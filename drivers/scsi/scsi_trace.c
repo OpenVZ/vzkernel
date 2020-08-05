@@ -17,6 +17,7 @@
  */
 #include <linux/kernel.h>
 #include <linux/trace_seq.h>
+#include <asm/unaligned.h>
 #include <trace/events/scsi.h>
 
 #define SERVICE_ACTION16(cdb) (cdb[1] & 0x1f)
@@ -28,7 +29,7 @@ scsi_trace_misc(struct trace_seq *, unsigned char *, int);
 static const char *
 scsi_trace_rw6(struct trace_seq *p, unsigned char *cdb, int len)
 {
-	const char *ret = p->buffer + p->len;
+	const char *ret = trace_seq_buffer_ptr(p);
 	sector_t lba = 0, txlen = 0;
 
 	lba |= ((cdb[1] & 0x1F) << 16);
@@ -46,7 +47,7 @@ scsi_trace_rw6(struct trace_seq *p, unsigned char *cdb, int len)
 static const char *
 scsi_trace_rw10(struct trace_seq *p, unsigned char *cdb, int len)
 {
-	const char *ret = p->buffer + p->len;
+	const char *ret = trace_seq_buffer_ptr(p);
 	sector_t lba = 0, txlen = 0;
 
 	lba |= (cdb[2] << 24);
@@ -71,7 +72,7 @@ scsi_trace_rw10(struct trace_seq *p, unsigned char *cdb, int len)
 static const char *
 scsi_trace_rw12(struct trace_seq *p, unsigned char *cdb, int len)
 {
-	const char *ret = p->buffer + p->len;
+	const char *ret = trace_seq_buffer_ptr(p);
 	sector_t lba = 0, txlen = 0;
 
 	lba |= (cdb[2] << 24);
@@ -94,7 +95,7 @@ scsi_trace_rw12(struct trace_seq *p, unsigned char *cdb, int len)
 static const char *
 scsi_trace_rw16(struct trace_seq *p, unsigned char *cdb, int len)
 {
-	const char *ret = p->buffer + p->len;
+	const char *ret = trace_seq_buffer_ptr(p);
 	sector_t lba = 0, txlen = 0;
 
 	lba |= ((u64)cdb[2] << 56);
@@ -125,7 +126,7 @@ scsi_trace_rw16(struct trace_seq *p, unsigned char *cdb, int len)
 static const char *
 scsi_trace_rw32(struct trace_seq *p, unsigned char *cdb, int len)
 {
-	const char *ret = p->buffer + p->len, *cmd;
+	const char *ret = trace_seq_buffer_ptr(p), *cmd;
 	sector_t lba = 0, txlen = 0;
 	u32 ei_lbrt = 0;
 
@@ -180,7 +181,7 @@ out:
 static const char *
 scsi_trace_unmap(struct trace_seq *p, unsigned char *cdb, int len)
 {
-	const char *ret = p->buffer + p->len;
+	const char *ret = trace_seq_buffer_ptr(p);
 	unsigned int regions = cdb[7] << 8 | cdb[8];
 
 	trace_seq_printf(p, "regions=%u", (regions - 8) / 16);
@@ -192,7 +193,7 @@ scsi_trace_unmap(struct trace_seq *p, unsigned char *cdb, int len)
 static const char *
 scsi_trace_service_action_in(struct trace_seq *p, unsigned char *cdb, int len)
 {
-	const char *ret = p->buffer + p->len, *cmd;
+	const char *ret = trace_seq_buffer_ptr(p), *cmd;
 	sector_t lba = 0;
 	u32 alloc_len = 0;
 
@@ -231,6 +232,92 @@ out:
 }
 
 static const char *
+scsi_trace_maintenance_in(struct trace_seq *p, unsigned char *cdb, int len)
+{
+	const char *ret = trace_seq_buffer_ptr(p), *cmd;
+	u32 alloc_len;
+
+	switch (SERVICE_ACTION16(cdb)) {
+	case MI_REPORT_IDENTIFYING_INFORMATION:
+		cmd = "REPORT_IDENTIFYING_INFORMATION";
+		break;
+	case MI_REPORT_TARGET_PGS:
+		cmd = "REPORT_TARGET_PORT_GROUPS";
+		break;
+	case MI_REPORT_ALIASES:
+		cmd = "REPORT_ALIASES";
+		break;
+	case MI_REPORT_SUPPORTED_OPERATION_CODES:
+		cmd = "REPORT_SUPPORTED_OPERATION_CODES";
+		break;
+	case MI_REPORT_SUPPORTED_TASK_MANAGEMENT_FUNCTIONS:
+		cmd = "REPORT_SUPPORTED_TASK_MANAGEMENT_FUNCTIONS";
+		break;
+	case MI_REPORT_PRIORITY:
+		cmd = "REPORT_PRIORITY";
+		break;
+	case MI_REPORT_TIMESTAMP:
+		cmd = "REPORT_TIMESTAMP";
+		break;
+	case MI_MANAGEMENT_PROTOCOL_IN:
+		cmd = "MANAGEMENT_PROTOCOL_IN";
+		break;
+	default:
+		trace_seq_puts(p, "UNKNOWN");
+		goto out;
+	}
+
+	alloc_len = get_unaligned_be32(&cdb[6]);
+
+	trace_seq_printf(p, "%s alloc_len=%u", cmd, alloc_len);
+
+out:
+	trace_seq_putc(p, 0);
+
+	return ret;
+}
+
+static const char *
+scsi_trace_maintenance_out(struct trace_seq *p, unsigned char *cdb, int len)
+{
+	const char *ret = trace_seq_buffer_ptr(p), *cmd;
+	u32 alloc_len;
+
+	switch (SERVICE_ACTION16(cdb)) {
+	case MO_SET_IDENTIFYING_INFORMATION:
+		cmd = "SET_IDENTIFYING_INFORMATION";
+		break;
+	case MO_SET_TARGET_PGS:
+		cmd = "SET_TARGET_PORT_GROUPS";
+		break;
+	case MO_CHANGE_ALIASES:
+		cmd = "CHANGE_ALIASES";
+		break;
+	case MO_SET_PRIORITY:
+		cmd = "SET_PRIORITY";
+		break;
+	case MO_SET_TIMESTAMP:
+		cmd = "SET_TIMESTAMP";
+		break;
+	case MO_MANAGEMENT_PROTOCOL_OUT:
+		cmd = "MANAGEMENT_PROTOCOL_OUT";
+		break;
+	default:
+		trace_seq_puts(p, "UNKNOWN");
+		goto out;
+	}
+
+	alloc_len = get_unaligned_be32(&cdb[6]);
+
+	trace_seq_printf(p, "%s alloc_len=%u", cmd, alloc_len);
+
+out:
+	trace_seq_putc(p, 0);
+
+	return ret;
+}
+
+static const char *
 scsi_trace_varlen(struct trace_seq *p, unsigned char *cdb, int len)
 {
 	switch (SERVICE_ACTION32(cdb)) {
@@ -247,7 +334,7 @@ scsi_trace_varlen(struct trace_seq *p, unsigned char *cdb, int len)
 static const char *
 scsi_trace_misc(struct trace_seq *p, unsigned char *cdb, int len)
 {
-	const char *ret = p->buffer + p->len;
+	const char *ret = trace_seq_buffer_ptr(p);
 
 	trace_seq_printf(p, "-");
 	trace_seq_putc(p, 0);
@@ -278,10 +365,14 @@ scsi_trace_parse_cdb(struct trace_seq *p, unsigned char *cdb, int len)
 		return scsi_trace_rw16(p, cdb, len);
 	case UNMAP:
 		return scsi_trace_unmap(p, cdb, len);
-	case SERVICE_ACTION_IN:
+	case SERVICE_ACTION_IN_16:
 		return scsi_trace_service_action_in(p, cdb, len);
 	case VARIABLE_LENGTH_CMD:
 		return scsi_trace_varlen(p, cdb, len);
+	case MAINTENANCE_IN:
+		return scsi_trace_maintenance_in(p, cdb, len);
+	case MAINTENANCE_OUT:
+		return scsi_trace_maintenance_out(p, cdb, len);
 	default:
 		return scsi_trace_misc(p, cdb, len);
 	}

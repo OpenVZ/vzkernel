@@ -9,8 +9,8 @@ struct vsyscall_gtod_data {
 
 	struct { /* extract of a clocksource struct */
 		int vclock_mode;
-		cycle_t	cycle_last;
-		cycle_t	mask;
+		u64	cycle_last;
+		u64	mask;
 		u32	mult;
 		u32	shift;
 	} clock;

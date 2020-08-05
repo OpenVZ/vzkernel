@@ -69,7 +69,7 @@ static u16 get_app_wr_id(u64 wr_id)
 
 static inline int ehca_write_rwqe(struct ipz_queue *ipz_rqueue,
 				  struct ehca_wqe *wqe_p,
-				  struct ib_recv_wr *recv_wr,
+				  const struct ib_recv_wr *recv_wr,
 				  u32 rq_map_idx)
 {
 	u8 cnt_ds;
@@ -110,19 +110,19 @@ static inline int ehca_write_rwqe(struct ipz_queue *ipz_rqueue,
 /* need ib_mad struct */
 #include <rdma/ib_mad.h>
 
-static void trace_send_wr_ud(const struct ib_send_wr *send_wr)
+static void trace_ud_wr(const struct ib_ud_wr *ud_wr)
 {
 	int idx;
 	int j;
-	while (send_wr) {
-		struct ib_mad_hdr *mad_hdr = send_wr->wr.ud.mad_hdr;
-		struct ib_sge *sge = send_wr->sg_list;
-		ehca_gen_dbg("send_wr#%x wr_id=%lx num_sge=%x "
-			     "send_flags=%x opcode=%x", idx, send_wr->wr_id,
-			     send_wr->num_sge, send_wr->send_flags,
-			     send_wr->opcode);
+	while (ud_wr) {
+		struct ib_mad_hdr *mad_hdr = ud_wrmad_hdr;
+		struct ib_sge *sge = ud_wr->wr.sg_list;
+		ehca_gen_dbg("ud_wr#%x wr_id=%lx num_sge=%x "
+			     "send_flags=%x opcode=%x", idx, ud_wr->wr.wr_id,
+			     ud_wr->wr.num_sge, ud_wr->wr.send_flags,
+			     ud_wr->.wr.opcode);
 		if (mad_hdr) {
-			ehca_gen_dbg("send_wr#%x mad_hdr base_version=%x "
+			ehca_gen_dbg("ud_wr#%x mad_hdr base_version=%x "
 				     "mgmt_class=%x class_version=%x method=%x "
 				     "status=%x class_specific=%x tid=%lx "
 				     "attr_id=%x resv=%x attr_mod=%x",
@@ -134,19 +134,19 @@ static void trace_send_wr_ud(const struct ib_send_wr *send_wr)
 				     mad_hdr->resv,
 				     mad_hdr->attr_mod);
 		}
-		for (j = 0; j < send_wr->num_sge; j++) {
+		for (j = 0; j < ud_wr->wr.num_sge; j++) {
 			u8 *data = __va(sge->addr);
-			ehca_gen_dbg("send_wr#%x sge#%x addr=%p length=%x "
+			ehca_gen_dbg("ud_wr#%x sge#%x addr=%p length=%x "
 				     "lkey=%x",
 				     idx, j, data, sge->length, sge->lkey);
 			/* assume length is n*16 */
-			ehca_dmp(data, sge->length, "send_wr#%x sge#%x",
+			ehca_dmp(data, sge->length, "ud_wr#%x sge#%x",
 				 idx, j);
 			sge++;
 		} /* eof for j */
 		idx++;
-		send_wr = send_wr->next;
-	} /* eof while send_wr */
+		ud_wr = ud_wr(ud_wr->wr.next);
+	} /* eof while ud_wr */
 }
 
 #endif /* DEBUG_GSI_SEND_WR */
@@ -160,7 +160,7 @@ static inline int ehca_write_swqe(struct ehca_qp *qp,
 	u32 idx;
 	u64 dma_length;
 	struct ehca_av *my_av;
-	u32 remote_qkey = send_wr->wr.ud.remote_qkey;
+	u32 remote_qkey;
 	struct ehca_qmap_entry *qmap_entry = &qp->sq_map.map[sq_map_idx];
 
 	if (unlikely((send_wr->num_sge < 0) ||
@@ -223,20 +223,21 @@ static inline int ehca_write_swqe(struct ehca_qp *qp,
 		/* no break is intential here */
 	case IB_QPT_UD:
 		/* IB 1.2 spec C10-15 compliance */
-		if (send_wr->wr.ud.remote_qkey & 0x80000000)
+		remote_qkey = ud_wr(send_wr)->remote_qkey;
+		if (remote_qkey & 0x80000000)
 			remote_qkey = qp->qkey;
 
-		wqe_p->destination_qp_number = send_wr->wr.ud.remote_qpn << 8;
+		wqe_p->destination_qp_number = ud_wr(send_wr)->remote_qpn << 8;
 		wqe_p->local_ee_context_qkey = remote_qkey;
-		if (unlikely(!send_wr->wr.ud.ah)) {
-			ehca_gen_err("wr.ud.ah is NULL. qp=%p", qp);
+		if (unlikely(!ud_wr(send_wr)->ah)) {
+			ehca_gen_err("ud_wr(send_wr) is NULL. qp=%p", qp);
 			return -EINVAL;
 		}
-		if (unlikely(send_wr->wr.ud.remote_qpn == 0)) {
+		if (unlikely(ud_wr(send_wr)->remote_qpn == 0)) {
 			ehca_gen_err("dest QP# is 0. qp=%x", qp->real_qp_num);
 			return -EINVAL;
 		}
-		my_av = container_of(send_wr->wr.ud.ah, struct ehca_av, ib_ah);
+		my_av = container_of(ud_wr(send_wr)->ah, struct ehca_av, ib_ah);
 		wqe_p->u.ud_av.ud_av = my_av->av;
 
 		/*
@@ -255,9 +256,9 @@ static inline int ehca_write_swqe(struct ehca_qp *qp,
 		    qp->qp_type == IB_QPT_GSI)
 			wqe_p->u.ud_av.ud_av.pmtu = 1;
 		if (qp->qp_type == IB_QPT_GSI) {
-			wqe_p->pkeyi = send_wr->wr.ud.pkey_index;
+			wqe_p->pkeyi = ud_wr(send_wr)->pkey_index;
 #ifdef DEBUG_GSI_SEND_WR
-			trace_send_wr_ud(send_wr);
+			trace_ud_wr(ud_wr(send_wr));
 #endif /* DEBUG_GSI_SEND_WR */
 		}
 		break;
@@ -269,8 +270,8 @@ static inline int ehca_write_swqe(struct ehca_qp *qp,
 	case IB_QPT_RC:
 		/* TODO: atomic not implemented */
 		wqe_p->u.nud.remote_virtual_address =
-			send_wr->wr.rdma.remote_addr;
-		wqe_p->u.nud.rkey = send_wr->wr.rdma.rkey;
+			rdma_wr(send_wr)->remote_addr;
+		wqe_p->u.nud.rkey = rdma_wr(send_wr)->rkey;
 
 		/*
 		 * omitted checking of IB_SEND_INLINE
@@ -398,7 +399,7 @@ static inline void map_ib_wc_status(u32 cqe_status,
 }
 
 static inline int post_one_send(struct ehca_qp *my_qp,
-			 struct ib_send_wr *cur_send_wr,
+			 const struct ib_send_wr *cur_send_wr,
 			 int hidden)
 {
 	struct ehca_wqe *wqe_p;
@@ -438,8 +439,8 @@ static inline int post_one_send(struct ehca_qp *my_qp,
 }
 
 int ehca_post_send(struct ib_qp *qp,
-		   struct ib_send_wr *send_wr,
-		   struct ib_send_wr **bad_send_wr)
+		   const struct ib_send_wr *send_wr,
+		   const struct ib_send_wr **bad_send_wr)
 {
 	struct ehca_qp *my_qp = container_of(qp, struct ehca_qp, ib_qp);
 	int wqe_cnt = 0;
@@ -503,8 +504,8 @@ out:
 
 static int internal_post_recv(struct ehca_qp *my_qp,
 			      struct ib_device *dev,
-			      struct ib_recv_wr *recv_wr,
-			      struct ib_recv_wr **bad_recv_wr)
+			      const struct ib_recv_wr *recv_wr,
+			      const struct ib_recv_wr **bad_recv_wr)
 {
 	struct ehca_wqe *wqe_p;
 	int wqe_cnt = 0;
@@ -581,8 +582,8 @@ out:
 }
 
 int ehca_post_recv(struct ib_qp *qp,
-		   struct ib_recv_wr *recv_wr,
-		   struct ib_recv_wr **bad_recv_wr)
+		   const struct ib_recv_wr *recv_wr,
+		   const struct ib_recv_wr **bad_recv_wr)
 {
 	struct ehca_qp *my_qp = container_of(qp, struct ehca_qp, ib_qp);
 
@@ -598,8 +599,8 @@ int ehca_post_recv(struct ib_qp *qp,
 }
 
 int ehca_post_srq_recv(struct ib_srq *srq,
-		       struct ib_recv_wr *recv_wr,
-		       struct ib_recv_wr **bad_recv_wr)
+		       const struct ib_recv_wr *recv_wr,
+		       const struct ib_recv_wr **bad_recv_wr)
 {
 	return internal_post_recv(container_of(srq, struct ehca_qp, ib_srq),
 				  srq->device, recv_wr, bad_recv_wr);
@@ -613,7 +614,6 @@ int ehca_post_srq_recv(struct ib_srq *srq,
 static const u8 ib_wc_opcode[255] = {
 	[0x01] = IB_WC_RECV+1,
 	[0x02] = IB_WC_RECV_RDMA_WITH_IMM+1,
-	[0x04] = IB_WC_BIND_MW+1,
 	[0x08] = IB_WC_FETCH_ADD+1,
 	[0x10] = IB_WC_COMP_SWAP+1,
 	[0x20] = IB_WC_RDMA_WRITE+1,

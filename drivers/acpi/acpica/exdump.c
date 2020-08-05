@@ -127,15 +127,17 @@ static struct acpi_exdump_info acpi_ex_dump_method[9] = {
 	 "Parameter Count"},
 	{ACPI_EXD_UINT8, ACPI_EXD_OFFSET(method.sync_level), "Sync Level"},
 	{ACPI_EXD_POINTER, ACPI_EXD_OFFSET(method.mutex), "Mutex"},
-	{ACPI_EXD_UINT8, ACPI_EXD_OFFSET(method.owner_id), "Owner Id"},
+	{ACPI_EXD_UINT16, ACPI_EXD_OFFSET(method.owner_id), "Owner Id"},
 	{ACPI_EXD_UINT8, ACPI_EXD_OFFSET(method.thread_count), "Thread Count"},
 	{ACPI_EXD_UINT32, ACPI_EXD_OFFSET(method.aml_length), "Aml Length"},
 	{ACPI_EXD_POINTER, ACPI_EXD_OFFSET(method.aml_start), "Aml Start"}
 };
 
-static struct acpi_exdump_info acpi_ex_dump_mutex[5] = {
+static struct acpi_exdump_info acpi_ex_dump_mutex[6] = {
 	{ACPI_EXD_INIT, ACPI_EXD_TABLE_SIZE(acpi_ex_dump_mutex), NULL},
 	{ACPI_EXD_UINT8, ACPI_EXD_OFFSET(mutex.sync_level), "Sync Level"},
+	{ACPI_EXD_UINT8, ACPI_EXD_OFFSET(mutex.original_sync_level),
+	 "Original Sync Level"},
 	{ACPI_EXD_POINTER, ACPI_EXD_OFFSET(mutex.owner_thread), "Owner Thread"},
 	{ACPI_EXD_UINT16, ACPI_EXD_OFFSET(mutex.acquisition_depth),
 	 "Acquire Depth"},
@@ -279,8 +281,8 @@ static struct acpi_exdump_info acpi_ex_dump_field_common[7] = {
 
 static struct acpi_exdump_info acpi_ex_dump_node[5] = {
 	{ACPI_EXD_INIT, ACPI_EXD_TABLE_SIZE(acpi_ex_dump_node), NULL},
-	{ACPI_EXD_UINT8, ACPI_EXD_NSOFFSET(flags), "Flags"},
-	{ACPI_EXD_UINT8, ACPI_EXD_NSOFFSET(owner_id), "Owner Id"},
+	{ACPI_EXD_UINT16, ACPI_EXD_NSOFFSET(flags), "Flags"},
+	{ACPI_EXD_UINT16, ACPI_EXD_NSOFFSET(owner_id), "Owner Id"},
 	{ACPI_EXD_POINTER, ACPI_EXD_NSOFFSET(child), "Child List"},
 	{ACPI_EXD_POINTER, ACPI_EXD_NSOFFSET(peer), "Next Peer"}
 };
@@ -357,6 +359,7 @@ acpi_ex_dump_object(union acpi_operand_object *obj_desc,
 
 		switch (info->opcode) {
 		case ACPI_EXD_INIT:
+
 			break;
 
 		case ACPI_EXD_TYPE:
@@ -718,6 +721,7 @@ void acpi_ex_dump_operand(union acpi_operand_object *obj_desc, u32 depth)
 		break;
 
 	default:
+
 		/* Unknown Type */
 
 		acpi_os_printf("Unknown Type %X\n", obj_desc->common.type);

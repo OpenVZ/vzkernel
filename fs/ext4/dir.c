@@ -34,7 +34,7 @@ static int ext4_dx_readdir(struct file *filp,
 
 /**
  * Check if the given dir-inode refers to an htree-indexed directory
- * (or a directory which chould potentially get coverted to use htree
+ * (or a directory which could potentially get converted to use htree
  * indexing).
  *
  * Return 1 if it is a dx dir, 0 if not
@@ -78,7 +78,7 @@ int __ext4_check_dir_entry(const char *function, unsigned int line,
 	else if (unlikely(rlen < EXT4_DIR_REC_LEN(de->name_len)))
 		error_msg = "rec_len is too small for name_len";
 	else if (unlikely(((char *) de - buf) + rlen > size))
-		error_msg = "directory entry across range";
+		error_msg = "directory entry overrun";
 	else if (unlikely(le32_to_cpu(de->inode) >
 			le32_to_cpu(EXT4_SB(dir->i_sb)->s_es->s_inodes_count)))
 		error_msg = "inode out of bounds";
@@ -87,18 +87,16 @@ int __ext4_check_dir_entry(const char *function, unsigned int line,
 
 	if (filp)
 		ext4_error_file(filp, function, line, bh->b_blocknr,
-				"bad entry in directory: %s - offset=%u(%u), "
-				"inode=%u, rec_len=%d, name_len=%d",
-				error_msg, (unsigned) (offset % size),
-				offset, le32_to_cpu(de->inode),
-				rlen, de->name_len);
+				"bad entry in directory: %s - offset=%u, "
+				"inode=%u, rec_len=%d, name_len=%d, size=%d",
+				error_msg, offset, le32_to_cpu(de->inode),
+				rlen, de->name_len, size);
 	else
 		ext4_error_inode(dir, function, line, bh->b_blocknr,
-				"bad entry in directory: %s - offset=%u(%u), "
-				"inode=%u, rec_len=%d, name_len=%d",
-				error_msg, (unsigned) (offset % size),
-				offset, le32_to_cpu(de->inode),
-				rlen, de->name_len);
+				"bad entry in directory: %s - offset=%u, "
+				"inode=%u, rec_len=%d, name_len=%d, size=%d",
+				 error_msg, offset, le32_to_cpu(de->inode),
+				 rlen, de->name_len, size);
 
 	return 1;
 }
@@ -340,13 +338,15 @@ static loff_t ext4_dir_llseek(struct file *file, loff_t offset, int whence)
 {
 	struct inode *inode = file->f_mapping->host;
 	int dx_dir = is_dx_dir(inode);
-	loff_t htree_max = ext4_get_htree_eof(file);
+	loff_t ret, htree_max = ext4_get_htree_eof(file);
 
 	if (likely(dx_dir))
-		return generic_file_llseek_size(file, offset, whence,
+		ret = generic_file_llseek_size(file, offset, whence,
 						    htree_max, htree_max);
 	else
-		return ext4_llseek(file, offset, whence);
+		ret = ext4_llseek(file, offset, whence);
+	file->f_version = inode->i_version - 1;
+	return ret;
 }
 
 /*
@@ -617,6 +617,31 @@ static int ext4_release_dir(struct inode *inode, struct file *filp)
 {
 	if (filp->private_data)
 		ext4_htree_free_dir_info(filp->private_data);
+
+	return 0;
+}
+
+int ext4_check_all_de(struct inode *dir, struct buffer_head *bh, void *buf,
+		      int buf_size)
+{
+	struct ext4_dir_entry_2 *de;
+	int nlen, rlen;
+	unsigned int offset = 0;
+	char *top;
+
+	de = (struct ext4_dir_entry_2 *)buf;
+	top = buf + buf_size;
+	while ((char *) de < top) {
+		if (ext4_check_dir_entry(dir, NULL, de, bh,
+					 buf, buf_size, offset))
+			return -EIO;
+		nlen = EXT4_DIR_REC_LEN(de->name_len);
+		rlen = ext4_rec_len_from_disk(de->rec_len, buf_size);
+		de = (struct ext4_dir_entry_2 *)((char *)de + rlen);
+		offset += rlen;
+	}
+	if ((char *) de > top)
+		return -EIO;
 
 	return 0;
 }

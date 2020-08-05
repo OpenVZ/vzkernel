@@ -25,6 +25,7 @@
 #include <linux/proc_fs.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv6.h>
+#include <linux/netfilter_bridge.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_queue.h>
 #include <linux/list.h>
@@ -35,7 +36,7 @@
 
 #include <linux/atomic.h>
 
-#ifdef CONFIG_BRIDGE_NETFILTER
+#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 #include "../bridge/br_private.h"
 #endif
 
@@ -227,57 +228,17 @@ nfqnl_flush(struct nfqnl_instance *queue, nfqnl_cmpfn cmpfn, unsigned long data)
 	spin_unlock_bh(&queue->lock);
 }
 
-static void
-nfqnl_zcopy(struct sk_buff *to, const struct sk_buff *from, int len, int hlen)
-{
-	int i, j = 0;
-	int plen = 0; /* length of skb->head fragment */
-	struct page *page;
-	unsigned int offset;
-
-	/* dont bother with small payloads */
-	if (len <= skb_tailroom(to)) {
-		skb_copy_bits(from, 0, skb_put(to, len), len);
-		return;
-	}
-
-	if (hlen) {
-		skb_copy_bits(from, 0, skb_put(to, hlen), hlen);
-		len -= hlen;
-	} else {
-		plen = min_t(int, skb_headlen(from), len);
-		if (plen) {
-			page = virt_to_head_page(from->head);
-			offset = from->data - (unsigned char *)page_address(page);
-			__skb_fill_page_desc(to, 0, page, offset, plen);
-			get_page(page);
-			j = 1;
-			len -= plen;
-		}
-	}
-
-	to->truesize += len + plen;
-	to->len += len + plen;
-	to->data_len += len + plen;
-
-	for (i = 0; i < skb_shinfo(from)->nr_frags; i++) {
-		if (!len)
-			break;
-		skb_shinfo(to)->frags[j] = skb_shinfo(from)->frags[i];
-		skb_shinfo(to)->frags[j].size = min_t(int, skb_shinfo(to)->frags[j].size, len);
-		len -= skb_shinfo(to)->frags[j].size;
-		skb_frag_ref(to, j);
-		j++;
-	}
-	skb_shinfo(to)->nr_frags = j;
-}
-
-static int nfqnl_put_packet_info(struct sk_buff *nlskb, struct sk_buff *packet)
+static int
+nfqnl_put_packet_info(struct sk_buff *nlskb, struct sk_buff *packet,
+		      bool csum_verify)
 {
 	__u32 flags = 0;
 
 	if (packet->ip_summed == CHECKSUM_PARTIAL)
 		flags = NFQA_SKB_CSUMNOTREADY;
+	else if (csum_verify)
+		flags = NFQA_SKB_CSUM_NOTVERIFIED;
+
 	if (skb_is_gso(packet))
 		flags |= NFQA_SKB_GSO;
 
@@ -291,7 +252,7 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 {
 	size_t size;
 	size_t data_len = 0, cap_len = 0;
-	int hlen = 0;
+	unsigned int hlen = 0;
 	struct sk_buff *skb;
 	struct nlattr *nla;
 	struct nfqnl_msg_packet_hdr *pmsg;
@@ -302,12 +263,13 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 	struct net_device *outdev;
 	struct nf_conn *ct = NULL;
 	enum ip_conntrack_info uninitialized_var(ctinfo);
+	bool csum_verify;
 
 	size =    nlmsg_total_size(sizeof(struct nfgenmsg))
 		+ nla_total_size(sizeof(struct nfqnl_msg_packet_hdr))
 		+ nla_total_size(sizeof(u_int32_t))	/* ifindex */
 		+ nla_total_size(sizeof(u_int32_t))	/* ifindex */
-#ifdef CONFIG_BRIDGE_NETFILTER
+#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 		+ nla_total_size(sizeof(u_int32_t))	/* ifindex */
 		+ nla_total_size(sizeof(u_int32_t))	/* ifindex */
 #endif
@@ -319,7 +281,13 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 	if (entskb->tstamp.tv64)
 		size += nla_total_size(sizeof(struct nfqnl_msg_packet_timestamp));
 
-	outdev = entry->outdev;
+	if (entry->state.hook <= NF_INET_FORWARD ||
+	   (entry->state.hook == NF_INET_POST_ROUTING && entskb->sk == NULL))
+		csum_verify = !skb_csum_unnecessary(entskb);
+	else
+		csum_verify = false;
+
+	outdev = entry->state.out;
 
 	switch ((enum nfqnl_config_mode)ACCESS_ONCE(queue->copy_mode)) {
 	case NFQNL_COPY_META:
@@ -336,15 +304,8 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 		if (data_len == 0 || data_len > entskb->len)
 			data_len = entskb->len;
 
-
-		if (!entskb->head_frag ||
-		    skb_headlen(entskb) < L1_CACHE_BYTES ||
-		    skb_shinfo(entskb)->nr_frags >= MAX_SKB_FRAGS)
-			hlen = skb_headlen(entskb);
-
-		if (skb_has_frag_list(entskb))
-			hlen = entskb->len;
-		hlen = min_t(int, data_len, hlen);
+		hlen = skb_zerocopy_headlen(entskb);
+		hlen = min_t(unsigned int, hlen, data_len);
 		size += sizeof(struct nlattr) + hlen;
 		cap_len = entskb->len;
 		break;
@@ -353,36 +314,38 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 	if (queue->flags & NFQA_CFG_F_CONNTRACK)
 		ct = nfqnl_ct_get(entskb, &size, &ctinfo);
 
-	skb = nfnetlink_alloc_skb(&init_net, size, queue->peer_portid,
-				  GFP_ATOMIC);
-	if (!skb)
+	skb = alloc_skb(size, GFP_ATOMIC);
+	if (!skb) {
+		skb_tx_error(entskb);
 		return NULL;
+	}
 
 	nlh = nlmsg_put(skb, 0, 0,
 			NFNL_SUBSYS_QUEUE << 8 | NFQNL_MSG_PACKET,
 			sizeof(struct nfgenmsg), 0);
 	if (!nlh) {
+		skb_tx_error(entskb);
 		kfree_skb(skb);
 		return NULL;
 	}
 	nfmsg = nlmsg_data(nlh);
-	nfmsg->nfgen_family = entry->pf;
+	nfmsg->nfgen_family = entry->state.pf;
 	nfmsg->version = NFNETLINK_V0;
 	nfmsg->res_id = htons(queue->queue_num);
 
 	nla = __nla_reserve(skb, NFQA_PACKET_HDR, sizeof(*pmsg));
 	pmsg = nla_data(nla);
 	pmsg->hw_protocol	= entskb->protocol;
-	pmsg->hook		= entry->hook;
+	pmsg->hook		= entry->state.hook;
 	*packet_id_ptr		= &pmsg->packet_id;
 
-	indev = entry->indev;
+	indev = entry->state.in;
 	if (indev) {
-#ifndef CONFIG_BRIDGE_NETFILTER
+#if !IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 		if (nla_put_be32(skb, NFQA_IFINDEX_INDEV, htonl(indev->ifindex)))
 			goto nla_put_failure;
 #else
-		if (entry->pf == PF_BRIDGE) {
+		if (entry->state.pf == PF_BRIDGE) {
 			/* Case 1: indev is physical input device, we need to
 			 * look for bridge group (when called from
 			 * netfilter_bridge) */
@@ -394,25 +357,29 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 					 htonl(br_port_get_rcu(indev)->br->dev->ifindex)))
 				goto nla_put_failure;
 		} else {
+			int physinif;
+
 			/* Case 2: indev is bridge group, we need to look for
 			 * physical device (when called from ipv4) */
 			if (nla_put_be32(skb, NFQA_IFINDEX_INDEV,
 					 htonl(indev->ifindex)))
 				goto nla_put_failure;
-			if (entskb->nf_bridge && entskb->nf_bridge->physindev &&
+
+			physinif = nf_bridge_get_physinif(entskb);
+			if (physinif &&
 			    nla_put_be32(skb, NFQA_IFINDEX_PHYSINDEV,
-					 htonl(entskb->nf_bridge->physindev->ifindex)))
+					 htonl(physinif)))
 				goto nla_put_failure;
 		}
 #endif
 	}
 
 	if (outdev) {
-#ifndef CONFIG_BRIDGE_NETFILTER
+#if !IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 		if (nla_put_be32(skb, NFQA_IFINDEX_OUTDEV, htonl(outdev->ifindex)))
 			goto nla_put_failure;
 #else
-		if (entry->pf == PF_BRIDGE) {
+		if (entry->state.pf == PF_BRIDGE) {
 			/* Case 1: outdev is physical output device, we need to
 			 * look for bridge group (when called from
 			 * netfilter_bridge) */
@@ -424,14 +391,18 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 					 htonl(br_port_get_rcu(outdev)->br->dev->ifindex)))
 				goto nla_put_failure;
 		} else {
+			int physoutif;
+
 			/* Case 2: outdev is bridge group, we need to look for
 			 * physical output device (when called from ipv4) */
 			if (nla_put_be32(skb, NFQA_IFINDEX_OUTDEV,
 					 htonl(outdev->ifindex)))
 				goto nla_put_failure;
-			if (entskb->nf_bridge && entskb->nf_bridge->physoutdev &&
+
+			physoutif = nf_bridge_get_physoutif(entskb);
+			if (physoutif &&
 			    nla_put_be32(skb, NFQA_IFINDEX_PHYSOUTDEV,
-					 htonl(entskb->nf_bridge->physoutdev->ifindex)))
+					 htonl(physoutif)))
 				goto nla_put_failure;
 		}
 #endif
@@ -444,7 +415,10 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 	if (indev && entskb->dev &&
 	    entskb->mac_header != entskb->network_header) {
 		struct nfqnl_msg_packet_hw phw;
-		int len = dev_parse_header(entskb, phw.hw_addr);
+		int len;
+
+		memset(&phw, 0, sizeof(phw));
+		len = dev_parse_header(entskb, phw.hw_addr);
 		if (len) {
 			phw.hw_addrlen = htons(len);
 			if (nla_put(skb, NFQA_HWADDR, sizeof(phw), &phw))
@@ -468,7 +442,7 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 	if (cap_len > 0 && nla_put_be32(skb, NFQA_CAP_LEN, htonl(cap_len)))
 		goto nla_put_failure;
 
-	if (nfqnl_put_packet_info(skb, entskb))
+	if (nfqnl_put_packet_info(skb, entskb, csum_verify))
 		goto nla_put_failure;
 
 	if (data_len) {
@@ -477,17 +451,19 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 		if (skb_tailroom(skb) < sizeof(*nla) + hlen)
 			goto nla_put_failure;
 
-		nla = (struct nlattr *)skb_put(skb, sizeof(*nla));
+		nla = skb_put(skb, sizeof(*nla));
 		nla->nla_type = NFQA_PAYLOAD;
 		nla->nla_len = nla_attr_size(data_len);
 
-		nfqnl_zcopy(skb, entskb, data_len, hlen);
+		if (skb_zerocopy(skb, entskb, data_len, hlen))
+			goto nla_put_failure;
 	}
 
 	nlh->nlmsg_len = skb->len;
 	return skb;
 
 nla_put_failure:
+	skb_tx_error(entskb);
 	kfree_skb(skb);
 	net_err_ratelimited("nf_queue: error creating packet message\n");
 	return NULL;
@@ -509,10 +485,6 @@ __nfqnl_enqueue_packet(struct net *net, struct nfqnl_instance *queue,
 	}
 	spin_lock_bh(&queue->lock);
 
-	if (!queue->peer_portid) {
-		err = -EINVAL;
-		goto err_out_free_nskb;
-	}
 	if (queue->queue_total >= queue->queue_maxlen) {
 		if (queue->flags & NFQA_CFG_F_FAIL_OPEN) {
 			failopen = 1;
@@ -561,7 +533,7 @@ nf_queue_entry_dup(struct nf_queue_entry *e)
 	return NULL;
 }
 
-#ifdef CONFIG_BRIDGE_NETFILTER
+#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 /* When called from bridge netfilter, skb->data must point to MAC header
  * before calling skb_gso_segment(). Else, original MAC header is lost
  * and segmented skbs will be sent to wrong destination.
@@ -625,8 +597,8 @@ nfqnl_enqueue_packet(struct nf_queue_entry *entry, unsigned int queuenum)
 	struct nfqnl_instance *queue;
 	struct sk_buff *skb, *segs;
 	int err = -ENOBUFS;
-	struct net *net = dev_net(entry->indev ?
-				  entry->indev : entry->outdev);
+	struct net *net = dev_net(entry->state.in ?
+				  entry->state.in : entry->state.out);
 	struct nfnl_queue_net *q = nfnl_queue_pernet(net);
 
 	/* rcu_read_lock()ed by nf_hook_slow() */
@@ -639,7 +611,7 @@ nfqnl_enqueue_packet(struct nf_queue_entry *entry, unsigned int queuenum)
 
 	skb = entry->skb;
 
-	switch (entry->pf) {
+	switch (entry->state.pf) {
 	case NFPROTO_IPV4:
 		skb->protocol = htons(ETH_P_IP);
 		break;
@@ -657,7 +629,7 @@ nfqnl_enqueue_packet(struct nf_queue_entry *entry, unsigned int queuenum)
 	 * returned by nf_queue.  For instance, callers rely on -ECANCELED to
 	 * mean 'ignore this hook'.
 	 */
-	if (IS_ERR(segs))
+	if (IS_ERR_OR_NULL(segs))
 		goto out_err;
 	queued = 0;
 	err = 0;
@@ -698,11 +670,8 @@ nfqnl_mangle(void *data, int data_len, struct nf_queue_entry *e, int diff)
 		if (diff > skb_tailroom(e->skb)) {
 			nskb = skb_copy_expand(e->skb, skb_headroom(e->skb),
 					       diff, GFP_ATOMIC);
-			if (!nskb) {
-				printk(KERN_WARNING "nf_queue: OOM "
-				      "in mangle, dropping packet\n");
+			if (!nskb)
 				return -ENOMEM;
-			}
 			kfree_skb(e->skb);
 			e->skb = nskb;
 		}
@@ -754,19 +723,20 @@ nfqnl_set_mode(struct nfqnl_instance *queue,
 static int
 dev_cmp(struct nf_queue_entry *entry, unsigned long ifindex)
 {
-	if (entry->indev)
-		if (entry->indev->ifindex == ifindex)
+	if (entry->state.in)
+		if (entry->state.in->ifindex == ifindex)
 			return 1;
-	if (entry->outdev)
-		if (entry->outdev->ifindex == ifindex)
+	if (entry->state.out)
+		if (entry->state.out->ifindex == ifindex)
 			return 1;
-#ifdef CONFIG_BRIDGE_NETFILTER
+#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	if (entry->skb->nf_bridge) {
-		if (entry->skb->nf_bridge->physindev &&
-		    entry->skb->nf_bridge->physindev->ifindex == ifindex)
-			return 1;
-		if (entry->skb->nf_bridge->physoutdev &&
-		    entry->skb->nf_bridge->physoutdev->ifindex == ifindex)
+		int physinif, physoutif;
+
+		physinif = nf_bridge_get_physinif(entry->skb);
+		physoutif = nf_bridge_get_physoutif(entry->skb);
+
+		if (physinif == ifindex || physoutif == ifindex)
 			return 1;
 	}
 #endif
@@ -800,7 +770,7 @@ static int
 nfqnl_rcv_dev_event(struct notifier_block *this,
 		    unsigned long event, void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 
 	/* Drop any packets associated with the downed device */
 	if (event == NETDEV_DOWN)
@@ -848,6 +818,7 @@ static const struct nla_policy nfqa_verdict_policy[NFQA_MAX+1] = {
 	[NFQA_MARK]		= { .type = NLA_U32 },
 	[NFQA_PAYLOAD]		= { .type = NLA_UNSPEC },
 	[NFQA_CT]		= { .type = NLA_UNSPEC },
+	[NFQA_EXP]		= { .type = NLA_UNSPEC },
 };
 
 static const struct nla_policy nfqa_verdict_batch_policy[NFQA_MAX+1] = {
@@ -959,10 +930,8 @@ nfqnl_recv_verdict(struct sock *ctnl, struct sk_buff *skb,
 	struct net *net = sock_net(ctnl);
 	struct nfnl_queue_net *q = nfnl_queue_pernet(net);
 
-	queue = instance_lookup(q, queue_num);
-	if (!queue)
-		queue = verdict_instance_lookup(q, queue_num,
-						NETLINK_CB(skb).portid);
+	queue = verdict_instance_lookup(q, queue_num,
+					NETLINK_CB(skb).portid);
 	if (IS_ERR(queue))
 		return PTR_ERR(queue);
 
@@ -977,8 +946,14 @@ nfqnl_recv_verdict(struct sock *ctnl, struct sk_buff *skb,
 		return -ENOENT;
 
 	rcu_read_lock();
-	if (nfqa[NFQA_CT] && (queue->flags & NFQA_CFG_F_CONNTRACK))
+	if (nfqa[NFQA_CT] && (queue->flags & NFQA_CFG_F_CONNTRACK)) {
 		ct = nfqnl_ct_parse(entry->skb, nfqa[NFQA_CT], &ctinfo);
+		if (ct && nfqa[NFQA_EXP]) {
+			nfqnl_attach_expect(ct, nfqa[NFQA_EXP],
+					    NETLINK_CB(skb).portid,
+					    nlmsg_report(nlh));
+		}
+	}
 
 	if (nfqa[NFQA_PAYLOAD]) {
 		u16 payload_len = nla_len(nfqa[NFQA_PAYLOAD]);
@@ -1011,6 +986,9 @@ nfqnl_recv_unsupp(struct sock *ctnl, struct sk_buff *skb,
 static const struct nla_policy nfqa_cfg_policy[NFQA_CFG_MAX+1] = {
 	[NFQA_CFG_CMD]		= { .len = sizeof(struct nfqnl_msg_config_cmd) },
 	[NFQA_CFG_PARAMS]	= { .len = sizeof(struct nfqnl_msg_config_params) },
+	[NFQA_CFG_QUEUE_MAXLEN]	= { .type = NLA_U32 },
+	[NFQA_CFG_MASK]		= { .type = NLA_U32 },
+	[NFQA_CFG_FLAGS]	= { .type = NLA_U32 },
 };
 
 static const struct nf_queue_handler nfqh = {
@@ -1299,7 +1277,13 @@ static struct pernet_operations nfnl_queue_net_ops = {
 
 static int __init nfnetlink_queue_init(void)
 {
-	int status = -ENOMEM;
+	int status;
+
+	status = register_pernet_subsys(&nfnl_queue_net_ops);
+	if (status < 0) {
+		pr_err("nf_queue: failed to register pernet ops\n");
+		goto out;
+	}
 
 	netlink_register_notifier(&nfqnl_rtnl_notifier);
 	status = nfnetlink_subsys_register(&nfqnl_subsys);
@@ -1308,29 +1292,24 @@ static int __init nfnetlink_queue_init(void)
 		goto cleanup_netlink_notifier;
 	}
 
-	status = register_pernet_subsys(&nfnl_queue_net_ops);
-	if (status < 0) {
-		pr_err("nf_queue: failed to register pernet ops\n");
-		goto cleanup_subsys;
-	}
-	register_netdevice_notifier(&nfqnl_dev_notifier);
+	register_netdevice_notifier_rh(&nfqnl_dev_notifier);
 	nf_register_queue_handler(&nfqh);
 	return status;
 
-cleanup_subsys:
-	nfnetlink_subsys_unregister(&nfqnl_subsys);
 cleanup_netlink_notifier:
 	netlink_unregister_notifier(&nfqnl_rtnl_notifier);
+	unregister_pernet_subsys(&nfnl_queue_net_ops);
+out:
 	return status;
 }
 
 static void __exit nfnetlink_queue_fini(void)
 {
 	nf_unregister_queue_handler();
-	unregister_netdevice_notifier(&nfqnl_dev_notifier);
-	unregister_pernet_subsys(&nfnl_queue_net_ops);
+	unregister_netdevice_notifier_rh(&nfqnl_dev_notifier);
 	nfnetlink_subsys_unregister(&nfqnl_subsys);
 	netlink_unregister_notifier(&nfqnl_rtnl_notifier);
+	unregister_pernet_subsys(&nfnl_queue_net_ops);
 
 	rcu_barrier(); /* Wait for completion of call_rcu()'s */
 }

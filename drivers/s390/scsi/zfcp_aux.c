@@ -3,7 +3,7 @@
  *
  * Module interface and handling of zfcp data structures.
  *
- * Copyright IBM Corp. 2002, 2010
+ * Copyright IBM Corp. 2002, 2013
  */
 
 /*
@@ -23,6 +23,7 @@
  *            Christof Schmitt
  *            Martin Petermann
  *            Sven Schuetz
+ *            Steffen Maier
  */
 
 #define KMSG_COMPONENT "zfcp"
@@ -140,13 +141,6 @@ static int __init zfcp_module_init(void)
 	scsi_transport_reserve_device(zfcp_scsi_transport_template,
 				      sizeof(struct zfcp_scsi_dev));
 
-
-	retval = misc_register(&zfcp_cfdc_misc);
-	if (retval) {
-		pr_err("Registering the misc device zfcp_cfdc failed\n");
-		goto out_misc;
-	}
-
 	retval = ccw_driver_register(&zfcp_ccw_driver);
 	if (retval) {
 		pr_err("The zfcp device driver could not register with "
@@ -159,8 +153,6 @@ static int __init zfcp_module_init(void)
 	return 0;
 
 out_ccw_register:
-	misc_deregister(&zfcp_cfdc_misc);
-out_misc:
 	fc_release_transport(zfcp_scsi_transport_template);
 out_transport:
 	kmem_cache_destroy(zfcp_fc_req_cache);
@@ -175,7 +167,6 @@ module_init(zfcp_module_init);
 static void __exit zfcp_module_exit(void)
 {
 	ccw_driver_unregister(&zfcp_ccw_driver);
-	misc_deregister(&zfcp_cfdc_misc);
 	fc_release_transport(zfcp_scsi_transport_template);
 	kmem_cache_destroy(zfcp_fc_req_cache);
 	kmem_cache_destroy(zfcp_fsf_qtcb_cache);
@@ -284,16 +275,16 @@ static void zfcp_free_low_mem_buffers(struct zfcp_adapter *adapter)
  */
 int zfcp_status_read_refill(struct zfcp_adapter *adapter)
 {
-	while (atomic_read(&adapter->stat_miss) > 0)
+	while (atomic_add_unless(&adapter->stat_miss, -1, 0))
 		if (zfcp_fsf_status_read(adapter->qdio)) {
+			atomic_inc(&adapter->stat_miss); /* undo add -1 */
 			if (atomic_read(&adapter->stat_miss) >=
 			    adapter->stat_read_buf_num) {
 				zfcp_erp_adapter_reopen(adapter, 0, "axsref1");
 				return 1;
 			}
 			break;
-		} else
-			atomic_dec(&adapter->stat_miss);
+		}
 	return 0;
 }
 
@@ -362,8 +353,12 @@ struct zfcp_adapter *zfcp_adapter_enqueue(struct ccw_device *ccw_device)
 	adapter->ccw_device = ccw_device;
 
 	INIT_WORK(&adapter->stat_work, _zfcp_status_read_scheduler);
-	INIT_WORK(&adapter->scan_work, zfcp_fc_scan_ports);
+	INIT_DELAYED_WORK(&adapter->scan_work, zfcp_fc_scan_ports);
 	INIT_WORK(&adapter->ns_up_work, zfcp_fc_sym_name_update);
+
+	adapter->next_port_scan = jiffies;
+
+	adapter->erp_action.adapter = adapter;
 
 	if (zfcp_qdio_setup(adapter))
 		goto failed;
@@ -415,6 +410,8 @@ struct zfcp_adapter *zfcp_adapter_enqueue(struct ccw_device *ccw_device)
 	adapter->dma_parms.max_segment_size = ZFCP_QDIO_SBALE_LEN;
 	adapter->ccw_device->dev.dma_parms = &adapter->dma_parms;
 
+	adapter->stat_read_buf_num = FSF_STATUS_READS_RECOM;
+
 	if (!zfcp_scsi_adapter_register(adapter))
 		return adapter;
 
@@ -427,7 +424,7 @@ void zfcp_adapter_unregister(struct zfcp_adapter *adapter)
 {
 	struct ccw_device *cdev = adapter->ccw_device;
 
-	cancel_work_sync(&adapter->scan_work);
+	cancel_delayed_work_sync(&adapter->scan_work);
 	cancel_work_sync(&adapter->stat_work);
 	cancel_work_sync(&adapter->ns_up_work);
 	zfcp_destroy_adapter_work_queue(adapter);
@@ -531,6 +528,9 @@ struct zfcp_port *zfcp_port_enqueue(struct zfcp_adapter *adapter, u64 wwpn,
 	port->rport_task = RPORT_NONE;
 	port->dev.parent = &adapter->ccw_device->dev;
 	port->dev.release = zfcp_port_release;
+
+	port->erp_action.adapter = adapter;
+	port->erp_action.port = port;
 
 	if (dev_set_name(&port->dev, "0x%016llx", (unsigned long long)wwpn)) {
 		kfree(port);

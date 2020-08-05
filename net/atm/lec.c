@@ -41,6 +41,9 @@ static unsigned char bridge_ula_lec[] = { 0x01, 0x80, 0xc2, 0x00, 0x00 };
 #include <linux/module.h>
 #include <linux/init.h>
 
+/* Hardening for Spectre-v1 */
+#include <linux/nospec.h>
+
 #include "lec.h"
 #include "lec_arpc.h"
 #include "resources.h"
@@ -194,7 +197,7 @@ lec_send(struct atm_vcc *vcc, struct sk_buff *skb)
 static void lec_tx_timeout(struct net_device *dev)
 {
 	pr_info("%s\n", dev->name);
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	netif_wake_queue(dev);
 }
 
@@ -324,7 +327,7 @@ static netdev_tx_t lec_start_xmit(struct sk_buff *skb,
 out:
 	if (entry)
 		lec_arp_put(entry);
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	return NETDEV_TX_OK;
 }
 
@@ -563,7 +566,7 @@ static const struct net_device_ops lec_netdev_ops = {
 	.ndo_open		= lec_open,
 	.ndo_stop		= lec_close,
 	.ndo_start_xmit		= lec_start_xmit,
-	.ndo_change_mtu		= lec_change_mtu,
+	.ndo_change_mtu_rh74	= lec_change_mtu,
 	.ndo_tx_timeout		= lec_tx_timeout,
 	.ndo_set_rx_mode	= lec_set_multicast_list,
 };
@@ -695,8 +698,10 @@ static int lec_vcc_attach(struct atm_vcc *vcc, void __user *arg)
 	bytes_left = copy_from_user(&ioc_data, arg, sizeof(struct atmlec_ioc));
 	if (bytes_left != 0)
 		pr_info("copy from user failed for %d bytes\n", bytes_left);
-	if (ioc_data.dev_num < 0 || ioc_data.dev_num >= MAX_LEC_ITF ||
-	    !dev_lec[ioc_data.dev_num])
+	if (ioc_data.dev_num < 0 || ioc_data.dev_num >= MAX_LEC_ITF)
+		return -EINVAL;
+	ioc_data.dev_num = array_index_nospec(ioc_data.dev_num, MAX_LEC_ITF);
+	if (!dev_lec[ioc_data.dev_num])
 		return -EINVAL;
 	vpriv = kmalloc(sizeof(struct lec_vcc_priv), GFP_KERNEL);
 	if (!vpriv)

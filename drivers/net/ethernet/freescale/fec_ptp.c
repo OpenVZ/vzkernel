@@ -79,7 +79,7 @@
  * cyclecounter structure used to construct a ns counter from the
  * arbitrary fixed point registers
  */
-static cycle_t fec_ptp_read(const struct cyclecounter *cc)
+static u64 fec_ptp_read(const struct cyclecounter *cc)
 {
 	struct fec_enet_private *fep =
 		container_of(cc, struct fec_enet_private, cc);
@@ -358,6 +358,7 @@ void fec_ptp_init(struct net_device *ndev, struct platform_device *pdev)
 	fep->ptp_caps.n_alarm = 0;
 	fep->ptp_caps.n_ext_ts = 0;
 	fep->ptp_caps.n_per_out = 0;
+	fep->ptp_caps.n_pins = 0;
 	fep->ptp_caps.pps = 0;
 	fep->ptp_caps.adjfreq = fec_ptp_adjfreq;
 	fep->ptp_caps.adjtime = fec_ptp_adjtime;
