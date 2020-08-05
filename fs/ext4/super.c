@@ -4423,14 +4423,16 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	sbi->s_err_report.function = print_daily_error_info;
 	sbi->s_err_report.data = (unsigned long) sb;
 
-	/* Register extent status tree shrinker */
-	ext4_es_register_shrinker(sbi);
-
 	err = percpu_counter_init(&sbi->s_extent_cache_cnt, 0, GFP_KERNEL);
 	if (err) {
 		ext4_msg(sb, KERN_ERR, "insufficient memory");
 		goto failed_mount3;
 	}
+
+	/* Register extent status tree shrinker */
+	if (ext4_es_register_shrinker(sbi))
+		goto failed_mount3;
+
 
 	sbi->s_stripe = ext4_get_stripe_size(sbi);
 	sbi->s_extent_max_zeroout_kb = 32;
@@ -4739,8 +4741,8 @@ failed_mount_wq:
 		jbd2_journal_destroy(sbi->s_journal);
 		sbi->s_journal = NULL;
 	}
-failed_mount3:
 	ext4_es_unregister_shrinker(sbi);
+failed_mount3:
 	del_timer_sync(&sbi->s_err_report);
 	percpu_counter_destroy(&sbi->s_extent_cache_cnt);
 	if (sbi->s_mmp_tsk)
