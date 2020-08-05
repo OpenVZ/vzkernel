@@ -358,8 +358,8 @@ static int do_show_cs_stats(struct pcs_cs *cs, void *ctx)
 		read_ops_rate.rate / STAT_TIMER_PERIOD,
 		write_ops_rate.rate / STAT_TIMER_PERIOD,
 		sync_ops_rate.rate / STAT_TIMER_PERIOD);
-	latency_percl_print(&iolat, m);
 	latency_percl_print(&netlat, m);
+	latency_percl_print(&iolat, m);
 	seq_printf(m, "%-10u\n", in_flight_avg);
 	return 0;
 }
