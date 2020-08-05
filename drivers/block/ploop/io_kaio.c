@@ -181,10 +181,6 @@ static int kaio_kernel_submit(struct file *file, struct kaio_req *kreq,
 	struct iov_iter iter;
 	int err;
 
-	iocb = aio_kernel_alloc(GFP_NOIO);
-	if (!iocb)
-		return -ENOMEM;
-
 	if (rw & REQ_DISCARD) {
 		op = IOCB_CMD_UNMAP_ITER;
 		if (file_inode(file)->i_sb->s_magic == EXT4_SUPER_MAGIC)
@@ -193,6 +189,10 @@ static int kaio_kernel_submit(struct file *file, struct kaio_req *kreq,
 		op = IOCB_CMD_WRITE_ITER;
 	else
 		op = IOCB_CMD_READ_ITER;
+
+	iocb = aio_kernel_alloc(GFP_NOIO);
+	if (!iocb)
+		return -ENOMEM;
 
 	iov_iter_init_bvec(&iter, kreq->bvecs, nr_segs, count, 0);
 	aio_kernel_init_iter(iocb, file, op, &iter, pos);
