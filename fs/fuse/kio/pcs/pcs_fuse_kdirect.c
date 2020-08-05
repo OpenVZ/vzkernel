@@ -804,7 +804,7 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 	struct fuse_req *req = &r->req;
 	struct pcs_dentry_info *di = get_pcs_inode(req->io_inode);
 	struct fuse_inode *fi = get_fuse_inode(req->io_inode);
-	int ret;
+	int ret = 0;
 
 	spin_lock(&di->lock);
 	/* Deffer all requests if shrink requested to prevent livelock */
@@ -816,7 +816,7 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 		}
 		wait_shrink(r, di);
 		ret = 1;
-		goto pending;
+		goto out;
 	}
 
 	switch (req->in.h.opcode) {
@@ -829,11 +829,10 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 			if (in->offset >= di->fileinfo.attr.size) {
 				req->out.args[0].size = 0;
 				ret = -EPERM;
-				goto fail;
+				goto out;
 			}
 			size = di->fileinfo.attr.size - in->offset;
 		}
-		spin_unlock(&di->lock);
 
 		pcs_fuse_prep_io(r, PCS_REQ_T_READ, in->offset, size, 0);
 		break;
@@ -845,9 +844,8 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE, in->offset,
 					 in->size, 0);
 			ret = req_wait_grow_queue(r, ff, in->offset, in->size);
-			goto pending;
+			goto out;
 		}
-		spin_unlock(&di->lock);
 
 		pcs_fuse_prep_io(r, PCS_REQ_T_WRITE, in->offset, in->size, 0);
 		break;
@@ -864,11 +862,10 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 		if (in->fm_start + size > di->fileinfo.attr.size) {
 			if (in->fm_start >= di->fileinfo.attr.size) {
 				ret = -EPERM;
-				goto fail;
+				goto out;
 			}
 			size = di->fileinfo.attr.size - in->fm_start;
 		}
-		spin_unlock(&di->lock);
 
 		pcs_fuse_prep_io(r, PCS_REQ_T_FIEMAP, in->fm_start,
 				 in->fm_extent_count*sizeof(struct fiemap_extent),
@@ -892,14 +889,15 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 			else
 				pcs_fuse_prep_fallocate(r);
 			ret = req_wait_grow_queue(r, ff, in->offset, in->length);
-			goto pending;
+			goto out;
 		}
-		spin_unlock(&di->lock);
 
-		if (type < PCS_REQ_T_MAX)
+		if (type < PCS_REQ_T_MAX) {
 			pcs_fuse_prep_io(r, type, in->offset, in->length, 0);
-		else
-			return -EPERM; /* NOPE */
+		} else {
+			ret = -EPERM; /* NOPE */
+			goto out;
+		}
 		break;
 	}
 	default:
@@ -907,14 +905,13 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 	}
 
 	if (!kqueue_insert(di, ff, req))
-		return -EIO;
-	if (req->in.h.opcode == FUSE_READ)
+		ret = -EIO;
+	else if (req->in.h.opcode == FUSE_READ)
 		fuse_read_dio_begin(fi);
 	else
 		fuse_write_dio_begin(fi);
-	return 0;
-fail:
-pending:
+
+out:
 	spin_unlock(&di->lock);
 	return ret;
 }
