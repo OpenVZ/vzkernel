@@ -137,6 +137,13 @@ struct ve_struct {
 	struct work_struct	release_agent_work;
 
 	/*
+	 * List of data, private for each root cgroup in
+	 * ve's css_set.
+	 */
+	struct list_head	per_cgroot_list;
+	struct raw_spinlock	per_cgroot_list_lock;
+
+	/*
 	 * All tasks, that belong to this ve, live
 	 * in cgroups, that are children to cgroups
 	 * that form this css_set.
