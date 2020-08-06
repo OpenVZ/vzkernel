@@ -478,6 +478,26 @@ struct css_set {
 };
 
 /*
+ * refcounted get/put for css_set objects
+ */
+extern void __put_css_set(struct css_set *cg, int taskexit);
+
+static inline void get_css_set(struct css_set *cg)
+{
+	atomic_inc(&cg->refcount);
+}
+
+static inline void put_css_set(struct css_set *cg)
+{
+	__put_css_set(cg, 0);
+}
+
+static inline void put_css_set_taskexit(struct css_set *cg)
+{
+	__put_css_set(cg, 1);
+}
+
+/*
  * cgroup_map_cb is an abstract callback API for reporting map-valued
  * control files
  */
