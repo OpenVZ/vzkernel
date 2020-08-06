@@ -327,6 +327,9 @@ struct cgroup {
 	/* directory xattrs */
 	struct simple_xattrs xattrs;
 	u64 subgroups_limit;
+
+	/* ve_owner, responsible for running release agent. */
+	struct ve_struct __rcu *ve_owner;
 };
 
 #define MAX_CGROUP_ROOT_NAMELEN 64
@@ -672,6 +675,7 @@ int cgroup_task_count(const struct cgroup *cgrp);
 #ifdef CONFIG_VE
 void cgroup_mark_ve_roots(struct ve_struct *ve);
 void cgroup_unmark_ve_roots(struct ve_struct *ve);
+struct ve_struct *cgroup_get_ve_owner(struct cgroup *cgrp);
 #endif
 
 /*
