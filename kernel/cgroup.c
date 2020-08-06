@@ -2526,13 +2526,28 @@ static int cgroup_release_agent_write(struct cgroup *cgrp, struct cftype *cft,
 	if (!cgroup_lock_live_group(cgrp))
 		return -ENODEV;
 
+	/*
+	 * Call to cgroup_get_local_root is a way to make sure
+	 * that cgrp in the argument is valid "virtual root"
+	 * cgroup. If it's not - this means that cgroup_unmark_ve_roots
+	 * has already cleared CGRP_VE_ROOT flag from this cgroup while
+	 * the file was still opened by other process and
+	 * that we shouldn't allow further writings via that file.
+	 */
 	root_cgrp = cgroup_get_local_root(cgrp);
 	BUG_ON(!root_cgrp);
+
+	if (root_cgrp != cgrp) {
+		ret = -EPERM;
+		goto out;
+	}
+
 	if (root_cgrp->ve_owner)
 		ret = ve_set_release_agent_path(root_cgrp, buffer);
 	else
 		ret = -ENODEV;
 
+out:
 	mutex_unlock(&cgroup_mutex);
 	return ret;
 }
@@ -4370,7 +4385,7 @@ static struct cftype files[] = {
 	},
 	{
 		.name = "release_agent",
-		.flags = CFTYPE_ONLY_ON_ROOT,
+		.flags = CFTYPE_ONLY_ON_ROOT | CFTYPE_VE_WRITABLE,
 		.read_seq_string = cgroup_release_agent_show,
 		.write_string = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX,
@@ -4588,39 +4603,99 @@ static int subgroups_count(struct cgroup *cgroup)
 	return cgrps_count;
 }
 
-#ifdef CONFIG_VE
-void cgroup_mark_ve_roots(struct ve_struct *ve)
+static struct cftype *get_cftype_by_name(const char *name)
 {
-	struct cgroup *cgrp;
-	struct cgroupfs_root *root;
+	struct cftype *cft;
+	for (cft = files; cft->name[0] != '\0'; cft++) {
+		if (!strcmp(cft->name, name))
+			return cft;
+	}
+	return NULL;
+}
 
+#ifdef CONFIG_VE
+int cgroup_mark_ve_roots(struct ve_struct *ve)
+{
+	struct cgroup *cgrp, *tmp;
+	struct cgroupfs_root *root;
+	int err = 0;
+	struct cftype *cft;
+	LIST_HEAD(pending);
+
+	cft = get_cftype_by_name("release_agent");
+	BUG_ON(!cft);
+
+	mutex_lock(&cgroup_cft_mutex);
 	mutex_lock(&cgroup_mutex);
 	for_each_active_root(root) {
-		cgrp = task_cgroup_from_root(ve->init_task, root);
+		cgrp = css_cgroup_from_root(ve->root_css_set, root);
 		rcu_assign_pointer(cgrp->ve_owner, ve);
 		set_bit(CGRP_VE_ROOT, &cgrp->flags);
 
+		dget(cgrp->dentry);
+		list_add_tail(&cgrp->cft_q_node, &pending);
 		if (test_bit(cpu_cgroup_subsys_id, &root->subsys_mask))
 			link_ve_root_cpu_cgroup(cgrp);
 	}
 	mutex_unlock(&cgroup_mutex);
 	synchronize_rcu();
+	list_for_each_entry_safe(cgrp, tmp, &pending, cft_q_node) {
+		struct inode *inode = cgrp->dentry->d_inode;
+
+		if (err) {
+			list_del_init(&cgrp->cft_q_node);
+			dput(cgrp->dentry);
+			continue;
+		}
+
+		mutex_lock(&inode->i_mutex);
+		mutex_lock(&cgroup_mutex);
+		if (!cgroup_is_removed(cgrp))
+			err = cgroup_add_file(cgrp, NULL, cft);
+		mutex_unlock(&cgroup_mutex);
+		mutex_unlock(&inode->i_mutex);
+
+		list_del_init(&cgrp->cft_q_node);
+		dput(cgrp->dentry);
+	}
+	mutex_unlock(&cgroup_cft_mutex);
+
+	if (err)
+		cgroup_unmark_ve_roots(ve);
+
+	return err;
 }
 
 void cgroup_unmark_ve_roots(struct ve_struct *ve)
 {
-	struct cgroup *cgrp;
+	struct cgroup *cgrp, *tmp;
 	struct cgroupfs_root *root;
+	struct cftype *cft;
+	LIST_HEAD(pending);
+	cft = get_cftype_by_name("release_agent");
 
+	mutex_lock(&cgroup_cft_mutex);
 	mutex_lock(&cgroup_mutex);
 	for_each_active_root(root) {
 		cgrp = css_cgroup_from_root(ve->root_css_set, root);
+		dget(cgrp->dentry);
+		list_add_tail(&cgrp->cft_q_node, &pending);
+	}
+	mutex_unlock(&cgroup_mutex);
+	list_for_each_entry_safe(cgrp, tmp, &pending, cft_q_node) {
+		struct inode *inode = cgrp->dentry->d_inode;
+		mutex_lock(&inode->i_mutex);
+		mutex_lock(&cgroup_mutex);
+		cgroup_rm_file(cgrp, cft);
+		dput(cgrp->dentry);
 		BUG_ON(!rcu_dereference_protected(cgrp->ve_owner,
 				lockdep_is_held(&cgroup_mutex)));
 		rcu_assign_pointer(cgrp->ve_owner, NULL);
 		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
+		mutex_unlock(&cgroup_mutex);
+		mutex_unlock(&inode->i_mutex);
 	}
-	mutex_unlock(&cgroup_mutex);
+	mutex_unlock(&cgroup_cft_mutex);
 	/* ve_owner == NULL will be visible */
 	synchronize_rcu();
 
