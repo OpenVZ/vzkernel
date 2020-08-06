@@ -273,10 +273,6 @@ static bool cgroup_lock_live_group(struct cgroup *cgrp)
 
 /* the list of cgroups eligible for automatic release. Protected by
  * release_list_lock */
-static LIST_HEAD(release_list);
-static DEFINE_RAW_SPINLOCK(release_list_lock);
-static void cgroup_release_agent(struct work_struct *work);
-static DECLARE_WORK(release_agent_work, cgroup_release_agent);
 static void check_for_release(struct cgroup *cgrp);
 
 /* Link structure for associating css_set objects with cgroups */
@@ -4576,6 +4572,15 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	mutex_unlock(&cgroup_mutex);
 	/* ve_owner == NULL will be visible */
 	synchronize_rcu();
+
+	/*
+	 * Anyone already waiting in this wq to execute
+	 * cgroup_release_agent doesn't know that ve_owner is NULL,
+	 * but we can wait for all of them at flush_workqueue.
+	 * After it is complete no other cgroup can seep through
+	 * to this ve's workqueue, so it's safe to shutdown ve.
+	 */
+	flush_workqueue(ve->wq);
 }
 
 struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp)
@@ -4875,11 +4880,7 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 
 	set_bit(CGRP_REMOVED, &cgrp->flags);
 
-	raw_spin_lock(&release_list_lock);
-	if (!list_empty(&cgrp->release_list))
-		list_del_init(&cgrp->release_list);
-	raw_spin_unlock(&release_list_lock);
-
+	ve_rm_from_release_list(cgrp);
 	/*
 	 * Remove @cgrp directory.  The removal puts the base ref but we
 	 * aren't quite done with @cgrp yet, so hold onto it.
@@ -5667,17 +5668,7 @@ static void check_for_release(struct cgroup *cgrp)
 		 * already queued for a userspace notification, queue
 		 * it now
 		 */
-		int need_schedule_work = 0;
-
-		raw_spin_lock(&release_list_lock);
-		if (!cgroup_is_removed(cgrp) &&
-		    list_empty(&cgrp->release_list)) {
-			list_add(&cgrp->release_list, &release_list);
-			need_schedule_work = 1;
-		}
-		raw_spin_unlock(&release_list_lock);
-		if (need_schedule_work)
-			schedule_work(&release_agent_work);
+		ve_add_to_release_list(cgrp);
 	}
 }
 
@@ -5704,20 +5695,24 @@ static void check_for_release(struct cgroup *cgrp)
  * this routine has no use for the exit status of the release agent
  * task, so no sense holding our caller up for that.
  */
-static void cgroup_release_agent(struct work_struct *work)
+void cgroup_release_agent(struct work_struct *work)
 {
-	BUG_ON(work != &release_agent_work);
+	struct ve_struct *ve;
+	ve = container_of(work, struct ve_struct, release_agent_work);
 	mutex_lock(&cgroup_mutex);
-	raw_spin_lock(&release_list_lock);
-	while (!list_empty(&release_list)) {
+	raw_spin_lock(&ve->release_list_lock);
+	while (!list_empty(&ve->release_list)) {
 		char *argv[3], *envp[3];
 		int i, err;
 		char *pathbuf = NULL, *agentbuf = NULL;
-		struct cgroup *cgrp = list_entry(release_list.next,
-						    struct cgroup,
-						    release_list);
+		struct cgroup *cgrp;
+
+		cgrp = list_entry(ve->release_list.next,
+				  struct cgroup,
+				  release_list);
+
 		list_del_init(&cgrp->release_list);
-		raw_spin_unlock(&release_list_lock);
+		raw_spin_unlock(&ve->release_list_lock);
 		pathbuf = kmalloc(PAGE_SIZE, GFP_KERNEL);
 		if (!pathbuf)
 			goto continue_free;
@@ -5752,9 +5747,9 @@ static void cgroup_release_agent(struct work_struct *work)
  continue_free:
 		kfree(pathbuf);
 		kfree(agentbuf);
-		raw_spin_lock(&release_list_lock);
+		raw_spin_lock(&ve->release_list_lock);
 	}
-	raw_spin_unlock(&release_list_lock);
+	raw_spin_unlock(&ve->release_list_lock);
 	mutex_unlock(&cgroup_mutex);
 }
 
