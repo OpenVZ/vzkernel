@@ -810,6 +810,42 @@ static struct cgroup_name *cgroup_alloc_name(struct dentry *dentry)
 	return name;
 }
 
+struct cgroup *cgroup_get_local_root(struct cgroup *cgrp)
+{
+	/*
+	 * Find nearest root cgroup, which might be host cgroup root
+	 * or ve cgroup root.
+	 *
+	 *    <host_root_cgroup> -> local_root
+	 *     \                    ^
+	 *      <cgroup>            |
+	 *       \                  |
+	 *        <cgroup>   --->   from here
+	 *        \
+	 *         <ve_root_cgroup> -> local_root
+	 *         \                   ^
+	 *          <cgroup>           |
+	 *          \                  |
+	 *           <cgroup>  --->    from here
+	 */
+	while (cgrp->parent && !test_bit(CGRP_VE_ROOT, &cgrp->flags))
+		cgrp = cgrp->parent;
+
+	return cgrp;
+}
+
+struct ve_struct *cgroup_get_ve_owner(struct cgroup *cgrp)
+{
+	struct ve_struct *ve;
+	/* Caller should hold RCU */
+
+	cgrp = cgroup_get_local_root(cgrp);
+	ve = rcu_dereference(cgrp->ve_owner);
+	if (!ve)
+		ve = get_ve0();
+	return ve;
+}
+
 static void cgroup_free_fn(struct work_struct *work)
 {
 	struct cgroup *cgrp = container_of(work, struct cgroup, destroy_work);
@@ -1796,6 +1832,8 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		ret = PTR_ERR(new_root);
 		goto drop_modules;
 	}
+
+	RCU_INIT_POINTER(new_root->top_cgroup.ve_owner, &ve0);
 	opts.new_root = new_root;
 
 	/* Locate an existing or new sb for this hierarchy */
@@ -4512,12 +4550,14 @@ void cgroup_mark_ve_roots(struct ve_struct *ve)
 	mutex_lock(&cgroup_mutex);
 	for_each_active_root(root) {
 		cgrp = task_cgroup_from_root(ve->init_task, root);
+		rcu_assign_pointer(cgrp->ve_owner, ve);
 		set_bit(CGRP_VE_ROOT, &cgrp->flags);
 
 		if (test_bit(cpu_cgroup_subsys_id, &root->subsys_mask))
 			link_ve_root_cpu_cgroup(cgrp);
 	}
 	mutex_unlock(&cgroup_mutex);
+	synchronize_rcu();
 }
 
 void cgroup_unmark_ve_roots(struct ve_struct *ve)
@@ -4528,9 +4568,14 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	mutex_lock(&cgroup_mutex);
 	for_each_active_root(root) {
 		cgrp = css_cgroup_from_root(ve->root_css_set, root);
+		BUG_ON(!rcu_dereference_protected(cgrp->ve_owner,
+				lockdep_is_held(&cgroup_mutex)));
+		rcu_assign_pointer(cgrp->ve_owner, NULL);
 		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 	mutex_unlock(&cgroup_mutex);
+	/* ve_owner == NULL will be visible */
+	synchronize_rcu();
 }
 
 struct cgroup *cgroup_get_ve_root(struct cgroup *cgrp)
