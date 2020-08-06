@@ -4615,6 +4615,18 @@ static struct cftype *get_cftype_by_name(const char *name)
 }
 
 #ifdef CONFIG_VE
+static inline bool is_virtualized_cgroup(struct cgroup *cgrp)
+{
+	lockdep_assert_held(&cgroup_mutex);
+	if (cgrp->root->subsys_mask)
+		return true;
+
+	if (!strcmp(cgrp->root->name, "systemd"))
+		return true;
+
+	return false;
+}
+
 int cgroup_mark_ve_roots(struct ve_struct *ve)
 {
 	struct cgroup *cgrp, *tmp;
@@ -4630,6 +4642,17 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 	mutex_lock(&cgroup_mutex);
 	for_each_active_root(root) {
 		cgrp = css_cgroup_from_root(ve->root_css_set, root);
+
+		/*
+		 * At container start, vzctl creates special cgroups to serve
+		 * as virtualized cgroup roots. They are bind-mounted on top
+		 * of original cgroup mount point in container namespace. But
+		 * not all cgroup mounts undergo this procedure. We should
+		 * skip cgroup mounts that are not virtualized.
+		 */
+		if (!is_virtualized_cgroup(cgrp))
+			continue;
+
 		rcu_assign_pointer(cgrp->ve_owner, ve);
 		set_bit(CGRP_VE_ROOT, &cgrp->flags);
 
@@ -4679,6 +4702,14 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	mutex_lock(&cgroup_mutex);
 	for_each_active_root(root) {
 		cgrp = css_cgroup_from_root(ve->root_css_set, root);
+
+		/*
+		 * For this line see comments in
+		 * cgroup_mark_ve_roots
+		 */
+		if (!is_virtualized_cgroup(cgrp))
+			continue;
+
 		dget(cgrp->dentry);
 		list_add_tail(&cgrp->cft_q_node, &pending);
 	}
