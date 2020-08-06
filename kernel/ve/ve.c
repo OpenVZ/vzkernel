@@ -45,6 +45,14 @@
 #include <linux/vziptable_defs.h>
 #include <net/rtnetlink.h>
 
+struct per_cgroot_data {
+	struct list_head list;
+	/*
+	 * data is related to this cgroup
+	 */
+	struct cgroup *cgroot;
+};
+
 extern struct kmapset_set sysfs_ve_perms_set;
 
 static struct kmem_cache *ve_cachep;
@@ -92,6 +100,9 @@ struct ve_struct ve0 = {
 	.release_list		= LIST_HEAD_INIT(ve0.release_list),
 	.release_agent_work	= __WORK_INITIALIZER(ve0.release_agent_work,
 					cgroup_release_agent),
+	.per_cgroot_list	= LIST_HEAD_INIT(ve0.per_cgroot_list),
+	.per_cgroot_list_lock	= __RAW_SPIN_LOCK_UNLOCKED(
+					ve0.per_cgroot_list_lock),
 };
 EXPORT_SYMBOL(ve0);
 
@@ -117,6 +128,52 @@ void put_ve(struct ve_struct *ve)
 		css_put(&ve->css);
 }
 EXPORT_SYMBOL(put_ve);
+
+static struct per_cgroot_data *per_cgroot_data_find_locked(
+	struct list_head *per_cgroot_list, struct cgroup *cgroot)
+{
+	struct per_cgroot_data *data;
+
+	list_for_each_entry(data, per_cgroot_list, list) {
+		if (data->cgroot == cgroot)
+			return data;
+	}
+	return NULL;
+}
+
+static inline struct per_cgroot_data *per_cgroot_get_or_create(
+	struct ve_struct *ve, struct cgroup *cgroot)
+{
+	struct per_cgroot_data *data, *other_data;
+
+	raw_spin_lock(&ve->per_cgroot_list_lock);
+	data = per_cgroot_data_find_locked(&ve->per_cgroot_list,
+		cgroot);
+	raw_spin_unlock(&ve->per_cgroot_list_lock);
+
+	if (data)
+		return data;
+
+	data = kzalloc(sizeof(struct per_cgroot_data), GFP_KERNEL);
+	if (!data)
+		return ERR_PTR(-ENOMEM);
+
+	raw_spin_lock(&ve->per_cgroot_list_lock);
+	other_data = per_cgroot_data_find_locked(&ve->per_cgroot_list,
+		cgroot);
+
+	if (other_data) {
+		raw_spin_unlock(&ve->per_cgroot_list_lock);
+		kfree(data);
+		return other_data;
+	}
+
+	data->cgroot = cgroot;
+	list_add(&data->list, &ve->per_cgroot_list);
+
+	raw_spin_unlock(&ve->per_cgroot_list_lock);
+	return data;
+}
 
 struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id)
 {
@@ -617,6 +674,18 @@ err_list:
 	return err;
 }
 
+static void ve_per_cgroot_free(struct ve_struct *ve)
+{
+	struct per_cgroot_data *data, *saved;
+
+	raw_spin_lock(&ve->per_cgroot_list_lock);
+	list_for_each_entry_safe(data, saved, &ve->per_cgroot_list, list) {
+		list_del_init(&data->list);
+		kfree(data);
+	}
+	raw_spin_unlock(&ve->per_cgroot_list_lock);
+}
+
 void ve_stop_ns(struct pid_namespace *pid_ns)
 {
 	struct ve_struct *ve = current->task_ve;
@@ -666,6 +735,8 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	cgroup_unmark_ve_roots(ve);
 
 	ve_workqueue_stop(ve);
+
+	ve_per_cgroot_free(ve);
 
 	/*
 	 * At this point all userspace tasks in container are dead.
@@ -740,6 +811,7 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 
 	INIT_WORK(&ve->release_agent_work, cgroup_release_agent);
 	raw_spin_lock_init(&ve->release_list_lock);
+	raw_spin_lock_init(&ve->per_cgroot_list_lock);
 
 	ve->_randomize_va_space = ve0._randomize_va_space;
 
@@ -776,6 +848,7 @@ do_init:
 	INIT_LIST_HEAD(&ve->ve_list);
 	INIT_LIST_HEAD(&ve->devmnt_list);
 	INIT_LIST_HEAD(&ve->release_list);
+	INIT_LIST_HEAD(&ve->per_cgroot_list);
 	mutex_init(&ve->devmnt_mutex);
 
 #ifdef CONFIG_AIO
