@@ -127,6 +127,13 @@ struct ve_struct {
 	struct kmapset_key	sysfs_perms_key;
 
 	struct workqueue_struct	*wq;
+
+	/*
+	 * All tasks, that belong to this ve, live
+	 * in cgroups, that are children to cgroups
+	 * that form this css_set.
+	 */
+	struct css_set		*root_css_set;
 };
 
 struct ve_devmnt {
