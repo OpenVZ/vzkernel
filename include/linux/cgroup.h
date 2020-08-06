@@ -239,6 +239,13 @@ struct cgroup_name {
 	char name[];
 };
 
+struct cgroup_rcu_string {
+	struct rcu_head rcu_head;
+	char val[];
+};
+
+struct cgroup_rcu_string *cgroup_rcu_strdup(const char *str, int len);
+
 struct cgroup {
 	unsigned long flags;		/* "unsigned long" so bitops work */
 
