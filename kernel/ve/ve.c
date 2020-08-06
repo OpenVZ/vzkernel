@@ -484,6 +484,21 @@ static void ve_drop_context(struct ve_struct *ve)
 
 static const struct timespec zero_time = { };
 
+static int ve_workqueue_start(struct ve_struct *ve)
+{
+	ve->wq = alloc_workqueue("ve_wq_%s",
+		WQ_SYSFS|WQ_FREEZABLE|WQ_UNBOUND, 8, ve->ve_name);
+
+	if (!ve->wq)
+		return -ENOMEM;
+	return 0;
+}
+
+static void ve_workqueue_stop(struct ve_struct *ve)
+{
+	destroy_workqueue(ve->wq);
+}
+
 /* under ve->op_sem write-lock */
 static int ve_start_container(struct ve_struct *ve)
 {
@@ -527,6 +542,10 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_umh;
 
+	err = ve_workqueue_start(ve);
+	if (err)
+		goto err_workqueue;
+
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -542,6 +561,8 @@ static int ve_start_container(struct ve_struct *ve)
 	return 0;
 
 err_iterate:
+	ve_workqueue_stop(ve);
+err_workqueue:
 	ve_stop_umh(ve);
 err_umh:
 	ve_stop_kthread(ve);
@@ -599,6 +620,8 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 		return;
 
 	cgroup_unmark_ve_roots(ve);
+
+	ve_workqueue_stop(ve);
 
 	/*
 	 * At this point all userspace tasks in container are dead.
@@ -1655,6 +1678,8 @@ static int __init ve_subsys_init(void)
 {
 	ve_cachep = KMEM_CACHE(ve_struct, SLAB_PANIC);
 	list_add(&ve0.ve_list, &ve_list_head);
+	ve0.wq = alloc_workqueue("ve0_wq", WQ_FREEZABLE|WQ_UNBOUND, 8);
+	BUG_ON(!ve0.wq);
 	return 0;
 }
 late_initcall(ve_subsys_init);
