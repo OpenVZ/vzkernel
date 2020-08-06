@@ -745,21 +745,33 @@ err_list:
 	return err;
 }
 
-static void ve_per_cgroot_free(struct ve_struct *ve)
+static inline void per_cgroot_data_free(struct per_cgroot_data *data)
+{
+	struct cgroup_rcu_string *release_agent = data->release_agent_path;
+
+	RCU_INIT_POINTER(data->release_agent_path, NULL);
+	if (release_agent)
+		kfree_rcu(release_agent, rcu_head);
+	kfree(data);
+}
+
+void ve_cleanup_per_cgroot_data(struct ve_struct *ve, struct cgroup *cgrp)
 {
 	struct per_cgroot_data *data, *saved;
-	struct cgroup_rcu_string *release_agent;
 
+	BUG_ON(!ve && !cgrp);
+	rcu_read_lock();
+	if (!ve)
+		ve = cgroup_get_ve_owner(cgrp);
 	raw_spin_lock(&ve->per_cgroot_list_lock);
 	list_for_each_entry_safe(data, saved, &ve->per_cgroot_list, list) {
-		release_agent = data->release_agent_path;
-		RCU_INIT_POINTER(data->release_agent_path, NULL);
-		if (release_agent)
-			kfree_rcu(release_agent, rcu_head);
-		list_del_init(&data->list);
-		kfree(data);
+		if (!cgrp || data->cgroot == cgrp) {
+			list_del_init(&data->list);
+			per_cgroot_data_free(data);
+		}
 	}
 	raw_spin_unlock(&ve->per_cgroot_list_lock);
+	rcu_read_unlock();
 }
 
 void ve_stop_ns(struct pid_namespace *pid_ns)
@@ -812,7 +824,7 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 
 	ve_workqueue_stop(ve);
 
-	ve_per_cgroot_free(ve);
+	ve_cleanup_per_cgroot_data(ve, NULL);
 
 	/*
 	 * At this point all userspace tasks in container are dead.
