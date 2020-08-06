@@ -1756,6 +1756,7 @@ static void cgroup_drop_root(struct cgroupfs_root *root)
 {
 	if (!root)
 		return;
+	ve_cleanup_per_cgroot_data(NULL, &root->top_cgroup);
 
 	BUG_ON(!root->hierarchy_id);
 	spin_lock(&hierarchy_id_lock);
