@@ -484,8 +484,6 @@ static void ve_drop_context(struct ve_struct *ve)
 
 static const struct timespec zero_time = { };
 
-extern void cgroup_mark_ve_root(struct ve_struct *ve);
-
 static int ve_workqueue_start(struct ve_struct *ve)
 {
 	ve->wq = alloc_workqueue("ve_wq_%s",
@@ -552,7 +550,7 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err < 0)
 		goto err_iterate;
 
-	cgroup_mark_ve_root(ve);
+	cgroup_mark_ve_roots(ve);
 
 	ve->is_running = 1;
 
