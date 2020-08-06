@@ -671,6 +671,7 @@ int cgroup_path(const struct cgroup *cgrp, char *buf, int buflen);
 int cgroup_path_ve(const struct cgroup *cgrp, char *buf, int buflen);
 
 int cgroup_task_count(const struct cgroup *cgrp);
+void cgroup_release_agent(struct work_struct *work);
 
 #ifdef CONFIG_VE
 void cgroup_mark_ve_roots(struct ve_struct *ve);
