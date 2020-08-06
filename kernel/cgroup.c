@@ -639,6 +639,31 @@ static struct css_set *find_css_set(
 }
 
 /*
+ * Walk each cgroup link of a given css_set and find a cgroup that
+ * is the child of cgroupfs_root in argument.
+ */
+static struct cgroup *css_cgroup_from_root(struct css_set *css_set,
+					    struct cgroupfs_root *root)
+{
+	struct cgroup *res = NULL;
+	struct cg_cgroup_link *link;
+
+	BUG_ON(!mutex_is_locked(&cgroup_mutex));
+	read_lock(&css_set_lock);
+
+	list_for_each_entry(link, &css_set->cg_links, cg_link_list) {
+		struct cgroup *c = link->cgrp;
+		if (c->root == root) {
+			res = c;
+			break;
+		}
+	}
+	read_unlock(&css_set_lock);
+	BUG_ON(!res);
+	return res;
+}
+
+/*
  * Return the cgroup for "task" from the given hierarchy. Must be
  * called with cgroup_mutex held.
  */
@@ -4491,6 +4516,19 @@ void cgroup_mark_ve_roots(struct ve_struct *ve)
 
 		if (test_bit(cpu_cgroup_subsys_id, &root->subsys_mask))
 			link_ve_root_cpu_cgroup(cgrp);
+	}
+	mutex_unlock(&cgroup_mutex);
+}
+
+void cgroup_unmark_ve_roots(struct ve_struct *ve)
+{
+	struct cgroup *cgrp;
+	struct cgroupfs_root *root;
+
+	mutex_lock(&cgroup_mutex);
+	for_each_active_root(root) {
+		cgrp = css_cgroup_from_root(ve->root_css_set, root);
+		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 	mutex_unlock(&cgroup_mutex);
 }

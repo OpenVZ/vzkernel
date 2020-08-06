@@ -671,6 +671,7 @@ int cgroup_task_count(const struct cgroup *cgrp);
 
 #ifdef CONFIG_VE
 void cgroup_mark_ve_roots(struct ve_struct *ve);
+void cgroup_unmark_ve_roots(struct ve_struct *ve);
 #endif
 
 /*
