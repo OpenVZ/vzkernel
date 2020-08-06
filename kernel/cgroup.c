@@ -777,6 +777,21 @@ static struct inode *cgroup_new_inode(umode_t mode, struct super_block *sb)
 	return inode;
 }
 
+struct cgroup_rcu_string *cgroup_rcu_strdup(const char *str, int len)
+{
+	struct cgroup_rcu_string *result;
+	size_t buflen = len + 1;
+
+	result = kmalloc(sizeof(*result) + buflen, GFP_KERNEL);
+	if (!result)
+		return ERR_PTR(-ENOMEM);
+	if (strlcpy(result->val, str, buflen) >= buflen) {
+		kfree(result);
+		return ERR_PTR(-ENAMETOOLONG);
+	}
+	return result;
+}
+
 static struct cgroup_name *cgroup_alloc_name(struct dentry *dentry)
 {
 	struct cgroup_name *name;
