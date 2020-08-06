@@ -623,6 +623,8 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	if (!ve->ve_ns || ve->ve_ns->pid_ns != pid_ns)
 		return;
 
+	cgroup_unmark_ve_roots(ve);
+
 	ve_workqueue_stop(ve);
 
 	/*
