@@ -453,6 +453,8 @@ static void ve_grab_context(struct ve_struct *ve)
 
 	get_task_struct(tsk);
 	ve->init_task = tsk;
+	ve->root_css_set = tsk->cgroups;
+	get_css_set(ve->root_css_set);
 	ve->init_cred = (struct cred *)get_current_cred();
 	rcu_assign_pointer(ve->ve_ns, get_nsproxy(tsk->nsproxy));
 	ve->ve_netns =  get_net(ve->ve_ns->net_ns);
@@ -463,6 +465,9 @@ static void ve_drop_context(struct ve_struct *ve)
 {
 	struct nsproxy *ve_ns = ve->ve_ns;
 	struct net *net = ve->ve_netns;
+
+	put_css_set_taskexit(ve->root_css_set);
+	ve->root_css_set = NULL;
 
 	ve->ve_netns = NULL;
 	put_net(net);
@@ -479,7 +484,6 @@ static void ve_drop_context(struct ve_struct *ve)
 
 	put_task_struct(ve->init_task);
 	ve->init_task = NULL;
-
 }
 
 static const struct timespec zero_time = { };
