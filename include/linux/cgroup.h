@@ -649,6 +649,10 @@ int cgroup_path_ve(const struct cgroup *cgrp, char *buf, int buflen);
 
 int cgroup_task_count(const struct cgroup *cgrp);
 
+#ifdef CONFIG_VE
+void cgroup_mark_ve_roots(struct ve_struct *ve);
+#endif
+
 /*
  * Control Group taskset, used to pass around set of tasks to cgroup_subsys
  * methods.

@@ -4497,7 +4497,7 @@ static int subgroups_count(struct cgroup *cgroup)
 }
 
 #ifdef CONFIG_VE
-void cgroup_mark_ve_root(struct ve_struct *ve)
+void cgroup_mark_ve_roots(struct ve_struct *ve)
 {
 	struct cgroup *cgrp;
 	struct cgroupfs_root *root;
