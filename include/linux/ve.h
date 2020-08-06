@@ -125,6 +125,8 @@ struct ve_struct {
 	struct cn_private	*cn;
 #endif
 	struct kmapset_key	sysfs_perms_key;
+
+	struct workqueue_struct	*wq;
 };
 
 struct ve_devmnt {
