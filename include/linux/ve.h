@@ -220,6 +220,8 @@ int ve_set_release_agent_path(struct cgroup *cgroot,
 
 const char *ve_get_release_agent_path(struct cgroup *cgrp_root);
 
+void ve_cleanup_per_cgroot_data(struct ve_struct *ve, struct cgroup *cgrp);
+
 extern struct ve_struct *get_ve(struct ve_struct *ve);
 extern void put_ve(struct ve_struct *ve);
 
