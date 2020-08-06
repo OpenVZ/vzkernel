@@ -126,7 +126,15 @@ struct ve_struct {
 #endif
 	struct kmapset_key	sysfs_perms_key;
 
+	/*
+	 * cgroups, that want to notify about becoming
+	 * empty, are linked to this release_list.
+	 */
+	struct list_head	release_list;
+	struct raw_spinlock	release_list_lock;
+
 	struct workqueue_struct	*wq;
+	struct work_struct	release_agent_work;
 
 	/*
 	 * All tasks, that belong to this ve, live
@@ -197,6 +205,8 @@ call_usermodehelper_ve(struct ve_struct *ve, char *path, char **argv,
 }
 void do_update_load_avg_ve(void);
 
+void ve_add_to_release_list(struct cgroup *cgrp);
+void ve_rm_from_release_list(struct cgroup *cgrp);
 extern struct ve_struct *get_ve(struct ve_struct *ve);
 extern void put_ve(struct ve_struct *ve);
 
