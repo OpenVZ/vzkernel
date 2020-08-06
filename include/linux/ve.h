@@ -214,6 +214,12 @@ void do_update_load_avg_ve(void);
 
 void ve_add_to_release_list(struct cgroup *cgrp);
 void ve_rm_from_release_list(struct cgroup *cgrp);
+
+int ve_set_release_agent_path(struct ve_struct *ve, struct cgroup *cgroot,
+	const char *release_agent);
+
+const char *ve_get_release_agent_path(struct cgroup *cgrp_root);
+
 extern struct ve_struct *get_ve(struct ve_struct *ve);
 extern void put_ve(struct ve_struct *ve);
 
