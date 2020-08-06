@@ -5705,7 +5705,8 @@ void cgroup_release_agent(struct work_struct *work)
 		char *argv[3], *envp[3];
 		int i, err;
 		char *pathbuf = NULL, *agentbuf = NULL;
-		struct cgroup *cgrp;
+		struct cgroup *cgrp, *root_cgrp;
+		struct task_struct *ve_task;
 
 		cgrp = list_entry(ve->release_list.next,
 				  struct cgroup,
@@ -5716,8 +5717,24 @@ void cgroup_release_agent(struct work_struct *work)
 		pathbuf = kmalloc(PAGE_SIZE, GFP_KERNEL);
 		if (!pathbuf)
 			goto continue_free;
-		if (cgroup_path(cgrp, pathbuf, PAGE_SIZE) < 0)
+		if (__cgroup_path(cgrp, pathbuf, PAGE_SIZE, true) < 0)
 			goto continue_free;
+		rcu_read_lock();
+		root_cgrp = cgroup_get_local_root(cgrp);
+		/*
+		 * At VE destruction root cgroup looses VE_ROOT flag.
+		 * Because of that 'cgroup_get_local_root' will not see
+		 * VE root and return host's root cgroup instead.
+		 * We can detect this because we have a pointer to
+		 * original ve coming from work argument.
+		 * We do not want to execute VE's notifications on host,
+		 * so in this case we skip.
+		 */
+		if (rcu_access_pointer(root_cgrp->ve_owner) != ve) {
+			rcu_read_unlock();
+			goto continue_free;
+		}
+		rcu_read_unlock();
 		agentbuf = kstrdup(cgrp->root->release_agent_path, GFP_KERNEL);
 		if (!agentbuf)
 			goto continue_free;
@@ -5737,8 +5754,12 @@ void cgroup_release_agent(struct work_struct *work)
 		 * since the exec could involve hitting disk and hence
 		 * be a slow process */
 		mutex_unlock(&cgroup_mutex);
-		err = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
-		if (err < 0)
+
+		err = call_usermodehelper_fns_ve(ve, argv[0], argv,
+			envp, UMH_WAIT_EXEC, NULL, NULL, NULL);
+
+		ve_task = ve->init_task;
+		if (err < 0 && (!(ve_task->flags & PF_EXITING)))
 			pr_warn_ratelimited("cgroup release_agent "
 					    "%s %s failed: %d\n",
 					    agentbuf, pathbuf, err);
