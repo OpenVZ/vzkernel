@@ -51,6 +51,11 @@ struct per_cgroot_data {
 	 * data is related to this cgroup
 	 */
 	struct cgroup *cgroot;
+	/*
+	 * path to release agent binaray, that should
+	 * be spawned for all cgroups under this cgroup root
+	 */
+	struct cgroup_rcu_string __rcu *release_agent_path;
 };
 
 extern struct kmapset_set sysfs_ve_perms_set;
@@ -173,6 +178,68 @@ static inline struct per_cgroot_data *per_cgroot_get_or_create(
 
 	raw_spin_unlock(&ve->per_cgroot_list_lock);
 	return data;
+}
+
+int ve_set_release_agent_path(struct cgroup *cgroot,
+	const char *release_agent)
+{
+	struct ve_struct *ve;
+	struct per_cgroot_data *data;
+	struct cgroup_rcu_string *new_path, *old_path;
+	int err = 0;
+
+	/*
+	 * caller should grab cgroup_mutex to safely use
+	 * ve_owner field
+	 */
+	ve = cgroot->ve_owner;
+	BUG_ON(!ve);
+
+	new_path = cgroup_rcu_strdup(release_agent, strlen(release_agent));
+	if (IS_ERR(new_path))
+		return PTR_ERR(new_path);
+
+	data = per_cgroot_get_or_create(ve, cgroot);
+	if (IS_ERR(data)) {
+		kfree(new_path);
+		return PTR_ERR(data);
+	}
+
+	raw_spin_lock(&ve->per_cgroot_list_lock);
+
+	old_path = rcu_dereference_protected(data->release_agent_path,
+		lockdep_is_held(&ve->per_cgroot_list_lock));
+
+	rcu_assign_pointer(data->release_agent_path, new_path);
+	raw_spin_unlock(&ve->per_cgroot_list_lock);
+
+	if (old_path)
+		kfree_rcu(old_path, rcu_head);
+
+	return err;
+}
+
+const char *ve_get_release_agent_path(struct cgroup *cgroot)
+{
+	/* caller must grab rcu_read_lock */
+	const char *result = NULL;
+	struct per_cgroot_data *data;
+	struct cgroup_rcu_string *str;
+	struct ve_struct *ve;
+	ve = rcu_dereference(cgroot->ve_owner);
+	if (!ve)
+		return NULL;
+
+	raw_spin_lock(&ve->per_cgroot_list_lock);
+
+	data = per_cgroot_data_find_locked(&ve->per_cgroot_list, cgroot);
+	if (data) {
+		str = rcu_dereference(data->release_agent_path);
+		if (str)
+			result = str->val;
+	}
+	raw_spin_unlock(&ve->per_cgroot_list_lock);
+	return result;
 }
 
 struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id)
@@ -528,9 +595,6 @@ static void ve_drop_context(struct ve_struct *ve)
 	struct nsproxy *ve_ns = ve->ve_ns;
 	struct net *net = ve->ve_netns;
 
-	put_css_set_taskexit(ve->root_css_set);
-	ve->root_css_set = NULL;
-
 	ve->ve_netns = NULL;
 	put_net(net);
 
@@ -538,6 +602,9 @@ static void ve_drop_context(struct ve_struct *ve)
 	rcu_assign_pointer(ve->ve_ns, NULL);
 	synchronize_rcu();
 	put_nsproxy(ve_ns);
+
+	put_css_set_taskexit(ve->root_css_set);
+	ve->root_css_set = NULL;
 
 	ve_hook_iterate_fini(VE_SHUTDOWN_CHAIN, ve);
 
@@ -677,9 +744,14 @@ err_list:
 static void ve_per_cgroot_free(struct ve_struct *ve)
 {
 	struct per_cgroot_data *data, *saved;
+	struct cgroup_rcu_string *release_agent;
 
 	raw_spin_lock(&ve->per_cgroot_list_lock);
 	list_for_each_entry_safe(data, saved, &ve->per_cgroot_list, list) {
+		release_agent = data->release_agent_path;
+		RCU_INIT_POINTER(data->release_agent_path, NULL);
+		if (release_agent)
+			kfree_rcu(release_agent, rcu_head);
 		list_del_init(&data->list);
 		kfree(data);
 	}

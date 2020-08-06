@@ -1095,9 +1095,12 @@ static int rebind_subsystems(struct cgroupfs_root *root,
 
 static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 {
+	const char *release_agent;
 	struct cgroupfs_root *root = dentry->d_sb->s_fs_info;
 	struct cgroup_subsys *ss;
+	struct cgroup *root_cgrp = &root->top_cgroup;
 
+	mutex_lock(&cgroup_mutex);
 	mutex_lock(&cgroup_root_mutex);
 	for_each_subsys(root, ss)
 		seq_printf(seq, ",%s", ss->name);
@@ -1109,14 +1112,37 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 		seq_puts(seq, ",xattr");
 	if (root->flags & CGRP_ROOT_CPUSET_V2_MODE)
 		seq_puts(seq, ",cpuset_v2_mode");
-	if (strlen(root->release_agent_path))
-		seq_show_option(seq, "release_agent",
-				root->release_agent_path);
+#ifdef CONFIG_VE
+	{
+		struct ve_struct *ve = get_exec_env();
+
+		if (!ve_is_super(ve)) {
+			/*
+			 * ve->init_task is NULL in case when cgroup is accessed
+			 * before ve_start_container has been called.
+			 *
+			 * ve->init_task is synchronized via ve->ve_ns rcu, see
+			 * ve_grab_context/drop_context.
+			 */
+			rcu_read_lock();
+			if (ve->ve_ns)
+				root_cgrp = task_cgroup_from_root(ve->init_task,
+					root);
+			rcu_read_unlock();
+		}
+	}
+#endif
+	rcu_read_lock();
+	release_agent = ve_get_release_agent_path(root_cgrp);
+	if (release_agent && release_agent[0])
+		seq_show_option(seq, "release_agent", release_agent);
+	rcu_read_unlock();
 	if (test_bit(CGRP_CPUSET_CLONE_CHILDREN, &root->top_cgroup.flags))
 		seq_puts(seq, ",clone_children");
 	if (strlen(root->name))
 		seq_show_option(seq, "name", root->name);
 	mutex_unlock(&cgroup_root_mutex);
+	mutex_unlock(&cgroup_mutex);
 	return 0;
 }
 
@@ -1389,8 +1415,13 @@ static int cgroup_remount(struct super_block *sb, int *flags, char *data)
 	/* re-populate subsystem files */
 	cgroup_populate_dir(cgrp, false, added_mask);
 
-	if (opts.release_agent)
-		strcpy(root->release_agent_path, opts.release_agent);
+	if (opts.release_agent) {
+		struct cgroup *root_cgrp;
+		root_cgrp = cgroup_get_local_root(cgrp);
+		if (root_cgrp->ve_owner)
+			ret = ve_set_release_agent_path(root_cgrp,
+				opts.release_agent);
+	}
  out_unlock:
 	kfree(opts.release_agent);
 	kfree(opts.name);
@@ -1714,8 +1745,6 @@ static struct cgroupfs_root *cgroup_root_from_opts(struct cgroup_sb_opts *opts)
 	root->subsys_mask = opts->subsys_mask;
 	root->flags = opts->flags;
 	ida_init(&root->cgroup_ida);
-	if (opts->release_agent)
-		strcpy(root->release_agent_path, opts->release_agent);
 	if (opts->name)
 		strcpy(root->name, opts->name);
 	if (opts->cpuset_clone_children)
@@ -1914,6 +1943,11 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 
 		cred = override_creds(&init_cred);
 		cgroup_populate_dir(root_cgrp, true, root->subsys_mask);
+		if (opts.release_agent) {
+			ret = ve_set_release_agent_path(root_cgrp,
+				opts.release_agent);
+		}
+
 		revert_creds(cred);
 		mutex_unlock(&cgroup_root_mutex);
 		mutex_unlock(&cgroup_mutex);
@@ -2483,7 +2517,8 @@ static int cgroup_procs_write(struct cgroup *cgrp, struct cftype *cft, u64 tgid)
 static int cgroup_release_agent_write(struct cgroup *cgrp, struct cftype *cft,
 				      const char *buffer)
 {
-	BUILD_BUG_ON(sizeof(cgrp->root->release_agent_path) < PATH_MAX);
+	int ret = 0;
+	struct cgroup *root_cgrp;
 
 	if (strlen(buffer) >= PATH_MAX)
 		return -EINVAL;
@@ -2491,19 +2526,35 @@ static int cgroup_release_agent_write(struct cgroup *cgrp, struct cftype *cft,
 	if (!cgroup_lock_live_group(cgrp))
 		return -ENODEV;
 
-	mutex_lock(&cgroup_root_mutex);
-	strcpy(cgrp->root->release_agent_path, buffer);
-	mutex_unlock(&cgroup_root_mutex);
+	root_cgrp = cgroup_get_local_root(cgrp);
+	BUG_ON(!root_cgrp);
+	if (root_cgrp->ve_owner)
+		ret = ve_set_release_agent_path(root_cgrp, buffer);
+	else
+		ret = -ENODEV;
+
 	mutex_unlock(&cgroup_mutex);
-	return 0;
+	return ret;
 }
 
 static int cgroup_release_agent_show(struct cgroup *cgrp, struct cftype *cft,
 				     struct seq_file *seq)
 {
+	const char *release_agent;
+	struct cgroup *root_cgrp;
+
 	if (!cgroup_lock_live_group(cgrp))
 		return -ENODEV;
-	seq_puts(seq, cgrp->root->release_agent_path);
+
+	root_cgrp = cgroup_get_local_root(cgrp);
+	if (root_cgrp->ve_owner) {
+		rcu_read_lock();
+		release_agent = ve_get_release_agent_path(root_cgrp);
+
+		if (release_agent)
+			seq_puts(seq, release_agent);
+		rcu_read_unlock();
+	}
 	seq_putc(seq, '\n');
 	mutex_unlock(&cgroup_mutex);
 	return 0;
@@ -5698,15 +5749,24 @@ static void check_for_release(struct cgroup *cgrp)
 void cgroup_release_agent(struct work_struct *work)
 {
 	struct ve_struct *ve;
+	char *agentbuf;
+
+	agentbuf = kzalloc(PATH_MAX, GFP_KERNEL);
+	if (!agentbuf) {
+		pr_warn("failed to allocate agentbuf\n");
+		return;
+	}
+
 	ve = container_of(work, struct ve_struct, release_agent_work);
 	mutex_lock(&cgroup_mutex);
 	raw_spin_lock(&ve->release_list_lock);
 	while (!list_empty(&ve->release_list)) {
 		char *argv[3], *envp[3];
 		int i, err;
-		char *pathbuf = NULL, *agentbuf = NULL;
+		char *pathbuf = NULL;
 		struct cgroup *cgrp, *root_cgrp;
 		struct task_struct *ve_task;
+		const char *release_agent;
 
 		cgrp = list_entry(ve->release_list.next,
 				  struct cgroup,
@@ -5734,9 +5794,15 @@ void cgroup_release_agent(struct work_struct *work)
 			rcu_read_unlock();
 			goto continue_free;
 		}
+
+		release_agent = ve_get_release_agent_path(root_cgrp);
+
+		*agentbuf = 0;
+		if (release_agent)
+			strncpy(agentbuf, release_agent, PATH_MAX);
 		rcu_read_unlock();
-		agentbuf = kstrdup(cgrp->root->release_agent_path, GFP_KERNEL);
-		if (!agentbuf)
+
+		if (!*agentbuf)
 			goto continue_free;
 
 		i = 0;
@@ -5767,11 +5833,11 @@ void cgroup_release_agent(struct work_struct *work)
 		mutex_lock(&cgroup_mutex);
  continue_free:
 		kfree(pathbuf);
-		kfree(agentbuf);
 		raw_spin_lock(&ve->release_list_lock);
 	}
 	raw_spin_unlock(&ve->release_list_lock);
 	mutex_unlock(&cgroup_mutex);
+	kfree(agentbuf);
 }
 
 static int __init cgroup_disable(char *str)
