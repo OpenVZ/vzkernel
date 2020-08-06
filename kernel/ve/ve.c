@@ -87,6 +87,11 @@ struct ve_struct ve0 = {
 	.netif_max_nr		= INT_MAX,
 	.arp_neigh_nr		= ATOMIC_INIT(0),
 	.nd_neigh_nr		= ATOMIC_INIT(0),
+	.release_list_lock	= __RAW_SPIN_LOCK_UNLOCKED(
+					ve0.release_list_lock),
+	.release_list		= LIST_HEAD_INIT(ve0.release_list),
+	.release_agent_work	= __WORK_INITIALIZER(ve0.release_agent_work,
+					cgroup_release_agent),
 };
 EXPORT_SYMBOL(ve0);
 
@@ -503,6 +508,41 @@ static void ve_workqueue_stop(struct ve_struct *ve)
 	destroy_workqueue(ve->wq);
 }
 
+void ve_add_to_release_list(struct cgroup *cgrp)
+{
+	struct ve_struct *ve;
+	int need_schedule_work = 0;
+
+	rcu_read_lock();
+	ve = cgroup_get_ve_owner(cgrp);
+
+	raw_spin_lock(&ve->release_list_lock);
+	if (!cgroup_is_removed(cgrp) &&
+	    list_empty(&cgrp->release_list)) {
+		list_add(&cgrp->release_list, &ve->release_list);
+		need_schedule_work = 1;
+	}
+	raw_spin_unlock(&ve->release_list_lock);
+
+	if (need_schedule_work)
+		queue_work(ve->wq, &ve->release_agent_work);
+
+	rcu_read_unlock();
+}
+
+void ve_rm_from_release_list(struct cgroup *cgrp)
+{
+	struct ve_struct *ve;
+	rcu_read_lock();
+	ve = cgroup_get_ve_owner(cgrp);
+
+	raw_spin_lock(&ve->release_list_lock);
+	if (!list_empty(&cgrp->release_list))
+		list_del_init(&cgrp->release_list);
+	raw_spin_unlock(&ve->release_list_lock);
+	rcu_read_unlock();
+}
+
 /* under ve->op_sem write-lock */
 static int ve_start_container(struct ve_struct *ve)
 {
@@ -698,6 +738,9 @@ static struct cgroup_subsys_state *ve_create(struct cgroup *cg)
 	if (!ve->ve_name)
 		goto err_name;
 
+	INIT_WORK(&ve->release_agent_work, cgroup_release_agent);
+	raw_spin_lock_init(&ve->release_list_lock);
+
 	ve->_randomize_va_space = ve0._randomize_va_space;
 
 	ve->features = VE_FEATURES_DEF;
@@ -732,6 +775,7 @@ do_init:
 	INIT_LIST_HEAD(&ve->devices);
 	INIT_LIST_HEAD(&ve->ve_list);
 	INIT_LIST_HEAD(&ve->devmnt_list);
+	INIT_LIST_HEAD(&ve->release_list);
 	mutex_init(&ve->devmnt_mutex);
 
 #ifdef CONFIG_AIO
