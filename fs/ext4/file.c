@@ -128,21 +128,58 @@ static bool ext4_overwrite_io(struct inode *inode, loff_t pos, loff_t len)
 static int ext4_fastmap(struct inode *inode, sector_t lblk_sec,
 			unsigned int len, sector_t *pblk_sec, bool write)
 {
+	struct address_space *mapping = inode->i_mapping;
+	bool unaligned_aio, found, locked = false;
 	struct ext4_map_blocks map;
 	loff_t pos = lblk_sec << 9;
-	bool unaligned_aio, found;
+
+	if (!S_ISREG(inode->i_mode))
+		return -ENOENT;
+	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
+		return -ENOENT;
+	if (ext4_should_journal_data(inode))
+		return -ENOENT;
 
 	unaligned_aio = ext4_unaligned_aio(inode, len, pos);
 	if (unaligned_aio)
 		return -ENOENT;
 
+	if (write) {
+		if (!mutex_trylock(&inode->i_mutex))
+			return -ENOENT;
+		locked = true;
+	}
+
+	if (unlikely(mapping_needs_writeback(mapping)))
+		goto err_maybe_unlock;
+
+	inode_dio_begin(inode);
+	smp_mb();
+
+	if (locked) {
+		mutex_unlock(&inode->i_mutex);
+		locked = false;
+	}
+
+	if (unlikely(ext4_test_inode_state(inode,
+				EXT4_STATE_DIOREAD_LOCK))) {
+		goto err_dio_end;
+	}
+
 	found = __ext4_overwrite_io(inode, lblk_sec << 9, len, &map,
 				    EXT4_GET_BLOCKS_EXTENT_TREE_ONLY_NONBLOCK);
 	if (!found)
-		return -ENOENT;
+		goto err_dio_end;
 
 	*pblk_sec = map.m_pblk << (inode->i_blkbits - 9);
 	return 0;
+
+err_dio_end:
+	inode_dio_end(inode);
+err_maybe_unlock:
+	if (locked)
+		mutex_unlock(&inode->i_mutex);
+	return -ENOENT;
 }
 
 static ssize_t ext4_write_checks(struct kiocb *iocb, struct iov_iter *iter, loff_t *pos)
