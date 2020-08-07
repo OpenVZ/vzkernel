@@ -1229,7 +1229,7 @@ kaio_fastmap(struct ploop_io *io, struct bio *orig_bio,
 	q = bdev_get_queue(bio->bi_bdev);
 
 	if (q->merge_bvec_fn == NULL)
-		return 0;
+		goto out;
 
 	bio->bi_size = 0;
 	bio->bi_vcnt = 0;
@@ -1244,12 +1244,26 @@ kaio_fastmap(struct ploop_io *io, struct bio *orig_bio,
 		};
 		if (q->merge_bvec_fn(q, &bm_data, bv) < bv->bv_len) {
 			io->plo->st.fast_neg_backing++;
-			return 1;
+			goto err_end_io;
 		}
 		bio->bi_size += bv->bv_len;
 		bio->bi_vcnt++;
 	}
+out:
 	return 0;
+
+err_end_io:
+	io->ops->fastmap_end_io(io, orig_bio);
+	return 1;
+}
+
+static void kaio_fastmap_end_io(struct ploop_io *io, struct bio *orig_bio)
+{
+	struct inode *inode = io->files.inode;
+
+	if (orig_bio->bi_size == 0)
+		return;
+	inode_dio_end(inode);
 }
 
 static struct ploop_io_ops ploop_io_ops_kaio =
@@ -1288,6 +1302,7 @@ static struct ploop_io_ops ploop_io_ops_kaio =
 
 	.autodetect     =       kaio_autodetect,
 	.fastmap	=	kaio_fastmap,
+	.fastmap_end_io	=	kaio_fastmap_end_io,
 };
 
 static int __init pio_kaio_mod_init(void)
