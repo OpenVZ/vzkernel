@@ -2013,7 +2013,7 @@ struct inode_operations {
 	int (*atomic_open)(struct inode *, struct dentry *,
 			   struct file *, unsigned open_flag,
 			   umode_t create_mode, int *opened);
-	int (*fastmap)(struct inode *, sector_t, unsigned int, sector_t *);
+	int (*fastmap)(struct inode *, sector_t, unsigned int, sector_t *, bool);
 } ____cacheline_aligned;
 
 
