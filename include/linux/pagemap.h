@@ -14,6 +14,7 @@
 #include <linux/bitops.h>
 #include <linux/hardirq.h> /* for in_interrupt() */
 #include <linux/hugetlb_inline.h>
+#include <linux/dax.h>
 
 /*
  * Bits in mapping->flags.  The lower __GFP_BITS_SHIFT bits are the page
@@ -115,6 +116,12 @@ static inline void mapping_set_gfp_mask(struct address_space *m, gfp_t mask)
 {
 	m->flags = (m->flags & ~(__force unsigned long)__GFP_BITS_MASK) |
 				(__force unsigned long)mask;
+}
+
+static inline bool mapping_needs_writeback(struct address_space *mapping)
+{
+	return (!dax_mapping(mapping) && mapping->nrpages) ||
+	    (dax_mapping(mapping) && mapping->nrexceptional);
 }
 
 /*
