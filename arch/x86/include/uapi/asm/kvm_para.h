@@ -24,7 +24,8 @@
 #define KVM_FEATURE_STEAL_TIME		5
 #define KVM_FEATURE_PV_EOI		6
 #define KVM_FEATURE_PV_UNHALT		7
-#define KVM_FEATURE_POLL_CONTROL       12
+#define KVM_FEATURE_PV_SEND_IPI		11
+#define KVM_FEATURE_POLL_CONTROL	12
 
 /* The last 8 bits are used to indicate how to interpret the flags field
  * in pvclock structure. If no bits are set, all flags are ignored.
