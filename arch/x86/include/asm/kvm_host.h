@@ -1433,6 +1433,10 @@ void kvm_arch_mmu_notifier_invalidate_page(struct kvm *kvm,
 					   unsigned long address);
 
 u64 kvm_get_arch_capabilities(void);
+int kvm_pv_send_ipi(struct kvm *kvm, unsigned long ipi_bitmap_low,
+		    unsigned long ipi_bitmap_high, int min,
+		    unsigned long icr, int op_64_bit);
+
 void kvm_define_shared_msr(unsigned index, u32 msr);
 int kvm_set_shared_msr(unsigned index, u64 val, u64 mask);
 
