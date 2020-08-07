@@ -692,10 +692,18 @@ static struct ploop_delta * find_delta(struct ploop_device * plo, int level)
 DEFINE_BIO_CB(ploop_fast_end_io)
 {
 	unsigned long flags;
+	struct ploop_delta * delta;
 	struct ploop_device * plo;
 	struct bio * orig = bio->bi_private;
 
-	plo = orig->bi_bdev->bd_disk->private_data;
+	/* Assigned in bio_fast_map() */
+	delta = (void *)orig->bi_next;
+	orig->bi_next = NULL;
+
+	if (delta->io.ops->fastmap_end_io)
+		delta->io.ops->fastmap_end_io(&delta->io, orig);
+
+	plo = delta->plo;
 
 	/* End of fast bio wakes up main process only when this could
 	 * mean exit from ATTENTION state.
@@ -774,6 +782,7 @@ bio_fast_map(struct ploop_device * plo, struct bio * orig_bio, struct bio * bio)
 {
 	struct ploop_delta * delta;
 	sector_t isector;
+	int ret;
 
 	if (orig_bio->bi_size == 0)
 		delta = ploop_top_delta(plo);
@@ -788,7 +797,19 @@ bio_fast_map(struct ploop_device * plo, struct bio * orig_bio, struct bio * bio)
 	if (delta->io.ops->fastmap == NULL)
 		return 1;
 
-	return delta->io.ops->fastmap(&delta->io, orig_bio, bio, isector);
+	ret = delta->io.ops->fastmap(&delta->io, orig_bio, bio, isector);
+
+	if (ret)
+		return 1;
+
+	/*
+	 * We reuse orig_bio->bi_next for a while.
+	 * ploop_fast_end_io() nullifies it back.
+	 */
+	BUG_ON(orig_bio->bi_next);
+	orig_bio->bi_next = (void *)delta;
+
+	return 0;
 }
 
 static inline unsigned int block_vecs(struct ploop_device * plo)
