@@ -126,7 +126,7 @@ static bool ext4_overwrite_io(struct inode *inode, loff_t pos, loff_t len)
 }
 
 static int ext4_fastmap(struct inode *inode, sector_t lblk_sec,
-			unsigned int len, sector_t *pblk_sec)
+			unsigned int len, sector_t *pblk_sec, bool write)
 {
 	struct ext4_map_blocks map;
 	loff_t pos = lblk_sec << 9;
