@@ -1206,7 +1206,8 @@ kaio_fastmap(struct ploop_io *io, struct bio *orig_bio,
 		return 0;
 	}
 
-	ret = inode->i_op->fastmap(inode, isec, orig_bio->bi_size, &phys_sec);
+	ret = inode->i_op->fastmap(inode, isec, orig_bio->bi_size, &phys_sec,
+				   orig_bio->bi_rw & REQ_WRITE);
 	if (ret < 0) {
 		io->plo->st.fast_neg_noem++;
 		return 1;
