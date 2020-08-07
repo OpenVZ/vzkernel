@@ -165,8 +165,16 @@ struct ploop_io_ops
 	void	(*post_submit)(struct ploop_io *, struct ploop_request *);
 
 	int	(*disable_merge)(struct ploop_io * io, sector_t isector, unsigned int len);
+
+	/*
+	 * fastmap maps @isec to the sector on the underlining device.
+	 * Before ->fastmap_end_io is called the mapper sector is stable.
+	 * I.e., fastmap works as opening protection bracket,
+	 * while fastmap_end_io is closing protection bracket.
+	 */
 	int	(*fastmap)(struct ploop_io * io, struct bio *orig_bio,
 			   struct bio * bio, sector_t isec);
+	void	(*fastmap_end_io)(struct ploop_io *io, struct bio *orig_bio);
 
 	void	(*read_page)(struct ploop_io * io, struct ploop_request * preq,
 			     struct page * page, sector_t sec);
