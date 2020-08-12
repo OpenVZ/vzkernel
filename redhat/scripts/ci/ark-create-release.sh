@@ -43,10 +43,10 @@ if git tag -v "$UPSTREAM_REF" > /dev/null 2>&1; then
 	RELEASE_BRANCHES=" ark/$UPSTREAM_REF ark/patches/$UPSTREAM_REF"
 else
 	# This is a snapshot release so we're only going to make a tag
-	git checkout --detach ark-patches && git describe
+	git checkout --detach os-build && git describe
 	RELEASE_BRANCHES=""
 fi
-git merge -m "Merge configuration and build scripts" os-build
+git merge -m "Merge ark patches" ark-patches
 
 MR_PATCHES=$(gitlab project-merge-request list --project-id=${PROJECT_ID} \
 	--labels="Include in Releases" --state=opened | grep -v "^$" | sort | \

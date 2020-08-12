@@ -195,6 +195,14 @@ if [ "$MARKER" != "$LAST_MARKER" ]; then
 	rm $clogf.tmp $clogf.unique
 fi
 
+# HACK temporary hack until single tree workflow
+# Don't reprint all the ark-patches again.
+if [ -n "$(git log --oneline --first-parent --grep="Merge ark patches" ${lasttag}..)" ]; then
+	# Throw away the clogf and just print the summary merge
+	echo "" > $clogf
+	echo "- Merge ark-patches" >> $clogf
+fi
+
 LENGTH=$(wc -l $clogf | awk '{print $1}')
 
 #the changelog was created in reverse order
