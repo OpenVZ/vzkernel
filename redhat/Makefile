@@ -315,18 +315,20 @@ dist-release: dist-clean-sources
 dist-release-tag:
 	@git tag -a -m "$(PACKAGE_NAME)-$(STAMP_VERSION)-$(PKGRELEASE)" $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PKGRELEASE)
 
-DIST_BRANCH ?= "os-build"
-dist-merge-upstream:
+git-tree-check:
 	@if test -n "$(DIST_PUSH)" && test -z "$(shell git remote get-url gitlab 2>/dev/null)"; then \
 		echo -e "Please run 'git remote add gitlab <url>' to enable git-push.\n"; \
 		exit 1; \
 	fi
+	@git diff-index --quiet HEAD || \
+		{ echo -e "Dirty tree, please clean before merging.\n"; exit 1; }
+
+DIST_BRANCH ?= "os-build"
+dist-merge-upstream: git-tree-check
 	@if test "$(shell git branch --show-current)" != "$(DIST_BRANCH)"; then \
 		echo -e "Please checkout $(DIST_BRANCH) branch before merging.\n"; \
 		exit 1; \
 		fi;
-	@(shell git --no-optional-locks status -uno --porcelain 2>/dev/null || \
-		{ echo -e "Dirty tree, please clean before merging.\n"; exit 1; })
 
 	@# If TAG is empty, script defaults to master:HEAD
 	@$(REDHAT)/scripts/ci/ark-rebase-patches.sh $(TAG) || exit 1
@@ -335,7 +337,14 @@ dist-merge-upstream:
 dist-merge-upstream-push: DIST_PUSH="1"
 dist-merge-upstream-push: dist-merge-upstream
 
+dist-fedora-release: git-tree-check
 
+	@# If TAG is empty, script defaults to master:HEAD
+	@cd ..; $(REDHAT)/scripts/ci/ark-create-release.sh $(TAG) || \
+		(echo "Unable to create release tag"; exit 1)
+
+dist-fedora-release-push: DIST_PUSH="1"
+dist-fedora-release-push: dist-fedora-release
 
 .PHONY: dist-brew dist-koji
 dist-brew : BUILD_FLAGS ?= $(BREW_FLAGS) $(TEST_FLAGS)
