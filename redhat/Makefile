@@ -305,12 +305,15 @@ dist-rpm-baseonly: dist-sources
 # unless you know what you're doing, you don't want to use the next three ones
 dist-release-finish: setup-source
 	@cp $(SOURCES)/$(CHANGELOG) $(REDHAT)/$(CHANGELOG)
-	@git add $(REDHAT)/$(CHANGELOG)
 	@echo $(MARKER) > $(REDHAT)/marker
-	@git add $(REDHAT)/marker
-	@git commit -s ../Makefile.rhelver $(REDHAT)/marker $(REDHAT)/$(CHANGELOG) $(PACKAGE_NAME).spec.template -m "[redhat] $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PREBUILD)$(BUILD)$(BUILDID)"
+	@# if neither changelog nor marker was updated, skip bumping a release
+	git diff-index --quiet HEAD && (echo "Nothing changed, skipping updates"; exit 0) || true
+	$(REDHAT)/scripts/new_release.sh $(REDHAT) $(__YSTREAM) $(__ZSTREAM); \
+	git add $(REDHAT)/$(CHANGELOG); \
+	git add $(REDHAT)/marker; \
+	git commit -s ../Makefile.rhelver $(REDHAT)/marker $(REDHAT)/$(CHANGELOG) $(PACKAGE_NAME).spec.template -m "[redhat] $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PREBUILD)$(BUILD)$(BUILDID)"; \
+
 dist-release: dist-clean-sources
-	@$(REDHAT)/scripts/new_release.sh $(REDHAT) $(__YSTREAM) $(__ZSTREAM)
 	@$(MAKE) dist-release-finish
 dist-release-tag:
 	@git tag -a -m "$(PACKAGE_NAME)-$(STAMP_VERSION)-$(PKGRELEASE)" $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PKGRELEASE)
