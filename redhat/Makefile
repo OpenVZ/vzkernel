@@ -309,10 +309,6 @@ dist-release-finish: setup-source
 	@echo $(MARKER) > $(REDHAT)/marker
 	@git add $(REDHAT)/marker
 	@git commit -s ../Makefile.rhelver $(REDHAT)/marker $(REDHAT)/$(CHANGELOG) $(PACKAGE_NAME).spec.template -m "[redhat] $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PREBUILD)$(BUILD)$(BUILDID)"
-	@$(MAKE) dist-configs
-	@$(MAKE) dist-kabi
-	@$(MAKE) dist-kabi-dup
-	@$(MAKE) sources-rh
 dist-release: dist-clean-sources
 	@$(REDHAT)/scripts/new_release.sh $(REDHAT) $(__YSTREAM) $(__ZSTREAM)
 	@$(MAKE) dist-release-finish
@@ -361,7 +357,7 @@ $(REDHAT)/rpm/SOURCES/$(PACKAGE_NAME).spec:
 dist-git-test: export RH_DIST_GIT_TEST="1"
 dist-git-test: dist-git
 
-dist-git: dist-srpm $(TARBALL) $(KABI_TARBALL) $(KABIDW_TARBALL)
+dist-git: dist-srpm $(KABI_TARBALL) $(KABIDW_TARBALL)
 ifeq ("$(RHDISTGIT_BRANCH)", "")
  $(error RHDISTGIT_BRANCH unset)
 endif
