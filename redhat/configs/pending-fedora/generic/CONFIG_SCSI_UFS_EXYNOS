@@ -1,0 +1,23 @@
+# CONFIG_SCSI_UFS_EXYNOS:
+# 
+# This selects the EXYNOS specific additions to UFSHCD platform driver.
+# UFS host on EXYNOS includes HCI and UNIPRO layer, and associates with
+# UFS-PHY driver.
+# 
+# Select this if you have UFS host controller on EXYNOS chipset.
+# If unsure, say N.
+# 
+# Symbol: SCSI_UFS_EXYNOS [=n]
+# Type  : tristate
+# Defined at drivers/scsi/ufs/Kconfig:165
+#   Prompt: EXYNOS specific hooks to UFS controller platform driver
+#   Depends on: SCSI_LOWLEVEL [=y] && SCSI [=y] && SCSI_UFSHCD_PLATFORM [=m] && (ARCH_EXYNOS [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> SCSI device support
+#         -> SCSI low-level drivers (SCSI_LOWLEVEL [=y])
+# Selects: PHY_SAMSUNG_UFS [=n]
+# 
+# 
+# 
+# CONFIG_SCSI_UFS_EXYNOS is not set

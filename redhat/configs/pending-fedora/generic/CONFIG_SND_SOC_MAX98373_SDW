@@ -1,0 +1,29 @@
+# CONFIG_SND_SOC_MAX98373_SDW:
+# 
+# Enable support for Maxim Integrated MAX98373 Soundwire
+# amplifier. MAX98373 supports either the MIPI SoundWire
+# compatible interface for audio and control data, or
+# the PCM interface for audio data and a standard I2C
+# interface for control data. Select this if MAX98373 is
+# connected via soundwire.
+# 
+# Symbol: SND_SOC_MAX98373_SDW [=n]
+# Type  : tristate
+# Defined at sound/soc/codecs/Kconfig:879
+#   Prompt: Maxim Integrated MAX98373 Speaker Amplifier - SDW
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SOUNDWIRE [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> CODEC drivers
+# Selects: SND_SOC_MAX98373 [=m] && REGMAP_SOUNDWIRE [=m]
+# Selected by [n]:
+#   - SND_SOC_INTEL_SOUNDWIRE_SOF_MACH [=n] && SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_SOC_INTEL_MACH [=y] && SND_SOC_SOF_INTEL_SOUNDWIRE && I2C [=y] && ACPI [=y] && GPIOLIB [=y] && (MFD_INTEL_LPSS [=y] || COMPILE_TEST [=n]) && (SND_SOC_INTEL_USER_FRIENDLY_LONG_NAMES [=y] || COMPILE_TEST [=n]) && SOUNDWIRE [=y] && SND_HDA_CODEC_HDMI [=m] && SND_SOC_SOF_HDA_AUDIO_CODEC [=y]
+# Implied by [n]:
+#   - SND_SOC_ALL_CODECS [=n] && SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && COMPILE_TEST [=n]
+# 
+# 
+# 
+# CONFIG_SND_SOC_MAX98373_SDW is not set

@@ -1,0 +1,20 @@
+# CONFIG_STM32_FMC2_EBI:
+# 
+# Select this option to enable the STM32 FMC2 External Bus Interface
+# controller. This driver configures the transactions with external
+# devices (like SRAM, ethernet adapters, FPGAs, LCD displays, ...) on
+# SOCs containing the FMC2 External Bus Interface.
+# 
+# Symbol: STM32_FMC2_EBI [=n]
+# Type  : tristate
+# Defined at drivers/memory/Kconfig:191
+#   Prompt: Support for FMC2 External Bus Interface on STM32MP SoCs
+#   Depends on: MEMORY [=y] && (MACH_STM32MP157 [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Memory Controller drivers (MEMORY [=y])
+# Selects: MFD_SYSCON [=y]
+# 
+# 
+# 
+# CONFIG_STM32_FMC2_EBI is not set

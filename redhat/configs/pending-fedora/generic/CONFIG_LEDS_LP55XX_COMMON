@@ -1,0 +1,18 @@
+# CONFIG_LEDS_LP55XX_COMMON:
+# 
+# This option supports common operations for LP5521/5523/55231/5562/8501
+# devices.
+# 
+# Symbol: LEDS_LP55XX_COMMON [=n]
+# Type  : tristate
+# Defined at drivers/leds/Kconfig:398
+#   Prompt: Common Driver for TI/National LP5521/5523/55231/5562/8501
+#   Depends on: NEW_LEDS [=y] && (LEDS_CLASS_MULTICOLOR [=n] || !LEDS_CLASS_MULTICOLOR [=n]) && OF [=y] && I2C [=m]
+#   Location:
+#     -> Device Drivers
+#       -> LED Support (NEW_LEDS [=y])
+# Selects: FW_LOADER [=y] && FW_LOADER_USER_HELPER [=y]
+# 
+# 
+# 
+# CONFIG_LEDS_LP55XX_COMMON is not set

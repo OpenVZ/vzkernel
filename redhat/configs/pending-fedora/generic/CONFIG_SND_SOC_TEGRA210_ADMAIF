@@ -1,0 +1,25 @@
+# CONFIG_SND_SOC_TEGRA210_ADMAIF:
+# 
+# Config to enable ADMAIF which is the interface between ADMA and
+# Audio Hub (AHUB). Each ADMA channel that sends/receives data to/
+# from AHUB must interface through an ADMAIF channel. ADMA channel
+# sending data to AHUB pairs with an ADMAIF Tx channel, where as
+# ADMA channel receiving data from AHUB pairs with an ADMAIF Rx
+# channel. Buffer size is configurable for each ADMAIIF channel.
+# Say Y or M if you want to add support for Tegra210 ADMAIF module.
+# 
+# Symbol: SND_SOC_TEGRA210_ADMAIF [=n]
+# Type  : tristate
+# Defined at sound/soc/tegra/Kconfig:109
+#   Prompt: Tegra210 ADMAIF module
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_SOC_TEGRA [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> SoC Audio for the Tegra System-on-Chip (SND_SOC_TEGRA [=m])
+# 
+# 
+# 
+# CONFIG_SND_SOC_TEGRA210_ADMAIF is not set

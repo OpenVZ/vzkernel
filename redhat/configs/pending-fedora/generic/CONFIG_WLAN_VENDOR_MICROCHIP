@@ -1,0 +1,22 @@
+# CONFIG_WLAN_VENDOR_MICROCHIP:
+# 
+# If you have a wireless card belonging to this class, say Y.
+# 
+# Note that the answer to this question doesn't directly affect the
+# kernel: saying N will just cause the configurator to skip all the
+# questions about these cards. If you say Y, you will be asked for
+# your specific card in the following questions.
+# 
+# Symbol: WLAN_VENDOR_MICROCHIP [=y]
+# Type  : bool
+# Defined at drivers/net/wireless/microchip/Kconfig:2
+#   Prompt: Microchip devices
+#   Depends on: NETDEVICES [=y] && WLAN [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Wireless LAN (WLAN [=y])
+# 
+# 
+# 
+CONFIG_WLAN_VENDOR_MICROCHIP=y

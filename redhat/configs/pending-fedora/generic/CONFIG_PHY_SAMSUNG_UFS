@@ -1,0 +1,21 @@
+# CONFIG_PHY_SAMSUNG_UFS:
+# 
+# Enable this to support the Samsung UFS PHY driver for
+# Samsung SoCs. This driver provides the interface for UFS
+# host controller to do PHY related programming.
+# 
+# Symbol: PHY_SAMSUNG_UFS [=n]
+# Type  : tristate
+# Defined at drivers/phy/samsung/Kconfig:32
+#   Prompt: SAMSUNG SoC series UFS PHY driver
+#   Depends on: OF [=y] && (ARCH_EXYNOS [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> PHY Subsystem
+# Selects: GENERIC_PHY [=y]
+# Selected by [n]:
+#   - SCSI_UFS_EXYNOS [=n] && SCSI_LOWLEVEL [=y] && SCSI [=y] && SCSI_UFSHCD_PLATFORM [=m] && (ARCH_EXYNOS [=y] || COMPILE_TEST [=n])
+# 
+# 
+# 
+# CONFIG_PHY_SAMSUNG_UFS is not set

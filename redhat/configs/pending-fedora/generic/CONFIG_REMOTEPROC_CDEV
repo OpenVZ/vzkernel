@@ -1,0 +1,21 @@
+# CONFIG_REMOTEPROC_CDEV:
+# 
+# Say y here to have a character device interface for the remoteproc
+# framework. Userspace can boot/shutdown remote processors through
+# this interface.
+# 
+# It's safe to say N if you don't want to use this interface.
+# 
+# Symbol: REMOTEPROC_CDEV [=n]
+# Type  : bool
+# Defined at drivers/remoteproc/Kconfig:17
+#   Prompt: Remoteproc character device interface
+#   Depends on: REMOTEPROC [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Remoteproc drivers
+#         -> Support for Remote Processor subsystem (REMOTEPROC [=y])
+# 
+# 
+# 
+# CONFIG_REMOTEPROC_CDEV is not set

@@ -1,0 +1,19 @@
+# CONFIG_DEBUG_FS_ALLOW_ALL:
+# 
+# No restrictions apply. Both API and filesystem registration
+# is on. This is the normal default operation.
+# 
+# Symbol: DEBUG_FS_ALLOW_ALL [=y]
+# Type  : bool
+# Defined at lib/Kconfig.debug:500
+#   Prompt: Access normal
+#   Depends on: <choice>
+#   Location:
+#     -> Kernel hacking
+#       -> Generic Kernel Debugging Instruments
+#         -> Debug Filesystem (DEBUG_FS [=y])
+#           -> Debugfs default access (<choice> [=y])
+# 
+# 
+# 
+CONFIG_DEBUG_FS_ALLOW_ALL=y

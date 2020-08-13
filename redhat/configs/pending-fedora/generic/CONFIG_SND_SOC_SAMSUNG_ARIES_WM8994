@@ -1,0 +1,24 @@
+# CONFIG_SND_SOC_SAMSUNG_ARIES_WM8994:
+# 
+# Say Y if you want to add support for SoC audio on Aries boards,
+# which has a WM8994 codec connected to a BT codec, a cellular
+# modem, and the Samsung I2S controller.  Jack detection is done
+# via ADC, GPIOs, and an extcon device.  Switching between the Mic
+# and TV-Out path is also handled.
+# 
+# Symbol: SND_SOC_SAMSUNG_ARIES_WM8994 [=n]
+# Type  : tristate
+# Defined at sound/soc/samsung/Kconfig:215
+#   Prompt: SoC I2S Audio support for WM8994 on Aries
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_SOC_SAMSUNG [=m] && MFD_WM8994 [=m] && IIO [=m] && EXTCON [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> ASoC support for Samsung (SND_SOC_SAMSUNG [=m])
+# Selects: SND_SOC_BT_SCO [=n] && SND_SOC_WM8994 [=m] && SND_SAMSUNG_I2S [=m]
+# 
+# 
+# 
+# CONFIG_SND_SOC_SAMSUNG_ARIES_WM8994 is not set

@@ -1,0 +1,20 @@
+# CONFIG_SM_GPUCC_8250:
+# 
+# Support for the graphics clock controller on SM8250 devices.
+# Say Y if you want to support graphics controller devices and
+# functionality such as 3D graphics.
+# 
+# Symbol: SM_GPUCC_8250 [=n]
+# Type  : tristate
+# Defined at drivers/clk/qcom/Kconfig:439
+#   Prompt: SM8250 Graphics Clock Controller
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_QCOM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Support for Qualcomm's clock controllers (COMMON_CLK_QCOM [=y])
+# Selects: SM_GCC_8250 [=m]
+# 
+# 
+# 
+# CONFIG_SM_GPUCC_8250 is not set

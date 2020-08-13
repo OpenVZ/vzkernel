@@ -1,0 +1,18 @@
+# CONFIG_PHY_XILINX_ZYNQMP:
+# 
+# Enable this to support ZynqMP High Speed Gigabit Transceiver
+# that is part of ZynqMP SoC.
+# 
+# Symbol: PHY_XILINX_ZYNQMP [=n]
+# Type  : tristate
+# Defined at drivers/phy/xilinx/Kconfig:7
+#   Prompt: Xilinx ZynqMP PHY driver
+#   Depends on: ARCH_ZYNQMP [=y] || COMPILE_TEST [=n]
+#   Location:
+#     -> Device Drivers
+#       -> PHY Subsystem
+# Selects: GENERIC_PHY [=y]
+# 
+# 
+# 
+# CONFIG_PHY_XILINX_ZYNQMP is not set
