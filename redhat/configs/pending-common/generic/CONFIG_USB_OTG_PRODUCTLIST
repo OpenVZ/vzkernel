@@ -1,0 +1,21 @@
+# CONFIG_USB_OTG_PRODUCTLIST:
+# 
+# If you say Y here, the "otg_productlist.h" file will be used as a
+# product list, so USB peripherals not listed there will be
+# rejected during enumeration.  This behavior is required by the
+# USB OTG and EH specification for all devices not on your product's
+# "Targeted Peripherals List".  "Embedded Hosts" are likewise
+# allowed to support only a limited number of peripherals.
+# 
+# Symbol: USB_OTG_PRODUCTLIST [=n]
+# Type  : bool
+# Defined at drivers/usb/core/Kconfig:58
+#   Prompt: Rely on OTG and EH Targeted Peripherals List
+#   Depends on: USB_SUPPORT [=y] && USB [=y]
+#   Location:
+#     -> Device Drivers
+#       -> USB support (USB_SUPPORT [=y])
+# 
+# 
+# 
+# CONFIG_USB_OTG_PRODUCTLIST is not set

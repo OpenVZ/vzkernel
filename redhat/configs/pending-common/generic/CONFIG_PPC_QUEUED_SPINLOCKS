@@ -1,0 +1,22 @@
+# CONFIG_PPC_QUEUED_SPINLOCKS:
+# 
+# Say Y here to use queued spinlocks which give better scalability and
+# fairness on large SMP and NUMA systems without harming single threaded
+# performance.
+# 
+# This option is currently experimental, the code is more complex and
+# less tested so it defaults to "N" for the moment.
+# 
+# If unsure, say "N".
+# 
+# Symbol: PPC_QUEUED_SPINLOCKS [=n]
+# Type  : bool
+# Defined at arch/powerpc/Kconfig:497
+#   Prompt: Queued spinlocks
+#   Depends on: SMP [=y]
+#   Location:
+#     -> Kernel options
+# 
+# 
+# 
+# CONFIG_PPC_QUEUED_SPINLOCKS is not set

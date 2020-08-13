@@ -1,0 +1,22 @@
+# CONFIG_SCD30_CORE:
+# 
+# Say Y here to build support for the Sensirion SCD30 sensor with carbon
+# dioxide, relative humidity and temperature sensing capabilities.
+# 
+# To compile this driver as a module, choose M here: the module will
+# be called scd30_core.
+# 
+# Symbol: SCD30_CORE [=n]
+# Type  : tristate
+# Defined at drivers/iio/chemical/Kconfig:88
+#   Prompt: SCD30 carbon dioxide sensor driver
+#   Depends on: IIO [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Chemical Sensors
+# Selects: IIO_BUFFER [=y] && IIO_TRIGGERED_BUFFER [=m]
+# 
+# 
+# 
+# CONFIG_SCD30_CORE is not set
