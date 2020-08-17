@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_THERMAL_NETLINK is not set
+CONFIG_THERMAL_NETLINK=y

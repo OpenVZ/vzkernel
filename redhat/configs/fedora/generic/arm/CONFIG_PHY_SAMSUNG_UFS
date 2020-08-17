@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_PHY_SAMSUNG_UFS is not set
+CONFIG_PHY_SAMSUNG_UFS=m

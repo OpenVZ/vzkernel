@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_NET_DSA_TAG_RTL4_A is not set
+CONFIG_NET_DSA_TAG_RTL4_A=m

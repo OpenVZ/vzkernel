@@ -21,4 +21,4 @@
 # 
 # 
 # 
-# CONFIG_VIDEO_RDACM20 is not set
+CONFIG_VIDEO_RDACM20=m

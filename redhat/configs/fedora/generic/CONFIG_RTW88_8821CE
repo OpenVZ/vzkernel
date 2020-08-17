@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_RTW88_8821CE is not set
+CONFIG_RTW88_8821CE=m

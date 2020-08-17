@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_DRM_AMD_DC_DCN3_0 is not set
+CONFIG_DRM_AMD_DC_DCN3_0=y

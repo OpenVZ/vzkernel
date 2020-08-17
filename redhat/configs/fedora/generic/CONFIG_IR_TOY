@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_IR_TOY is not set
+CONFIG_IR_TOY=m

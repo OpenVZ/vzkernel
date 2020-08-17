@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_PCIE_XILINX_CPM is not set
+CONFIG_PCIE_XILINX_CPM=y
