@@ -886,7 +886,7 @@ kaio_sync_write(struct ploop_io * io, struct page * page, unsigned int len,
 static int kaio_sync_read_many(struct ploop_io *io, struct page *pages[],
 				unsigned int nr_pages, sector_t sec)
 {
-	return kaio_sync_io(io, READ_SYNC, pages, nr_pages,
+	return kaio_sync_io(io, IOCB_CMD_READ_ITER, pages, nr_pages,
 			    PAGE_SIZE * nr_pages, 0, sec);
 }
 
