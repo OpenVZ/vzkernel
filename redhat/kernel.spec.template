@@ -2064,7 +2064,7 @@ popd
 %endif
 
 %if %{with_selftests}
-%{make} -s ARCH=$Arch V=1 samples/bpf/
+%{make} -s %{?_smp_mflags} ARCH=$Arch V=1 samples/bpf/
 pushd tools/testing/selftests
 # We need to install here because we need to call make with ARCH set which
 # doesn't seem possible to do in the install section.
