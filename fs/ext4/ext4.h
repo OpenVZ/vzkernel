@@ -624,6 +624,8 @@ enum {
 #define EXT4_IOC_RESIZE_FS		_IOW('f', 16, __u64)
 #define EXT4_IOC_SWAP_BOOT		_IO('f', 17)
 #define EXT4_IOC_PRECACHE_EXTENTS	_IO('f', 18)
+/* ioctl codes 19--39 are reserved for fscrypt */
+#define EXT4_IOC_CLEAR_ES_CACHE		_IO('f', 40)
 #define EXT4_IOC_OPEN_BALLOON		_IO('f', 42)
 #define EXT4_IOC_MFSYNC			_IO('f', 43)
 #define EXT4_IOC_SET_RSV_BLOCKS		_IOW('f', 44, __u64)
