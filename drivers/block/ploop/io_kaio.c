@@ -793,7 +793,7 @@ kaio_sync_io(struct ploop_io * io, int op, struct page **pages,
 {
 	struct kiocb *iocb;
 	struct iov_iter iter;
-	struct bio_vec bvec_on_stack, *bvec;
+	struct bio_vec bvec_on_stack, *bvec, *tmp;
 	loff_t pos = (loff_t) sec << 9;
 	struct file *file = io->files.file;
 	struct kaio_comp comp;
@@ -814,15 +814,17 @@ kaio_sync_io(struct ploop_io * io, int op, struct page **pages,
 		return -ENOMEM;
 	}
 
+	tmp = bvec;
 	for (i = 0; i < nr_pages; i++) {
-		bvec->bv_page = pages[i];
+		tmp->bv_page = pages[i];
 		count = PAGE_SIZE - off;
 		if (count > len)
 			count = len;
-		bvec->bv_len = count;
-		bvec->bv_offset = off;
+		tmp->bv_len = count;
+		tmp->bv_offset = off;
 		off = 0;
 		len -= count;
+		tmp++;
 	}
 
 	iov_iter_init_bvec(&iter, bvec, nr_pages, bvec_length(bvec, nr_pages), 0);
