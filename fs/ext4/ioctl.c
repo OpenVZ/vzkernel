@@ -754,6 +754,14 @@ resize_out:
 	case EXT4_IOC_PRECACHE_EXTENTS:
 		return ext4_ext_precache(inode);
 
+	case EXT4_IOC_CLEAR_ES_CACHE:
+	{
+		if (!inode_owner_or_capable(inode))
+			return -EACCES;
+		ext4_clear_inode_es(inode);
+		return 0;
+	}
+
 	case EXT4_IOC_OPEN_BALLOON:
 		if (!capable(CAP_SYS_ADMIN))
 			return -EACCES;
@@ -912,6 +920,7 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case FITRIM:
 	case EXT4_IOC_RESIZE_FS:
 	case EXT4_IOC_PRECACHE_EXTENTS:
+	case EXT4_IOC_CLEAR_ES_CACHE:
 		break;
 	case FS_IOC_PFCACHE_OPEN:
 	case FS_IOC_PFCACHE_CLOSE:
