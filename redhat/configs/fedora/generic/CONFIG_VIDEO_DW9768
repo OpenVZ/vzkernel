@@ -20,4 +20,4 @@
 # 
 # 
 # 
-# CONFIG_VIDEO_DW9768 is not set
+CONFIG_VIDEO_DW9768=m

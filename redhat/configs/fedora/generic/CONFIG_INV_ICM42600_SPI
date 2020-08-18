@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_INV_ICM42600_SPI is not set
+CONFIG_INV_ICM42600_SPI=m

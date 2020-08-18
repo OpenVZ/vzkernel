@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_CEC_CH7322 is not set
+CONFIG_CEC_CH7322=m

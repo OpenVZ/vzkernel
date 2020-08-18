@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_PCI_J721E_HOST is not set
+CONFIG_PCI_J721E_HOST=y

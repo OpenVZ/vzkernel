@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_GPIO_PCA9570 is not set
+CONFIG_GPIO_PCA9570=m

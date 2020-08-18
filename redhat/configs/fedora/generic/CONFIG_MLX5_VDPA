@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_MLX5_VDPA is not set
+CONFIG_MLX5_VDPA=y

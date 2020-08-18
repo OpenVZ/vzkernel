@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_MLX5_EN_IPSEC is not set
+CONFIG_MLX5_EN_IPSEC=y
