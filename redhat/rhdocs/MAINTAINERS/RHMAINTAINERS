@@ -1003,7 +1003,7 @@ F:	include/net/netns/x_tables.h
 NETWORKING [GENERAL]
 I:	net
 M:	Jiri Benc <jbenc@redhat.com>
-M:	Neil Horman <nhorman@redhat.com>
+M:	Marcelo Leitner <mleitner@redhat.com>
 R:	Davide Caratti <dcaratti@redhat.com>
 R:	Eric Garver <egarver@redhat.com>
 R:	Flavio Leitner <fbl@redhat.com>
@@ -1016,7 +1016,6 @@ R:	Jiri Benc <jbenc@redhat.com>
 R:	Lorenzo Bianconi <lorenzo.bianconi@redhat.com>
 R:	Marcelo Leitner <mleitner@redhat.com>
 R:	Matteo Croce <mcroce@redhat.com>
-R:	Neil Horman <nhorman@redhat.com>
 R:	Paolo Abeni <pabeni@redhat.com>
 R:	Phil Sutter <psutter@redhat.com>
 R:	Sabrina Dubroca <sdubroca@redhat.com>
@@ -1315,7 +1314,6 @@ F:	include/target/
 
 SCTP PROTOCOL
 M:	Marcelo Ricardo Leitner <mleitner@redhat.com>
-M:	Neil Horman <nhorman@redhat.com>
 S:	Maintained
 F:	net/sctp/
 F:	include/linux/sctp.h
