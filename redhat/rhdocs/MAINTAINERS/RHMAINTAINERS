@@ -734,7 +734,8 @@ F:	drivers/char/tpm/*
 F:	include/linux/tpm.h
 
 INTEL QUICK ASSIST TECHNOLOGY (QAT)
-M:	Neil Horman <nhorman@redhat.com>
+M:	Vlad Dronov <vdronov@redhat.com>
+M:	Tony Camuso <tcamuso@redhat.com>
 S:	Maintained
 F:	drivers/crypto/qat/*
 
