@@ -1130,7 +1130,41 @@ static void kaio_queue_settings(struct ploop_io * io, struct request_queue * q)
 	if (inode->i_sb->s_magic == EXT4_SUPER_MAGIC) {
 		WARN_ON(!kaio_backed_ext4);
 		blk_queue_stack_limits(q, bdev_get_queue(io->files.bdev));
-		ploop_set_discard_limits(io->plo);
+		/*
+		 * There is no a way to force block engine to split a request
+		 * to fit a single cluster, when discard granuality is 4K
+		 * (inherited from fs block size in blk_queue_stack_limits()).
+		 * So, ploop_make_request() splits them.
+		 */
+		io->plo->force_split_discard_reqs = true;
+		/*
+		 * Why not (1 << io->plo->cluster_log)?
+		 * Someone may want to clear indexes in case of a request
+		 * is big enough to fit the whole cluster.
+		 * In case of max_discard_sectors is 1 cluster, a request
+		 * for [cluster_start - 4K, cluster_start + cluster_size)
+		 * at block level will be splitted in two requests:
+		 *
+		 * [cluster_start - 4K, cluster_start + cluster_size - 4K)
+		 * [cluster_start + cluster_size - 4K, cluster_start + cluster_size)
+		 *
+		 * Then, ploop_make_request() splits the first of them in two
+		 * to fit a single cluster, so all three requests will be smaller
+		 * then 1 cluster, and no index will be cleared.
+		 *
+		 * Note, this does not solve a problem, when a request covers
+		 * 3 clusters: [cluster_start - 4K, cluster_start + 2 * cluster_size],
+		 * so the third cluster's index will remain. This will require
+		 * unlimited max_discard_sectors and splitting every request
+		 * in ploop_make_request(). We don't want that in that context.
+		 *
+		 * But even in current view, this makes indexes to be cleared
+		 * more frequently, and index-clearing code will be tested better.
+		 *
+		 * Anyway, in general this may be an excess functionality.
+		 * If it's so, it will be dropped later.
+		 */
+		q->limits.max_discard_sectors = (1 << io->plo->cluster_log) * 2 - 1;
 		return;
 	}
 
