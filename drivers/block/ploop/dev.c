@@ -990,7 +990,7 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 		plo->st.bio_splits++;
 
 		if (!(bio->bi_rw & REQ_DISCARD))
-			BUG_ON(bio->bi_vcnt != 1)
+			BUG_ON(bio->bi_vcnt != 1);
 
 		bp = bio_split(bio, first_sectors);
 		ploop_make_request(q, &bp->bio1);
