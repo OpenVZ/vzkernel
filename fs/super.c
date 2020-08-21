@@ -80,7 +80,7 @@ EXPORT_SYMBOL(dcache_is_low);
  * shrinker path and that leads to deadlock on the shrinker_rwsem. Hence we
  * take a passive reference to the superblock to avoid this from occurring.
  */
-static unsigned long super_cache_scan(struct shrinker *shrink,
+unsigned long super_cache_scan(struct shrinker *shrink,
 				      struct shrink_control *sc)
 {
 	struct super_block *sb;
