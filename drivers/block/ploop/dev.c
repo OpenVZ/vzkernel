@@ -979,7 +979,8 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	 * bio layer assumes that it can prepare single-page bio
 	 * not depending on any alignment constraints. So be it.
 	 */
-	if (!(bio->bi_rw & REQ_DISCARD) && bio->bi_size &&
+	if ((!(bio->bi_rw & REQ_DISCARD) || plo->force_split_discard_reqs) &&
+	    bio->bi_size &&
 	    (bio->bi_sector >> cluster_log) !=
 	    ((bio->bi_sector + (bio->bi_size >> 9) - 1) >> cluster_log)) {
 		struct bio_pair *bp;
@@ -988,7 +989,8 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 
 		plo->st.bio_splits++;
 
-		BUG_ON(bio->bi_vcnt != 1);
+		if (!(bio->bi_rw & REQ_DISCARD))
+			BUG_ON(bio->bi_vcnt != 1);
 
 		bp = bio_split(bio, first_sectors);
 		ploop_make_request(q, &bp->bio1);
@@ -2298,7 +2300,7 @@ static bool ploop_can_issue_discard(struct ploop_device *plo,
 	if (!list_is_singular(&plo->map.delta_list))
 		return false;
 
-	return whole_block(plo, preq);
+	return whole_block(plo, preq) || plo->force_split_discard_reqs;
 }
 
 static void
@@ -2568,7 +2570,8 @@ delta_io:
 				}
 				preq->iblock = iblk;
 				if (!(preq->req_rw & REQ_DISCARD) ||
-				    (delta->ops->capability & PLOOP_FMT_CAP_IDENTICAL))
+				    (delta->ops->capability & PLOOP_FMT_CAP_IDENTICAL) ||
+				    !whole_block(plo, preq))
 					preq->eng_state = PLOOP_E_COMPLETE;
 				else
 					preq->eng_state = PLOOP_E_DATA_WBI;
@@ -4205,6 +4208,7 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 	blk_queue_merge_bvec(q, ploop_merge_bvec);
 	blk_queue_flush(q, REQ_FLUSH);
 
+	plo->force_split_discard_reqs = false;
 	top_delta->io.ops->queue_settings(&top_delta->io, q);
 	/* REQ_WRITE_SAME is not supported */
 	blk_queue_max_write_same_sectors(q, 0);
