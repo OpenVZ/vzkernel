@@ -13,9 +13,9 @@ MODSECKEY=$1
 MODPUBKEY=$2
 moddir=$3
 
-modules=`find $moddir -type f -name '*.ko'`
+modules=$(find "$moddir" -type f -name '*.ko')
 
-NPROC=`nproc`
+NPROC=$(nproc)
 [ -z "$NPROC" ] && NPROC=1
 
 # NB: this loop runs 2000+ iterations. Try to be fast.
@@ -27,7 +27,7 @@ done
 " DUMMYARG0   # xargs appends ARG1 ARG2..., which go into $mod in for loop.
 
 RANDOMMOD=$(echo "$modules" | sort -R | head -n 1)
-if [ "~Module signature appended~" != "$(tail -c 28 $RANDOMMOD)" ]; then
+if [ "~Module signature appended~" != "$(tail -c 28 "$RANDOMMOD")" ]; then
     echo "*****************************"
     echo "*** Modules are unsigned! ***"
     echo "*****************************"
