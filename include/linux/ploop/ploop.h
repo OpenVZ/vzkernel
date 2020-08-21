@@ -404,6 +404,7 @@ struct ploop_device
 
 	int			cluster_log;
 	int			fmt_version;
+	bool			force_split_discard_reqs;
 
 	int			active_reqs;
 	int			fastpath_reqs;
