@@ -17,6 +17,7 @@
 #include <linux/aio.h>
 
 #include <linux/ploop/ploop.h>
+#include <uapi/linux/falloc.h>
 
 #define KAIO_PREALLOC (128 * 1024 * 1024) /* 128 MB */
 
@@ -183,8 +184,17 @@ static int kaio_kernel_submit(struct file *file, struct kaio_req *kreq,
 
 	if (rw & REQ_DISCARD) {
 		op = IOCB_CMD_UNMAP_ITER;
-		if (file_inode(file)->i_sb->s_magic == EXT4_SUPER_MAGIC)
-			return -ENOTSUPP;
+		if (file_inode(file)->i_sb->s_magic == EXT4_SUPER_MAGIC) {
+			err = file->f_op->fallocate(file,
+				    FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,
+				    pos, count);
+			if (err == 0) {
+				kaio_complete_io_request(kreq->preq);
+				/* Otherwise, caller decrements counter */
+			}
+			return err;
+		}
+
 	} else if (rw & REQ_WRITE)
 		op = IOCB_CMD_WRITE_ITER;
 	else
