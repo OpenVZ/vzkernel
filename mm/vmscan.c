@@ -598,6 +598,7 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 			map = memcg_nid_shrinker_map(memcg, nid);
 			nr_max = min(shrinker_nr_max, map->nr_max);
 		} else if (rwsem_is_contended(&shrinker_rwsem)) {
+			freed = freed ? : 1;
 			break;
 		}
 	}
