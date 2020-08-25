@@ -578,7 +578,6 @@ F:	fs/ext4/
 
 FCOE (libfc, libfcoe)
 M:	Chris Leech <cleech@redhat.com>
-M:	Neil Horman <nhorman@redhat.com>
 S:	Maintained
 F:	drivers/scsi/libfc/
 F:	drivers/scsi/fcoe/
@@ -602,7 +601,7 @@ F:	include/linux/dax.h
 F:	include/trace/events/fs_dax.h
 
 FIREWIRE SUBSYSTEM
-M:	Neil Horman <nhorman@redhat.com>
+L:	kernel-patches@redhat.com
 S:	Maintained
 F:	drivers/firewire/
 F:	include/linux/firewire*.h
@@ -893,7 +892,7 @@ M:	Tony Camuso <tcamuso@redhat.com>
 S:	Maintained
 
 ISMT SMBUS DRIVER
-M:	Neil Horman <nhorman@redhat.com>
+M:	Tony Camuso <tcamuso@redhat.com>
 S:	Maintained
 F:	drivers/i2c/busses/i2c-ismt.c
 
@@ -1334,11 +1333,6 @@ S:	Maintained
 F:	drivers/ata/
 F:	include/linux/ata.h
 F:	include/linux/libata.h
-
-SIERRA_NET USB BROADBAND MODEM
-M:	Neil Horman <nhorman@redhat.com>
-S:	Maintained
-F:	drivers/net/usb/sierra_net.c
 
 SFC NETWORK DRIVER
 M:	Jarod Wilson <jarod@redhat.com>
