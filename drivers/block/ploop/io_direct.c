@@ -1721,10 +1721,11 @@ static int dio_autodetect(struct ploop_io *io, unsigned int id)
 	mm_segment_t fs;
 	unsigned int flags;
 
-	if (kaio_backed_ext4)
-		return -1;
 	if (inode->i_sb->s_magic != EXT4_SUPER_MAGIC)
 		return -1; /* not mine */
+
+	if (id == PLOOP_IO_AUTO && kaio_backed_ext4)
+		return -1;
 
 	if (inode->i_sb->s_bdev == NULL) {
 		printk("File on FS EXT(%s) without backing device\n", s_id);
