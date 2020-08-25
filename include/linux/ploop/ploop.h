@@ -208,7 +208,7 @@ struct ploop_io_ops
 	loff_t  (*i_size_read)(struct ploop_io*);
 	fmode_t (*f_mode)(struct ploop_io*);
 
-	int     (*autodetect)(struct ploop_io * io);
+	int     (*autodetect)(struct ploop_io *io, unsigned int id);
 };
 
 static inline loff_t generic_i_size_read(struct ploop_io *io)

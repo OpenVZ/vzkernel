@@ -1208,7 +1208,7 @@ static void kaio_issue_flush(struct ploop_io * io, struct ploop_request *preq)
 	spin_unlock_irq(&io->plo->lock);
 }
 
-static int kaio_autodetect(struct ploop_io * io)
+static int kaio_autodetect(struct ploop_io *io, unsigned int id)
 {
 	struct file  * file  = io->files.file;
 	struct inode * inode = file->f_mapping->host;
