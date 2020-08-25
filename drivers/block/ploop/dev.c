@@ -61,6 +61,12 @@ static long user_threshold __read_mostly = 4L * 1024 * 1024; /* 4GB in KB */
 
 static int large_disk_support __read_mostly = 1; /* true */
 static int native_discard_support __read_mostly = 1;
+/*
+ * This matters in case of PLOOP_IO_AUTO is requested
+ * in struct ploop_ctl_chunk::pctl_type:
+ * 1)not-zero is to choose io_kaio engine for ext4;
+ * 2)zero is to choose io_direct.
+ */
 int kaio_backed_ext4 __read_mostly = 0;
 EXPORT_SYMBOL(kaio_backed_ext4);
 
