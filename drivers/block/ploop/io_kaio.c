@@ -1138,7 +1138,6 @@ static void kaio_queue_settings(struct ploop_io * io, struct request_queue * q)
 	struct inode *inode = file->f_mapping->host;
 
 	if (inode->i_sb->s_magic == EXT4_SUPER_MAGIC) {
-		WARN_ON(!kaio_backed_ext4);
 		blk_queue_stack_limits(q, bdev_get_queue(io->files.bdev));
 		/*
 		 * There is no a way to force block engine to split a request
@@ -1214,7 +1213,8 @@ static int kaio_autodetect(struct ploop_io *io, unsigned int id)
 	struct inode * inode = file->f_mapping->host;
 
 	if (inode->i_sb->s_magic != FUSE_SUPER_MAGIC &&
-	    (inode->i_sb->s_magic != EXT4_SUPER_MAGIC || !kaio_backed_ext4))
+	    (inode->i_sb->s_magic != EXT4_SUPER_MAGIC ||
+	     (id == PLOOP_IO_AUTO && !kaio_backed_ext4)))
 		return -1; /* not mine */
 
 	if (!(file->f_flags & O_DIRECT)) {
