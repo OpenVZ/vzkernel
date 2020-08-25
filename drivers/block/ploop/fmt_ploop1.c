@@ -333,7 +333,9 @@ ploop1_open(struct ploop_delta * delta)
 	    ((u64)ph->bd_size + ph->l1_off) << 9)
 		delta->flags |= PLOOP_FMT_PREALLOCATED;
 
-	if (delta->io.ops->id != PLOOP_IO_DIRECT && !kaio_backed_ext4)
+	/* FIXME: is there a better place for this? */
+	if (delta->io.ops->id != PLOOP_IO_DIRECT &&
+	    delta->io.files.inode->i_sb->s_magic != EXT4_SUPER_MAGIC)
 		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
 
 	return 0;
