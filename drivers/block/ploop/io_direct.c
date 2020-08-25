@@ -1711,7 +1711,7 @@ static int dio_dump(struct ploop_io * io)
 	return -1;
 }
 
-static int dio_autodetect(struct ploop_io * io)
+static int dio_autodetect(struct ploop_io *io, unsigned int id)
 {
 	struct file  * file  = io->files.file;
 	struct inode * inode = file->f_mapping->host;
