@@ -43,7 +43,7 @@ static struct ploop_io_ops * ploop_io_get(struct ploop_io *io, unsigned int id)
 	mutex_lock(&ploop_ios_mutex);
 	list_for_each_entry(ops, &ploop_ios, list) {
 		if ((id == ops->id || id == PLOOP_IO_AUTO) &&
-		    !ops->autodetect(io) && try_module_get(ops->owner)) {
+		    !ops->autodetect(io, id) && try_module_get(ops->owner)) {
 			mutex_unlock(&ploop_ios_mutex);
 			return ops;
 		}
