@@ -345,6 +345,11 @@ int security_sb_parse_opts_str(char *options, struct security_mnt_opts *opts)
 }
 EXPORT_SYMBOL(security_sb_parse_opts_str);
 
+int security_move_mount(const struct path *from_path, const struct path *to_path)
+{
+	return security_ops->move_mount(from_path, to_path);
+}
+
 int security_inode_alloc(struct inode *inode)
 {
 	inode->i_security = NULL;
