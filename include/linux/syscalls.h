@@ -891,4 +891,6 @@ asmlinkage long sys_membarrier(int cmd, int flags);
 
 asmlinkage long sys_mlock2(unsigned long start, size_t len, int flags);
 
+asmlinkage long sys_open_tree(int dfd, const char __user *path, unsigned flags);
+
 #endif
