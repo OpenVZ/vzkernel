@@ -372,6 +372,7 @@
 382	i386	pkey_free		sys_pkey_free
 
 428	i386	open_tree		sys_open_tree
+429	i386	move_mount		sys_move_mount
 
 510	i386	getluid			sys_getluid
 511	i386	setluid			sys_setluid
