@@ -114,6 +114,11 @@ static int cap_sb_parse_opts_str(char *options, struct security_mnt_opts *opts)
 	return 0;
 }
 
+static int cap_move_mount(const struct path *from_path, const struct path *to_path)
+{
+	return 0;
+}
+
 static int cap_dentry_init_security(struct dentry *dentry, int mode,
 					struct qstr *name, void **ctx,
 					u32 *ctxlen)
@@ -1019,6 +1024,7 @@ void __init security_fixup_ops(struct security_operations *ops)
 	set_to_cap_if_null(ops, sb_set_mnt_opts);
 	set_to_cap_if_null(ops, sb_clone_mnt_opts);
 	set_to_cap_if_null(ops, sb_parse_opts_str);
+	set_to_cap_if_null(ops, move_mount);
 	set_to_cap_if_null(ops, dentry_init_security);
 	set_to_cap_if_null(ops, dentry_create_files_as);
 	set_to_cap_if_null(ops, inode_alloc_security);
