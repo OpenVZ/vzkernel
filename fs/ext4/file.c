@@ -139,6 +139,8 @@ static int ext4_fastmap(struct inode *inode, sector_t lblk_sec,
 		return -ENOENT;
 	if (ext4_should_journal_data(inode))
 		return -ENOENT;
+	if (IS_DAX(inode))
+		return -ENOENT;
 
 	unaligned_aio = ext4_unaligned_aio(inode, len, pos);
 	if (unaligned_aio)
