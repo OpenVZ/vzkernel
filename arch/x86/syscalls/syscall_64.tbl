@@ -337,6 +337,7 @@
 331	common	pkey_free		sys_pkey_free
 
 428	common	open_tree		sys_open_tree
+429	common	move_mount		sys_move_mount
 
 500	64	getluid			sys_getluid
 501	64	setluid			sys_setluid
