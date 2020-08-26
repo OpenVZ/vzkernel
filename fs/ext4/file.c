@@ -612,6 +612,16 @@ ext4_file_dax_read_iter(
 }
 #endif
 
+ssize_t
+ext4_file_read_iter(struct kiocb *iocb, struct iov_iter *iter, loff_t pos)
+{
+#ifdef CONFIG_FS_DAX
+	if (IS_DAX(file_inode(iocb->ki_filp)))
+		return ext4_file_dax_read_iter(iocb, iter, pos);
+#endif
+	return generic_file_read_iter(iocb, iter, pos);
+}
+
 static ssize_t
 ext4_file_read(
 	struct kiocb		*iocb,
@@ -623,11 +633,7 @@ ext4_file_read(
 	struct iov_iter iter;
 
 	iov_iter_init(&iter, iovp, nr_segs, size, 0);
-#ifdef CONFIG_FS_DAX
-	if (IS_DAX(file_inode(iocb->ki_filp)))
-		return ext4_file_dax_read_iter(iocb, &iter, pos);
-#endif
-	return generic_file_read_iter(iocb, &iter, pos);
+	return ext4_file_read_iter(iocb, &iter, pos);
 }
 
 const struct file_operations_extend  ext4_file_operations = {
@@ -649,7 +655,7 @@ const struct file_operations_extend  ext4_file_operations = {
 		.splice_read	= generic_file_splice_read,
 		.splice_write	= generic_file_splice_write,
 		.fallocate	= ext4_fallocate,
-		.read_iter	= generic_file_read_iter,
+		.read_iter	= ext4_file_read_iter,
 		.write_iter	= ext4_file_write_iter,
 	},
 	.mmap_supported_flags = MAP_SYNC,
