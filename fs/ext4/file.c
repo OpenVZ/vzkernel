@@ -580,16 +580,14 @@ loff_t ext4_llseek(struct file *file, loff_t offset, int whence)
 
 #ifdef CONFIG_FS_DAX
 static ssize_t
-ext4_file_dax_read(
+ext4_file_dax_read_iter(
 	struct kiocb		*iocb,
-	const struct iovec	*iovp,
-	unsigned long		nr_segs,
+	struct iov_iter		*iter,
 	loff_t			pos)
 {
-	size_t			size = iov_length(iovp, nr_segs);
+	size_t			size = iov_iter_count(iter);
 	ssize_t			ret = 0;
 	struct inode *inode = file_inode(iocb->ki_filp);
-	struct iov_iter iter;
 
 	if (!size)
 		return 0; /* skip atime */
@@ -602,12 +600,10 @@ ext4_file_dax_read(
 	if (!IS_DAX(inode)) {
 		inode_unlock(inode);
 		/* Fallback to buffered IO in case we cannot support DAX */
-		return generic_file_aio_read(iocb, iovp, nr_segs, pos);
+		return generic_file_read_iter(iocb, iter, pos);
 	}
 
-	iov_iter_init(&iter, iovp, nr_segs, size, 0);
-
-	ret = dax_iomap_rw(READ, iocb, &iter, pos,
+	ret = dax_iomap_rw(READ, iocb, iter, pos,
 					size, &ext4_iomap_ops);
 	inode_unlock(inode);
 
@@ -623,11 +619,15 @@ ext4_file_read(
 	unsigned long		nr_segs,
 	loff_t 			pos)
 {
+	size_t size = iov_length(iovp, nr_segs);
+	struct iov_iter iter;
+
+	iov_iter_init(&iter, iovp, nr_segs, size, 0);
 #ifdef CONFIG_FS_DAX
 	if (IS_DAX(file_inode(iocb->ki_filp)))
-		return ext4_file_dax_read(iocb, iovp, nr_segs, pos);
+		return ext4_file_dax_read_iter(iocb, &iter, pos);
 #endif
-	return generic_file_aio_read(iocb, iovp, nr_segs, pos);
+	return generic_file_read_iter(iocb, &iter, pos);
 }
 
 const struct file_operations_extend  ext4_file_operations = {
