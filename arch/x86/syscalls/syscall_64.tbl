@@ -336,6 +336,8 @@
 330	common	pkey_alloc		sys_pkey_alloc
 331	common	pkey_free		sys_pkey_free
 
+428	common	open_tree		sys_open_tree
+
 500	64	getluid			sys_getluid
 501	64	setluid			sys_setluid
 502	64	setublimit		sys_setublimit
