@@ -175,12 +175,6 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 	if (test_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state))
 		return 0;
 
-	/* To do: add discard alignment for v1 */
-	if (delta->plo->fmt_version != PLOOP_FMT_V2) {
-		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
-		return 0;
-	}
-
 	ret = -ENOMEM;
 	/* Use multiplier 10 for bigger batch and better performance */
 	nr_all_pages = 10 * cluster_size_in_bytes(delta->plo) / PAGE_SIZE;
@@ -336,6 +330,10 @@ ploop1_open(struct ploop_delta * delta)
 	/* FIXME: is there a better place for this? */
 	if (delta->io.ops->id == PLOOP_IO_KAIO &&
 	    delta->io.files.inode->i_sb->s_magic == FUSE_SUPER_MAGIC)
+		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
+
+	/* TODO: add discard alignment for v1 */
+	if (delta->plo->fmt_version != PLOOP_FMT_V2)
 		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
 
 	return 0;
