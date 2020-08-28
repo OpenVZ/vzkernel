@@ -373,6 +373,83 @@ static u32 show_discard_granularity(struct ploop_device * plo)
 	return plo->queue->limits.discard_granularity;
 }
 
+static int store_discard_granularity(struct ploop_device *plo, u32 val)
+{
+	struct ploop_delta *delta;
+	struct request_queue *q;
+	struct inode *inode;
+	int ret = 0;
+
+	mutex_lock(&plo->ctl_mutex);
+	q = plo->queue;
+	if (val == q->limits.discard_granularity)
+		goto unlock;
+
+	delta = ploop_top_delta(plo);
+	if (!delta) {
+		ret = -ENODEV;
+		goto unlock;
+	}
+
+	inode = delta->io.files.inode;
+	if (inode->i_sb->s_magic != EXT4_SUPER_MAGIC) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	if (val == cluster_size_in_bytes(plo)) {
+		ploop_set_discard_limits(plo);
+		plo->force_split_discard_reqs = false;
+		goto unlock;
+	}
+
+	if (val != inode->i_sb->s_blocksize) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	q->limits.discard_granularity = val;
+	/*
+	 * There is no a way to force block engine to split a request
+	 * to fit a single cluster, when discard granuality is 4K
+	 * (inherited from fs block size in blk_queue_stack_limits()).
+	 * So, ploop_make_request() splits them.
+	 */
+	plo->force_split_discard_reqs = true;
+	/*
+	 * Why not (1 << io->plo->cluster_log)?
+	 * Someone may want to clear indexes in case of a request
+	 * is big enough to fit the whole cluster.
+	 * In case of max_discard_sectors is 1 cluster, a request
+	 * for [cluster_start - 4K, cluster_start + cluster_size)
+	 * at block level will be splitted in two requests:
+	 *
+	 * [cluster_start - 4K, cluster_start + cluster_size - 4K)
+	 * [cluster_start + cluster_size - 4K, cluster_start + cluster_size)
+	 *
+	 * Then, ploop_make_request() splits the first of them in two
+	 * to fit a single cluster, so all three requests will be smaller
+	 * then 1 cluster, and no index will be cleared.
+	 *
+	 * Note, this does not solve a problem, when a request covers
+	 * 3 clusters: [cluster_start - 4K, cluster_start + 2 * cluster_size],
+	 * so the third cluster's index will remain. This will require
+	 * unlimited max_discard_sectors and splitting every request
+	 * in ploop_make_request(). We don't want that in that context.
+	 *
+	 * But even in current view, this makes indexes to be cleared
+	 * more frequently, and index-clearing code will be tested better.
+	 *
+	 * Anyway, in general this may be an excess functionality.
+	 * If it's so, it will be dropped later.
+	 */
+	q->limits.max_discard_sectors = (1 << plo->cluster_log) * 2 - 1;
+
+unlock:
+	mutex_unlock(&plo->ctl_mutex);
+	return ret;
+}
+
 static u32 show_discard_alignment(struct ploop_device * plo)
 {
 	return plo->queue->limits.discard_alignment;
@@ -612,7 +689,7 @@ static struct attribute *tune_attributes[] = {
 	_A2(congestion_low_watermark),
 	_A2(max_active_requests),
 	_A2(push_backup_timeout),
-	_A(discard_granularity),
+	_A2(discard_granularity),
 	_A(discard_alignment),
 	_A2(discard_zeroes_data),
 	_A2(trusted),
