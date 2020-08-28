@@ -3420,8 +3420,10 @@ static int ploop_add_delta(struct ploop_device * plo, unsigned long arg)
 	if (err)
 		goto out_destroy;
 
-	if (list_empty(&plo->map.delta_list))
+	if (list_empty(&plo->map.delta_list)) {
 		plo->fmt_version = PLOOP_FMT_UNDEFINED;
+		clear_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
+	}
 
 	err = delta->ops->open(delta);
 	if (err)
