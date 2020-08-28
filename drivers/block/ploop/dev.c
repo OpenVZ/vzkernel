@@ -4249,6 +4249,7 @@ out_err:
 
 static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 {
+	struct request_queue *q = plo->queue;
 	int p, active_reqs;
 	struct ploop_delta * delta;
 	int cnt;
@@ -4308,6 +4309,9 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 	}
 
 	plo->tune.trusted = 0;
+
+	q->limits.discard_granularity = 0;
+	q->limits.max_discard_sectors = 0;
 
 	clear_bit(PLOOP_S_PUSH_BACKUP, &plo->state);
 	ploop_pb_stop(plo->pbd, true);
@@ -5644,6 +5648,8 @@ static struct ploop_device *__ploop_dev_alloc(int index)
 	KOBJECT_INIT(&plo->kobj, &ploop_ktype);
 	atomic_inc(&plo_count);
 	bio_list_init(&plo->bio_discard_list);
+	plo->queue->limits.discard_granularity = 0;
+	plo->queue->limits.max_discard_sectors = 0;
 
 	dk->major		= ploop_major;
 	dk->first_minor		= index << PLOOP_PART_SHIFT;
