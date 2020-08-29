@@ -1054,7 +1054,7 @@ static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg,
 	struct tcp_sock *tp = tcp_sk(sk);
 	int err, flags;
 
-	if (!(sysctl_tcp_fastopen & TFO_CLIENT_ENABLE))
+	if (!(sock_net(sk)->ipv4.sysctl_tcp_fastopen & TFO_CLIENT_ENABLE))
 		return -EOPNOTSUPP;
 	if (tp->fastopen_req != NULL)
 		return -EALREADY; /* Another Fast Open is in progress */

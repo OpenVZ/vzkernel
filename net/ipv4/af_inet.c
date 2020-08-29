@@ -193,7 +193,7 @@ int inet_listen(struct socket *sock, int backlog)
 {
 	struct sock *sk = sock->sk;
 	unsigned char old_state;
-	int err;
+	int err, tcp_fastopen;
 
 	lock_sock(sk);
 
@@ -216,14 +216,15 @@ int inet_listen(struct socket *sock, int backlog)
 		 * socket was in TCP_LISTEN state previously but was
 		 * shutdown() (rather than close()).
 		 */
-		if ((sysctl_tcp_fastopen & TFO_SERVER_ENABLE) != 0 &&
+		tcp_fastopen = sock_net(sk)->ipv4.sysctl_tcp_fastopen;
+		if ((tcp_fastopen & TFO_SERVER_ENABLE) != 0 &&
 		    inet_csk(sk)->icsk_accept_queue.fastopenq == NULL) {
-			if ((sysctl_tcp_fastopen & TFO_SERVER_WO_SOCKOPT1) != 0)
+			if ((tcp_fastopen & TFO_SERVER_WO_SOCKOPT1) != 0)
 				err = fastopen_init_queue(sk, backlog);
-			else if ((sysctl_tcp_fastopen &
+			else if ((tcp_fastopen &
 				  TFO_SERVER_WO_SOCKOPT2) != 0)
 				err = fastopen_init_queue(sk,
-				    ((uint)sysctl_tcp_fastopen) >> 16);
+				    ((uint)tcp_fastopen) >> 16);
 			else
 				err = 0;
 			if (err)
