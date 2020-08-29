@@ -4719,6 +4719,7 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 		mutex_lock(&inode->i_mutex);
 		mutex_lock(&cgroup_mutex);
 		cgroup_rm_file(cgrp, cft);
+		dput(cgrp->dentry);
 		BUG_ON(!rcu_dereference_protected(cgrp->ve_owner,
 				lockdep_is_held(&cgroup_mutex)));
 		rcu_assign_pointer(cgrp->ve_owner, NULL);
