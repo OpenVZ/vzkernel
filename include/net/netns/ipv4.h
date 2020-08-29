@@ -76,6 +76,8 @@ struct netns_ipv4 {
 	kgid_t sysctl_ping_group_range[2];
 	long sysctl_tcp_mem[3];
 
+	int sysctl_tcp_fastopen;
+
 	atomic_t dev_addr_genid;
 	RH_KABI_FILL_HOLE(unsigned int	fib_seq)	/* protected by rtnl_mutex */
 
