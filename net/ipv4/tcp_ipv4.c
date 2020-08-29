@@ -2533,6 +2533,9 @@ static int __net_init tcp_sk_init(struct net *net)
 	net->ipv4_sysctl_tcp_keepalive_probes = TCP_KEEPALIVE_PROBES;
 	net->ipv4_sysctl_tcp_keepalive_intvl = TCP_KEEPALIVE_INTVL;
 
+	/* preserve RHEL7 default tcp_fastopen sysctl value */
+	net->ipv4.sysctl_tcp_fastopen = 0;
+
 	return 0;
 
 fail:
