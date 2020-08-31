@@ -1156,13 +1156,28 @@ F:	include/linux/libnvdimm.h
 F:	include/linux/nd.h
 F:	include/uapi/linux/ndctl.h
 
-NVM EXPRESS BLOCK DRIVER (nvme)
+NVM EXPRESS DRIVER (nvme)
 M:	David Milburn <dmilburn@redhat.com>
+M:	Gopal Tiwari <gtiwari@redhat.com>
 S:	Maintained
-F:	drivers/block/nvme-core.c
-F:	drivers/block/nvme-scsi.c
+F:	drivers/nvme/host/
+F:	drivers/nvme/target/
 F:	include/linux/nvme.h
-F:	include/uapi/linux/nvme.h
+F:	include/linux/nvme-rdma*.h
+
+NVM EXPRESS DRIVER FC
+M:	Ewan D. Milne <emilne@redhat.com>
+S:	Maintained
+F:	drivers/nvme/host/fc.c
+F:	drivers/nvme/target/fc.c
+F:	include/linux/nvme-fc*.h
+
+NVM EXPRESS DRIVER TCP
+M:	Chris Leech <cleech@redhat.com>
+S:	Maintained
+F:	drivers/nvme/host/tcp.c
+F:	drivers/nvme/target/tcp.c
+F:	include/linux/nvme-tcp*.h
 
 OMNI-PATH ARCHITECTURE (opa)
 M:	Kamal Heib <kheib@redhat.com>
