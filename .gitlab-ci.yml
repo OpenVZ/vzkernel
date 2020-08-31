@@ -1,10 +1,169 @@
-# CI definitions for ark-patches and internal are maintained in a single file
-# outside the main repository because the two branches are regularly merged
-# together in release branches. Rather than trying to keep the two branches in
-# sync or have merge conflicts each time we merge the two branches, the
-# definition is stored externally and included in each branch.
-#
-# To update any CI jobs, please submit any merge requests to
-# https://gitlab.com/cki-project/kernel-ark-ci/.
-include:
-  - remote: 'https://gitlab.com/cki-project/kernel-ark-ci/raw/master/gitlab-ci.yml'
+# This CI will only work for project members. CI for public contributors
+# runs via a webhook on the merge requests. There's nothing you have to do if
+# you want your changes tested -- created pipeline will be automatically
+# linked in the merge request and appropriate labels will be added to it.
+# Changes to this file will NOT be reflected in the webhook testing.
+
+stages:
+  - test
+  - build
+  - deploy
+
+workflow:
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+
+trigger_pipeline:
+  stage: test
+  variables:
+    # The following ones are required by CKI pipeline definition
+    git_url: ${CI_MERGE_REQUEST_PROJECT_URL}
+    branch: ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}
+    commit_hash: ${CI_COMMIT_SHA}
+    mr_id: ${CI_MERGE_REQUEST_IID}
+    mr_url: ${CI_MERGE_REQUEST_PROJECT_URL}/-/merge_requests/${CI_MERGE_REQUEST_IID}
+    title: ${CI_COMMIT_TITLE}
+    name: kernel-ark-${CI_MERGE_REQUEST_ID}
+
+    # We only need srpm so skip the rest of the stages
+    kernel_type: upstream
+    make_target: rpm
+    builder_image: registry.gitlab.com/cki-project/containers/builder-rawhide
+    builder_image_tag: latest
+    srpm_make_target: dist-srpm
+    skip_build: 'true'
+    skip_publish: 'true'
+    skip_test: 'true'
+
+  trigger:
+    project: redhat/red-hat-ci-tools/kernel/cki-runs/trusted-pipelines
+    branch: kernel-ark
+    strategy: depend
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+
+# scheduled job
+merge_upstream:
+  image: registry.gitlab.com/cki-project/containers/builder-fedora
+  variables:
+    GIT_DEPTH: "0"
+    GIT_CLONE_PATH: $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kernel-ark
+  before_script:
+    - echo "fastestmirror=true" >> /etc/dnf/dnf.conf
+    - dnf -y install python3-gitlab git openssh-clients dnf-utils gnupg2
+    - git config user.name "Fedora Kernel Team"
+    - git config user.email "kernel-team@fedoraproject.org"
+    - echo "$PYTHON_GITLAB_CONFIG" >> ~/.python-gitlab.cfg
+    # Need SSH since the clone is set up without write access.
+    - eval $(ssh-agent -s)
+    - echo "$PRIVATE_KEY" | tr -d '\r' | ssh-add - > /dev/null
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo "$GITLAB_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    - git remote add gitlab git@gitlab.com:cki-project/kernel-ark.git
+    - gpg2 --import "$TORVALDS_GPG_KEY"
+  script:
+    - git checkout --track origin/master && git describe
+    - git checkout --track origin/os-build && git describe
+    - export PROJECT_ID="$CI_PROJECT_ID"
+    - make dist-merge-upstream-push || exit 1
+  retry: 2
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $RAWHIDE_RELEASE == "false"'
+
+# scheduled job
+rawhide_release:
+  image: registry.gitlab.com/cki-project/containers/builder-fedora
+  variables:
+    GIT_DEPTH: "0"
+    GIT_CLONE_PATH: $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kernel-ark
+  before_script:
+    - echo "fastestmirror=true" >> /etc/dnf/dnf.conf
+    - dnf -y install python3-gitlab git openssh-clients dnf-utils gnupg2
+    - git config user.name "Fedora Kernel Team"
+    - git config user.email "kernel-team@fedoraproject.org"
+    - echo "$PYTHON_GITLAB_CONFIG" >> ~/.python-gitlab.cfg
+    # Need SSH since the clone is set up without write access.
+    - eval $(ssh-agent -s)
+    - echo "$PRIVATE_KEY" | tr -d '\r' | ssh-add - > /dev/null
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo "$GITLAB_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    - git remote add gitlab git@gitlab.com:cki-project/kernel-ark.git
+    - gpg2 --import "$TORVALDS_GPG_KEY"
+  script:
+    - git checkout --track origin/master && git describe
+    - git checkout --track origin/ark-latest && git describe
+    - git checkout --track origin/os-build && git describe
+    - export PROJECT_ID="$CI_PROJECT_ID"
+    - redhat/scripts/ci/ark-create-release.sh "master" "$CI_PROJECT_ID" || exit_code=$?
+    - if [ $exit_code -eq 3 ]; then echo "Tag exists, halting" && exit 0; fi;
+    - if [ $exit_code -ne 0 ]; then echo "Unable to create release tag" && exit 1; fi;
+    - git push gitlab os-build
+    - >
+      for branch in $(git branch | grep configs/"$(date +%F)"); do
+        git push \
+          -o merge_request.create \
+          -o merge_request.target=os-build \
+          -o merge_request.remove_source_branch \
+          gitlab "$branch"
+      done;
+    - git push gitlab "$(git describe)"
+    - git push gitlab ark/*
+    - git push -f gitlab ark-latest
+  retry: 2
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $RAWHIDE_RELEASE == "true"'
+
+test_docs:
+  stage: test
+  image: registry.gitlab.com/cki-project/containers/python
+  before_script:
+    - python3 -m venv ~/docs-venv
+    - source ~/docs-venv/bin/activate
+    - pip install sphinx
+    - cd redhat/docs/
+  script: make SPHINXOPTS="-W" html
+  rules:
+    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "os-build"'
+      changes:
+        - redhat/docs/**/*
+
+
+docs:
+  stage: build
+  image: registry.gitlab.com/cki-project/containers/python
+  before_script:
+    - python3 -m venv ~/docs-venv
+    - source ~/docs-venv/bin/activate
+    - pip install sphinx
+    - cd redhat/docs/
+  script: make SPHINXOPTS="-W" html
+  artifacts:
+    paths:
+      - redhat/docs/_build/html/
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "os-build"'
+      changes:
+        - redhat/docs/**/*
+
+pages:
+  stage: deploy
+  image: registry.gitlab.com/cki-project/containers/python
+  dependencies:
+    - docs
+  script:
+    - mv redhat/docs/_build/html/ public/
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "os-build"'
+      changes:
+        - redhat/docs/**/*
