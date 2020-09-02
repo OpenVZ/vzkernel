@@ -46,6 +46,7 @@
 #include <linux/parser.h>
 #include <linux/bpf.h>
 #include <linux/filter.h>
+#include <linux/ve.h>
 
 #include "internal.h"
 
@@ -10044,6 +10045,9 @@ SYSCALL_DEFINE5(perf_event_open,
 	/* for future expandability... */
 	if (flags & ~PERF_FLAG_ALL)
 		return -EINVAL;
+
+	if (!ve_is_super(get_exec_env()))
+		return -EACCES;
 
 	err = perf_copy_attr(attr_uptr, &attr);
 	if (err)
