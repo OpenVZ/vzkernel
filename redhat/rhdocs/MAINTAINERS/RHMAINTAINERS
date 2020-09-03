@@ -492,6 +492,20 @@ S:	Maintained
 F:	Documentation/filesystems/cramfs.txt
 F:	fs/cramfs/
 
+CRYPTO API
+M:	Herbert Xu <herbert.xu@redhat.com>
+M:	"David S. Miller" <davem@redhat.com>
+R:	Ondrej Mosnacek <omosnace@redhat.com>
+S:	Maintained
+F:	Documentation/crypto/
+F:	Documentation/devicetree/bindings/crypto/
+F:	arch/*/crypto/
+F:	crypto/
+F:	drivers/crypto/
+F:	include/crypto/
+F:	include/linux/crypto*
+F:	lib/crypto/
+
 DEVICE DIRECT ACCESS
 M:	Jeff Moyer <jmoyer@redhat.com>
 S:	Maintained
@@ -532,11 +546,17 @@ M:	David Teigland <teigland@redhat.com>
 S:	Maintained
 F:	fs/dlm/
 
-DMA MAPPING SUPPORT
+DMA BUFFER SHARING FRAMEWORK
+M:	Lyude Paul <lyude@redhat.com>
+S:	Maintained
+F:	drivers/dma-buf/
+F:	include/linux/dma-buf*
+
+DMA SUPPORT
 M:	Jerry Snitselaar <jsnitsel@redhat.com>
 M:	Donald Dutile <ddutile@redhat.com>
 S:	Maintained
-F:	kernel/dma/*
+F:	kernel/dma/
 F:	include/linux/dma*
 
 DM-RAID SUPPORT
@@ -609,7 +629,7 @@ F:	include/linux/firewire*.h
 FTRACE
 M:	Jerome Marchand <jmarchan@redhat.com>
 S:	Maintained
-F:	kernel/trace/ftrace.c
+F:	kernel/trace/
 F:	include/linux/ftrace*
 
 FUSE FILESYSTEM
@@ -1232,6 +1252,11 @@ S:	Maintained
 F:	drivers/pinctrl/
 F:	include/linux/pinctrl/
 
+LINUX FOR POWERPC (64-BIT)
+L:	kernel-patches@redhat.com
+S:	Maintained
+F:	arch/powerpc/
+
 POWER STATE COORDINATION INTERFACE (PSCI)
 M:	Mark Salter <msalter@redhat.com>
 S:	Maintained
@@ -1472,8 +1497,10 @@ F:	samples/vfio-mdev/
 VIDEO DRIVERS
 M:	David Airlie <airlied@redhat.com>
 M:	Adam Jackson <ajax@redhat.com>
+M:	Lyude Paul <lyude@redhat.com>
 S:	Maintained
 F:	drivers/gpu/
+F:	drivers/video/
 
 VIRT LIB
 M:	Alex Williamson <alex.williamson@redhat.com>
@@ -1514,8 +1541,10 @@ F:	Documentation/devicetree/bindings/virtio/
 F:	drivers/virtio/
 F:	tools/virtio/
 F:	drivers/net/virtio_net.c
+F:	drivers/vdpa/
 F:	drivers/block/virtio_blk.c
 F:	include/linux/virtio*.h
+F:	include/linxu/vdpa.h
 F:	include/uapi/linux/virtio_*.h
 F:	drivers/crypto/virtio/
 F:	mm/balloon_compaction.c
