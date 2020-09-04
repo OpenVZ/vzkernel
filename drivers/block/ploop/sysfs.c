@@ -396,18 +396,13 @@ static int store_discard_granularity(struct ploop_device *plo, u32 val)
 		goto unlock;
 	}
 
-	inode = delta->io.files.inode;
-	if (inode->i_sb->s_magic != EXT4_SUPER_MAGIC) {
-		ret = -EINVAL;
-		goto unlock;
-	}
-
 	if (val == cluster_size_in_bytes(plo)) {
 		ploop_set_discard_limits(plo);
 		plo->force_split_discard_reqs = false;
 		goto unlock;
 	}
 
+	inode = delta->io.files.inode;
 	if (val != inode->i_sb->s_blocksize) {
 		ret = -EINVAL;
 		goto unlock;
