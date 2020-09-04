@@ -1138,25 +1138,8 @@ static void kaio_queue_settings(struct ploop_io * io, struct request_queue * q)
 	struct inode *inode = file->f_mapping->host;
 
 	if (inode->i_sb->s_magic == EXT4_SUPER_MAGIC) {
-		unsigned int max_discard_sectors = q->limits.max_discard_sectors;
-		unsigned int discard_granularity = q->limits.discard_granularity;
-
-		/*
-		 * It would be better to call this function not only on start
-		 * like now (on every top delta update, e.g. before start).
-		 * But this is difficult with two engines and different holes
-		 * policy. This should be reworked after we switch to io_kaio
-		 * completely.
-		 */
 		blk_queue_stack_limits(q, bdev_get_queue(io->files.bdev));
-		if (discard_granularity) {
-			/* Restore user values set before PLOOP_IOC_START */
-			q->limits.max_discard_sectors = max_discard_sectors;
-			q->limits.discard_granularity = discard_granularity;
-		} else {
-			/* Set defaults */
-			ploop_set_discard_limits(io->plo);
-		}
+		ploop_set_discard_limits(io->plo);
 		return;
 	}
 
