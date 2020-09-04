@@ -1143,6 +1143,8 @@ static void kaio_queue_settings(struct ploop_io * io, struct request_queue * q)
 		return;
 	}
 
+	/* FUSE default is maintaince-mode discard */
+	set_bit(PLOOP_S_NO_FALLOC_DISCARD, &io->plo->state);
 	blk_set_stacking_limits(&q->limits);
 	/*
 	 * Maintaince mode based discard splits a big bio itself,
@@ -1153,7 +1155,6 @@ static void kaio_queue_settings(struct ploop_io * io, struct request_queue * q)
 	 *
 	 * https://jira.sw.ru/browse/PSBM-95772
 	 */
-	//ploop_set_discard_limits(io->plo);
 	q->limits.max_discard_sectors = UINT_MAX >> 9;
 }
 
