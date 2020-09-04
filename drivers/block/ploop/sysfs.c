@@ -381,6 +381,11 @@ static int store_discard_granularity(struct ploop_device *plo, u32 val)
 	int ret = 0;
 
 	mutex_lock(&plo->ctl_mutex);
+	if (test_bit(PLOOP_S_RUNNING, &plo->state)) {
+		ret = -EBUSY;
+		goto unlock;
+	}
+
 	q = plo->queue;
 	if (val == q->limits.discard_granularity)
 		goto unlock;
