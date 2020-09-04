@@ -3386,6 +3386,21 @@ static int ploop_set_max_delta_size(struct ploop_device *plo, unsigned long arg)
 	return 0;
 }
 
+static void autoconfigure_queue_settings(struct ploop_device *plo)
+{
+	struct ploop_delta *top_delta = ploop_top_delta(plo);
+	struct request_queue *q = plo->queue;
+
+	if (test_bit(PLOOP_S_RUNNING, &plo->state))
+		return;
+
+	plo->force_split_discard_reqs = false;
+	blk_set_default_limits(&q->limits);
+	top_delta->io.ops->queue_settings(&top_delta->io, q);
+	/* REQ_WRITE_SAME is not supported */
+	blk_queue_max_write_same_sectors(q, 0);
+}
+
 static int ploop_add_delta(struct ploop_device * plo, unsigned long arg)
 {
 	int err;
@@ -3451,6 +3466,17 @@ static int ploop_add_delta(struct ploop_device * plo, unsigned long arg)
 	mutex_unlock(&plo->sysfs_mutex);
 	set_bit(PLOOP_S_CHANGED, &plo->state);
 
+	/*
+	 * Inherit queue settings from top_delta. This is called every time
+	 * a new delta is added. We do not call this once in ploop_start(),
+	 * because of period between last delta addition and ploop start
+	 * is time to overwrite autoconfigured deraults from userspace
+	 * (e.g., to disable maintaince mode based discard).
+	 * We can't allow to overwrite after start, since we populate
+	 * holes_bitmap in ploop1 on start, and it depends on selected
+	 * discard mode.
+	 */
+	autoconfigure_queue_settings(plo);
 	return 0;
 
 out_close:
@@ -4214,12 +4240,6 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 
 	blk_queue_merge_bvec(q, ploop_merge_bvec);
 	blk_queue_flush(q, REQ_FLUSH);
-
-	plo->force_split_discard_reqs = false;
-	blk_set_default_limits(&q->limits);
-	top_delta->io.ops->queue_settings(&top_delta->io, q);
-	/* REQ_WRITE_SAME is not supported */
-	blk_queue_max_write_same_sectors(q, 0);
 
 	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, q);
 	queue_flag_clear_unlocked(QUEUE_FLAG_STANDBY, q);
