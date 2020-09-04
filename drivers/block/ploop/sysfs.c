@@ -386,6 +386,11 @@ static int store_discard_granularity(struct ploop_device *plo, u32 val)
 		goto unlock;
 	}
 
+	if (!may_allow_falloc_discard(plo)) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+
 	q = plo->queue;
 	if (val == q->limits.discard_granularity)
 		goto unlock;
@@ -397,6 +402,7 @@ static int store_discard_granularity(struct ploop_device *plo, u32 val)
 	}
 
 	if (val == cluster_size_in_bytes(plo)) {
+		clear_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state);
 		ploop_set_discard_limits(plo);
 		plo->force_split_discard_reqs = false;
 		goto unlock;
@@ -408,6 +414,7 @@ static int store_discard_granularity(struct ploop_device *plo, u32 val)
 		goto unlock;
 	}
 
+	clear_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state);
 	q->limits.discard_granularity = val;
 	/*
 	 * There is no a way to force block engine to split a request
