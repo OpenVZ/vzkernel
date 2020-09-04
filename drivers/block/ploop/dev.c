@@ -3773,6 +3773,9 @@ static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 	if (err)
 		goto out_close2;
 
+	if (!may_allow_falloc_discard(plo))
+		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state);
+
 	enable_discard(plo);
 	return 0;
 
