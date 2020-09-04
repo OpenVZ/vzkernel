@@ -884,6 +884,7 @@ static inline void ploop_set_discard_limits(struct ploop_device *plo)
 }
 struct map_node;
 
+bool may_allow_falloc_discard(struct ploop_device *plo);
 int ploop_fastmap(struct ploop_map * map, cluster_t block, iblock_t *result);
 void ploop_update_map(struct ploop_map * map, int level, cluster_t block, iblock_t iblk);
 void ploop_update_map_hdr(struct ploop_map * map, u8 *hdr, int hdr_size);
