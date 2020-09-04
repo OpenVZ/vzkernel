@@ -4206,7 +4206,6 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 	/* Deltas are ready. Enable block device. */
 	set_device_ro(bdev, (top_delta->flags & PLOOP_FMT_RDONLY) != 0);
 
-	blk_queue_make_request(q, ploop_make_request);
 	q->queuedata = plo;
 	q->backing_dev_info.congested_fn = ploop_congested;
 	q->backing_dev_info.congested_fn2 = ploop_congested2;
@@ -4217,6 +4216,7 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 	blk_queue_flush(q, REQ_FLUSH);
 
 	plo->force_split_discard_reqs = false;
+	blk_set_default_limits(&q->limits);
 	top_delta->io.ops->queue_settings(&top_delta->io, q);
 	/* REQ_WRITE_SAME is not supported */
 	blk_queue_max_write_same_sectors(q, 0);
@@ -5616,6 +5616,8 @@ static struct ploop_device *__ploop_dev_alloc(int index)
 	dk = plo->disk = alloc_disk(PLOOP_PART_MAX);
 	if (!plo->disk)
 		goto out_queue;
+
+	blk_queue_make_request(plo->queue, ploop_make_request);
 
 	spin_lock_init(&plo->lock);
 	spin_lock_init(&plo->dummy_lock);
