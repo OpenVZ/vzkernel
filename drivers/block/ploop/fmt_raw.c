@@ -61,9 +61,6 @@ raw_open(struct ploop_delta * delta)
 		return -EINVAL;
 	}
 
-	if (delta->io.ops->id == PLOOP_IO_DIRECT)
-		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
-
 	/* no more allocations at all */
 	delta->flags |= PLOOP_FMT_PREALLOCATED;
 

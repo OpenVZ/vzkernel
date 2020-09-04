@@ -327,15 +327,6 @@ ploop1_open(struct ploop_delta * delta)
 	    ((u64)ph->bd_size + ph->l1_off) << 9)
 		delta->flags |= PLOOP_FMT_PREALLOCATED;
 
-	/* FIXME: is there a better place for this? */
-	if (delta->io.ops->id == PLOOP_IO_KAIO &&
-	    delta->io.files.inode->i_sb->s_magic == FUSE_SUPER_MAGIC)
-		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
-
-	/* TODO: add discard alignment for v1 */
-	if (delta->plo->fmt_version != PLOOP_FMT_V2)
-		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &delta->plo->state);
-
 	return 0;
 
 out_err:
