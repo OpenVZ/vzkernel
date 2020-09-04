@@ -1749,6 +1749,9 @@ static struct cgroupfs_root *cgroup_root_from_opts(struct cgroup_sb_opts *opts)
 		strcpy(root->name, opts->name);
 	if (opts->cpuset_clone_children)
 		set_bit(CGRP_CPUSET_CLONE_CHILDREN, &root->top_cgroup.flags);
+
+	RCU_INIT_POINTER(root->top_cgroup.ve_owner, &ve0);
+
 	return root;
 }
 
@@ -1859,7 +1862,6 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 		goto drop_modules;
 	}
 
-	RCU_INIT_POINTER(new_root->top_cgroup.ve_owner, &ve0);
 	opts.new_root = new_root;
 
 	/* Locate an existing or new sb for this hierarchy */
