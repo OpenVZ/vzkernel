@@ -3401,6 +3401,30 @@ static void autoconfigure_queue_settings(struct ploop_device *plo)
 	blk_queue_max_write_same_sectors(q, 0);
 }
 
+bool may_allow_falloc_discard(struct ploop_device *plo)
+{
+	struct ploop_delta *delta;
+
+	/*
+	 * V1 format may have clusters unaligned by cluster size.
+	 * But does libploop permit them?!
+	 */
+	if (plo->fmt_version == PLOOP_FMT_V1)
+		return false;
+
+	lockdep_assert_held(&plo->ctl_mutex);
+	if (list_empty(&plo->map.delta_list))
+		return false;
+	/* Base delta is RAW and io is io_direct? */
+	delta = list_last_entry(&plo->map.delta_list,
+				struct ploop_delta, list);
+	if (delta->io.ops->id == PLOOP_IO_DIRECT &&
+	    delta->ops->id == PLOOP_FMT_RAW)
+		return false;
+
+	return true;
+}
+
 static int ploop_add_delta(struct ploop_device * plo, unsigned long arg)
 {
 	int err;
@@ -4214,6 +4238,9 @@ static int ploop_start(struct ploop_device * plo, struct block_device *bdev)
 		plo->free_qlen++;
 		plo->free_qmax++;
 	}
+
+	if (!may_allow_falloc_discard(plo))
+		set_bit(PLOOP_S_NO_FALLOC_DISCARD, &plo->state);
 
 	list_for_each_entry_reverse(delta, &plo->map.delta_list, list) {
 		err = delta->ops->start(delta);
