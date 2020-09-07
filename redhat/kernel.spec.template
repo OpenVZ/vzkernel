@@ -353,7 +353,6 @@ Summary: The Linux kernel
 %define kernel_image vmlinux
 %define kernel_image_elf 1
 %define all_arch_configs kernel-%{version}-ppc64le*.config
-%define kcflags -O3
 %endif
 
 %ifarch s390x
