@@ -1,0 +1,19 @@
+# CONFIG_XEN_UNPOPULATED_ALLOC:
+# 
+# Use unpopulated memory ranges in order to create mappings for guest
+# memory regions, including grant maps and foreign pages. This avoids
+# having to balloon out RAM regions in order to obtain physical memory
+# space to create such mappings.
+# 
+# Symbol: XEN_UNPOPULATED_ALLOC [=y]
+# Type  : bool
+# Defined at drivers/xen/Kconfig:328
+#   Prompt: Use unpopulated memory ranges for guest mappings
+#   Depends on: XEN [=y] && X86 [=y] && ZONE_DEVICE [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Xen driver support
+# 
+# 
+# 
+CONFIG_XEN_UNPOPULATED_ALLOC=y
