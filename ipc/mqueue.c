@@ -35,6 +35,8 @@
 #include <linux/ipc_namespace.h>
 #include <linux/user_namespace.h>
 #include <linux/slab.h>
+#include <linux/exportfs.h>
+#include <linux/random.h>
 
 #include <net/sock.h>
 #include "util.h"
@@ -86,6 +88,7 @@ struct mqueue_inode_info {
 };
 
 static const struct inode_operations mqueue_dir_inode_operations;
+static const struct export_operations mqueue_export_ops;
 static const struct file_operations mqueue_file_operations;
 static const struct super_operations mqueue_super_ops;
 static void remove_notification(struct mqueue_inode_info *info);
@@ -115,6 +118,144 @@ static struct ipc_namespace *get_ns_from_inode(struct inode *inode)
 	ns = __get_ns_from_inode(inode);
 	spin_unlock(&mq_lock);
 	return ns;
+}
+
+/*
+ * hashtable for inodes that have exported fhandles.
+ * When we export fhandle, we add it's inode into
+ * hashtable so we can find it fast
+ */
+
+#define MQUEUE_INODE_HASH_BITS 7
+static DEFINE_HASHTABLE(mqueue_inode_table, MQUEUE_INODE_HASH_BITS);
+static DEFINE_SPINLOCK(mqueue_inode_table_lock);
+
+struct mq_inode_hitem {
+	struct inode *inode;
+	struct hlist_node hlist;
+};
+
+static inline unsigned long mqueue_inode_get_hash(unsigned int i_ino)
+{
+	return hash_32(i_ino, MQUEUE_INODE_HASH_BITS);
+}
+
+static struct mq_inode_hitem *mqueue_find_item_no_lock(unsigned long fh[2])
+{
+	struct mq_inode_hitem *i;
+	struct hlist_head *head = mqueue_inode_table
+		+ mqueue_inode_get_hash(fh[1]);
+	struct mq_inode_hitem *found = NULL;
+
+	hlist_for_each_entry(i, head, hlist) {
+		if (i->inode->i_generation == fh[0] &&
+		    i->inode->i_ino == fh[1]) {
+			found = i;
+			break;
+		}
+	}
+
+	return found;
+}
+
+static struct inode *mqueue_find_inode(unsigned long fh[2], char take_ref)
+{
+	struct mq_inode_hitem *item;
+	struct inode *ret = NULL;
+
+	spin_lock(&mqueue_inode_table_lock);
+	item = mqueue_find_item_no_lock(fh);
+	if (item && take_ref && !igrab(item->inode))
+		item = NULL;
+	spin_unlock(&mqueue_inode_table_lock);
+
+	if (item)
+		ret = item->inode;
+
+	return ret;
+}
+
+static int mqueue_hash_add(struct inode *inode)
+{
+	unsigned long fh[2] = {inode->i_generation, inode->i_ino};
+
+	if (!mqueue_find_inode(fh, 0)) {
+		struct mq_inode_hitem *item;
+		struct mq_inode_hitem *existing_item = 0;
+		struct hlist_head *head = mqueue_inode_table
+			+ mqueue_inode_get_hash(inode->i_ino);
+
+		item = kmalloc(sizeof(struct mq_inode_hitem), GFP_KERNEL);
+		if (!item)
+			return -ENOMEM;
+		item->inode = inode;
+
+		spin_lock(&mqueue_inode_table_lock);
+		existing_item = mqueue_find_item_no_lock(fh);
+		if (!existing_item)
+			hlist_add_head(&item->hlist, head);
+		spin_unlock(&mqueue_inode_table_lock);
+
+		if (existing_item)
+			kfree(item);
+	}
+
+	return 0;
+}
+
+static void mqueue_hash_del(struct inode *inode)
+{
+	struct mq_inode_hitem *item;
+	unsigned long fh[2] = {inode->i_generation, inode->i_ino};
+
+	spin_lock(&mqueue_inode_table_lock);
+	item = mqueue_find_item_no_lock(fh);
+	if (item)
+		hlist_del(&item->hlist);
+	spin_unlock(&mqueue_inode_table_lock);
+
+	kfree(item);
+	return;
+}
+
+static struct dentry *mqueue_fh_to_dentry(struct super_block *sb,
+		struct fid *fid, int fh_len, int fh_type)
+{
+	struct inode *inode;
+	struct dentry *dentry = ERR_PTR(-ENOENT);
+	unsigned long fhandle[2] = {fid->raw[0], fid->raw[1]};
+
+	if (fh_len < 2)
+		return NULL;
+
+	inode = mqueue_find_inode(fhandle, 1);
+	if (inode) {
+		dentry = d_find_alias(inode);
+		iput(inode);
+	}
+	return dentry;
+}
+
+static int mqueue_encode_fh(struct inode *inode, __u32 *fh, int *len,
+				struct inode *parent)
+{
+	if (*len < 2) {
+		*len = 2;
+		return FILEID_INVALID;
+	}
+
+	/*
+	 * encode_fh is expected to return 255 (FILEID_INVALID)
+	 * in case of failure. We can't return ENOMEM, so
+	 * return FILEID_INVALID at least.
+	 */
+	if (mqueue_hash_add(inode))
+		return FILEID_INVALID;
+
+	fh[0] = inode->i_generation;
+	fh[1] = inode->i_ino;
+	*len = 2;
+	return 1;
 }
 
 /* Auxiliary functions to manipulate messages' list */
@@ -226,6 +367,7 @@ static struct inode *mqueue_get_inode(struct super_block *sb,
 		goto err;
 
 	inode->i_ino = get_next_ino();
+	inode->i_generation = prandom_u32();
 	inode->i_mode = mode;
 	inode->i_uid = current_fsuid();
 	inode->i_gid = current_fsgid();
@@ -316,6 +458,7 @@ static int mqueue_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_blocksize_bits = PAGE_CACHE_SHIFT;
 	sb->s_magic = MQUEUE_MAGIC;
 	sb->s_op = &mqueue_super_ops;
+	sb->s_export_op = &mqueue_export_ops;
 
 	inode = mqueue_get_inode(sb, ns, S_IFDIR | S_ISVTX | S_IRWXUGO, NULL);
 	if (IS_ERR(inode))
@@ -381,6 +524,8 @@ static void mqueue_evict_inode(struct inode *inode)
 
 	if (S_ISDIR(inode->i_mode))
 		return;
+
+	mqueue_hash_del(inode);
 
 	ipc_ns = get_ns_from_inode(inode);
 	info = MQUEUE_I(inode);
@@ -1374,6 +1519,11 @@ static const struct inode_operations mqueue_dir_inode_operations = {
 	.lookup = simple_lookup,
 	.create = mqueue_create,
 	.unlink = mqueue_unlink,
+};
+
+static const struct export_operations mqueue_export_ops = {
+	.encode_fh      = mqueue_encode_fh,
+	.fh_to_dentry	= mqueue_fh_to_dentry,
 };
 
 static const struct file_operations mqueue_file_operations = {
