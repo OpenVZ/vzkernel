@@ -715,9 +715,21 @@ static int acct_one_skb(struct venet_stat *stat, struct sk_buff *skb, int dir, i
 	return class;
 }
 
+static inline void venet_clear_mark(struct sk_buff *skb)
+{
+#ifdef CONFIG_NETFILTER
+	skb->mark = 0;
+#endif
+}
+
 void venet_acct_classify_add_incoming(struct venet_stat *stat, struct sk_buff *skb)
 {
 	acct_one_skb(stat, skb, ACCT_IN, venet_acct_skb_size(skb));
+	/*
+	 * Every incomming skb must have zero mark, since here is its first
+	 * come into VE's IP stack.
+	 */
+	venet_clear_mark(skb);
 }
 
 static inline void venet_acct_mark(struct venet_stat *stat,
