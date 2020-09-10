@@ -496,6 +496,8 @@ static void dentry_lru_add(struct dentry *dentry)
 {
 	if (unlikely(!(dentry->d_flags & DCACHE_LRU_LIST)))
 		d_lru_add(dentry);
+	else
+		dentry->d_flags |= DCACHE_REFERENCED;
 }
 
 /*
@@ -770,7 +772,6 @@ repeat:
 			goto kill_it;
 	}
 
-	dentry->d_flags |= DCACHE_REFERENCED;
 	dentry_lru_add(dentry);
 
 	dentry->d_lockref.count--;
