@@ -440,6 +440,13 @@ S:	Maintained
 F:	Documentation/filesystems/ceph.txt
 F:	fs/ceph/
 
+CHAR and MISC DRIVERS
+M:	John Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/char/
+F:	drivers/misc/
+F:	include/linux/miscdevice.h
+
 CIFS FILESYSTEM
 L:	kernel-patches@redhat.com
 S:	Maintained
@@ -454,6 +461,15 @@ CISCO FCOE HBA (fnic)
 M:	Chris Leech <cleech@redhat.com>
 S:	Maintained
 F:	drivers/scsi/fnic/
+
+COMMON CLK FRAMEWORK
+M:	Mark Salter <msalter@redhat.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/clock/
+F:	drivers/clk/
+F:	include/linux/clk-pr*
+F:	include/linux/clk/
+F:	include/linux/of_clk.h
 
 CONFIGFS
 M:	Bob Peterson <rpeterso@redhat.com>
@@ -654,6 +670,13 @@ F:	kernel/futex.c
 F:	tools/perf/bench/futex*
 F:	tools/testing/selftests/futex/
 
+GENERIC PHY FRAMEWORK
+M:	John Linville <linville@redhat.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/phy/
+F:	drivers/phy
+F:	include/linux/phy
+
 GFS2 FILE SYSTEM
 M:	Bob Peterson <rpeterso@redhat.com>
 M:	Andreas Gruenbacher <agruenba@redhat.com>
@@ -681,6 +704,23 @@ F:	include/linux/i2c.h
 F:	include/linux/i2c-*.h
 F:	include/uapi/linux/i2c.h
 F:	include/uapi/linux/i2c-*.h
+
+INIT
+M:	Prarit Bhargava <prarit@redhat.com>
+S:	Maintained
+F:	init/
+
+INPUT (KEYBOARD, MOUSE, JOYSTICK, TOUCHSCREEN) DRIVERS
+M:	Tony Camuso <tcamuso@redhat.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/input/
+F:	Documentation/devicetree/bindings/serio/
+F:	Documentation/input/
+F:	drivers/input/
+F:	include/linux/input.h
+F:	include/linux/input/
+F:	include/uapi/linux/input-event-codes.h
+F:	include/uapi/linux/input.h
 
 INTEGRITY SUBSYSTEM
 M:	Bruno Meneguele <bmeneg@redhat.com>
@@ -927,12 +967,10 @@ M:	Tony Camuso <tcamuso@redhat.com>
 S:	Maintained
 F:	drivers/i2c/busses/i2c-ismt.c
 
-MMC LAYER
-M:	Gopal Tiwari <gtiwari@redhat.com>
+LIB
+M:	Prarit Bhargava <prarit@redhat.com>
 S:	Maintained
-F:	Documentation/mmc/
-F:	include/linux/mmc/
-F:	drivers/mmc/
+F:	lib/
 
 LIVE PATCHING / KPATCH
 M:	Josh Poimboeuf <jpoimboe@redhat.com>
@@ -999,6 +1037,11 @@ MEMORY MANAGEMENT
 M:	Rafael Aquini <aquini@redhat.com>
 S:	Maintained
 F:	include/linux/mm.h
+F:	include/linux/gfp.h
+F:	include/linux/memory_hotplug.h
+F:	include/linux/mm.h
+F:	include/linux/mmzone.h
+F:	include/linux/vmalloc.h
 F:	mm/
 
 MEMORY HOTPLUG
@@ -1010,6 +1053,13 @@ M:	David Milburn <dmilburn@redhat.com>
 S:	Maintained
 F:	drivers/block/mtip32xx/mtip32xx.c
 F:	drivers/block/mtip32xx/mtip32xx.h
+
+MMC LAYER
+M:	Gopal Tiwari <gtiwari@redhat.com>
+S:	Maintained
+F:	Documentation/mmc/
+F:	include/linux/mmc/
+F:	drivers/mmc/
 
 MYRICOM MYRI-10G 10GbE DRIVER (MYRI10GE)
 M:	Jarod Wilson <jarod@redhat.com>
@@ -1428,6 +1478,12 @@ F:	Documentation/networking/switchdev.txt
 F:	include/net/switchdev.h
 F:	net/switchdev/
 
+SYSTEM ON CHIP
+M:	Mark Salter <msalter@redhat.com>
+S:	Maintained
+F:	drivers/soc/
+F:	include/linux/soc
+
 TC subsystem
 M:	Ivan Vecera <ivecera@redhat.com>
 S:	Maintained
@@ -1458,6 +1514,18 @@ F:	include/uapi/linux/tipc.h
 F:	include/uapi/linux/tipc_netlink.h
 F:	include/uapi/linux/tipc_config.h
 F:	include/uapi/linux/tipc_socket_diag.h
+
+TTY LAYER
+M:	John Linville <linville@redhat.com>
+S:	Supported
+F:	drivers/tty/
+F:	drivers/tty/serial/serial_core.c
+F:	include/linux/serial.h
+F:	include/linux/serial_core.h
+F:	include/linux/tty.h
+F:	include/uapi/linux/serial.h
+F:	include/uapi/linux/serial_core.h
+F:	include/uapi/linux/tty.h
 
 X86 ARCHITECTURE
 M:	David Arcari <darcari@redhat.com>
