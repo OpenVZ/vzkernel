@@ -335,6 +335,7 @@ dist-merge-upstream: git-tree-check
 
 	@# If TAG is empty, script defaults to master:HEAD
 	@$(REDHAT)/scripts/ci/ark-rebase-patches.sh $(TAG) || exit 1
+	git checkout $(DIST_BRANCH)
 	@$(REDHAT)/scripts/ci/ark-update-configs.sh $(TAG)
 
 dist-merge-upstream-push: DIST_PUSH="1"
