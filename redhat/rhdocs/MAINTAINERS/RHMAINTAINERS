@@ -643,6 +643,17 @@ M:	Tomas Henzl <thenzl@redhat.com>
 S:	Maintained
 F:	drivers/message/fusion/
 
+FUTEX SUBSYSTEM
+M:	Waiman Long <longman@redhat.com>
+S:	Maintained
+F:	Documentation/*futex*
+F:	include/asm-generic/futex.h
+F:	include/linux/futex.h
+F:	include/uapi/linux/futex.h
+F:	kernel/futex.c
+F:	tools/perf/bench/futex*
+F:	tools/testing/selftests/futex/
+
 GFS2 FILE SYSTEM
 M:	Bob Peterson <rpeterso@redhat.com>
 M:	Andreas Gruenbacher <agruenba@redhat.com>
