@@ -3643,14 +3643,46 @@ void ploop_relax(struct ploop_device * plo)
 }
 EXPORT_SYMBOL(ploop_relax);
 
+static int get_bdev_from_fd(int fd, struct block_device **bdev)
+{
+	struct file *file = fget(fd);
+	struct inode *inode;
+	int ret = -ENODEV;
+
+	if (!file)
+		return -ENODEV;
+
+	inode = file_inode(file);
+	if (!inode)
+		goto fput;
+
+	*bdev = inode->i_sb->s_bdev;
+	if (*bdev) {
+		bdgrab(*bdev);
+		ret = 0;
+	}
+fput:
+	fput(file);
+	return ret;
+}
+
 /* search disk for first partition bdev with mounted fs and freeze it */
 static struct super_block *find_and_freeze_bdev(struct ploop_device *plo,
-						struct block_device ** bdev_pp)
+						int sync_fd,
+						struct block_device **bdev_pp)
 {
 	struct super_block  * sb   = NULL;
 	struct block_device * bdev = NULL;
 	struct gendisk *disk = plo->disk;
-	int i;
+	int i, ret;
+
+	if (sync_fd != -1) {
+		ret = get_bdev_from_fd(sync_fd, &bdev);
+		if (ret)
+			return ERR_PTR(ret);
+		sb = freeze_bdev(bdev);
+		goto out;
+	}
 
 	bdev = ploop_get_dm_crypt_bdev(plo);
 	if (bdev) {
@@ -3683,12 +3715,12 @@ out:
 static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 			  struct block_device * bdev)
 {
-	int err;
 	struct ploop_ctl ctl;
-	struct ploop_ctl_chunk chunk;
+	struct ploop_ctl_chunk chunk, __user *uchunks;
 	struct ploop_delta * delta, * top_delta;
 	struct ploop_snapdata snapdata;
 	struct super_block * sb;
+	int err, sync_fd = -1;
 
 	if (list_empty(&plo->map.delta_list))
 		return -ENOENT;
@@ -3700,10 +3732,26 @@ static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 
 	if (copy_from_user(&ctl, (void*)arg, sizeof(struct ploop_ctl)))
 		return -EFAULT;
+	uchunks = (void *)((void*)arg + sizeof(struct ploop_ctl));
+	if (ctl.pctl_chunks == 2) {
+		/*
+		 * We reused second chunk for fd of mountpoint to sync.
+		 * In case of we need to support more mountpoints,
+		 * we may reuse more chunks (chunks below #0 are mountpoints).
+		 */
+		if (copy_from_user(&chunk, &uchunks[1],
+				   sizeof(struct ploop_ctl_chunk)))
+			return -EFAULT;
+		if (chunk.pctl_type || chunk.pctl_flags || chunk.pctl_offset ||
+		    chunk.pctl_start || chunk.pctl_len)
+			return -EINVAL;
+		/* The rest of fields are ignored */
+		sync_fd = chunk.pctl_fd;
+		ctl.pctl_chunks = 1;
+	}
 	if (ctl.pctl_chunks != 1)
-		return -EINVAL;
-	if (copy_from_user(&chunk, (void*)arg + sizeof(struct ploop_ctl),
-			   sizeof(struct ploop_ctl_chunk)))
+		return -ENOTSUPP;
+	if (copy_from_user(&chunk, uchunks, sizeof(struct ploop_ctl_chunk)))
 		return -EFAULT;
 
 	delta = init_delta(plo, &ctl, -1);
@@ -3739,7 +3787,7 @@ static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 		/* freeze_bdev() may trigger ploop_bd_full() */
 		plo->maintenance_type = PLOOP_MNTN_SNAPSHOT;
 		mutex_unlock(&plo->ctl_mutex);
-		sb = find_and_freeze_bdev(plo, &bdev);
+		sb = find_and_freeze_bdev(plo, sync_fd, &bdev);
 		mutex_lock(&plo->ctl_mutex);
 		plo->maintenance_type = PLOOP_MNTN_OFF;
 		if (IS_ERR(sb)) {
