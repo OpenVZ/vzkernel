@@ -17,6 +17,7 @@ static void read_dirty(struct closure *);
 struct dirty_io {
 	struct closure		cl;
 	struct cached_dev	*dc;
+	struct bio_aux		bio_aux;
 	struct bio		bio;
 };
 
@@ -122,6 +123,7 @@ static void dirty_init(struct keybuf_key *w)
 	bio->bi_max_vecs	= DIV_ROUND_UP(KEY_SIZE(&w->key), PAGE_SECTORS);
 	bio->bi_private		= w;
 	bio->bi_io_vec		= bio->bi_inline_vecs;
+	bio_init_aux(&io->bio, &io->bio_aux);
 	bch_bio_map(bio, NULL);
 }
 
