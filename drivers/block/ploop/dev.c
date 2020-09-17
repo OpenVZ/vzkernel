@@ -4159,52 +4159,6 @@ out:
 	return err;
 }
 
-static int ploop_truncate(struct ploop_device * plo, unsigned long arg)
-{
-	int err;
-	struct ploop_truncate_ctl ctl;
-	struct ploop_delta * delta;
-	struct file * file;
-
-	if (copy_from_user(&ctl, (void*)arg, sizeof(struct ploop_truncate_ctl)))
-		return -EFAULT;
-
-	if (ctl.fd < 0)
-		return -EBADF;
-
-	if (list_empty(&plo->map.delta_list))
-		return -ENOENT;
-
-	delta = find_delta(plo, ctl.level);
-	if (delta == NULL)
-		return -ENOENT;
-
-	if (!(delta->flags & PLOOP_FMT_RDONLY))
-		return -EBUSY;
-
-	if (delta->ops->truncate == NULL)
-		return -EOPNOTSUPP;
-
-	file = fget(ctl.fd);
-	if (file == NULL)
-		return -EBADF;
-
-	ploop_quiesce(plo);
-
-	ploop_map_destroy(&plo->map);
-
-	err = delta->ops->truncate(delta, file, ctl.alloc_head);
-	if (!err)
-		/* See comment in dio_release_prealloced */
-		delta->io.prealloced_size = 0;
-
-	ploop_relax(plo);
-
-	fput(file);
-
-	return err;
-}
-
 static int ploop_bd_full(struct backing_dev_info *bdi, long long nr, int root)
 {
 	struct ploop_device *plo      = bdi->congested_data;
@@ -5580,9 +5534,6 @@ static int ploop_ioctl(struct block_device *bdev, fmode_t fmode, unsigned int cm
 
 	case PLOOP_IOC_MERGE:
 		err = ploop_merge(plo);
-		break;
-	case PLOOP_IOC_TRUNCATE:
-		err = ploop_truncate(plo, arg);
 		break;
 	case PLOOP_IOC_UPDATE_INDEX:
 		err = ploop_index_update_ioc(plo, arg);
