@@ -637,7 +637,7 @@ F:	include/linux/dax.h
 F:	include/trace/events/fs_dax.h
 
 FIREWIRE SUBSYSTEM
-L:	kernel-patches@redhat.com
+M:	Jarod Wilson <jarod@redhat.com>
 S:	Maintained
 F:	drivers/firewire/
 F:	include/linux/firewire*.h
