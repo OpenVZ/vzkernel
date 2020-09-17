@@ -321,7 +321,7 @@ struct ploop_track_extent
 /* Replace alive delta with equivalent one. */
 #define PLOOP_IOC_REPLACE_DELTA	_IOW(PLOOPCTLTYPE, 13, struct ploop_ctl)
 
-/* Replace alive delta with equivalent one. */
+/* This was never used */
 #define PLOOP_IOC_TRUNCATE	_IOW(PLOOPCTLTYPE, 14, struct ploop_truncate_ctl)
 
 /* Update in-core copy of L2 table */
