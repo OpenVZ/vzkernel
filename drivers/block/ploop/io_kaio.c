@@ -1204,20 +1204,11 @@ kaio_fastmap(struct ploop_io *io, struct bio *orig_bio,
 	if (!inode->i_op->fastmap)
 		return 1;
 
-	if (unlikely((orig_bio->bi_rw & (REQ_FLUSH | REQ_FUA)) &&
-		     test_bit(PLOOP_IO_FSYNC_DELAYED, &io->io_state)))
+	/* We have special fsync_thread for flushing */
+	if (unlikely(orig_bio->bi_rw & (REQ_FLUSH | REQ_FUA)))
 		return 1;
 
-	if (orig_bio->bi_size == 0) {
-		bio->bi_vcnt   = 0;
-		bio->bi_sector = 0;
-		bio->bi_size   = 0;
-		bio->bi_idx    = 0;
-
-		bio->bi_rw   = orig_bio->bi_rw;
-		bio->bi_bdev = io->files.bdev;
-		return 0;
-	}
+	BUG_ON(orig_bio->bi_size == 0);
 
 	ret = inode->i_op->fastmap(inode, isec, orig_bio->bi_size, &phys_sec,
 				   orig_bio->bi_rw & REQ_WRITE);
