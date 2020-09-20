@@ -2403,10 +2403,13 @@ restart:
 		}
 	}
 
+	spin_lock_irq(&plo->lock);
 	if (check_lockout(preq)) {
+		spin_unlock_irq(&plo->lock);
 		__TRACE("l %p %u\n", preq, preq->req_cluster);
 		return;
 	}
+	spin_unlock_irq(&plo->lock);
 
 	/* push_backup special processing */
 	if (!test_bit(PLOOP_REQ_PB_LOCKOUT, &preq->state) &&
