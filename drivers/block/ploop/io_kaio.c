@@ -582,7 +582,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 
 	BUG_ON(preq->prealloc_size);
 
-	if (unlikely(io->prealloced_size < end_pos + clu_siz)) {
+	if (unlikely(io->prealloced_size < end_pos)) {
 		isize = i_size_read(io->files.inode);
 		/*
 		 * FIXME: We never initialize io->prealloced_size,
@@ -591,13 +591,12 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		 */
 		if (unlikely(io->prealloced_size < isize)) {
 			io->prealloced_size = isize;
-			if (io->prealloced_size >= end_pos + clu_siz)
+			if (io->prealloced_size >= end_pos)
 				goto submit;
 		}
 
 		if (!io->prealloc_preq) {
-			loff_t pos = (((loff_t)(iblk + 1)  << log) |
-				      (KAIO_PREALLOC - 1)) + 1;
+			loff_t pos = (end_pos | (KAIO_PREALLOC - 1)) + 1;
 
 			BUG_ON(preq->prealloc_size);
 			preq->prealloc_size = pos;
