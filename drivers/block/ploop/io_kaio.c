@@ -528,8 +528,8 @@ static int kaio_fsync_thread(void * data)
 			isize = i_size_read(io->files.inode);
 			if (WARN_ON_ONCE(preq->prealloc_size < isize))
 				goto out;
-			err = kaio_truncate(io, io->files.file,
-					    preq->prealloc_size >> (plo->cluster_log + 9));
+			err = __kaio_truncate(io, io->files.file,
+					      preq->prealloc_size);
 			if (err)
 				PLOOP_REQ_SET_ERROR(preq, -EIO);
 		} else {
