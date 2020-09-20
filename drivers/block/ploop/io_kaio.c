@@ -546,6 +546,11 @@ static int kaio_fsync_thread(void * data)
 			} else if (preq->req_rw & REQ_FLUSH) {
 				BUG_ON(!preq->req_size);
 				preq->req_rw &= ~REQ_FLUSH;
+				/*
+				 * FIXME: We submit some data and main thread
+				 * is not synchronized with this? Also,
+				 * TODO: fsync_thread must care of ploop_quiesce().
+				 */
 				if (kaio_resubmit(preq)) {
 					spin_lock_irq(&plo->lock);
 					continue;
