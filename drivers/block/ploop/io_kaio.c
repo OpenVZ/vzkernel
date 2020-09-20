@@ -526,8 +526,17 @@ static int kaio_fsync_thread(void * data)
 		/* trick: preq->prealloc_size is actually new pos of eof */
 		if (preq->prealloc_size) {
 			isize = i_size_read(io->files.inode);
-			if (WARN_ON_ONCE(preq->prealloc_size < isize))
+			if (preq->prealloc_size <= isize) {
+				/*
+				 * FIXME: We never initialize io->prealloced_size,
+				 * and it can be 0 here. We update prealloc_size
+				 * and ploop_req_state_process() will actualize it.
+				 * This should be reworked in a more natural way.
+				 */
+				WARN_ON_ONCE(io->prealloced_size);
+				preq->prealloc_size = isize;
 				goto out;
+			}
 			err = __kaio_truncate(io, io->files.file,
 					      preq->prealloc_size);
 			if (err)
@@ -573,9 +582,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 		 struct bio_list * sbl, unsigned int size, iblock_t iblk)
 {
 	int log = preq->plo->cluster_log + 9;
-	loff_t clu_siz = 1 << log;
 	loff_t end_pos = (loff_t)(iblk + 1) << log;
-	loff_t isize;
 
 	if (unlikely(preq->req_rw & REQ_FLUSH)) {
 		spin_lock_irq(&io->plo->lock);
@@ -588,18 +595,6 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 	BUG_ON(preq->prealloc_size);
 
 	if (unlikely(io->prealloced_size < end_pos)) {
-		isize = i_size_read(io->files.inode);
-		/*
-		 * FIXME: We never initialize io->prealloced_size,
-		 * and it can be 0 here. The below actualizes it.
-		 * This should be reworked in a more natural way.
-		 */
-		if (unlikely(io->prealloced_size < isize)) {
-			io->prealloced_size = isize;
-			if (io->prealloced_size >= end_pos)
-				goto submit;
-		}
-
 		if (!io->prealloc_preq) {
 			loff_t pos = (end_pos | (KAIO_PREALLOC - 1)) + 1;
 
@@ -618,7 +613,7 @@ kaio_submit_alloc(struct ploop_io *io, struct ploop_request * preq,
 			return 0;
 		}
 	}
-submit:
+
 	preq->iblock = iblk;
 	preq->eng_state = PLOOP_E_DATA_WBI;
 
@@ -1087,6 +1082,20 @@ static int kaio_start_merge(struct ploop_io * io, struct ploop_snapdata *sd)
 	return 0;
 }
 
+/*
+ * XXX: Note, that __kaio_truncate() updates inode size racy
+ * for concurrent readers:
+ *
+ * 1)update inode->i_size;
+ * 2)flush new size to disk.
+ *
+ * So, in case of a concurrent reader reads a size between 1 and 2,
+ * the given size is not the size on the disk, that you'll see after
+ * power failure.
+ *
+ * Ideally, both __kaio_truncate() and i_size_read() should be used
+ * from fsync_thread only.
+ */
 static int __kaio_truncate(struct ploop_io * io, struct file * file, u64 pos)
 {
 	int err;
