@@ -347,6 +347,7 @@
 426	common	io_uring_enter		__x64_sys_io_uring_enter
 427	common	io_uring_register	__x64_sys_io_uring_register
 428	common	open_tree		__x64_sys_open_tree
+429	common	move_mount		__x64_sys_move_mount
 
 #
 # x32-specific system call numbers start at 512 to avoid cache impact
