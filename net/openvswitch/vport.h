@@ -109,6 +109,8 @@ struct vport_parms {
 	enum ovs_vport_type type;
 	struct nlattr *options;
 
+	int desired_ifindex;
+
 	/* For ovs_vport_alloc(). */
 	struct datapath *dp;
 	u16 port_no;
