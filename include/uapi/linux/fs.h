@@ -159,6 +159,12 @@ struct inodes_stat_t {
 #define MS_MGC_MSK 0xffff0000
 
 /*
+ * open_tree() flags.
+ */
+#define OPEN_TREE_CLONE		1		/* Clone the target tree and attach the clone */
+#define OPEN_TREE_CLOEXEC	O_CLOEXEC	/* Close the file on execve() */
+
+/*
  * Structure for FS_IOC_FSGETXATTR[A] and FS_IOC_FSSETXATTR.
  */
 struct fsxattr {
