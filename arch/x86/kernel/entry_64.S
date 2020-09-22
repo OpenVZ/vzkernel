@@ -949,11 +949,41 @@ irq_return:
 	 * when returning from IPI handler.
 	 */
 	INTERRUPT_RETURN
+	_ASM_EXTABLE(irq_return, bad_iret)
 
 #ifdef CONFIG_PARAVIRT
 ENTRY(native_iret)
 	iretq
+	_ASM_EXTABLE(native_iret, bad_iret)
 #endif
+
+	.section .fixup,"ax"
+bad_iret:
+	/*
+	 * The iret traps when the %cs or %ss being restored is bogus.
+	 * We've lost the original trap vector and error code.
+	 * #GPF is the most likely one to get for an invalid selector.
+	 * So pretend we completed the iret and took the #GPF in user mode.
+	 *
+	 * We are now running with the kernel GS after exception recovery.
+	 * But error_entry expects us to have user GS to match the user %cs,
+	 * so swap back.
+	 */
+	pushq $0
+
+	/*
+	 * If a kernel bug clears user CS bit and in turn we'll skip SWAPGS in
+	 * general_protection, skip the SWAPGS here as well so we won't hard reboot.
+	 * This increases robustness of bad_iret to kernel bugs as well.
+	 */
+	testl $3, 8*2(%rsp)
+	je 1f
+	SWAPGS
+1:
+
+	jmp general_protection
+
+	.previous
 
 	/* edi: workmask, edx: work */
 retint_careful:
@@ -1550,15 +1580,16 @@ error_sti:
 
 /*
  * There are two places in the kernel that can potentially fault with
- * usergs. Handle them here.  B stepping K8s sometimes report a
- * truncated RIP for IRET exceptions returning to compat mode. Check
- * for these here too.
+ * usergs. Handle them here. The exception handlers after iret run with
+ * kernel gs again, so don't set the user space flag. B stepping K8s
+ * sometimes report an truncated RIP for IRET exceptions returning to
+ * compat mode. Check for these here too.
  */
 error_kernelspace:
 	incl %ebx
 	leaq irq_return(%rip),%rcx
 	cmpq %rcx,RIP+8(%rsp)
-	je error_bad_iret
+	je error_swapgs
 	movl %ecx,%eax	/* zero extend */
 	cmpq %rax,RIP+8(%rsp)
 	je bstep_iret
@@ -1570,15 +1601,7 @@ error_kernelspace:
 bstep_iret:
 	/* Fix truncated RIP */
 	movq %rcx,RIP+8(%rsp)
-	/* fall through */
-
-error_bad_iret:
-	SWAPGS
-	mov %rsp,%rdi
-	call fixup_bad_iret
-	mov %rax,%rsp
-	decl %ebx	/* Return to usergs */
-	jmp error_sti
+	jmp error_swapgs
 	CFI_ENDPROC
 END(error_entry)
 
