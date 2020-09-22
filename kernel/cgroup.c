@@ -5934,7 +5934,7 @@ void cgroup_release_agent(struct work_struct *work)
 			envp, UMH_WAIT_EXEC, NULL, NULL, NULL);
 
 		ve_task = ve->init_task;
-		if (err < 0 && (!(ve_task->flags & PF_EXITING)))
+		if (err < 0 && (ve == &ve0 || !(ve_task->flags & PF_EXITING)))
 			pr_warn_ratelimited("cgroup release_agent "
 					    "%s %s failed: %d\n",
 					    agentbuf, pathbuf, err);
