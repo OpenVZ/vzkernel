@@ -402,3 +402,4 @@
 426	i386	io_uring_enter		sys_io_uring_enter		__ia32_sys_io_uring_enter
 427	i386	io_uring_register	sys_io_uring_register		__ia32_sys_io_uring_register
 428	i386	open_tree		sys_open_tree			__ia32_sys_open_tree
+429	i386	move_mount		sys_move_mount			__ia32_sys_move_mount
