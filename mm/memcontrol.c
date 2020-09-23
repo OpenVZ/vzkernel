@@ -400,6 +400,7 @@ struct mem_cgroup {
 	struct mem_cgroup_stat_cpu __percpu *stat;
 	struct mem_cgroup_stat2_cpu stat2;
 	spinlock_t pcp_counter_lock;
+	atomic_long_t	oom;
 
 	atomic_t	dead_count;
 #if defined(CONFIG_MEMCG_KMEM) && defined(CONFIG_INET)
@@ -2030,6 +2031,7 @@ void mem_cgroup_note_oom_kill(struct mem_cgroup *root_memcg,
 		if (memcg == root_memcg)
 			break;
 	}
+	atomic_long_inc(&root_memcg->oom);
 
 	if (memcg_to_put)
 		css_put(&memcg_to_put->css);
@@ -5739,6 +5741,7 @@ static int memcg_stat_show(struct cgroup *cont, struct cftype *cft,
 	for (i = 0; i < MEM_CGROUP_EVENTS_NSTATS; i++)
 		seq_printf(m, "%s %lu\n", mem_cgroup_events_names[i],
 			   mem_cgroup_read_events(memcg, i));
+	seq_printf(m, "oom %lu\n", atomic_long_read(&memcg->oom));
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
 		seq_printf(m, "%s %lu\n", mem_cgroup_lru_names[i],
@@ -5776,6 +5779,12 @@ static int memcg_stat_show(struct cgroup *cont, struct cftype *cft,
 	for (i = 0; i < MEM_CGROUP_EVENTS_NSTATS; i++)
 		seq_printf(m, "total_%s %llu\n", mem_cgroup_events_names[i],
 			   (u64)acc.events[i]);
+	{
+		unsigned long val = 0;
+		for_each_mem_cgroup_tree(mi, memcg)
+			val += atomic_long_read(&mi->oom);
+		seq_printf(m, "total_oom %lu\n", val);
+	}
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
 		seq_printf(m, "total_%s %llu\n", mem_cgroup_lru_names[i],
