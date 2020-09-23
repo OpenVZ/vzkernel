@@ -4373,6 +4373,9 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 
 	clear_bit(PLOOP_S_RUNNING, &plo->state);
 
+	part_stat_set_all(&plo->disk->part0, 0);
+	memset(&plo->st, 0, sizeof(plo->st));
+
 	del_timer_sync(&plo->mitigation_timer);
 	del_timer_sync(&plo->freeze_timer);
 
