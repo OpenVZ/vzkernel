@@ -251,14 +251,14 @@ ip_set_alloc(size_t size)
 	void *members = NULL;
 
 	if (size < KMALLOC_MAX_SIZE)
-		members = kzalloc(size, GFP_KERNEL | __GFP_NOWARN);
+		members = kzalloc(size, GFP_KERNEL_ACCOUNT | __GFP_NOWARN);
 
 	if (members) {
 		pr_debug("%p: allocated with kmalloc\n", members);
 		return members;
 	}
 
-	members = vzalloc(size);
+	members = vzalloc_account(size);
 	if (!members)
 		return NULL;
 	pr_debug("%p: allocated with vmalloc\n", members);
