@@ -156,8 +156,10 @@ void user_destroy(struct key *key)
 {
 	struct user_key_payload *upayload = key->payload.data[0];
 
-	memset(upayload, 0, sizeof(*upayload) + upayload->datalen);
-	kvfree(upayload);
+	if (upayload) {
+		memset(upayload, 0, sizeof(*upayload) + upayload->datalen);
+		kvfree(upayload);
+	}
 }
 
 EXPORT_SYMBOL_GPL(user_destroy);
