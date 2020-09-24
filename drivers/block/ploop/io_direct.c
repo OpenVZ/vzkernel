@@ -785,8 +785,9 @@ static int dio_fsync_thread(void * data)
 
 	spin_lock_irq(&plo->lock);
 	while (!kthread_should_stop() || !list_empty(&io->fsync_queue)) {
-		int err;
+		struct list_head fake_entry;
 		LIST_HEAD(list);
+		int err;
 
 		DEFINE_WAIT(_wait);
 		for (;;) {
@@ -806,6 +807,11 @@ static int dio_fsync_thread(void * data)
 
 		INIT_LIST_HEAD(&list);
 		list_splice_init(&io->fsync_queue, &list);
+		/*
+		 * Not empty io->fsync_queue means fsync_thread has
+		 * pending work. See ploop_quiesce() for details.
+		 */
+		list_add(&fake_entry, &io->fsync_queue);
 		io_count = io->io_count;
 		spin_unlock_irq(&plo->lock);
 
@@ -822,6 +828,7 @@ static int dio_fsync_thread(void * data)
 		 */
 
 		spin_lock_irq(&plo->lock);
+		list_del(&fake_entry);
 
 		if (io_count == io->io_count && !(io_count & 1))
 			clear_bit(PLOOP_IO_FSYNC_DELAYED, &io->io_state);
