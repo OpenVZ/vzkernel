@@ -535,7 +535,7 @@ static int kaio_fsync_thread(void * data)
 				 */
 				WARN_ON_ONCE(io->prealloced_size);
 				preq->prealloc_size = isize;
-				goto out;
+				goto ready;
 			}
 			err = __kaio_truncate(io, io->files.file,
 					      preq->prealloc_size);
@@ -566,7 +566,7 @@ static int kaio_fsync_thread(void * data)
 				}
 			}
 		}
-out:
+ready:
 		spin_lock_irq(&plo->lock);
 		list_add_tail(&preq->list, &plo->ready_queue);
 
