@@ -17,6 +17,12 @@ enum ovl_path_type {
 	__OVL_PATH_ORIGIN	= (1 << 2),
 };
 
+enum ovl_index_type {
+	OVL_INDEX_OFF = 0,
+	OVL_INDEX_ON,
+	OVL_INDEX_NOUUID,
+};
+
 #define OVL_TYPE_UPPER(type)	((type) & __OVL_PATH_UPPER)
 #define OVL_TYPE_MERGE(type)	((type) & __OVL_PATH_MERGE)
 #define OVL_TYPE_ORIGIN(type)	((type) & __OVL_PATH_ORIGIN)
@@ -277,11 +283,12 @@ static inline unsigned int ovl_xino_bits(struct super_block *sb)
 /* namei.c */
 int ovl_check_fh_len(struct ovl_fh *fh, int fh_len);
 struct dentry *ovl_decode_real_fh(struct ovl_fh *fh, struct vfsmount *mnt,
-				  bool connected);
+				  bool connected, bool nouuid);
 int ovl_check_origin_fh(struct ovl_fs *ofs, struct ovl_fh *fh, bool connected,
 			struct dentry *upperdentry, struct ovl_path **stackp);
 int ovl_verify_set_fh(struct dentry *dentry, const char *name,
-		      struct dentry *real, bool is_upper, bool set);
+		      struct dentry *real, bool is_upper, bool set,
+		      bool nouuid);
 struct dentry *ovl_index_upper(struct ovl_fs *ofs, struct dentry *index);
 int ovl_verify_index(struct ovl_fs *ofs, struct dentry *index);
 int ovl_get_index_name(struct dentry *origin, struct qstr *name);
@@ -294,15 +301,19 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 bool ovl_lower_positive(struct dentry *dentry);
 
 static inline int ovl_verify_origin(struct dentry *upper,
-				    struct dentry *origin, bool set)
+				    struct dentry *origin, bool set,
+				    bool nouuid)
 {
-	return ovl_verify_set_fh(upper, OVL_XATTR_ORIGIN, origin, false, set);
+	return ovl_verify_set_fh(upper, OVL_XATTR_ORIGIN, origin, false, set,
+				 nouuid);
 }
 
 static inline int ovl_verify_upper(struct dentry *index,
-				    struct dentry *upper, bool set)
+				   struct dentry *upper, bool set,
+				   bool nouuid)
 {
-	return ovl_verify_set_fh(index, OVL_XATTR_UPPER, upper, true, set);
+	return ovl_verify_set_fh(index, OVL_XATTR_UPPER, upper, true, set,
+				 nouuid);
 }
 
 /* readdir.c */
