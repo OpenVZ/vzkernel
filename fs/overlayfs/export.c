@@ -683,11 +683,12 @@ static struct dentry *ovl_upper_fh_to_d(struct super_block *sb,
 	struct ovl_fs *ofs = sb->s_fs_info;
 	struct dentry *dentry;
 	struct dentry *upper;
+	bool nouuid = ofs->config.index == OVL_INDEX_NOUUID;
 
 	if (!ofs->upper_mnt)
 		return ERR_PTR(-EACCES);
 
-	upper = ovl_decode_real_fh(fh, ofs->upper_mnt, true);
+	upper = ovl_decode_real_fh(fh, ofs->upper_mnt, true, nouuid);
 	if (IS_ERR_OR_NULL(upper))
 		return upper;
 
@@ -707,6 +708,7 @@ static struct dentry *ovl_lower_fh_to_d(struct super_block *sb,
 	struct dentry *index = NULL;
 	struct inode *inode;
 	int err;
+	bool nouuid = ofs->config.index == OVL_INDEX_NOUUID;
 
 	/* First lookup overlay inode in inode cache by origin fh */
 	err = ovl_check_origin_fh(ofs, fh, false, NULL, &stack);
@@ -759,7 +761,7 @@ static struct dentry *ovl_lower_fh_to_d(struct super_block *sb,
 			goto out_err;
 	}
 	if (index) {
-		err = ovl_verify_origin(index, origin.dentry, false);
+		err = ovl_verify_origin(index, origin.dentry, false, nouuid);
 		if (err)
 			goto out_err;
 	}
