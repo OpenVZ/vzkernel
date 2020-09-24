@@ -67,7 +67,7 @@ else
 fi
 
 if test -n "$DIST_PUSH"; then
-	echo "Pushing branch $(git branch --show-current) to $(get remote get-url gitlab)"
+	echo "Pushing branch $(git branch --show-current) to $(git remote get-url gitlab)"
 	git push gitlab HEAD
 
 	echo "Pushing config update branches"

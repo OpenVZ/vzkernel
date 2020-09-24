@@ -327,11 +327,10 @@ dist-merge-upstream: git-tree-check
 		fi;
 
 	@# If TAG is empty, script defaults to master:HEAD
-	@$(REDHAT)/scripts/ci/ark-rebase-patches.sh $(TAG) || exit 1
 	git checkout $(DIST_BRANCH)
 	@$(REDHAT)/scripts/ci/ark-update-configs.sh $(TAG)
 
-dist-merge-upstream-push: DIST_PUSH="1"
+dist-merge-upstream-push: export DIST_PUSH="1"
 dist-merge-upstream-push: dist-merge-upstream
 
 dist-fedora-release: git-tree-check
@@ -340,7 +339,7 @@ dist-fedora-release: git-tree-check
 	@cd ..; $(REDHAT)/scripts/ci/ark-create-release.sh $(TAG) || \
 		(echo "Unable to create release tag"; exit 1)
 
-dist-fedora-release-push: DIST_PUSH="1"
+dist-fedora-release-push: export DIST_PUSH="1"
 dist-fedora-release-push: dist-fedora-release
 
 .PHONY: dist-brew dist-koji

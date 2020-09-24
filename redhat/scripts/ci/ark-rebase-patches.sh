@@ -99,7 +99,7 @@ fi
 
 if $CLEAN_REBASE; then
 	if test -n "$DIST_PUSH"; then
-		echo "Pushing branch ark-patches to $(get remote get-url gitlab)"
+		echo "Pushing branch ark-patches to $(git remote get-url gitlab)"
 		git push -f gitlab ark-patches
 	else
 		printf "You can safely update ark-patches with 'git push -f <remote> ark-patches'\n"
@@ -114,7 +114,7 @@ if git tag -v "$UPSTREAM_REF" > /dev/null 2>&1; then
 	printf "Creating branch \"ark/patches/%s\"\n" "$UPSTREAM_REF"
 	git branch ark/patches/"$UPSTREAM_REF"
 	if test -n "$DIST_PUSH"; then
-		echo "Pushing branch ark/patches to $(get remote get-url gitlab)"
+		echo "Pushing branch ark/patches to $(git remote get-url gitlab)"
 		git push gitlab ark/patches/"$UPSTREAM_REF"
 	else
 		printf "Don't forget to run 'git push <remote> ark/patches/%s'\n" "$UPSTREAM_REF"
