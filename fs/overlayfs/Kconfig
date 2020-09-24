@@ -60,6 +60,22 @@ config OVERLAY_FS_INDEX
 
 	  If unsure, say N.
 
+config OVERLAY_FS_INDEX_NOUUID
+	bool "Overlayfs: relax uuid checks of inodes index feature"
+	depends on OVERLAY_FS
+	depends on OVERLAY_FS_INDEX
+	help
+	  If this config option is enabled then overlay will skip uuid checks
+	  for index lower to upper inode map, this only can be done if all
+	  upper and lower directories are on the same filesystem where basic
+	  fhandles are uniq.
+
+	  It is needed to overcome possible change of uuid on superblock of the
+	  backing filesystem, e.g. when you copied the virtual disk and mount
+	  both the copy of the disk and the original one at the same time.
+
+	  If unsure, say N.
+
 config OVERLAY_FS_NFS_EXPORT
 	bool "Overlayfs: turn on NFS export feature by default"
 	depends on OVERLAY_FS
