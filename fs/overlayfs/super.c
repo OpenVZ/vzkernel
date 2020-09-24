@@ -41,10 +41,12 @@ module_param_named(redirect_always_follow, ovl_redirect_always_follow,
 MODULE_PARM_DESC(redirect_always_follow,
 		 "Follow redirects even if redirect_dir feature is turned off");
 
-static bool ovl_index_def = IS_ENABLED(CONFIG_OVERLAY_FS_INDEX);
-module_param_named(index, ovl_index_def, bool, 0644);
+static int ovl_index_def = IS_ENABLED(CONFIG_OVERLAY_FS_INDEX_NOUUID) ?
+			 OVL_INDEX_NOUUID :
+			 IS_ENABLED(CONFIG_OVERLAY_FS_INDEX);
+module_param_named(index, ovl_index_def, int, 0644);
 MODULE_PARM_DESC(index,
-		 "Default to on or off for the inodes index feature");
+		 "Default to on, off or nouuid for the inodes index feature");
 
 static bool ovl_nfs_export_def = IS_ENABLED(CONFIG_OVERLAY_FS_NFS_EXPORT);
 module_param_named(nfs_export, ovl_nfs_export_def, bool, 0644);
@@ -386,8 +388,18 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 		seq_puts(m, ",default_permissions");
 	if (strcmp(ofs->config.redirect_mode, ovl_redirect_mode_def()) != 0)
 		seq_printf(m, ",redirect_dir=%s", ofs->config.redirect_mode);
-	if (ofs->config.index != ovl_index_def)
-		seq_printf(m, ",index=%s", ofs->config.index ? "on" : "off");
+	if (ofs->config.index != ovl_index_def) {
+		switch (ofs->config.index) {
+		case OVL_INDEX_OFF:
+			seq_puts(m, ",index=off");
+			break;
+		case OVL_INDEX_NOUUID:
+			seq_puts(m, ",index=nouuid");
+			break;
+		default:
+			seq_puts(m, ",index=on");
+		}
+	}
 	if (ofs->config.nfs_export != ovl_nfs_export_def)
 		seq_printf(m, ",nfs_export=%s", ofs->config.nfs_export ?
 						"on" : "off");
@@ -437,6 +449,7 @@ enum {
 	OPT_REDIRECT_DIR,
 	OPT_INDEX_ON,
 	OPT_INDEX_OFF,
+	OPT_INDEX_NOUUID,
 	OPT_NFS_EXPORT_ON,
 	OPT_NFS_EXPORT_OFF,
 	OPT_XINO_ON,
@@ -455,6 +468,7 @@ static const match_table_t ovl_tokens = {
 	{OPT_REDIRECT_DIR,		"redirect_dir=%s"},
 	{OPT_INDEX_ON,			"index=on"},
 	{OPT_INDEX_OFF,			"index=off"},
+	{OPT_INDEX_NOUUID,		"index=nouuid"},
 	{OPT_NFS_EXPORT_ON,		"nfs_export=on"},
 	{OPT_NFS_EXPORT_OFF,		"nfs_export=off"},
 	{OPT_XINO_ON,			"xino=on"},
@@ -565,12 +579,17 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			break;
 
 		case OPT_INDEX_ON:
-			config->index = true;
+			config->index = OVL_INDEX_ON;
 			index_opt = true;
 			break;
 
 		case OPT_INDEX_OFF:
-			config->index = false;
+			config->index = OVL_INDEX_OFF;
+			index_opt = true;
+			break;
+
+		case OPT_INDEX_NOUUID:
+			config->index = OVL_INDEX_NOUUID;
 			index_opt = true;
 			break;
 
@@ -668,7 +687,7 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			config->nfs_export = false;
 		} else {
 			/* Automatically enable index otherwise. */
-			config->index = true;
+			config->index = OVL_INDEX_ON;
 		}
 	}
 
@@ -888,7 +907,7 @@ static int ovl_lower_dir(const char *name, struct path *path,
 	fh_type = ovl_can_decode_fh(path->dentry->d_sb);
 	if ((ofs->config.nfs_export ||
 	     (ofs->config.index && ofs->config.upperdir)) && !fh_type) {
-		ofs->config.index = false;
+		ofs->config.index = OVL_INDEX_OFF;
 		ofs->config.nfs_export = false;
 		pr_warn("fs on '%s' does not support file handles, falling back to index=off,nfs_export=off.\n",
 			name);
@@ -1279,7 +1298,7 @@ static int ovl_make_workdir(struct super_block *sb, struct ovl_fs *ofs,
 	err = ovl_do_setxattr(ofs->workdir, OVL_XATTR_OPAQUE, "0", 1, 0);
 	if (err) {
 		ofs->noxattr = true;
-		ofs->config.index = false;
+		ofs->config.index = OVL_INDEX_OFF;
 		ofs->config.metacopy = false;
 		pr_warn("upper fs does not support xattr, falling back to index=off and metacopy=off.\n");
 		err = 0;
@@ -1302,7 +1321,7 @@ static int ovl_make_workdir(struct super_block *sb, struct ovl_fs *ofs,
 	/* Check if upper/work fs supports file handles */
 	fh_type = ovl_can_decode_fh(ofs->workdir->d_sb);
 	if (ofs->config.index && !fh_type) {
-		ofs->config.index = false;
+		ofs->config.index = OVL_INDEX_OFF;
 		pr_warn("upper fs does not support file handles, falling back to index=off.\n");
 	}
 
@@ -1364,6 +1383,7 @@ static int ovl_get_indexdir(struct super_block *sb, struct ovl_fs *ofs,
 {
 	struct vfsmount *mnt = ofs->upper_mnt;
 	int err;
+	bool nouuid = ofs->config.index == OVL_INDEX_NOUUID;
 
 	err = mnt_want_write(mnt);
 	if (err)
@@ -1371,7 +1391,7 @@ static int ovl_get_indexdir(struct super_block *sb, struct ovl_fs *ofs,
 
 	/* Verify lower root is upper root origin */
 	err = ovl_verify_origin(upperpath->dentry, oe->lowerstack[0].dentry,
-				true);
+				true, nouuid);
 	if (err) {
 		pr_err("failed to verify upper root origin\n");
 		goto out;
@@ -1394,11 +1414,13 @@ static int ovl_get_indexdir(struct super_block *sb, struct ovl_fs *ofs,
 		 */
 		if (ovl_check_origin_xattr(ofs->indexdir)) {
 			err = ovl_verify_set_fh(ofs->indexdir, OVL_XATTR_ORIGIN,
-						upperpath->dentry, true, false);
+						upperpath->dentry, true, false,
+						nouuid);
 			if (err)
 				pr_err("failed to verify index dir 'origin' xattr\n");
 		}
-		err = ovl_verify_upper(ofs->indexdir, upperpath->dentry, true);
+		err = ovl_verify_upper(ofs->indexdir, upperpath->dentry, true,
+				       nouuid);
 		if (err)
 			pr_err("failed to verify index dir 'upper' xattr\n");
 
@@ -1455,7 +1477,7 @@ static int ovl_get_fsid(struct ovl_fs *ofs, const struct path *path)
 	if (!ovl_lower_uuid_ok(ofs, &sb->s_uuid)) {
 		bad_uuid = true;
 		if (ofs->config.index || ofs->config.nfs_export) {
-			ofs->config.index = false;
+			ofs->config.index = OVL_INDEX_OFF;
 			ofs->config.nfs_export = false;
 			pr_warn("%s uuid detected in lower fs '%pd2', falling back to index=off,nfs_export=off.\n",
 				uuid_is_null(&sb->s_uuid) ? "null" :
@@ -1886,9 +1908,14 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	if (err)
 		goto out_free_oe;
 
+	if (ofs->config.index == OVL_INDEX_NOUUID && (ofs->numfs > 1)) {
+		pr_warn("index=nouuid requires an single fs for lower and upper, falling back to index=on.\n");
+		ofs->config.index = OVL_INDEX_ON;
+	}
+
 	/* Show index=off in /proc/mounts for forced r/o mount */
 	if (!ofs->indexdir) {
-		ofs->config.index = false;
+		ofs->config.index = OVL_INDEX_OFF;
 		if (ofs->upper_mnt && ofs->config.nfs_export) {
 			pr_warn("NFS export requires an index dir, falling back to nfs_export=off.\n");
 			ofs->config.nfs_export = false;
