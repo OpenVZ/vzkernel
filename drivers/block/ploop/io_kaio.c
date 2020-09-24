@@ -497,8 +497,10 @@ static int kaio_fsync_thread(void * data)
 
 	spin_lock_irq(&plo->lock);
 	while (!kthread_should_stop() || !list_empty(&io->fsync_queue)) {
+		struct list_head fake_entry;
+		struct ploop_request *preq;
+		bool skip_wakeup = false;
 		int err;
-		struct ploop_request * preq;
 
 		DEFINE_WAIT(_wait);
 		for (;;) {
@@ -518,6 +520,12 @@ static int kaio_fsync_thread(void * data)
 
 		preq = list_entry(io->fsync_queue.next, struct ploop_request, list);
 		list_del(&preq->list);
+		/*
+		 * Not empty io->fsync_queue means fsync_thread has pending work.
+		 * See ploop_quiesce() for details.
+		 */
+		list_add(&fake_entry, &io->fsync_queue);
+
 		io->fsync_qlen--;
 		if (!preq->prealloc_size)
 			plo->st.bio_fsync++;
@@ -557,20 +565,22 @@ static int kaio_fsync_thread(void * data)
 				preq->req_rw &= ~REQ_FLUSH;
 				/*
 				 * FIXME: We submit some data and main thread
-				 * is not synchronized with this? Also,
-				 * TODO: fsync_thread must care of ploop_quiesce().
+				 * is not synchronized with this?
 				 */
 				if (kaio_resubmit(preq)) {
 					spin_lock_irq(&plo->lock);
-					continue;
+					if (!plo->quiesce_comp)
+						skip_wakeup = true;
+					goto del_fake;
 				}
 			}
 		}
 ready:
 		spin_lock_irq(&plo->lock);
 		list_add_tail(&preq->list, &plo->ready_queue);
-
-		if (waitqueue_active(&plo->waitq))
+del_fake:
+		list_del(&fake_entry);
+		if (waitqueue_active(&plo->waitq) && !skip_wakeup)
 			wake_up_interruptible(&plo->waitq);
 	}
 	spin_unlock_irq(&plo->lock);
@@ -688,6 +698,7 @@ kaio_init(struct ploop_io * io)
 {
 	INIT_LIST_HEAD(&io->fsync_queue);
 	init_waitqueue_head(&io->fsync_waitq);
+	io->fsync_timer.function = NULL;
 
 	return 0;
 }

@@ -224,6 +224,23 @@ static int disable_and_wait_discard(struct ploop_device *plo)
 	return ret;
 }
 
+static bool has_pending_fsync_reqs(struct ploop_device *plo, struct ploop_io *io)
+{
+	unsigned long flags;
+	bool ret;
+
+	spin_lock_irqsave(&plo->lock, flags);
+	ret = !list_empty(&io->fsync_queue);
+	spin_unlock_irqrestore(&plo->lock, flags);
+
+	return ret;
+}
+
+static void wait_fsync_thread(struct ploop_device *plo, struct ploop_io *io)
+{
+	wait_event(plo->waitq, !has_pending_fsync_reqs(plo, io));
+}
+
 static void ploop_init_request(struct ploop_request *preq)
 {
 	preq->eng_state = PLOOP_E_ENTRY;
@@ -3602,6 +3619,7 @@ void ploop_quiesce(struct ploop_device * plo)
 {
 	struct completion qcomp;
 	struct ploop_request * preq;
+	struct ploop_io *io;
 
 	if (!test_bit(PLOOP_S_RUNNING, &plo->state))
 		return;
@@ -3628,6 +3646,18 @@ void ploop_quiesce(struct ploop_device * plo)
 
 	wait_fast_path_reqs(plo);
 	wait_for_completion(&qcomp);
+
+	/*
+	 * Main thread is sleeping, so no one may submit a new preq
+	 * for fsync_thread, except delayed timer. Let it fire.
+	 */
+	io = &ploop_top_delta(plo)->io;
+	if (io->fsync_timer.function) {
+		del_timer_sync(&io->fsync_timer);
+		io->fsync_timer.function(io->fsync_timer.data);
+	}
+	wait_fsync_thread(plo, io);
+
 	plo->quiesce_comp = NULL;
 }
 EXPORT_SYMBOL(ploop_quiesce);
