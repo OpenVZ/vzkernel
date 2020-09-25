@@ -89,8 +89,10 @@ void user_free_preparse(struct key_preparsed_payload *prep)
 {
 	struct user_key_payload *upayload = prep->payload.data[0];
 
-	memset(upayload, 0, sizeof(*upayload) + upayload->datalen);
-	kvfree(upayload);
+	if (upayload) {
+		memset(upayload, 0, sizeof(*upayload) + upayload->datalen);
+		kvfree(upayload);
+	}
 }
 EXPORT_SYMBOL_GPL(user_free_preparse);
 
