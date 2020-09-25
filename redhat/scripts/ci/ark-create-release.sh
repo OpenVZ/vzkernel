@@ -43,8 +43,6 @@ else
 	git checkout --detach os-build && git describe
 	RELEASE_BRANCHES=""
 fi
-git merge -m "Merge ark patches" ark-patches
-
 MR_PATCHES=$(gitlab project-merge-request list --project-id=${PROJECT_ID} \
 	--labels="Include in Releases" --state=opened | grep -v "^$" | sort | \
 	awk '{ print "https://gitlab.com/cki-project/kernel-ark/-/merge_requests/" $2 ".patch" }')
