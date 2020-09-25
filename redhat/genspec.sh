@@ -273,6 +273,14 @@ if [ "$SINGLE_TARBALL" = 0 ]; then
 	done
 fi
 
+# generate Patchlist.changelog file that holds the shas and commits not
+# included upstream.
+git log --no-merges --pretty=oneline --no-decorate master.. \
+	":(exclude,top).gitlab-ci.yml" \
+	":(exclude,top)makefile" \
+	":(exclude,top)Makefile.rhelver" \
+	":(exclude,top)redhat" > $plistf.changelog
+
 sed -i "s/%%PATCHLIST%%//" $SPECFILE
 sed -i "s/%%APPLYPATCH%%//" $SPECFILE
 
