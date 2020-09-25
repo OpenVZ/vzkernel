@@ -49,7 +49,7 @@ if [ -z "$lasttag" ]; then
 	lasttag=$MARKER
 fi
 echo "Gathering new log entries since $lasttag"
-git format-patch --no-renames -k --stdout ${lasttag}.. -- ":!/redhat/rhdocs" | awk '
+git format-patch --no-renames -k --stdout ^master ${lasttag}.. -- ":!/redhat/rhdocs" | awk '
 BEGIN{TYPE="PATCHJUNK"; }
 	# add an entry to changelog
 	function changelog(subjectline, nameline, zstream)
