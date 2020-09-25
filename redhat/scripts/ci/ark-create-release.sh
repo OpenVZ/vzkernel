@@ -33,9 +33,6 @@ if [ -n "$BASE_RELEASE" ]; then
 fi
 
 git checkout os-build
-./redhat/scripts/ci/ark-rebase-patches.sh "$UPSTREAM_REF" "$PROJECT_ID"
-git checkout os-build
-./redhat/scripts/ci/ark-update-configs.sh "$UPSTREAM_REF" "$PROJECT_ID"
 make dist-release
 
 if git tag -v "$UPSTREAM_REF" > /dev/null 2>&1; then
