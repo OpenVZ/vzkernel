@@ -7860,6 +7860,7 @@ static int cpulimit_balance_cpu_stop(void *data)
 
 		schedstat_inc(sd->clb_count);
 
+		update_rq_clock(rq);
 		if (do_cpulimit_balance(&env))
 			schedstat_inc(sd->clb_pushed);
 		else
@@ -9592,6 +9593,7 @@ more_balance:
 			env.loop = 0;
 			local_irq_save(rf.flags);
 			double_rq_lock(env.dst_rq, busiest);
+			update_rq_clock(env.dst_rq);
 			cur_ld_moved = ld_moved = move_task_groups(&env);
 			double_rq_unlock(env.dst_rq, busiest);
 			local_irq_restore(rf.flags);
