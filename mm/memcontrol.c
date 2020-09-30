@@ -4973,7 +4973,7 @@ static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 	if (!pn)
 		return 1;
 
-	pn->lruvec_stat_cpu = alloc_percpu_gpf(struct lruvec_stat,
+	pn->lruvec_stat_cpu = alloc_percpu_gfp(struct lruvec_stat,
 					       GFP_KERNEL_ACCOUNT);
 	if (!pn->lruvec_stat_cpu) {
 		kfree(pn);
@@ -5035,7 +5035,7 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	if (memcg->id.id < 0)
 		goto fail;
 
-	memcg->stat_cpu = alloc_percpu_gpf(struct mem_cgroup_stat_cpu,
+	memcg->stat_cpu = alloc_percpu_gfp(struct mem_cgroup_stat_cpu,
 					   GFP_KERNEL_ACCOUNT);
 	if (!memcg->stat_cpu)
 		goto fail;
