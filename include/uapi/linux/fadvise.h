@@ -18,6 +18,5 @@
 #define POSIX_FADV_DONTNEED	4 /* Don't need these pages.  */
 #define POSIX_FADV_NOREUSE	5 /* Data will be accessed once.  */
 #endif
-#define FADV_DEACTIVATE		32 /* Mark pages as good candidates for reclaim */
 
 #endif	/* FADVISE_H_INCLUDED */
