@@ -3680,20 +3680,23 @@ static int get_bdev_from_fd(int fd, struct block_device **bdev)
 {
 	struct file *file = fget(fd);
 	struct inode *inode;
-	int ret = -ENODEV;
+	int ret;
 
 	if (!file)
-		return -ENODEV;
+		return -EBADF;
 
-	inode = file_inode(file);
+	ret = -ENODEV;
+	inode = file->f_mapping->host;
 	if (!inode)
 		goto fput;
 
-	*bdev = inode->i_sb->s_bdev;
-	if (*bdev) {
-		bdgrab(*bdev);
-		ret = 0;
-	}
+	ret = -ENOTBLK;
+	if (!S_ISBLK(inode->i_mode))
+		goto fput;
+
+	ret = 0;
+	*bdev = I_BDEV(inode);
+	bdgrab(*bdev);
 fput:
 	fput(file);
 	return ret;
@@ -3780,6 +3783,8 @@ static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 			return -EINVAL;
 		/* The rest of fields are ignored */
 		sync_fd = chunk.pctl_fd;
+		if (sync_fd < 0)
+			return -EBADF;
 		ctl.pctl_chunks = 1;
 	}
 	if (ctl.pctl_chunks != 1)
