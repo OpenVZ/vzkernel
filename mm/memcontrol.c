@@ -2336,14 +2336,18 @@ static void reclaim_high(struct mem_cgroup *memcg,
 {
 
 	do {
+		long cache_overused;
 
 		if (page_counter_read(&memcg->memory) > memcg->high) {
 			memcg_memory_event(memcg, MEMCG_HIGH);
 			try_to_free_mem_cgroup_pages(memcg, nr_pages, gfp_mask, true);
 		}
 
-		if (page_counter_read(&memcg->cache) > memcg->cache.max)
-			try_to_free_mem_cgroup_pages(memcg, nr_pages, gfp_mask, false);
+		cache_overused = page_counter_read(&memcg->cache) -
+			memcg->cache.max;
+
+		if (cache_overused > 0)
+			try_to_free_mem_cgroup_pages(memcg, cache_overused, gfp_mask, false);
 	} while ((memcg = parent_mem_cgroup(memcg)));
 }
 
