@@ -1614,7 +1614,7 @@ static inline bool memcg_kmem_enabled(void)
 
 static inline bool memcg_kmem_bypass(void)
 {
-	if (in_interrupt())
+	if (!in_task())
 		return true;
 
 	/* Allow remote memcg charging in kthread contexts. */
