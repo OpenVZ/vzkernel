@@ -644,7 +644,7 @@ memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order)
 	 */
 	if (gfp & __GFP_NOFAIL)
 		return true;
-	if (in_interrupt() || (!current->mm) || (current->flags & PF_KTHREAD))
+	if (!in_task() || (!current->mm) || (current->flags & PF_KTHREAD))
 		return true;
 
 	/* If the test is dying, just let it go. */
@@ -682,7 +682,7 @@ memcg_kmem_get_cache(struct kmem_cache *cachep, gfp_t gfp)
 		return cachep;
 	if (gfp & __GFP_NOFAIL)
 		return cachep;
-	if (in_interrupt() || (!current->mm) || (current->flags & PF_KTHREAD))
+	if (!in_task() || (!current->mm) || (current->flags & PF_KTHREAD))
 		return cachep;
 	if (unlikely(fatal_signal_pending(current)))
 		return cachep;
