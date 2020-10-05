@@ -75,6 +75,8 @@ struct accumulated_stats {
 	unsigned long stat[MEMCG_NR_STAT];
 	unsigned long events[NR_VM_EVENT_ITEMS];
 	unsigned long lru_pages[NR_LRU_LISTS];
+	unsigned long oom;
+	unsigned long oom_kill;
 	const unsigned int *stats_array;
 	const unsigned int *events_array;
 	int stats_size;

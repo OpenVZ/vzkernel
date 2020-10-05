@@ -3144,6 +3144,8 @@ void accumulate_memcg_tree(struct mem_cgroup *memcg,
 		for (i = 0; i < NR_LRU_LISTS; i++)
 			acc->lru_pages[i] +=
 				mem_cgroup_nr_lru_pages(mi, BIT(i));
+		acc->oom += atomic_long_read(&mi->memory_events[MEMCG_OOM]);
+		acc->oom_kill += atomic_long_read(&mi->memory_events[MEMCG_OOM_KILL]);
 
 		cond_resched();
 	}
@@ -3899,6 +3901,13 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 	BUILD_BUG_ON(ARRAY_SIZE(memcg1_stat_names) != ARRAY_SIZE(memcg1_stats));
 	BUILD_BUG_ON(ARRAY_SIZE(mem_cgroup_lru_names) != NR_LRU_LISTS);
 
+	memset(&acc, 0, sizeof(acc));
+	acc.stats_size = ARRAY_SIZE(memcg1_stats);
+	acc.stats_array = memcg1_stats;
+	acc.events_size = ARRAY_SIZE(memcg1_events);
+	acc.events_array = memcg1_events;
+	accumulate_memcg_tree(memcg, &acc);
+
 	for (i = 0; i < ARRAY_SIZE(memcg1_stats); i++) {
 		if (memcg1_stats[i] == MEMCG_SWAP && !do_memsw_account())
 			continue;
@@ -3910,6 +3919,18 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 	for (i = 0; i < ARRAY_SIZE(memcg1_events); i++)
 		seq_printf(m, "%s %lu\n", memcg1_event_names[i],
 			   memcg_sum_events(memcg, memcg1_events[i]));
+
+	/*
+	 * For root_mem_cgroup we want to account global ooms as well.
+	 * The diff between allo MEMCG_OOM_KILL and MEMCG_OOM events
+	 * should give us the glogbal ooms count.
+	 */
+	if (memcg == root_mem_cgroup)
+		seq_printf(m, "oom %lu\n", acc.oom_kill - acc.oom +
+			atomic_long_read(&memcg->memory_events[MEMCG_OOM]));
+	else
+		seq_printf(m, "oom %lu\n",
+			atomic_long_read(&memcg->memory_events[MEMCG_OOM]));
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
 		seq_printf(m, "%s %lu\n", mem_cgroup_lru_names[i],
@@ -3927,13 +3948,6 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 		seq_printf(m, "hierarchical_memsw_limit %llu\n",
 			   (u64)memsw * PAGE_SIZE);
 
-	memset(&acc, 0, sizeof(acc));
-	acc.stats_size = ARRAY_SIZE(memcg1_stats);
-	acc.stats_array = memcg1_stats;
-	acc.events_size = ARRAY_SIZE(memcg1_events);
-	acc.events_array = memcg1_events;
-	accumulate_memcg_tree(memcg, &acc);
-
 	for (i = 0; i < ARRAY_SIZE(memcg1_stats); i++) {
 		if (memcg1_stats[i] == MEMCG_SWAP && !do_memsw_account())
 			continue;
@@ -3944,6 +3958,11 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 	for (i = 0; i < ARRAY_SIZE(memcg1_events); i++)
 		seq_printf(m, "total_%s %llu\n", memcg1_event_names[i],
 			   (u64)acc.events[i]);
+
+	if (memcg == root_mem_cgroup)
+		seq_printf(m, "total_oom %lu\n", acc.oom_kill);
+	else
+		seq_printf(m, "total_oom %lu\n", acc.oom);
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
 		seq_printf(m, "total_%s %llu\n", mem_cgroup_lru_names[i],
