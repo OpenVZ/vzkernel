@@ -1964,6 +1964,15 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 }
 EXPORT_SYMBOL(sock_alloc_send_pskb);
 
+struct sk_buff *sock_alloc_send_pskb_flags(struct sock *sk, unsigned long header_len,
+				     unsigned long data_len, int noblock,
+				     int *errcode, int max_page_order, gfp_t extra_flags)
+{
+	return __sock_alloc_send_pskb(sk, header_len, data_len, noblock,
+				errcode, max_page_order, extra_flags);
+}
+EXPORT_SYMBOL(sock_alloc_send_pskb_flags);
+
 struct sk_buff *sock_alloc_send_skb(struct sock *sk, unsigned long size,
 				    int noblock, int *errcode)
 {
