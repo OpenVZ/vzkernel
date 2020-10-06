@@ -1626,6 +1626,13 @@ extern struct sk_buff		*sock_alloc_send_pskb(struct sock *sk,
 						      int noblock,
 						      int *errcode,
 						      int max_page_order);
+extern struct sk_buff		*sock_alloc_send_pskb_flags(struct sock *sk,
+						      unsigned long header_len,
+						      unsigned long data_len,
+						      int noblock,
+						      int *errcode,
+						      int max_page_order,
+						      gfp_t extra_flags);
 extern void *sock_kmalloc(struct sock *sk, int size,
 			  gfp_t priority);
 extern void sock_kfree_s(struct sock *sk, void *mem, int size);
