@@ -1142,8 +1142,8 @@ static struct sk_buff *tun_alloc_skb(struct tun_file *tfile,
 	if (prepad + len < PAGE_SIZE || !linear)
 		linear = len;
 
-	skb = sock_alloc_send_pskb(sk, prepad + linear, len - linear, noblock,
-				   &err, 0);
+	skb = sock_alloc_send_pskb_flags(sk, prepad + linear, len - linear, noblock,
+				&err, 0, __GFP_NOWARN);
 	if (!skb)
 		return ERR_PTR(err);
 
