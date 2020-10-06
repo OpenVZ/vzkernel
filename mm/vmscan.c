@@ -2952,26 +2952,6 @@ static void snapshot_refaults(struct mem_cgroup *root_memcg, struct zone *zone)
        } while ((memcg = mem_cgroup_iter(root_memcg, memcg, NULL)));
 }
 
-/* All zones in zonelist are unreclaimable? */
-static bool all_unreclaimable(struct zonelist *zonelist,
-		struct scan_control *sc)
-{
-	struct zoneref *z;
-	struct zone *zone;
-
-	for_each_zone_zonelist_nodemask(zone, z, zonelist,
-			gfp_zone(sc->gfp_mask), sc->nodemask) {
-		if (!populated_zone(zone))
-			continue;
-		if (!cpuset_zone_allowed_hardwall(zone, GFP_KERNEL))
-			continue;
-		if (zone_reclaimable(zone))
-			return false;
-	}
-
-	return true;
-}
-
 static void shrink_tcrutches(struct scan_control *scan_ctrl)
 {
 	int nid;
@@ -3096,10 +3076,6 @@ out:
 		sc->may_thrash = 1;
 		goto retry;
 	}
-
-	/* top priority shrink_zones still had more to do? don't OOM, then */
-	if (global_reclaim(sc) && !all_unreclaimable(zonelist, sc))
-		return 1;
 
 	return 0;
 }
