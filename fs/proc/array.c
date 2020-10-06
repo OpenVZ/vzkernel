@@ -546,11 +546,8 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 
 #ifdef CONFIG_VE
 	if (!is_super) {
-		struct timespec *ve_start_ts =
-				&get_exec_env()->real_start_timespec;
-		start_time -=
-			(unsigned long long)ve_start_ts->tv_sec * NSEC_PER_SEC
-				+ ve_start_ts->tv_nsec;
+		u64 offset = get_exec_env()->real_start_time;
+		start_time -= (unsigned long long)offset;
 	}
 	/* tasks inside a CT can have negative start time e.g. if the CT was
 	 * migrated from another hw node, in which case we will report 0 in
