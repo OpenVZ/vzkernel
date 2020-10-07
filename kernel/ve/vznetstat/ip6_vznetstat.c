@@ -21,6 +21,7 @@
 #include <linux/if.h>
 #include <linux/netdevice.h>
 #include <linux/vznetstat.h>
+#include <net/dst.h>
 
 static unsigned int
 venet_acct_in_hook_v6(const struct nf_hook_ops *hook,
@@ -46,9 +47,12 @@ venet_acct_out_hook_v6(const struct nf_hook_ops *hook,
 		    const struct net_device *out,
 		    const struct nf_hook_state *state)
 {
+	struct dst_entry *dst = skb_dst(skb);
 	int res = NF_ACCEPT;
 
 	if (out->flags & IFF_LOOPBACK)
+		goto out;
+	if (dst && (dst->dev->flags & IFF_LOOPBACK))
 		goto out;
 
 	skb->protocol = __constant_htons(ETH_P_IPV6);
