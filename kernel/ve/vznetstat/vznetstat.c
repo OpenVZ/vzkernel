@@ -753,15 +753,6 @@ void venet_acct_classify_add_outgoing(struct venet_stat *stat, struct sk_buff *s
 	venet_acct_mark(stat, skb, class);
 }
 
-void venet_acct_classify_sub_outgoing(struct venet_stat *stat, struct sk_buff *skb)
-{
-	int class;
-
-	class = acct_one_skb(stat, skb, ACCT_OUT, -venet_acct_skb_size(skb));
-	/* Do not forget to mark skb for traffic shaper */
-	venet_acct_mark(stat, skb, class);
-}
-
 void venet_acct_classify_add_incoming_plain(struct venet_stat *stat,
 		struct ve_addr_struct *src_addr, int data_size)
 {
@@ -1190,7 +1181,6 @@ EXPORT_SYMBOL(venet_acct_find_stat);
 EXPORT_SYMBOL(venet_acct_put_stat);
 EXPORT_SYMBOL(venet_acct_classify);
 EXPORT_SYMBOL(venet_acct_classify_add_outgoing);
-EXPORT_SYMBOL(venet_acct_classify_sub_outgoing);
 EXPORT_SYMBOL(venet_acct_classify_add_incoming);
 EXPORT_SYMBOL(venet_acct_classify_add_incoming_plain);
 EXPORT_SYMBOL(venet_acct_classify_add_outgoing_plain);

@@ -59,7 +59,6 @@ void   venet_acct_put_stat(struct venet_stat *);
 
 void venet_acct_classify_add_incoming(struct venet_stat *, struct sk_buff *skb);
 void venet_acct_classify_add_outgoing(struct venet_stat *, struct sk_buff *skb);
-void venet_acct_classify_sub_outgoing(struct venet_stat *, struct sk_buff *skb);
 
 void venet_acct_classify_add_incoming_plain(struct venet_stat *stat,
 		struct ve_addr_struct *src_addr, int data_size);
@@ -73,8 +72,6 @@ static inline void venet_acct_put_stat(struct venet_stat *stat) { }
 static inline void venet_acct_classify_add_incoming(struct venet_stat *stat,
 						struct sk_buff *skb) {}
 static inline void venet_acct_classify_add_outgoing(struct venet_stat *stat,
-						struct sk_buff *skb) {}
-static inline void venet_acct_classify_sub_outgoing(struct venet_stat *stat,
 						struct sk_buff *skb) {}
 
 static inline void venet_acct_classify_add_incoming_plain(struct venet_stat *stat,
