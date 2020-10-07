@@ -1241,8 +1241,7 @@ NVM EXPRESS DRIVER (nvme)
 M:	David Milburn <dmilburn@redhat.com>
 M:	Gopal Tiwari <gtiwari@redhat.com>
 S:	Maintained
-F:	drivers/nvme/host/
-F:	drivers/nvme/target/
+F:	drivers/nvme/
 F:	include/linux/nvme.h
 F:	include/linux/nvme-rdma*.h
 
