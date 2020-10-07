@@ -692,6 +692,48 @@ F:	drivers/hid/
 F:	include/linux/hid*
 F:	include/uapi/linux/hid*
 
+HWMON SUBSYSTEM
+M:	Dean Nelson <dnelson@redhat.com>
+S:	Maintained
+F:	drivers/hwmon/
+
+HWPOISON MEMORY FAILURE HANDLING
+M:	Dean Nelson <dnelson@redhat.com>
+S:	Maintained
+F:	mm/memory-failure.c
+F:	mm/hwpoison-inject.c
+
+Hyper-V CORE AND DRIVERS
+M:	Cathy Avery <cavery@redhat.com>
+M:	Mohammed Gamal <mgamal@redhat.com>
+M:	Vitaly Kuznetsov <vkuznets@redhat.com>
+S:	Maintained
+F:	Documentation/networking/device_drivers/microsoft/netvsc.txt
+F:	arch/x86/include/asm/mshyperv.h
+F:	arch/x86/include/asm/trace/hyperv.h
+F:	arch/x86/include/asm/hyperv-tlfs.h
+F:	arch/x86/kernel/cpu/mshyperv.c
+F:	arch/x86/hyperv
+F:	drivers/clocksource/hyperv_timer.c
+F:	drivers/hid/hid-hyperv.c
+F:	drivers/hv/
+F:	drivers/input/serio/hyperv-keyboard.c
+F:	drivers/pci/controller/pci-hyperv.c
+F:	drivers/pci/controller/pci-hyperv-intf.c
+F:	drivers/net/hyperv/
+F:	drivers/scsi/storvsc_drv.c
+F:	drivers/uio/uio_hv_generic.c
+F:	drivers/video/fbdev/hyperv_fb.c
+F:	drivers/iommu/hyperv-iommu.c
+F:	net/vmw_vsock/hyperv_transport.c
+F:	include/clocksource/hyperv_timer.h
+F:	include/linux/hyperv.h
+F:	include/uapi/linux/hyperv.h
+F:	include/asm-generic/mshyperv.h
+F:	tools/hv/
+F:	Documentation/ABI/stable/sysfs-bus-vmbus
+F:	Documentation/ABI/testing/debugfs-hyperv
+
 I2C SUBSYSTEM
 M:	Gopal Tiwari <gtiwari@redhat.com>
 M:	David Arcari <darcari@redhat.com>
@@ -704,6 +746,16 @@ F:	include/linux/i2c.h
 F:	include/linux/i2c-*.h
 F:	include/uapi/linux/i2c.h
 F:	include/uapi/linux/i2c-*.h
+
+INFINIBAND SUBSYSTEM
+M:	Kamal Heib <kheib@redhat.com>
+L:	kernel-patches@redhat.com
+S:	Maintained
+F:	drivers/infiniband/
+F:	include/rdma/
+F:	include/uapi/rdma/
+F:	include/uapi/linux/if_infiniband.h
+F:	Documentation/infiniband/
 
 INIT
 M:	Prarit Bhargava <prarit@redhat.com>
@@ -809,11 +861,28 @@ M:	Tony Camuso <tcamuso@redhat.com>
 S:	Maintained
 F:	drivers/crypto/qat/*
 
+IOMMU DRIVERS
+M:	Jerry Snitselaar <jsnitsel@redhat.com>
+M:	Myron Stowe <myron.stowe@redhat.com>
+M:	Alex Williamson <alex.williamson@redhat.com>
+M:	Don Dutile <ddutile@redhat.com>
+S:	Maintained
+F:	drivers/iommu/
+
+IPMI SUBSYSTEM
+M:	Tony Camuso <tcamuso@redhat.com>
+S:	Maintained
+
 ISCSI (iscsi_tcp, libiscsi, libiscsi_tcp, scsi_transport_iscsi)
 M:	Chris Leech <cleech@redhat.com>
 S:	Maintained
 F:	drivers/scsi/*iscsi*
 F:	include/scsi/*iscsi*
+
+ISMT SMBUS DRIVER
+M:	Tony Camuso <tcamuso@redhat.com>
+S:	Maintained
+F:	drivers/i2c/busses/i2c-ismt.c
 
 JOURNALLING LAYER FOR BLOCK DEVICES (JBD2)
 M:	Lukas Czerner <lczerner@redhat.com>
@@ -897,75 +966,6 @@ F:	arch/x86/include/asm/pvclock-abi.h
 F:	arch/x86/include/asm/vmx*.h
 F:	arch/x86/kernel/kvm.c
 F:	arch/x86/kernel/kvmclock.c
-
-HWMON SUBSYSTEM
-M:	Dean Nelson <dnelson@redhat.com>
-S:	Maintained
-F:	drivers/hwmon/
-
-HWPOISON MEMORY FAILURE HANDLING
-M:	Dean Nelson <dnelson@redhat.com>
-S:	Maintained
-F:	mm/memory-failure.c
-F:	mm/hwpoison-inject.c
-
-Hyper-V CORE AND DRIVERS
-M:	Cathy Avery <cavery@redhat.com>
-M:	Mohammed Gamal <mgamal@redhat.com>
-M:	Vitaly Kuznetsov <vkuznets@redhat.com>
-S:	Maintained
-F:	Documentation/networking/device_drivers/microsoft/netvsc.txt
-F:	arch/x86/include/asm/mshyperv.h
-F:	arch/x86/include/asm/trace/hyperv.h
-F:	arch/x86/include/asm/hyperv-tlfs.h
-F:	arch/x86/kernel/cpu/mshyperv.c
-F:	arch/x86/hyperv
-F:	drivers/clocksource/hyperv_timer.c
-F:	drivers/hid/hid-hyperv.c
-F:	drivers/hv/
-F:	drivers/input/serio/hyperv-keyboard.c
-F:	drivers/pci/controller/pci-hyperv.c
-F:	drivers/pci/controller/pci-hyperv-intf.c
-F:	drivers/net/hyperv/
-F:	drivers/scsi/storvsc_drv.c
-F:	drivers/uio/uio_hv_generic.c
-F:	drivers/video/fbdev/hyperv_fb.c
-F:	drivers/iommu/hyperv-iommu.c
-F:	net/vmw_vsock/hyperv_transport.c
-F:	include/clocksource/hyperv_timer.h
-F:	include/linux/hyperv.h
-F:	include/uapi/linux/hyperv.h
-F:	include/asm-generic/mshyperv.h
-F:	tools/hv/
-F:	Documentation/ABI/stable/sysfs-bus-vmbus
-F:	Documentation/ABI/testing/debugfs-hyperv
-
-INFINIBAND SUBSYSTEM
-M:	Kamal Heib <kheib@redhat.com>
-L:	kernel-patches@redhat.com
-S:	Maintained
-F:	drivers/infiniband/
-F:	include/rdma/
-F:	include/uapi/rdma/
-F:	include/uapi/linux/if_infiniband.h
-F:	Documentation/infiniband/
-
-IOMMU DRIVERS
-M:	Jerry Snitselaar <jsnitsel@redhat.com>
-M:	Myron Stowe <myron.stowe@redhat.com>
-M:	Alex Williamson <alex.williamson@redhat.com>
-M:	Don Dutile <ddutile@redhat.com>
-S:	Maintained
-F:	drivers/iommu/
-
-IPMI SUBSYSTEM
-M:	Tony Camuso <tcamuso@redhat.com>
-S:	Maintained
-
-ISMT SMBUS DRIVER
-M:	Tony Camuso <tcamuso@redhat.com>
-S:	Maintained
-F:	drivers/i2c/busses/i2c-ismt.c
 
 LIB
 M:	Prarit Bhargava <prarit@redhat.com>
