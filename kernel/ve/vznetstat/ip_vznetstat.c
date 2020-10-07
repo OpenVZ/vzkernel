@@ -77,12 +77,20 @@ static unsigned int venet_acct_out_hook(const struct nf_hook_ops *hook,
 				        const struct net_device *out,
 				        const struct nf_hook_state *state)
 {
+	struct dst_entry *dst = skb_dst(skb);
 	int res;
 
 	res = NF_ACCEPT;
 
 	/* Skip loopback dev */
 	if (out->flags & IFF_LOOPBACK)
+		goto out;
+	/*
+	 * @skb is routed to loopback. Say, your eth0 has address 10.94.86.184
+	 * and ip_hdr(skb)->saddr == ip_hdr(skb)->daddr == 10.94.86.184.
+	 * Then, @out is eth0 and we skip @skb in the above check.
+	 */
+	if (dst && (dst->dev->flags & IFF_LOOPBACK))
 		goto out;
 
 	/* Paranoia */
