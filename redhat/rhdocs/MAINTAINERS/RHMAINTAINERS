@@ -1425,6 +1425,19 @@ F:	include/linux/sctp.h
 F:	include/net/sctp/
 F:	include/uapi/linux/sctp.h
 
+SECURITY SUBSYSTEM
+M:	Ondrej Mosnacek <omosnace@redhat.com>
+S:	Supported
+F:	include/linux/lsm_*
+F:	include/linux/security.h
+F:	security/commoncap.c
+F:	security/inode.c
+F:	security/lsm_audit.c
+F:	security/min_addr.c
+F:	security/security.c
+F:	security/Kconfig
+F:	security/Makefile
+
 SELINUX SECURITY MODULE
 M:	Ondrej Mosnacek <omosnace@redhat.com>
 S:	Supported
