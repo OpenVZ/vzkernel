@@ -269,8 +269,17 @@ else
 fi
 
 # generate Patchlist.changelog file that holds the shas and commits not
-# included upstream.
-git log --no-merges --pretty=oneline --no-decorate master.. $EXCLUDE_FILES \
+# included upstream and git commit url.
+ARK_COMMIT_URL="https://gitlab.com/cki-project/kernel-ark/-/commit"
+
+# sed convert
+# <sha> <description>
+# to
+# <ark_commit_url>/<sha>
+#  <sha> <description>
+#
+git log --no-merges --pretty=oneline --no-decorate master.. $EXCLUDE_FILES | \
+	sed "s!^\([^ ]*\)!$ARK_COMMIT_URL/\1\n &!; s!\$!\n!" \
 	> $SOURCES/Patchlist.changelog
 
 for opt in $BUILDOPTS; do
