@@ -82,7 +82,7 @@ static unsigned int venet_acct_out_hook(const struct nf_hook_ops *hook,
 	res = NF_ACCEPT;
 
 	/* Skip loopback dev */
-	if (out == dev_net(out)->loopback_dev)
+	if (out->flags & IFF_LOOPBACK)
 		goto out;
 
 	/* Paranoia */
