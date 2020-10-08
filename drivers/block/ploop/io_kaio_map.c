@@ -58,7 +58,6 @@ int ploop_kaio_open(struct file * file, int rdonly)
 	pm->readers = rdonly ? 1 : -1;
 	list_add(&pm->list, &ploop_mappings);
 	pm = NULL;
-	mapping->host->i_flags |= S_SWAPFILE;
 
 kaio_open_done:
 	spin_unlock(&ploop_mappings_lock);
@@ -82,7 +81,6 @@ int ploop_kaio_close(struct address_space * mapping, int rdonly)
 			}
 
 			if (m->readers == 0) {
-				mapping->host->i_flags &= ~S_SWAPFILE;
 				list_del(&m->list);
 				pm = m;
 			}
