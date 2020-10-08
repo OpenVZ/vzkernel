@@ -412,6 +412,11 @@ S:	Maintained
 F:	drivers/net/bonding/
 F:	include/linux/if_bonding.h
 
+BUS DRIVER
+M:	Myron Stowe <myron.stowe@redhat.com>
+S:	Maintained
+F:	drivers/bus/
+
 CEPH COMMON CODE (LIBCEPH)
 M:	Ilya Dryomov <idryomov@redhat.com>
 M:	Jeff Layton <jlayton@redhat.com>
@@ -568,6 +573,12 @@ S:	Maintained
 F:	drivers/dma-buf/
 F:	include/linux/dma-buf*
 
+DMA DRIVERS
+M:	Jerry Snitselaar <jsnitsel@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+S:	Maintained
+F:	drivers/dma/
+
 DMA SUPPORT
 M:	Jerry Snitselaar <jsnitsel@redhat.com>
 M:	Donald Dutile <ddutile@redhat.com>
@@ -641,6 +652,13 @@ M:	Jarod Wilson <jarod@redhat.com>
 S:	Maintained
 F:	drivers/firewire/
 F:	include/linux/firewire*.h
+
+FIRMWARE SUBSYSTEM
+M:	Lenny Szubowicz <lszubowi@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+M:	Mark Langsdorf <mlangsdo@redhat.com>
+S:	Maintained
+F:	drivers/firmware/
 
 FTRACE
 M:	Jerome Marchand <jmarchan@redhat.com>
@@ -974,6 +992,11 @@ F:	arch/x86/include/asm/vmx*.h
 F:	arch/x86/kernel/kvm.c
 F:	arch/x86/kernel/kvmclock.c
 
+LEDS DRIVERS
+M:	Tony Camuso <tcamuso@redhat.com>
+S:	Maintained
+F:	drivers/leds/
+
 LIB
 M:	Prarit Bhargava <prarit@redhat.com>
 S:	Maintained
@@ -1035,6 +1058,11 @@ M:	Prarit Bhargava <prarit@redhat.com>
 S:	Maintained
 F:	arch/x86/kernel/cpu/mcheck/
 
+MAILBOX DRIVERS
+M:	Al Stone <ahs3@redhat.com>
+S:	Maintained
+F:	drivers/mailbox/
+
 MELLANOX ETHERNET SWITCH DRIVERS
 M:	Ivan Vecera <ivecera@redhat.com>
 S:	Maintained
@@ -1054,6 +1082,13 @@ F:	mm/
 MEMORY HOTPLUG
 M:	Prarit Bhargava <prarit@redhat.com>
 S:	Maintained
+
+MFD DRIVERS (Multi Function Devices)
+M:	Torez Smith <torez@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+M:	Tony Camuso <tcamuso@redhat.com>
+S:	Maintained
+F:	drivers/mfd/
 
 MICRON PCIe SSD DRIVER (mtip32xx)
 M:	David Milburn <dmilburn@redhat.com>
@@ -1319,10 +1354,16 @@ S:	Maintained
 F:	drivers/pinctrl/
 F:	include/linux/pinctrl/
 
-LINUX FOR POWERPC (64-BIT)
-L:	kernel-patches@redhat.com
+PLATFORM DRIVERS
+M:	David Arcari <darcari@redhat.com>
+M:	Mark Langsdorf <mlangsdo@redhat.com>
 S:	Maintained
-F:	arch/powerpc/
+F:	drivers/platform/
+
+POWER DRIVERS (Batteries, power supplies, etc.)
+M:	Lenny Szubowicz <lszubowi@redhat.com>
+S:	Maintained
+F:	drivers/power/
 
 POWER STATE COORDINATION INTERFACE (PSCI)
 M:	Mark Salter <msalter@redhat.com>
@@ -1330,6 +1371,11 @@ S:	Maintained
 F:	drivers/firmware/psci*.c
 F:	include/linux/psci.h
 F:	include/uapi/linux/psci.h
+
+POWERPC (64-BIT)
+M:	kernel-patches@redhat.com
+S:	Maintained
+F:	arch/powerpc/
 
 PSTORE PERSISTENT STORAGE
 M:	Lenny Szubowicz <lszubowi@redhat.com>
@@ -1480,6 +1526,11 @@ S:	Maintained
 F:	Documentation/filesystems/squashfs.txt
 F:	fs/squashfs/
 
+SPI DRIVERS (Serial Peripheral Interface)
+M:	Al Stone <ahs3@redhat.com>
+S:	Maintained
+F:	drivers/spi/
+
 SUN REMOTE PROCEDURE CALL (sunrpc)
 L:	kernel-patches@redhat.com
 S:	Maintained
@@ -1566,6 +1617,11 @@ M:	Torez Smith <torez@redhat.com>
 M:	Don Zickus <dzickus@redhat.com>
 S:	Maintained
 F:	drivers/usb/
+
+USR DIRECTORY
+M:	Prarit Bhargava <prarit@redhat.com>
+S:	Maintained
+F:	usr/
 
 UVC WEBCAM DRIVER
 M:	Tony Camuso <tcamuso@redhat.com>
