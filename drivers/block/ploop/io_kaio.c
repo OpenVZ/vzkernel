@@ -1119,9 +1119,7 @@ static int __kaio_truncate(struct ploop_io * io, struct file * file, u64 pos)
 	newattrs.ia_valid = ATTR_SIZE;
 
 	mutex_lock(&io->files.inode->i_mutex);
-	io->files.inode->i_flags &= ~S_SWAPFILE;
 	err = notify_change(F_DENTRY(file), &newattrs, NULL);
-	io->files.inode->i_flags |= S_SWAPFILE;
 	mutex_unlock(&io->files.inode->i_mutex);
 
 	if (err) {
