@@ -59,7 +59,6 @@ patches) , a sub-system maintainer's tree, or your own creation.
    git checkout linus/master
    git merge -m "Merge branch 'os-build'"  os-build
    # Fedora carries a patch to alter this setting, so we need to change the configuration to build a vanilla tree.
-   sed -i 's/=13/=11/g' redhat/configs/fedora/generic/arm/aarch64/CONFIG_FORCE_MAX_ZONEORDER
    # If you're targeting RHEL and have brew/rhpkg installed, use "make DIST=.elrdy dist-srpm" instead
    make dist-srpm
 

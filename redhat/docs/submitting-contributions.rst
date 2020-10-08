@@ -10,10 +10,9 @@ policies <https://docs.fedoraproject.org/en-US/quick-docs/kernel/overview/#_poli
 These guides assume you've completed the :ref:`quick-start` guide
 and are familiar with the :ref:`repository-layout`.
 
-There are two major types of contributions ARK accepts. The first is
-kernel configuration options and build scripts, both of which live in
-the ``os-build`` branch. The second are patches to the kernel itself,
-which are in the ``ark-patches`` branch.
+All contributions must be constructed against the ``os-build`` branch
+which contains the configs for Fedora and ARK builds, and the kernel patches
+for Fedora and ARK.
 
 Documentation
 =============
@@ -34,8 +33,8 @@ enforced by CI. You can check your changes locally with::
 
     make SPHINXOPTS="-W" html
 
-Configuration, Build Scripts, and Specfile
-==========================================
+Patches
+=======
 
 Quick start:
 
@@ -98,30 +97,7 @@ reference to it using the format ``Bugzilla: <url>``. For example:
    Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1234567890
    Signed-off-by: Jeremy Cline <jcline@redhat.com>
 
-Kernel Patches
-==============
-
-To add or update a kernel patch carried for ARK, start a new branch
-based on ``ark-patches``:
-
-1. ``git fetch upstream``
-2. ``git checkout -b my-kernel-patch upstream/ark-patches``
-3. Add commits any way you'd like (``git am``, ``git cherry-pick -x``,
-   etc). Patches are not likely to be accepted if they're not already on
-   their way upstream.
-4. Open a merge request against ``ark-patches``. You can do so in the
-   web UI, or directly from a git push command:
-   ``git push -o merge_request.create -o merge_request.target=ark-patches -u <your-remote> my-kernel-patch``.
-   Refer to the `push
-   options <https://docs.gitlab.com/ee/user/project/push_options.html>`__
-   documentation for more details.
-
-.. _commit-messages-1:
-
-Commit messages
----------------
-
-Kernel patches should be submitted upstream prior to being sent for
+Kernel code patches should be submitted upstream prior to being sent for
 inclusion in Fedora. The commit message for the patch should be the same
 as upstream, except for the addition of a few tags the message.
 
@@ -162,18 +138,6 @@ Bugzilla
 As with configuration and build script changes, if there is a Bugzilla
 bug relating to the kernel commit, please include a reference to it
 using the format ``Bugzilla: <url>``.
-
-Changes with Kernel Patches and Configuration
-=============================================
-
-It's common for a kernel patch to introduce a new configuration option.
-When this occurs, you'll need to open two merge requests:
-
-1. A merge request against ``os-build`` with the configuration change.
-2. A merge request against ``ark-patches`` with the kernel patches.
-
-Mark MR 1 as a Merge Request dependency of MR 2. When they've both been
-reviewed the maintainer will queue them up to merge at the same time.
 
 Continuous Integration
 ======================

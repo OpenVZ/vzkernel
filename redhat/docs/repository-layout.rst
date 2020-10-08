@@ -10,6 +10,17 @@ except master, though, are downstream-only.
 Branches
 --------
 
+os-build, a.k.a "the development branch"
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The os-build branch is the development branch of the tree.  The os-build branch
+tracks the latest version of the kernel patches for ARK and Fedora, as well as
+the kernel configuration and build scripts.  This is the branch to send
+merge request to.  When a new release is made, this branch is merged into the
+release branch.  Configuration and build scripts can be found in the
+``redhat/`` directory. Refer to the Configuration section below for more
+details.
+
 master
 ~~~~~~
 
@@ -17,31 +28,13 @@ The master branch tracks `Linus's master
 branch <git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git>`__
 (i.e. "mainline").
 
-os-build
-~~~~~~~~
-
-The os-build branch is used for the kernel configuration and build
-scripts. When new configuration options are needed or the build
-requirements change, this is the branch to send merge requests to. When
-a new release is made, this branch is merged into the release branch.
-Configuration and build scripts can be found in the ``redhat/``
-directory. Refer to the Configuration section below for more details.
-
 ark-latest
 ~~~~~~~~~~
 
-This branch points to the latest release branch. **This is not a
-development branch, do not base merge requests off this branch.**
-
-ark-patches
-~~~~~~~~~~~
-
-**This branch is regularly rebased; do not rely on commit hashes in this
-branch unless they are contained by a tag or release branch!**
-
-This branch tracks the latest version of the kernel patches for ARK and
-Fedora. Patches for a particular release are available via the
-``ark/patches/vX.Y[-rcN]`` branches.
+This branch points to the latest release branch.  This branch may differ
+slightly from os-build and contain critical patches that resolve compile or
+boot issues.  **This is not a development branch, do not base merge requests
+off this branch.**
 
 Release branches
 ~~~~~~~~~~~~~~~~
