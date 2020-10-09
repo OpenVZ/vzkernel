@@ -872,6 +872,13 @@ F:	drivers/iommu/
 IPMI SUBSYSTEM
 M:	Tony Camuso <tcamuso@redhat.com>
 S:	Maintained
+F:	drivers/char/ipmi/
+F:	include/linux/ipmi-fru.h
+F:	include/linux/ipmi.h
+F:	include/linux/ipmi_smi.h
+F:	include/uapi/linux/ipmi.h
+F:	include/uapi/linux/ipmi_bmc.h
+F:	include/uapi/linux/ipmi_msgdefs.h
 
 ISCSI (iscsi_tcp, libiscsi, libiscsi_tcp, scsi_transport_iscsi)
 M:	Chris Leech <cleech@redhat.com>
