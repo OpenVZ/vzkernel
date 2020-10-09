@@ -1,0 +1,26 @@
+# CONFIG_FB_ARMCLCD:
+# 
+# This framebuffer device driver is for the ARM PrimeCell PL110
+# Colour LCD controller.  ARM PrimeCells provide the building
+# blocks for System on a Chip devices.
+# 
+# If you want to compile this as a module (=code which can be
+# inserted into and removed from the running kernel), say M
+# here and read <file:Documentation/kbuild/modules.rst>.  The module
+# will be called amba-clcd.
+# 
+# Symbol: FB_ARMCLCD [=n]
+# Type  : tristate
+# Defined at drivers/video/fbdev/Kconfig:275
+#   Prompt: ARM PrimeCell PL110 support
+#   Depends on: (ARM || ARM64 [=y] || COMPILE_TEST [=n]) && FB [=y] && ARM_AMBA [=y] && HAS_IOMEM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Frame buffer Devices
+#           -> Support for frame buffer devices (FB [=y])
+# Selects: FB_CFB_FILLRECT [=y] && FB_CFB_COPYAREA [=y] && FB_CFB_IMAGEBLIT [=y] && FB_MODE_HELPERS [=n] && VIDEOMODE_HELPERS [=n] && BACKLIGHT_CLASS_DEVICE [=y]
+# 
+# 
+# 
+# CONFIG_FB_ARMCLCD is not set
