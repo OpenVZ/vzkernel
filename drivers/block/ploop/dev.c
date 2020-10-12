@@ -1461,8 +1461,11 @@ static void ploop_complete_request(struct ploop_request * preq)
 	 */
 	spin_lock_irq(&plo->lock);
 	plo->active_reqs--;
-	if (preq->req_rw & REQ_DISCARD)
-		plo->discard_inflight_reqs--;
+	if (preq->req_rw & REQ_DISCARD) {
+		if (!--plo->discard_inflight_reqs &&
+		    waitqueue_active(&plo->pending_waitq))
+			wake_up(&plo->pending_waitq);
+	}
 	spin_unlock_irq(&plo->lock);
 
 	while (preq->bl.head) {
