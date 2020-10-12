@@ -45,7 +45,7 @@ static void bch_generic_make_request_hack(struct bio *bio)
 	 *
 	 * To be taken out once immutable bvec stuff is in.
 	 */
-	bio->bi_max_vecs = bio->bi_vcnt;
+	bio->bi_max_vecs = bio->bi_vcnt ?: (bio->bi_io_vec ? 1 : 0);
 
 	generic_make_request(bio);
 }
