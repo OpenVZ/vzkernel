@@ -4748,11 +4748,7 @@ int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
 	free += page_counter_read(&memcg->dcache);
 
 	/* assume file cache is reclaimable */
-	free += mem_cgroup_recursive_stat2(memcg, MEM_CGROUP_STAT_CACHE);
-
-	/* but do not count shmem pages as they can't be purged,
-	 * only swapped out */
-	free -= mem_cgroup_recursive_stat(memcg, MEM_CGROUP_STAT_SHMEM);
+	free += page_counter_read(&memcg->cache);
 
 	return free < pages ? -ENOMEM : 0;
 }
