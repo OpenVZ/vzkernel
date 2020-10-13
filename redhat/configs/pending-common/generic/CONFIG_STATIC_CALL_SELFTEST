@@ -1,0 +1,15 @@
+# CONFIG_STATIC_CALL_SELFTEST:
+# 
+# Boot time self-test of the call patching code.
+# 
+# Symbol: STATIC_CALL_SELFTEST [=n]
+# Type  : bool
+# Defined at arch/Kconfig:109
+#   Prompt: Static call selftest
+#   Depends on: HAVE_STATIC_CALL [=y]
+#   Location:
+#     -> General architecture-dependent options
+# 
+# 
+# 
+# CONFIG_STATIC_CALL_SELFTEST is not set
