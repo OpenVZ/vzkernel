@@ -1745,7 +1745,7 @@ F:	drivers/virtio/virtio_input.c
 F:	include/uapi/linux/virtio_input.h
 
 VMWARE VMXNET3 ETHERNET DRIVER (vmxnet3)
-M:	Neil Horman <nhorman@redhat.com>
+M:	Cathy Avery <cavery@redhat.com>
 S:	Maintained
 F:	drivers/net/vmxnet3/*
 
