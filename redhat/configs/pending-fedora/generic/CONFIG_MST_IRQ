@@ -1,0 +1,16 @@
+# CONFIG_MST_IRQ:
+# 
+# Support MStar Interrupt Controller.
+# 
+# Symbol: MST_IRQ [=n]
+# Type  : bool
+# Defined at drivers/irqchip/Kconfig:584
+#   Prompt: MStar Interrupt Controller
+#   Location:
+#     -> Device Drivers
+#       -> IRQ chip support
+# Selects: IRQ_DOMAIN [=y] && IRQ_DOMAIN_HIERARCHY [=y]
+# 
+# 
+# 
+# CONFIG_MST_IRQ is not set

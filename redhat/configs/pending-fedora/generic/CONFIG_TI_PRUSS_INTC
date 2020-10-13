@@ -1,0 +1,20 @@
+# CONFIG_TI_PRUSS_INTC:
+# 
+# This enables support for the PRU-ICSS Local Interrupt Controller
+# present within a PRU-ICSS subsystem present on various TI SoCs.
+# The PRUSS INTC enables various interrupts to be routed to multiple
+# different processors within the SoC.
+# 
+# Symbol: TI_PRUSS_INTC [=n]
+# Type  : tristate
+# Defined at drivers/irqchip/Kconfig:496
+#   Prompt: TI PRU-ICSS Interrupt Controller
+#   Depends on: ARCH_DAVINCI [=n] || SOC_AM33XX [=y] || SOC_AM43XX [=y] || SOC_DRA7XX [=y] || ARCH_KEYSTONE [=n] || ARCH_K3
+#   Location:
+#     -> Device Drivers
+#       -> IRQ chip support
+# Selects: IRQ_DOMAIN [=y]
+# 
+# 
+# 
+# CONFIG_TI_PRUSS_INTC is not set

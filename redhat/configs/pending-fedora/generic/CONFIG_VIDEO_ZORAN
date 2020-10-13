@@ -1,0 +1,25 @@
+# CONFIG_VIDEO_ZORAN:
+# 
+# Say Y for support for MJPEG capture cards based on the Zoran
+# 36057/36067 PCI controller chipset. This includes the Iomega
+# Buz, Pinnacle DC10+ and the Linux Media Labs LML33. There is
+# a driver homepage at <http://mjpeg.sf.net/driver-zoran/>. For
+# more information, check <file:Documentation/driver-api/media/drivers/zoran.rst>.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called zr36067.
+# 
+# Symbol: VIDEO_ZORAN [=n]
+# Type  : tristate
+# Defined at drivers/staging/media/zoran/Kconfig:1
+#   Prompt: Zoran ZR36057/36067 Video For Linux (Deprecated)
+#   Depends on: STAGING [=y] && STAGING_MEDIA [=y] && MEDIA_SUPPORT [=m] && PCI [=y] && I2C_ALGOBIT [=m] && VIDEO_V4L2 [=m] && !ALPHA
+#   Location:
+#     -> Device Drivers
+#       -> Staging drivers (STAGING [=y])
+#         -> Media staging drivers (STAGING_MEDIA [=y])
+# Selects: VIDEOBUF2_DMA_CONTIG [=m]
+# 
+# 
+# 
+# CONFIG_VIDEO_ZORAN is not set

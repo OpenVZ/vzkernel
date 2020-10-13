@@ -1,0 +1,17 @@
+# CONFIG_ARM_CMN:
+# 
+# Support for PMU events monitoring on the Arm CMN-600 Coherent Mesh
+# Network interconnect.
+# 
+# Symbol: ARM_CMN [=n]
+# Type  : tristate
+# Defined at drivers/perf/Kconfig:44
+#   Prompt: Arm CMN-600 PMU support
+#   Depends on: PERF_EVENTS [=y] && (ARM64 [=y] || COMPILE_TEST [=n] && 64BIT [=y])
+#   Location:
+#     -> Device Drivers
+#       -> Performance monitor support
+# 
+# 
+# 
+# CONFIG_ARM_CMN is not set

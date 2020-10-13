@@ -1,0 +1,19 @@
+# CONFIG_REGULATOR_RASPBERRYPI_TOUCHSCREEN_ATTINY:
+# 
+# This driver supports ATTINY regulator on the Raspberry Pi 7-inch
+# touchscreen unit. The regulator is used to enable power to the
+# TC358762, display and to control backlight.
+# 
+# Symbol: REGULATOR_RASPBERRYPI_TOUCHSCREEN_ATTINY [=n]
+# Type  : tristate
+# Defined at drivers/regulator/Kconfig:886
+#   Prompt: Raspberry Pi 7-inch touchscreen panel ATTINY regulator
+#   Depends on: REGULATOR [=y] && BACKLIGHT_CLASS_DEVICE [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Voltage and Current Regulator Support (REGULATOR [=y])
+# Selects: REGMAP_I2C [=y]
+# 
+# 
+# 
+# CONFIG_REGULATOR_RASPBERRYPI_TOUCHSCREEN_ATTINY is not set
