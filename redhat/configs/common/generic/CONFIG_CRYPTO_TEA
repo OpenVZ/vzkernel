@@ -1,1 +1,1 @@
-CONFIG_CRYPTO_TEA=m
+# CONFIG_CRYPTO_TEA is not set
