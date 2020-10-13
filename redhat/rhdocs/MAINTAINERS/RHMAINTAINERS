@@ -708,6 +708,23 @@ F:	Documentation/filesystems/gfs2*.txt
 F:	fs/gfs2/
 F:	include/uapi/linux/gfs2_ondisk.h
 
+GPIO SUBSYSTEM
+M:	Brian Masney <bmasney@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+S:	Maintained
+F:	Documentation/ABI/obsolete/sysfs-gpio
+F:	Documentation/ABI/testing/gpio-cdev
+F:	Documentation/admin-guide/gpio/
+F:	Documentation/devicetree/bindings/gpio/
+F:	Documentation/driver-api/gpio/
+F:	drivers/gpio/
+F:	include/asm-generic/gpio.h
+F:	include/linux/gpio.h
+F:	include/linux/gpio/
+F:	include/linux/of_gpio.h
+F:	include/uapi/linux/gpio.h
+F:	tools/gpio/
+
 HID CORE LAYER
 M:	Benjamin Tissoires <benjamin.tissoires@redhat.com>
 S:	Maintained
@@ -1354,6 +1371,7 @@ F:	tools/perf/
 F:	tools/lib/
 
 PIN CONTROL SUBSYSTEM
+M:	Brian Masney <bmasney@redhat.com>
 M:	David Arcari <darcari@redhat.com>
 S:	Maintained
 F:	drivers/pinctrl/
