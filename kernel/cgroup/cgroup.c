@@ -1890,7 +1890,6 @@ void cgroup_mark_ve_root(struct ve_struct *ve)
 	struct css_set *cset;
 	struct cgroup *cgrp;
 
-	mutex_lock(&cgroup_mutex);
 	spin_lock_irq(&css_set_lock);
 
 	rcu_read_lock();
@@ -1906,7 +1905,6 @@ unlock:
 	rcu_read_unlock();
 
 	spin_unlock_irq(&css_set_lock);
-	mutex_unlock(&cgroup_mutex);
 }
 
 void cgroup_unmark_ve_roots(struct ve_struct *ve)
