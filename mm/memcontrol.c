@@ -7085,6 +7085,8 @@ void mem_cgroup_migrate(struct page *oldpage, struct page *newpage)
 	page_counter_charge(&memcg->memory, nr_pages);
 	if (do_memsw_account())
 		page_counter_charge(&memcg->memsw, nr_pages);
+	if (!PageAnon(newpage) && !PageSwapBacked(newpage))
+		page_counter_charge(&memcg->cache, nr_pages);
 	css_get_many(&memcg->css, nr_pages);
 
 	commit_charge(newpage, memcg, false);
