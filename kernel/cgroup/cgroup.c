@@ -1883,7 +1883,6 @@ void cgroup_mark_ve_root(struct ve_struct *ve)
 	struct css_set *cset;
 	struct cgroup *cgrp;
 
-	mutex_lock(&cgroup_mutex);
 	spin_lock_irq(&css_set_lock);
 
 	rcu_read_lock();
@@ -1899,7 +1898,6 @@ unlock:
 	rcu_read_unlock();
 
 	spin_unlock_irq(&css_set_lock);
-	mutex_unlock(&cgroup_mutex);
 }
 
 static struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
