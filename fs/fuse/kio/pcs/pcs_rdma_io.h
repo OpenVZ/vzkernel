@@ -57,6 +57,7 @@ struct pcs_rdmaio
 	 * blindly accepts the value. */
 	int queue_depth;
 	int send_queue_depth;
+	int recv_queue_depth;
 	int max_send_wr;
 
 	int send_timeout;
@@ -68,9 +69,6 @@ struct pcs_rdmaio
 	struct list_head tx_jobs; /* list head of TX jobs */
 
 	struct rio_rx *rx_descs; /* plain array of RX descriptors */
-	char *rx_bufs;           /* MR-ed area for payload of RXs */
-	size_t rx_bufs_size;
-	dma_addr_t rx_bufs_dma;
 	struct list_head pended_rxs; /* list head of pended RX frames */
 
 	int n_rx_posted; /* # posted RXs */
