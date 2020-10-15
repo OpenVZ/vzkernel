@@ -37,6 +37,7 @@ struct pcs_fuse_stat {
 	struct dentry *fstat;
 	struct dentry *fstat_lat;
 	struct dentry *cs_stats;
+	struct dentry *storage_version;
 };
 
 enum {
