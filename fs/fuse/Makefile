@@ -28,6 +28,9 @@ fuse_kio_pcs-objs := kio/pcs/pcs_fuse_kdirect.o \
 	kio/pcs/fuse_io.o \
 	kio/pcs/fuse_stat.o \
 	kio/pcs/pcs_sock_conn.o \
-	kio/pcs/pcs_auth.o
+	kio/pcs/pcs_auth.o \
+	kio/pcs/pcs_rdma_io.o \
+	kio/pcs/pcs_rdma_rw.o \
+	kio/pcs/pcs_rdma_conn.o
 
 virtiofs-y := virtio_fs.o
