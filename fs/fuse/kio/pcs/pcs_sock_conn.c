@@ -334,6 +334,7 @@ struct pcs_rpc_auth
 static int send_auth_msg(struct pcs_rpc *ep, void *data, size_t size, int state)
 {
 	struct pcs_rpc_engine *eng = ep->eng;
+	struct pcs_sockio *sio = sio_from_ioconn(ep->conn);
 	struct pcs_rpc_auth *au;
 	size_t msg_sz = sizeof(struct pcs_rpc_auth) +
 			round_up(size, PCS_RPC_AUTH_PAYLOAD_ALIGN) +
@@ -384,7 +385,7 @@ static int send_auth_msg(struct pcs_rpc *ep, void *data, size_t size, int state)
 	TRACE("state=%d, type=%d, len=%d, msg_sz: %lu",
 	      au->state, au->payload.type, au->payload.len, msg_sz);
 
-	err = send_buf(ep->conn->socket, (u8*)au, msg_sz);
+	err = send_buf(sio->socket, (u8*)au, msg_sz);
 	if (err)
 		TRACE("Can't send au msg, err: %d", err);
 	pcs_free_msg(msg);
@@ -394,6 +395,7 @@ static int send_auth_msg(struct pcs_rpc *ep, void *data, size_t size, int state)
 
 static int recv_auth_msg(struct pcs_rpc *ep, void *data, size_t size, int state)
 {
+	struct pcs_sockio *sio = sio_from_ioconn(ep->conn);
 	struct pcs_rpc_auth *au;
 	size_t fixed_sz = sizeof(struct pcs_rpc_auth) +
 			  round_up(size, PCS_RPC_AUTH_PAYLOAD_ALIGN);
@@ -406,7 +408,7 @@ static int recv_auth_msg(struct pcs_rpc *ep, void *data, size_t size, int state)
 		return -ENOMEM;
 	}
 
-	err = recv_buf(ep->conn->socket, msg->_inline_buffer, fixed_sz);
+	err = recv_buf(sio->socket, msg->_inline_buffer, fixed_sz);
 	if (err) {
 		TRACE("Can't recv auth msg(%d), err: %lu", err, fixed_sz);
 		goto fail;
@@ -447,7 +449,7 @@ static int recv_auth_msg(struct pcs_rpc *ep, void *data, size_t size, int state)
 		size_t rest_sz = au->hdr.len - fixed_sz;
 		while (rest_sz) {
 			size_t recv_sz = min(fixed_sz, rest_sz);
-			err = recv_buf(ep->conn->socket, msg->_inline_buffer,
+			err = recv_buf(sio->socket, msg->_inline_buffer,
 				       recv_sz);
 			if (err) {
 				TRACE("Can't recv auth msg(%d), err: %lu",
@@ -598,7 +600,6 @@ void pcs_sockconnect_start(struct pcs_rpc *ep)
 	iov_iter_kvec(&sio->write_iter, WRITE, NULL, 0, 0);
 	sio->hdr_max = sizeof(struct pcs_rpc_hdr);
 	sio->flags = sa->sa_family != AF_UNIX ? PCS_SOCK_F_CORK : 0;
-	INIT_LIST_HEAD(&sio->ioconn.list);
 
 	err = sock_create(sa->sa_family, SOCK_STREAM, 0, &sock);
 	if (err < 0) {
@@ -623,13 +624,14 @@ void pcs_sockconnect_start(struct pcs_rpc *ep)
 	cancel_delayed_work(&ep->timer_work);
 	ep->retries++;
 
-	ep->conn = &sio->ioconn;
-	sio->parent = pcs_rpc_get(ep);
-	sio->get_msg = rpc_get_hdr;
-	sio->eof = rpc_eof_cb;
+	ep->conn = &sio->netio.ioconn;
 	sio->send_timeout = PCS_SIO_TIMEOUT;
-	sio->ioconn.socket = sock;
-	sio->ioconn.destruct = pcs_sock_ioconn_destruct;
+	sio->socket = sock;
+	sio->netio.ioconn.destruct = pcs_sock_ioconn_destruct;
+	sio->netio.parent = pcs_rpc_get(ep);
+	sio->netio.tops = &pcs_sock_netio_tops;
+	sio->netio.getmsg = rpc_get_hdr;
+	sio->netio.eof = rpc_eof_cb;
 	if (ep->gc)
 		list_lru_add(&ep->gc->lru, &ep->lru_link);
 
@@ -653,10 +655,10 @@ void pcs_sockconnect_start(struct pcs_rpc *ep)
 	 * since this seems to be able to result in performance.
 	 */
 	WARN_ON_ONCE(sock->sk->sk_user_data);
-	sio->ioconn.orig.user_data = sock->sk->sk_user_data;
-	sio->ioconn.orig.data_ready = sock->sk->sk_data_ready;
-	sio->ioconn.orig.write_space = sock->sk->sk_write_space;
-	sio->ioconn.orig.error_report = sock->sk->sk_error_report;
+	sio->orig.user_data = sock->sk->sk_user_data;
+	sio->orig.data_ready = sock->sk->sk_data_ready;
+	sio->orig.write_space = sock->sk->sk_write_space;
+	sio->orig.error_report = sock->sk->sk_error_report;
 
 	sock->sk->sk_sndtimeo = PCS_SIO_TIMEOUT;
 	sock->sk->sk_allocation = GFP_NOFS;
