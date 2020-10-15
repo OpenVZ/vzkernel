@@ -23,7 +23,8 @@ fuse_kio_pcs-objs := kio/pcs/pcs_fuse_kdirect.o \
 	kio/pcs/pcs_cs.o \
 	kio/pcs/fuse_io.o \
 	kio/pcs/fuse_stat.o \
-	kio/pcs/pcs_sock_conn.o
+	kio/pcs/pcs_sock_conn.o \
+	kio/pcs/pcs_auth.o
 
 fuse-objs := dev.o dir.o file.o inode.o control.o xattr.o acl.o readdir.o
 virtiofs-y += virtio_fs.o
