@@ -965,6 +965,8 @@ static ssize_t ve_ts_write(struct kernfs_open_file *of, char *buf,
 
 	if (sscanf(buf, "%ld %ld", &delta.tv_sec, &delta.tv_nsec) != 2)
 		return -EINVAL;
+	if (!timespec_valid_strict(&delta))
+		return -EINVAL;
 	delta_ns = timespec_to_ns(&delta);
 
 	switch (of_cft(of)->private) {
