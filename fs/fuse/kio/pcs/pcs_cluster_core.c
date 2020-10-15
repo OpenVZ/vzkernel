@@ -158,6 +158,8 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 	cc->wq = wq;
 	snprintf(cc->cluster_name, sizeof(cc->cluster_name), "%s", cluster_name);
 	atomic_set(&cc->storage_version, PCS_VERSION_UNKNOWN);
+	cc->nilbuffer_kv.iov_base = cc->nilbuffer;
+	cc->nilbuffer_kv.iov_len = sizeof(cc->nilbuffer);
 
 	pcs_csset_init(&cc->css);
 
