@@ -156,7 +156,6 @@ struct pcs_sockio
 
 #define sio_from_ioconn(conn) container_of(conn, struct pcs_sockio, ioconn)
 
-struct pcs_sockio * pcs_sockio_init(struct socket* sock, int alloc_max, int hdr_max);
 void pcs_sockio_start(struct pcs_sockio * sio);
 void pcs_sock_sendmsg(struct pcs_sockio * sio, struct pcs_msg *msg);
 int pcs_sock_cancel_msg(struct pcs_msg * msg);
@@ -197,8 +196,7 @@ static inline void iov_iter_get_kvec(struct iov_iter *i, struct kvec *vec)
 	iov_iter_for_each_range(i, iov_iter_single_seg_count(i),
 			iov_iter_get_kvec_callback, vec);
 }
-void pcs_sock_internal_ioconn_destruct(struct pcs_ioconn *ioconn);
-void pcs_sock_external_ioconn_destruct(struct pcs_ioconn *ioconn);
+void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn);
 
 static inline void * msg_inline_head(struct pcs_msg * msg)
 {
