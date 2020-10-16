@@ -1,0 +1,18 @@
+# CONFIG_DRM_TOSHIBA_TC358762:
+# 
+# Toshiba TC358762 DSI/DPI bridge driver.
+# 
+# Symbol: DRM_TOSHIBA_TC358762 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/Kconfig:169
+#   Prompt: TC358762 DSI/DPI bridge
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_BRIDGE [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# Selects: DRM_MIPI_DSI [=n] && DRM_PANEL_BRIDGE [=y]
+# 
+# 
+# 
+# CONFIG_DRM_TOSHIBA_TC358762 is not set

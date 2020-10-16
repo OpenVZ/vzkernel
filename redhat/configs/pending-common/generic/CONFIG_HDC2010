@@ -1,0 +1,21 @@
+# CONFIG_HDC2010:
+# 
+# Say yes here to build support for the Texas Instruments
+# HDC2010 and HDC2080 relative humidity and temperature sensors.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called hdc2010.
+# 
+# Symbol: HDC2010 [=n]
+# Type  : tristate
+# Defined at drivers/iio/humidity/Kconfig:41
+#   Prompt: TI HDC2010 relative humidity and temperature sensor
+#   Depends on: IIO [=m] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Humidity sensors
+# 
+# 
+# 
+# CONFIG_HDC2010 is not set

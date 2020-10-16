@@ -1,0 +1,20 @@
+# CONFIG_USB4_DEBUGFS_WRITE:
+# 
+# Enables writing to device configuration registers through
+# debugfs interface.
+# 
+# Only enable this if you know what you are doing! Never enable
+# this for production systems or distro kernels.
+# 
+# Symbol: USB4_DEBUGFS_WRITE [=n]
+# Type  : bool
+# Defined at drivers/thunderbolt/Kconfig:21
+#   Prompt: Enable write by debugfs to configuration spaces (DANGEROUS)
+#   Depends on: USB4 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Unified support for USB4 and Thunderbolt (USB4 [=y])
+# 
+# 
+# 
+# CONFIG_USB4_DEBUGFS_WRITE is not set

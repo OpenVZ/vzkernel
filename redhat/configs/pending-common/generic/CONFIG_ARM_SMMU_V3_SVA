@@ -1,0 +1,21 @@
+# CONFIG_ARM_SMMU_V3_SVA:
+# 
+# Support for sharing process address spaces with devices using the
+# SMMUv3.
+# 
+# Say Y here if your system supports SVA extensions such as PCIe PASID
+# and PRI.
+# 
+# Symbol: ARM_SMMU_V3_SVA [=n]
+# Type  : bool
+# Defined at drivers/iommu/Kconfig:311
+#   Prompt: Shared Virtual Addressing support for the ARM SMMUv3
+#   Depends on: IOMMU_SUPPORT [=y] && ARM_SMMU_V3 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> IOMMU Hardware Support (IOMMU_SUPPORT [=y])
+#         -> ARM Ltd. System MMU Version 3 (SMMUv3) Support (ARM_SMMU_V3 [=y])
+# 
+# 
+# 
+# CONFIG_ARM_SMMU_V3_SVA is not set

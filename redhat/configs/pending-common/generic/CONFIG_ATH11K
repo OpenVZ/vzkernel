@@ -1,0 +1,22 @@
+# CONFIG_ATH11K:
+# 
+# This module adds support for Qualcomm Technologies 802.11ax family of
+# chipsets.
+# 
+# If you choose to build a module, it'll be called ath11k.
+# 
+# Symbol: ATH11K [=n]
+# Type  : tristate
+# Defined at drivers/net/wireless/ath/ath11k/Kconfig:2
+#   Prompt: Qualcomm Technologies 802.11ax chipset support
+#   Depends on: NETDEVICES [=y] && WLAN [=y] && WLAN_VENDOR_ATH [=y] && MAC80211 [=m] && HAS_DMA [=y] && CRYPTO_MICHAEL_MIC [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Wireless LAN (WLAN [=y])
+#           -> Atheros/Qualcomm devices (WLAN_VENDOR_ATH [=y])
+# Selects: ATH_COMMON [=m] && QCOM_QMI_HELPERS [=n]
+# 
+# 
+# 
+# CONFIG_ATH11K is not set

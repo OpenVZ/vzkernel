@@ -1,0 +1,21 @@
+# CONFIG_PCS_XPCS:
+# 
+# This module provides helper functions for Synopsys DesignWare XPCS
+# controllers.
+# 
+# Symbol: PCS_XPCS [=n]
+# Type  : tristate
+# Defined at drivers/net/pcs/Kconfig:8
+#   Prompt: Synopsys DesignWare XPCS controller
+#   Depends on: NETDEVICES [=y] && MDIO_DEVICE [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> PCS device drivers
+# Selects: MDIO_BUS [=y]
+# Selected by [n]:
+#   - STMMAC_ETH [=n] && NETDEVICES [=y] && ETHERNET [=y] && NET_VENDOR_STMICRO [=n] && HAS_IOMEM [=y] && HAS_DMA [=y]
+# 
+# 
+# 
+# CONFIG_PCS_XPCS is not set
