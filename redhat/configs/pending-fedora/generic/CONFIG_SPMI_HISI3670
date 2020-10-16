@@ -1,0 +1,19 @@
+# CONFIG_SPMI_HISI3670:
+# 
+# If you say yes to this option, support will be included for the
+# built-in SPMI PMIC Arbiter interface on Hisilicon 3670
+# processors.
+# 
+# Symbol: SPMI_HISI3670 [=n]
+# Type  : tristate
+# Defined at drivers/staging/hikey9xx/Kconfig:15
+#   Prompt: Hisilicon 3670 SPMI Controller
+#   Depends on: STAGING [=y] && HAS_IOMEM [=y] && SPMI [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Staging drivers (STAGING [=y])
+# Selects: IRQ_DOMAIN_HIERARCHY [=y]
+# 
+# 
+# 
+# CONFIG_SPMI_HISI3670 is not set

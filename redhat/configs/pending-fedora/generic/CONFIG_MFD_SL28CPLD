@@ -1,0 +1,21 @@
+# CONFIG_MFD_SL28CPLD:
+# 
+# Say yes here to enable support for the Kontron sl28cpld board
+# management controller.
+# 
+# It can be found on the following boards:
+#       * SMARC-sAL28
+# 
+# Symbol: MFD_SL28CPLD [=n]
+# Type  : tristate
+# Defined at drivers/mfd/Kconfig:1189
+#   Prompt: Kontron sl28cpld Board Management Controller
+#   Depends on: HAS_IOMEM [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multifunction device drivers
+# Selects: MFD_SIMPLE_MFD_I2C [=n]
+# 
+# 
+# 
+# CONFIG_MFD_SL28CPLD is not set

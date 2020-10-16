@@ -1,0 +1,23 @@
+# CONFIG_DWMAC_INTEL_PLAT:
+# 
+# Support for ethernet controllers on Intel SoCs
+# 
+# This selects the Intel platform specific glue layer support for
+# the stmmac device driver. This driver is used for the Intel Keem Bay
+# SoC.
+# Symbol: DWMAC_INTEL_PLAT [=n]
+# Type  : tristate
+# Defined at drivers/net/ethernet/stmicro/stmmac/Kconfig:212
+#   Prompt: Intel dwmac support
+#   Depends on: NETDEVICES [=y] && ETHERNET [=y] && NET_VENDOR_STMICRO [=y] && STMMAC_PLATFORM [=m] && OF [=y] && COMMON_CLK [=y] && STMMAC_ETH [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Ethernet driver support (ETHERNET [=y])
+#           -> STMicroelectronics devices (NET_VENDOR_STMICRO [=y])
+#             -> STMicroelectronics Multi-Gigabit Ethernet driver (STMMAC_ETH [=m])
+#               -> STMMAC Platform bus support (STMMAC_PLATFORM [=m])
+# 
+# 
+# 
+# CONFIG_DWMAC_INTEL_PLAT is not set

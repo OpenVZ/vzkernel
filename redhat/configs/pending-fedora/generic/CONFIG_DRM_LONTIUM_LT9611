@@ -1,0 +1,21 @@
+# CONFIG_DRM_LONTIUM_LT9611:
+# 
+# Driver for Lontium LT9611 DSI to HDMI bridge
+# chip driver that converts dual DSI and I2S to
+# HDMI signals
+# Please say Y if you have such hardware.
+# 
+# Symbol: DRM_LONTIUM_LT9611 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/Kconfig:51
+#   Prompt: Lontium LT9611 DSI/HDMI bridge
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_BRIDGE [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# Selects: SND_SOC_HDMI_CODEC [=n] && DRM_PANEL_BRIDGE [=y] && DRM_KMS_HELPER [=m] && REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_DRM_LONTIUM_LT9611 is not set

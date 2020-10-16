@@ -1,0 +1,20 @@
+# CONFIG_DRM_PANEL_MANTIX_MLAF057WE51:
+# 
+# Say Y here if you want to enable support for the Mantix
+# MLAF057WE51-X MIPI DSI panel as e.g. used in the Librem 5. It
+# has a resolution of 720x1440 pixels, a built in backlight and touch
+# controller.
+# 
+# Symbol: DRM_PANEL_MANTIX_MLAF057WE51 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/panel/Kconfig:220
+#   Prompt: Mantix MLAF057WE51-X MIPI-DSI LCD panel
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_PANEL [=y] && OF [=y] && DRM_MIPI_DSI [=y] && BACKLIGHT_CLASS_DEVICE [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Panels
+# 
+# 
+# 
+# CONFIG_DRM_PANEL_MANTIX_MLAF057WE51 is not set

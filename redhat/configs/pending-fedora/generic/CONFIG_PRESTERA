@@ -1,0 +1,22 @@
+# CONFIG_PRESTERA:
+# 
+# This driver supports Marvell Prestera Switch ASICs family.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called prestera.
+# 
+# Symbol: PRESTERA [=n]
+# Type  : tristate
+# Defined at drivers/net/ethernet/marvell/prestera/Kconfig:6
+#   Prompt: Marvell Prestera Switch ASICs support
+#   Depends on: NETDEVICES [=y] && ETHERNET [=y] && NET_VENDOR_MARVELL [=y] && NET_SWITCHDEV [=y] && VLAN_8021Q [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Ethernet driver support (ETHERNET [=y])
+#           -> Marvell devices (NET_VENDOR_MARVELL [=y])
+# Selects: NET_DEVLINK [=y]
+# 
+# 
+# 
+# CONFIG_PRESTERA is not set

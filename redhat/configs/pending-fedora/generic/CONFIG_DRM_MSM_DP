@@ -1,0 +1,19 @@
+# CONFIG_DRM_MSM_DP:
+# 
+# Compile in support for DP driver in MSM DRM driver. DP external
+# display support is enabled through this config option. It can
+# be primary or secondary display on device.
+# 
+# Symbol: DRM_MSM_DP [=y]
+# Type  : bool
+# Defined at drivers/gpu/drm/msm/Kconfig:60
+#   Prompt: Enable DisplayPort support in MSM DRM driver
+#   Depends on: HAS_IOMEM [=y] && DRM_MSM [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> MSM DRM (DRM_MSM [=m])
+# 
+# 
+# 
+CONFIG_DRM_MSM_DP=y

@@ -1,0 +1,24 @@
+# CONFIG_MFD_HI6421_SPMI:
+# 
+# Add support for HiSilicon Hi6421v600 SPMI PMIC. Hi6421 includes
+# multi-functions, such as regulators, RTC, codec, Coulomb counter,
+# etc.
+# 
+# This driver includes core APIs _only_. You have to select
+# individual components like voltage regulators under corresponding
+# menus in order to enable them.
+# We communicate with the Hi6421v600 via a SPMI bus.
+# 
+# Symbol: MFD_HI6421_SPMI [=n]
+# Type  : tristate
+# Defined at drivers/staging/hikey9xx/Kconfig:26
+#   Prompt: HiSilicon Hi6421v600 SPMI PMU/Codec IC
+#   Depends on: STAGING [=y] && OF [=y] && SPMI [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Staging drivers (STAGING [=y])
+# Selects: MFD_CORE [=y]
+# 
+# 
+# 
+# CONFIG_MFD_HI6421_SPMI is not set

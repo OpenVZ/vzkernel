@@ -1,0 +1,18 @@
+# CONFIG_INTERCONNECT_QCOM_SM8250:
+# 
+# This is a driver for the Qualcomm Network-on-Chip on sm8250-based
+# platforms.
+# 
+# Symbol: INTERCONNECT_QCOM_SM8250 [=n]
+# Type  : tristate
+# Defined at drivers/interconnect/qcom/Kconfig:78
+#   Prompt: Qualcomm SM8250 interconnect driver
+#   Depends on: INTERCONNECT [=y] && INTERCONNECT_QCOM [=y] && (QCOM_RPMH [=y] && QCOM_COMMAND_DB [=y] && OF [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> On-Chip Interconnect management support (INTERCONNECT [=y])
+# Selects: INTERCONNECT_QCOM_RPMH [=m] && INTERCONNECT_QCOM_BCM_VOTER [=m]
+# 
+# 
+# 
+# CONFIG_INTERCONNECT_QCOM_SM8250 is not set

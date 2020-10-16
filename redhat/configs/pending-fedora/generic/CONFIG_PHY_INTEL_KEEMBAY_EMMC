@@ -1,0 +1,20 @@
+# CONFIG_PHY_INTEL_KEEMBAY_EMMC:
+# 
+# Choose this option if you have an Intel Keem Bay SoC.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called phy-keembay-emmc.ko.
+# 
+# Symbol: PHY_INTEL_KEEMBAY_EMMC [=n]
+# Type  : tristate
+# Defined at drivers/phy/intel/Kconfig:5
+#   Prompt: Intel Keem Bay EMMC PHY driver
+#   Depends on: (OF [=y] && ARM64 [=y] || COMPILE_TEST [=n]) && HAS_IOMEM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> PHY Subsystem
+# Selects: GENERIC_PHY [=y] && REGMAP_MMIO [=y]
+# 
+# 
+# 
+# CONFIG_PHY_INTEL_KEEMBAY_EMMC is not set
