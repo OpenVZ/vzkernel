@@ -33,7 +33,6 @@ To resolve this, do the following:
 
 git checkout os-build
 BRANCH="$(git branch --show-current)"
-HEAD="$(git describe)"
 if ! git merge -m "Merge '$UPSTREAM_REF' into '$BRANCH'" "$UPSTREAM_REF"; then
 	git merge --abort
 	printf "Merge conflict; halting!\n"
@@ -48,10 +47,6 @@ if ! git merge -m "Merge '$UPSTREAM_REF' into '$BRANCH'" "$UPSTREAM_REF"; then
 	fi
 	exit 1
 fi
-NEW_HEAD="$(git describe)"
-
-# Merge is already up to date, nothing to do.
-test "$HEAD" != "$NEW_HEAD" || exit 0
 
 # Generates and commits all the pending configs
 make FLAVOR=fedora dist-configs-commit
