@@ -1,0 +1,21 @@
+# CONFIG_PPC_RTAS_FILTER:
+# 
+# The RTAS syscall API has security issues that could be used to
+# compromise system integrity. This option enforces restrictions on the
+# RTAS calls and arguments passed by userspace programs to mitigate
+# these issues.
+# 
+# Say Y unless you know what you are doing and the filter is causing
+# problems for you.
+# 
+# Symbol: PPC_RTAS_FILTER [=y]
+# Type  : bool
+# Defined at arch/powerpc/Kconfig:991
+#   Prompt: Enable filtering of RTAS syscalls
+#   Depends on: PPC_RTAS [=y]
+#   Location:
+#     -> Kernel options
+# 
+# 
+# 
+CONFIG_PPC_RTAS_FILTER=y

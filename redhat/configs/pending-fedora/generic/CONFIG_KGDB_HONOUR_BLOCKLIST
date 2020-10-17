@@ -1,0 +1,24 @@
+# CONFIG_KGDB_HONOUR_BLOCKLIST:
+# 
+# If set to Y the debug core will use the kprobe blocklist to
+# identify symbols where it is unsafe to set breakpoints.
+# In particular this disallows instrumentation of functions
+# called during debug trap handling and thus makes it very
+# difficult to inadvertently provoke recursive trap handling.
+# 
+# If unsure, say Y.
+# 
+# Symbol: KGDB_HONOUR_BLOCKLIST [=y]
+# Type  : bool
+# Defined at lib/Kconfig.kgdb:27
+#   Prompt: KGDB: use kprobe blocklist to prohibit unsafe breakpoints
+#   Depends on: KGDB [=y] && HAVE_KPROBES [=y] && MODULES [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Generic Kernel Debugging Instruments
+#         -> KGDB: kernel debugger (KGDB [=y])
+# Selects: KPROBES [=y]
+# 
+# 
+# 
+CONFIG_KGDB_HONOUR_BLOCKLIST=y
