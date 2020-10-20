@@ -1629,6 +1629,11 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 		struct page *page;
 		gfp_t tmp_mask = gfp_mask | __GFP_NOWARN;
 
+		if (unlikely(test_thread_flag(TIF_MEMDIE))) {
+			area->nr_pages = i;
+			goto nofail;
+		}
+
 		if (node < 0)
 			page = alloc_pages(tmp_mask, order);
 		else
@@ -1650,6 +1655,7 @@ fail:
 	warn_alloc_failed(gfp_mask, order,
 			  "vmalloc: allocation failure, allocated %ld of %ld bytes\n",
 			  (area->nr_pages*PAGE_SIZE), area->size);
+nofail:
 	vfree(area->addr);
 	return NULL;
 }
