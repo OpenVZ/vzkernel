@@ -69,6 +69,11 @@ S:	Maintained
 F:	redhat/
 I:	INTERNAL
 
+RHEL 8.4 Kernel Maintainer
+M:	Jan Stancek <jstancek@redhat.com>
+S:	Maintained
+F:	redhat/
+
 RHEL 8.3 Kernel Maintainer
 M:	Frantisek Hrbata <fhrbata@redhat.com>
 S:	Maintained
