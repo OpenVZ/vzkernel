@@ -1,0 +1,18 @@
+# CONFIG_CHARGER_BQ25980:
+# 
+# Say Y to enable support for the TI BQ25980, BQ25975 and BQ25960
+# series of fast battery chargers.
+# 
+# Symbol: CHARGER_BQ25980 [=n]
+# Type  : tristate
+# Defined at drivers/power/supply/Kconfig:639
+#   Prompt: TI BQ25980 battery charger driver
+#   Depends on: POWER_SUPPLY [=y] && I2C [=y] && (GPIOLIB [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Power supply class support (POWER_SUPPLY [=y])
+# Selects: REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_CHARGER_BQ25980 is not set

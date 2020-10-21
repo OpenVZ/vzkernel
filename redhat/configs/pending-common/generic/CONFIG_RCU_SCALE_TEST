@@ -1,0 +1,24 @@
+# CONFIG_RCU_SCALE_TEST:
+# 
+# This option provides a kernel module that runs performance
+# tests on the RCU infrastructure.  The kernel module may be built
+# after the fact on the running kernel to be tested, if desired.
+# 
+# Say Y here if you want RCU performance tests to be built into
+# the kernel.
+# Say M if you want the RCU performance tests to build as a module.
+# Say N if you are unsure.
+# 
+# Symbol: RCU_SCALE_TEST [=n]
+# Type  : tristate
+# Defined at kernel/rcu/Kconfig.debug:26
+#   Prompt: performance tests for RCU
+#   Depends on: DEBUG_KERNEL [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> RCU Debugging
+# Selects: TORTURE_TEST [=n] && SRCU [=y] && TASKS_RCU [=n] && TASKS_RUDE_RCU [=y] && TASKS_TRACE_RCU [=y]
+# 
+# 
+# 
+# CONFIG_RCU_SCALE_TEST is not set
