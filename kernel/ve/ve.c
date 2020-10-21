@@ -1147,3 +1147,19 @@ int vz_security_protocol_check(struct net *net, int protocol)
 	}
 }
 EXPORT_SYMBOL_GPL(vz_security_protocol_check);
+
+#ifdef CONFIG_CGROUP_SCHED
+int cpu_cgroup_proc_loadavg(struct cgroup_subsys_state *css,
+			    struct seq_file *p);
+
+int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p)
+{
+	struct cgroup_subsys_state *css;
+	int err;
+
+	css = ve_get_init_css(ve, cpu_cgrp_id);
+	err = cpu_cgroup_proc_loadavg(css, p);
+	css_put(css);
+	return err;
+}
+#endif /* CONFIG_CGROUP_SCHED */
