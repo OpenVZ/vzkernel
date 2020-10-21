@@ -1,0 +1,20 @@
+# CONFIG_SCF_TORTURE_TEST:
+# 
+# This option provides a kernel module that runs torture tests
+# on the smp_call_function() family of primitives.  The kernel
+# module may be built after the fact on the running kernel to
+# be tested, if desired.
+# 
+# Symbol: SCF_TORTURE_TEST [=n]
+# Type  : tristate
+# Defined at lib/Kconfig.debug:1370
+#   Prompt: torture tests for smp_call_function*()
+#   Depends on: DEBUG_KERNEL [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Lock Debugging (spinlocks, mutexes, etc...)
+# Selects: TORTURE_TEST [=m]
+# 
+# 
+# 
+# CONFIG_SCF_TORTURE_TEST is not set
