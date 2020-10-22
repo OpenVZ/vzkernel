@@ -2575,11 +2575,7 @@ static int do_sysinfo(struct sysinfo *info)
 
 		info->procs = nr_threads_ve(ve);
 
-#if 0
-FIXME after
-715f311fdb4a ("sched: Account task_group::cpustat,taskstats,avenrun") is ported
 		get_avenrun_ve(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
-#endif
 	}
 
 	/*
