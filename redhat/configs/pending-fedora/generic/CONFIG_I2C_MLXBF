@@ -1,0 +1,25 @@
+# CONFIG_I2C_MLXBF:
+# 
+# Enabling this option will add I2C SMBus support for Mellanox BlueField
+# system.
+# 
+# This driver can also be built as a module. If so, the module will be
+# called i2c-mlxbf.
+# 
+# This driver implements an I2C SMBus host controller and enables both
+# master and slave functions.
+# 
+# Symbol: I2C_MLXBF [=n]
+# Type  : tristate
+# Defined at drivers/i2c/busses/Kconfig:734
+#   Prompt: Mellanox BlueField I2C controller
+#   Depends on: I2C [=y] && HAS_IOMEM [=y] && ARM64 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> I2C support
+#         -> I2C support (I2C [=y])
+#           -> I2C Hardware Bus support
+# 
+# 
+# 
+# CONFIG_I2C_MLXBF is not set
