@@ -1,0 +1,21 @@
+# CONFIG_I2C_SLAVE_TESTUNIT:
+# 
+# This backend can be used to trigger test cases for I2C bus masters
+# which require a remote device with certain capabilities, e.g.
+# multi-master, SMBus Host Notify, etc. Please read
+# Documentation/i2c/slave-testunit-backend.rst for further details.
+# 
+# Symbol: I2C_SLAVE_TESTUNIT [=n]
+# Type  : tristate
+# Defined at drivers/i2c/Kconfig:128
+#   Prompt: I2C eeprom testunit driver
+#   Depends on: I2C [=y] && I2C_SLAVE [=y]
+#   Location:
+#     -> Device Drivers
+#       -> I2C support
+#         -> I2C support (I2C [=y])
+#           -> I2C slave support (I2C_SLAVE [=y])
+# 
+# 
+# 
+# CONFIG_I2C_SLAVE_TESTUNIT is not set
