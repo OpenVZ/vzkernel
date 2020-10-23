@@ -1901,7 +1901,7 @@ unlock:
 	spin_unlock_irq(&css_set_lock);
 }
 
-static struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
+struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
 {
 	struct cgroup *ve_root = NULL;
 
@@ -1913,9 +1913,9 @@ static struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
 		}
 		cgrp = cgroup_parent(cgrp);
 	} while (cgrp);
-        rcu_read_unlock();
+	rcu_read_unlock();
 
-        return ve_root;
+	return ve_root;
 }
 
 static bool subgroup_limit_reached(struct cgroup *cgroup)

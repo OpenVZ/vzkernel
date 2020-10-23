@@ -152,6 +152,8 @@ extern void monotonic_ve_to_abs(clockid_t which_clock, struct timespec64 *tp);
 extern bool current_user_ns_initial(void);
 struct user_namespace *ve_init_user_ns(void);
 
+extern struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp);
+
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
 
 extern int vz_security_family_check(struct net *net, int family);
@@ -178,6 +180,10 @@ static inline struct user_namespace *ve_init_user_ns(void)
 	return &init_user_ns;
 }
 
+static inline struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
+{
+	return NULL;
+}
 #define ve_uevent_seqnum uevent_seqnum
 
 static inline int vz_security_family_check(struct net *net, int family) { return 0; }
