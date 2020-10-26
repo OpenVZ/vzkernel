@@ -1,0 +1,18 @@
+# CONFIG_PCIE_HISI_ERR:
+# 
+# Say Y here if you want error handling support
+# for the PCIe controller's errors on HiSilicon HIP SoCs
+# 
+# Symbol: PCIE_HISI_ERR [=n]
+# Type  : bool
+# Defined at drivers/pci/controller/Kconfig:301
+#   Prompt: HiSilicon HIP PCIe controller error handling driver
+#   Depends on: PCI [=y] && ACPI_APEI_GHES [=y] && (ARM64 [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> PCI support (PCI [=y])
+#         -> PCI controller drivers
+# 
+# 
+# 
+# CONFIG_PCIE_HISI_ERR is not set
