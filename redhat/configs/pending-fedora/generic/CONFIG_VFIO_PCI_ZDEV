@@ -1,0 +1,22 @@
+# CONFIG_VFIO_PCI_ZDEV:
+# 
+# Enabling this option exposes VFIO capabilities containing hardware
+# configuration for zPCI devices. This enables userspace (e.g. QEMU)
+# to supply proper configuration values instead of hard-coded defaults
+# for zPCI devices passed through via VFIO on s390.
+# 
+# Say Y here.
+# 
+# Symbol: VFIO_PCI_ZDEV [=y]
+# Type  : bool
+# Defined at drivers/vfio/pci/Kconfig:49
+#   Prompt: VFIO PCI ZPCI device CLP support
+#   Depends on: VFIO_PCI [=m] && S390 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> VFIO Non-Privileged userspace driver framework (VFIO [=m])
+#         -> VFIO support for PCI devices (VFIO_PCI [=m])
+# 
+# 
+# 
+CONFIG_VFIO_PCI_ZDEV=y

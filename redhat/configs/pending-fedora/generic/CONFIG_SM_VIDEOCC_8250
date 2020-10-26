@@ -1,0 +1,20 @@
+# CONFIG_SM_VIDEOCC_8250:
+# 
+# Support for the video clock controller on SM8250 devices.
+# Say Y if you want to support video devices and functionality such as
+# video encode and decode.
+# 
+# Symbol: SM_VIDEOCC_8250 [=n]
+# Type  : tristate
+# Defined at drivers/clk/qcom/Kconfig:465
+#   Prompt: SM8250 Video Clock Controller
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_QCOM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Support for Qualcomm's clock controllers (COMMON_CLK_QCOM [=y])
+# Selects: SDM_GCC_8250 && QCOM_GDSC [=y]
+# 
+# 
+# 
+# CONFIG_SM_VIDEOCC_8250 is not set

@@ -1,0 +1,17 @@
+# CONFIG_CLK_PX30:
+# 
+# Build the driver for PX30 Clock Driver.
+# 
+# Symbol: CLK_PX30 [=y]
+# Type  : bool
+# Defined at drivers/clk/rockchip/Kconfig:12
+#   Prompt: Rockchip PX30 clock controller support
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_ROCKCHIP [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Rockchip clock controller common support (COMMON_CLK_ROCKCHIP [=y])
+# 
+# 
+# 
+CONFIG_CLK_PX30=y

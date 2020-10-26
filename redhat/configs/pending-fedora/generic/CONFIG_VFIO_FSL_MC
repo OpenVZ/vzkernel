@@ -1,0 +1,20 @@
+# CONFIG_VFIO_FSL_MC:
+# 
+# Driver to enable support for the VFIO QorIQ DPAA2 fsl-mc
+# (Management Complex) devices. This is required to passthrough
+# fsl-mc bus devices using the VFIO framework.
+# 
+# If you don't know what to do here, say N.
+# 
+# Symbol: VFIO_FSL_MC [=n]
+# Type  : tristate
+# Defined at drivers/vfio/fsl-mc/Kconfig:1
+#   Prompt: VFIO support for QorIQ DPAA2 fsl-mc bus devices
+#   Depends on: VFIO [=m] && FSL_MC_BUS [=y] && EVENTFD [=y]
+#   Location:
+#     -> Device Drivers
+#       -> VFIO Non-Privileged userspace driver framework (VFIO [=m])
+# 
+# 
+# 
+# CONFIG_VFIO_FSL_MC is not set

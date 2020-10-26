@@ -1,0 +1,17 @@
+# CONFIG_CLK_RK322X:
+# 
+# Build the driver for RK322x Clock Driver.
+# 
+# Symbol: CLK_RK322X [=y]
+# Type  : bool
+# Defined at drivers/clk/rockchip/Kconfig:42
+#   Prompt: Rockchip RK322x clock controller support
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_ROCKCHIP [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Rockchip clock controller common support (COMMON_CLK_ROCKCHIP [=y])
+# 
+# 
+# 
+CONFIG_CLK_RK322X=y

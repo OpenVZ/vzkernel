@@ -1,0 +1,17 @@
+# CONFIG_ARCH_TEGRA_234_SOC:
+# 
+# Enable support for the NVIDIA Tegra234 SoC.
+# 
+# Symbol: ARCH_TEGRA_234_SOC [=n]
+# Type  : bool
+# Defined at drivers/soc/tegra/Kconfig:122
+#   Prompt: NVIDIA Tegra234 SoC
+#   Depends on: ARCH_TEGRA [=y] && ARM64 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> SOC (System On Chip) specific Drivers
+# Selects: MAILBOX [=y] && TEGRA_BPMP [=y] && TEGRA_HSP_MBOX [=y] && TEGRA_IVC [=y] && SOC_TEGRA_PMC [=y]
+# 
+# 
+# 
+# CONFIG_ARCH_TEGRA_234_SOC is not set
