@@ -448,6 +448,14 @@ struct mem_ctl_info *edac_mc_alloc(unsigned mc_num,
 				   unsigned n_layers,
 				   struct edac_mc_layer *layers,
 				   unsigned sz_pvt);
+/**
+ * edac_get_owner - Return the owner's mod_name of EDAC MC
+ *
+ * Returns:
+ *      Pointer to mod_name string when EDAC MC is owned. NULL otherwise.
+ */
+extern const char *edac_get_owner(void);
+
 extern int edac_mc_add_mc_with_groups(struct mem_ctl_info *mci,
 				      const struct attribute_group **groups);
 #define edac_mc_add_mc(mci)	edac_mc_add_mc_with_groups(mci, NULL)
