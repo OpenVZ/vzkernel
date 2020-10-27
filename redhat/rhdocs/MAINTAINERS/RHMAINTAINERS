@@ -278,6 +278,13 @@ M:	Tomas Henzl <thenzl@redhat.com>
 S:	Maintained
 F:	drivers/scsi/arcmsr/
 
+ARCHITECTURE DIRECTORY FILES
+M:	Prarit Bhargava <prarit@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+M:	Mark Salter <msalter@redhat.com>
+M:	kernel-patches@redhat.com
+F:	arch/Kconfig
+
 ARM64 PORT (AARCH64 ARCHITECTURE)
 M:	Mark Salter <msalter@redhat.com>
 M:	Mark Langsdorf <mlangsdo@redhat.com>
