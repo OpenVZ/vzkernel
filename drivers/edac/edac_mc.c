@@ -722,6 +722,12 @@ struct mem_ctl_info *edac_mc_find(int idx)
 }
 EXPORT_SYMBOL(edac_mc_find);
 
+const char *edac_get_owner(void)
+{
+        return edac_mc_owner;
+}
+EXPORT_SYMBOL_GPL(edac_get_owner);
+
 /**
  * edac_mc_add_mc_with_groups: Insert the 'mci' structure into the mci
  *	global list and create sysfs entries associated with mci structure
