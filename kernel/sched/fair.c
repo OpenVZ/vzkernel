@@ -1053,7 +1053,8 @@ update_stats_enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 						delta >> 20);
 			}
 			account_scheduler_latency(tsk, delta >> 10, 0);
-		}
+		} else
+			__schedstat_add(se->statistics.iowait_sum, delta);
 	}
 }
 
