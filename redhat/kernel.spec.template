@@ -1,4 +1,30 @@
-# We have to override the new %%install behavior because, well... the kernel is special.
+# All Global changes to build and install go here.
+# Per the below section about __spec_install_pre, any rpm
+# environment changes that affect %%install need to go
+# here before the %%install macro is pre-built.
+
+# Disable LTO in userspace packages.
+%global _lto_cflags %{nil}
+
+
+
+# The kernel's %%install section is special
+# Normally the %%install section starts by cleaning up the BUILD_ROOT
+# like so:
+#
+# %%__spec_install_pre %%{___build_pre}\
+#     [ "$RPM_BUILD_ROOT" != "/" ] && rm -rf "${RPM_BUILD_ROOT}"\
+#     mkdir -p `dirname "$RPM_BUILD_ROOT"`\
+#     mkdir "$RPM_BUILD_ROOT"\
+# %%{nil}
+#
+# But because of kernel variants, the %%build section, specifically
+# BuildKernel(), moves each variant to its final destination as the
+# variant is built.  This violates the expectation of the %%install
+# section.  As a result we snapshot the current env variables and
+# purposely leave out the removal section.  All global wide changes
+# should be added above this line otherwise the %%install section
+# will not see them.
 %global __spec_install_pre %{___build_pre}
 
 # Short-term fix so the package builds with GCC 10.
