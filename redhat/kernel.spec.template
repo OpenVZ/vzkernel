@@ -105,10 +105,9 @@ Summary: The Linux kernel
 
 %define pkg_release %{specrelease}
 
-# What parts do we want to build?  We must build at least one kernel.
-# These are the kernels that are built IF the architecture allows it.
-# All should default to 1 (enabled) and be flipped to 0 (disabled)
-# by later arch-specific checks.
+# What parts do we want to build? These are the kernels that are built IF the
+# architecture allows it. All should default to 1 (enabled) and be flipped to
+# 0 (disabled) by later arch-specific checks.
 
 # The following build options are enabled by default.
 # Use either --without <opt> in your rpmbuild command or force values
@@ -1364,33 +1363,18 @@ cp_vmlinux()
 
 %define make %{__make} %{?cross_opts} %{?make_opts} HOSTCFLAGS="%{?build_hostcflags}" HOSTLDFLAGS="%{?build_hostldflags}"
 
-BuildKernel() {
-    MakeTarget=$1
-    KernelImage=$2
-    Flavour=$4
-    DoVDSO=$3
+InitBuildVars() {
+    # Initialize the kernel .config file and create some variables that are
+    # needed for the actual build process.
+
+    Flavour=$1
     Flav=${Flavour:++${Flavour}}
-    InstallName=${5:-vmlinuz}
 
-    DoModules=1
-    if [ "$Flavour" = "zfcpdump" ]; then
-	    DoModules=0
-    fi
-
-    # Pick the right config file for the kernel we're building
+    # Pick the right kernel config file
     Config=kernel-%{version}-%{_target_cpu}${Flavour:+-${Flavour}}.config
     DevelDir=/usr/src/kernels/%{KVERREL}${Flav}
 
-    # When the bootable image is just the ELF kernel, strip it.
-    # We already copy the unstripped file into the debuginfo package.
-    if [ "$KernelImage" = vmlinux ]; then
-      CopyKernel=cp_vmlinux
-    else
-      CopyKernel=cp
-    fi
-
     KernelVer=%{version}-%{release}.%{_target_cpu}${Flav}
-    echo BUILDING A KERNEL FOR ${Flavour} %{_target_cpu}...
 
     # make sure EXTRAVERSION says what we want it to say
     # Trim the release if this is a CI build, since KERNELVERSION is limited to 64 characters
@@ -1400,8 +1384,6 @@ BuildKernel() {
     # if pre-rc1 devel kernel, must fix up PATCHLEVEL for our versioning scheme
     # if we are post rc1 this should match anyway so this won't matter
     perl -p -i -e 's/^PATCHLEVEL.*/PATCHLEVEL = %{patchlevel}/' Makefile
-
-    # and now to start the build process
 
     %{make} %{?_smp_mflags} mrproper
     cp configs/$Config .config
@@ -1419,6 +1401,32 @@ BuildKernel() {
     if [ "$Flavour" == "" ]; then
         KCFLAGS="$KCFLAGS %{?kpatch_kcflags}"
     fi
+}
+
+BuildKernel() {
+    MakeTarget=$1
+    KernelImage=$2
+    Flavour=$4
+    DoVDSO=$3
+    Flav=${Flavour:++${Flavour}}
+    InstallName=${5:-vmlinuz}
+
+    DoModules=1
+    if [ "$Flavour" = "zfcpdump" ]; then
+	    DoModules=0
+    fi
+
+    # When the bootable image is just the ELF kernel, strip it.
+    # We already copy the unstripped file into the debuginfo package.
+    if [ "$KernelImage" = vmlinux ]; then
+      CopyKernel=cp_vmlinux
+    else
+      CopyKernel=cp
+    fi
+
+    InitBuildVars $Flavour
+
+    echo BUILDING A KERNEL FOR ${Flavour} %{_target_cpu}...
 
     %{make} ARCH=$Arch olddefconfig >/dev/null
 
@@ -1944,6 +1952,14 @@ BuildKernel %make_target %kernel_image %{use_vdso} lpae
 
 %if %{with_up}
 BuildKernel %make_target %kernel_image %{_use_vdso}
+%endif
+
+%ifnarch noarch i686
+%if !%{with_debug} && !%{with_zfcpdump} && !%{with_up}
+# If only building the user space tools, then initialize the build environment
+# and some variables so that the various userspace tools can be built.
+InitBuildVars
+%endif
 %endif
 
 %global perf_make \
