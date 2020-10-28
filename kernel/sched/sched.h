@@ -412,6 +412,11 @@ struct task_group {
 	/* Monotonic time in nsecs: */
 	u64			start_time;
 
+	struct kernel_cpustat	*cpustat_last;
+	struct kernel_cpustat	*vcpustat;
+	u64			vcpustat_last_update;
+	spinlock_t		vcpustat_lock;
+
 	struct cfs_bandwidth	cfs_bandwidth;
 #ifdef CONFIG_CFS_CPULIMIT
 #define MAX_CPU_RATE 1024

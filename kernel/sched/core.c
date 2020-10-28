@@ -6398,6 +6398,8 @@ static void sched_free_group(struct task_group *tg)
 	free_fair_sched_group(tg);
 	free_rt_sched_group(tg);
 	autogroup_free(tg);
+	kvfree(tg->cpustat_last);
+	kvfree(tg->vcpustat);
 	kmem_cache_free(task_group_cache, tg);
 }
 
@@ -6415,6 +6417,19 @@ struct task_group *sched_create_group(struct task_group *parent)
 
 	if (!alloc_rt_sched_group(tg, parent))
 		goto err;
+
+	tg->cpustat_last = kvzalloc(nr_cpu_ids * sizeof(struct kernel_cpustat),
+				    GFP_KERNEL);
+	if (!tg->cpustat_last)
+		goto err;
+
+	tg->vcpustat = kvzalloc(nr_cpu_ids * sizeof(struct kernel_cpustat),
+				GFP_KERNEL);
+	if (!tg->vcpustat)
+		goto err;
+
+	tg->vcpustat_last_update = 0;
+	spin_lock_init(&tg->vcpustat_lock);
 
 	/* start_timespec is saved CT0 uptime */
 	tg->start_time = ktime_get_boot_ns();
