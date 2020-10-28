@@ -524,6 +524,7 @@ BuildRequires: numactl-devel
 %endif
 %if %{with_tools}
 BuildRequires: gettext ncurses-devel
+BuildRequires: libcap-devel libcap-ng-devel
 %ifnarch s390x
 BuildRequires: pciutils-devel
 %endif
