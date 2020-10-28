@@ -396,11 +396,11 @@ void kvm_set_cpu_caps(void)
 	 * arch/x86/kernel/cpu/bugs.c is kind enough to
 	 * record that in cpufeatures so use them.
 	 */
-	if (boot_cpu_has(X86_FEATURE_IBPB))
+	if (boot_cpu_has( X86_FEATURE_AMD_IBPB))
 		kvm_cpu_cap_set(X86_FEATURE_AMD_IBPB);
-	if (boot_cpu_has(X86_FEATURE_IBRS))
+	if (boot_cpu_has(X86_FEATURE_AMD_IBRS))
 		kvm_cpu_cap_set(X86_FEATURE_AMD_IBRS);
-	if (boot_cpu_has(X86_FEATURE_STIBP))
+	if (boot_cpu_has(X86_FEATURE_AMD_STIBP))
 		kvm_cpu_cap_set(X86_FEATURE_AMD_STIBP);
 	if (boot_cpu_has(X86_FEATURE_SPEC_CTRL_SSBD))
 		kvm_cpu_cap_set(X86_FEATURE_AMD_SSBD);
