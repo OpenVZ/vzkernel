@@ -199,8 +199,10 @@ static inline void monotonic_ve_to_abs(clockid_t which_clock,
 struct seq_file;
 
 #if defined(CONFIG_VE) && defined(CONFIG_CGROUP_SCHED)
+int ve_show_cpu_stat(struct ve_struct *ve, struct seq_file *p);
 int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p);
 #else
+static inline int ve_show_cpu_stat(struct ve_struct *ve, struct seq_file *p) { return -ENOSYS; }
 static inline int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p) { return -ENOSYS; }
 #endif
 
