@@ -13,6 +13,7 @@
 #include <linux/irqnr.h>
 #include <linux/sched/cputime.h>
 #include <linux/tick.h>
+#include <linux/ve.h>
 
 #ifndef arch_irq_stat_cpu
 #define arch_irq_stat_cpu(cpu) 0
@@ -113,6 +114,15 @@ static int show_stat(struct seq_file *p, void *v)
 	u64 sum_softirq = 0;
 	unsigned int per_softirq_sums[NR_SOFTIRQS] = {0};
 	struct timespec64 boottime;
+	struct ve_struct *ve;
+
+	ve = get_exec_env();
+	if (!ve_is_super(ve)) {
+		int ret;
+		ret = ve_show_cpu_stat(ve, p);
+		if (ret != -ENOSYS)
+			return ret;
+	}
 
 	user = nice = system = idle = iowait =
 		irq = softirq = steal = 0;
