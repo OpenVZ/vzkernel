@@ -57,6 +57,7 @@ struct ve_struct ve0 = {
 	.netns_max_nr		= INT_MAX,
 	.meminfo_val		= VE_MEMINFO_SYSTEM,
 	.vdso_64		= (struct vdso_image*)&vdso_image_64,
+	.vdso_32		= (struct vdso_image*)&vdso_image_32,
 };
 EXPORT_SYMBOL(ve0);
 
@@ -570,13 +571,12 @@ unlock:
 	up_write(&ve->op_sem);
 }
 
-static int copy_vdso(struct ve_struct *ve)
+static int copy_vdso(struct vdso_image **vdso_dst, const struct vdso_image *vdso_src)
 {
-	const struct vdso_image *vdso_src = &vdso_image_64;
 	struct vdso_image *vdso;
 	void *vdso_data;
 
-	if (ve->vdso_64)
+	if (*vdso_dst)
 		return 0;
 
 	vdso = kmemdup(vdso_src, sizeof(*vdso), GFP_KERNEL);
@@ -593,8 +593,20 @@ static int copy_vdso(struct ve_struct *ve)
 
 	vdso->data = vdso_data;
 
-	ve->vdso_64 = vdso;
+	*vdso_dst = vdso;
 	return 0;
+}
+
+static void ve_free_vdso(struct ve_struct *ve)
+{
+	if (ve->vdso_64 && ve->vdso_64 != &vdso_image_64) {
+		kfree(ve->vdso_64->data);
+		kfree(ve->vdso_64);
+	}
+	if (ve->vdso_32 && ve->vdso_32 != &vdso_image_32) {
+		kfree(ve->vdso_32->data);
+		kfree(ve->vdso_32);
+	}
 }
 
 static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_css)
@@ -622,7 +634,10 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	if (err)
 		goto err_log;
 
-	if (copy_vdso(ve))
+	if (copy_vdso(&ve->vdso_64, &vdso_image_64))
+		goto err_vdso;
+
+	if (copy_vdso(&ve->vdso_32, &vdso_image_32))
 		goto err_vdso;
 
 	ve->features = VE_FEATURES_DEF;
@@ -645,6 +660,7 @@ do_init:
 	return &ve->css;
 
 err_vdso:
+	ve_free_vdso(ve);
 	ve_log_destroy(ve);
 err_log:
 	free_percpu(ve->sched_lat_ve.cur);
@@ -682,15 +698,6 @@ static void ve_offline(struct cgroup_subsys_state *css)
 
 	kfree(ve->ve_name);
 	ve->ve_name = NULL;
-}
-
-static void ve_free_vdso(struct ve_struct *ve)
-{
-	if (ve->vdso_64 == &vdso_image_64)
-		return;
-
-	kfree(ve->vdso_64->data);
-	kfree(ve->vdso_64);
 }
 
 static void ve_destroy(struct cgroup_subsys_state *css)

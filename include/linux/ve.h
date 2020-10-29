@@ -93,6 +93,7 @@ struct ve_struct {
 	struct cn_private	*cn;
 #endif
 	struct vdso_image	*vdso_64;
+	struct vdso_image	*vdso_32;
 };
 
 #define VE_MEMINFO_DEFAULT	1	/* default behaviour */
