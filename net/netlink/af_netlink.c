@@ -1532,6 +1532,13 @@ static int netlink_setsockopt(struct socket *sock, int level, int optname,
 
 	switch (optname) {
 	case NETLINK_REPAIR2:
+#ifdef CONFIG_VE
+		{
+			struct ve_struct *ve = get_exec_env();
+			if (!ve_is_super(ve) && !ve->is_pseudosuper)
+				return -ENOPROTOOPT;
+		}
+#endif
 		if (val)
 			nlk->flags |= NETLINK_F_REPAIR;
 		else
