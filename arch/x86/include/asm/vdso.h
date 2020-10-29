@@ -28,6 +28,7 @@ struct vdso_image {
 	long sym___kernel_vsyscall;
 	long sym_int80_landing_pad;
 	long sym_linux_version_code;
+	long sym_ve_start_time;
 };
 
 #ifdef CONFIG_X86_64

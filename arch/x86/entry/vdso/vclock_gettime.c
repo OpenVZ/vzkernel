@@ -24,6 +24,8 @@
 
 #define gtod (&VVAR(vsyscall_gtod_data))
 
+u64 ve_start_time;
+
 extern int __vdso_clock_gettime(clockid_t clock, struct timespec *ts);
 extern int __vdso_gettimeofday(struct timeval *tv, struct timezone *tz);
 extern time_t __vdso_time(time_t *t);
@@ -227,6 +229,21 @@ notrace static int __always_inline do_realtime(struct timespec *ts)
 	return mode;
 }
 
+static inline void timespec_sub_ns(struct timespec *ts, u64 ns)
+{
+	if ((s64)ns <= 0) {
+		ts->tv_sec += __iter_div_u64_rem(-ns, NSEC_PER_SEC, &ns);
+		ts->tv_nsec = ns;
+	} else {
+		ts->tv_sec -= __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
+		if (ns) {
+			ts->tv_sec--;
+			ns = NSEC_PER_SEC - ns;
+		}
+		ts->tv_nsec = ns;
+	}
+}
+
 notrace static int __always_inline do_monotonic(struct timespec *ts)
 {
 	unsigned long seq;
@@ -242,9 +259,7 @@ notrace static int __always_inline do_monotonic(struct timespec *ts)
 		ns >>= gtod->shift;
 	} while (unlikely(gtod_read_retry(gtod, seq)));
 
-	ts->tv_sec += __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
-	ts->tv_nsec = ns;
-
+	timespec_sub_ns(ts, ve_start_time - ns);
 	return mode;
 }
 
@@ -260,12 +275,16 @@ notrace static void do_realtime_coarse(struct timespec *ts)
 
 notrace static void do_monotonic_coarse(struct timespec *ts)
 {
+	u64 ns;
 	unsigned long seq;
+
 	do {
 		seq = gtod_read_begin(gtod);
 		ts->tv_sec = gtod->monotonic_time_coarse_sec;
-		ts->tv_nsec = gtod->monotonic_time_coarse_nsec;
+		ns = gtod->monotonic_time_coarse_nsec;
 	} while (unlikely(gtod_read_retry(gtod, seq)));
+
+	timespec_sub_ns(ts, ve_start_time - ns);
 }
 
 notrace int __vdso_clock_gettime(clockid_t clock, struct timespec *ts)

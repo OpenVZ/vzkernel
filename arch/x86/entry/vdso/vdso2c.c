@@ -110,6 +110,7 @@ struct vdso_sym required_syms[] = {
 	{"__kernel_rt_sigreturn", true},
 	{"int80_landing_pad", true},
 	{"linux_version_code", true},
+	{"ve_start_time", true},
 };
 
 __attribute__((format(printf, 1, 2))) __attribute__((noreturn))
