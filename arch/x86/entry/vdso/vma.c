@@ -291,7 +291,8 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	if (!vdso64_enabled)
 		return 0;
 
-	return map_vdso_randomized(&vdso_image_64);
+
+	return map_vdso_randomized(get_exec_env()->vdso_64);
 }
 
 #ifdef CONFIG_COMPAT
