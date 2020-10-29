@@ -31,6 +31,7 @@ struct vdso_image {
 	RH_KABI_EXTEND(unsigned long extable_base)
 	RH_KABI_EXTEND(unsigned long extable_len)
 	RH_KABI_EXTEND(const void *extable)
+	long sym_linux_version_code;
 };
 
 #ifdef CONFIG_X86_64
