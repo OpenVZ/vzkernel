@@ -1666,6 +1666,31 @@ static int dio_start_merge(struct ploop_io * io, struct ploop_snapdata *sd)
 	return 0;
 }
 
+/*
+ * There may be a hole in a place, which will be new BAT clusters
+ * after grow (before grow these clusters are data). Nullifying code
+ * expects there is no a hole, so we preallocate them here.
+ */
+static int dio_prepare_reloc(struct ploop_io *io, unsigned int start_clu,
+			     unsigned int nr)
+{
+	struct file *file = io->files.file;
+	int log = io->plo->cluster_log;
+	loff_t start, len;
+	int err;
+
+	start = start_clu << (log + 9);
+	len = nr << (log + 9);
+
+	err = file->f_op->fallocate(file, 0, start, len);
+	if (err)
+		return err;
+	err = file->f_op->fallocate(file, FALLOC_FL_CONVERT_UNWRITTEN,
+				    start, len);
+	return err;
+
+}
+
 static void dio_unplug(struct ploop_io * io)
 {	
 	/* Need more thinking how to implement unplug */
@@ -1802,6 +1827,7 @@ static struct ploop_io_ops ploop_io_ops_direct =
 	.complete_snapshot =	dio_complete_snapshot,
 	.io_prepare_merge =	dio_prepare_merge,
 	.start_merge	=	dio_start_merge,
+	.prepare_reloc	=	dio_prepare_reloc,
 	.truncate	=	dio_truncate,
 
 	.queue_settings	=	dio_queue_settings,

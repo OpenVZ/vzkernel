@@ -198,6 +198,8 @@ struct ploop_io_ops
 	int	(*complete_snapshot)(struct ploop_io *, struct ploop_snapdata *);
 	int	(*io_prepare_merge)(struct ploop_io *, struct ploop_snapdata *);
 	int	(*start_merge)(struct ploop_io *, struct ploop_snapdata *);
+	int	(*prepare_reloc)(struct ploop_io *, unsigned int, unsigned int);
+
 	int	(*truncate)(struct ploop_io *, struct file *, __u32 alloc_head);
 	void	(*queue_settings)(struct ploop_io *, struct request_queue *q);
 
