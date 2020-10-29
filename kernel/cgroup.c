@@ -644,7 +644,6 @@ static struct cgroup *css_cgroup_from_root(struct css_set *css_set,
 	struct cgroup *res = NULL;
 	struct cg_cgroup_link *link;
 
-	BUG_ON(!mutex_is_locked(&cgroup_mutex));
 	read_lock(&css_set_lock);
 
 	list_for_each_entry(link, &css_set->cg_links, cg_link_list) {
@@ -1100,7 +1099,6 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 	struct cgroup_subsys *ss;
 	struct cgroup *root_cgrp = &root->top_cgroup;
 
-	mutex_lock(&cgroup_mutex);
 	mutex_lock(&cgroup_root_mutex);
 	for_each_subsys(root, ss)
 		seq_printf(seq, ",%s", ss->name);
@@ -1112,6 +1110,7 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 		seq_puts(seq, ",xattr");
 	if (root->flags & CGRP_ROOT_CPUSET_V2_MODE)
 		seq_puts(seq, ",cpuset_v2_mode");
+	rcu_read_lock();
 #ifdef CONFIG_VE
 	{
 		struct ve_struct *ve = get_exec_env();
@@ -1124,15 +1123,12 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 			 * ve->init_task is synchronized via ve->ve_ns rcu, see
 			 * ve_grab_context/drop_context.
 			 */
-			rcu_read_lock();
 			if (ve->ve_ns)
-				root_cgrp = task_cgroup_from_root(ve->init_task,
+				root_cgrp = css_cgroup_from_root(ve->root_css_set,
 					root);
-			rcu_read_unlock();
 		}
 	}
 #endif
-	rcu_read_lock();
 	release_agent = ve_get_release_agent_path(root_cgrp);
 	if (release_agent && release_agent[0])
 		seq_show_option(seq, "release_agent", release_agent);
@@ -1142,7 +1138,6 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 	if (strlen(root->name))
 		seq_show_option(seq, "name", root->name);
 	mutex_unlock(&cgroup_root_mutex);
-	mutex_unlock(&cgroup_mutex);
 	return 0;
 }
 
