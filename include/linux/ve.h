@@ -17,6 +17,7 @@
 #include <linux/kmapset.h>
 #include <linux/kthread.h>
 #include <linux/binfmts.h>
+#include <asm/vdso.h>
 
 struct nsproxy;
 struct veip_struct;
@@ -91,6 +92,7 @@ struct ve_struct {
 #ifdef CONFIG_CONNECTOR
 	struct cn_private	*cn;
 #endif
+	struct vdso_image	*vdso_64;
 };
 
 #define VE_MEMINFO_DEFAULT	1	/* default behaviour */

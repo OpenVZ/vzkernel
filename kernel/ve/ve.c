@@ -56,6 +56,7 @@ struct ve_struct ve0 = {
 	.netns_avail_nr		= ATOMIC_INIT(INT_MAX),
 	.netns_max_nr		= INT_MAX,
 	.meminfo_val		= VE_MEMINFO_SYSTEM,
+	.vdso_64		= (struct vdso_image*)&vdso_image_64,
 };
 EXPORT_SYMBOL(ve0);
 
@@ -569,6 +570,33 @@ unlock:
 	up_write(&ve->op_sem);
 }
 
+static int copy_vdso(struct ve_struct *ve)
+{
+	const struct vdso_image *vdso_src = &vdso_image_64;
+	struct vdso_image *vdso;
+	void *vdso_data;
+
+	if (ve->vdso_64)
+		return 0;
+
+	vdso = kmemdup(vdso_src, sizeof(*vdso), GFP_KERNEL);
+	if (!vdso)
+		return -ENOMEM;
+
+	vdso_data = kmalloc(vdso_src->size, GFP_KERNEL);
+	if (!vdso_data) {
+		kfree(vdso);
+		return -ENOMEM;
+	}
+
+	memcpy(vdso_data, vdso_src->data, vdso_src->size);
+
+	vdso->data = vdso_data;
+
+	ve->vdso_64 = vdso;
+	return 0;
+}
+
 static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_css)
 {
 	struct ve_struct *ve = &ve0;
@@ -594,6 +622,9 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	if (err)
 		goto err_log;
 
+	if (copy_vdso(ve))
+		goto err_vdso;
+
 	ve->features = VE_FEATURES_DEF;
 	ve->_randomize_va_space = ve0._randomize_va_space;
 
@@ -613,6 +644,8 @@ do_init:
 
 	return &ve->css;
 
+err_vdso:
+	ve_log_destroy(ve);
 err_log:
 	free_percpu(ve->sched_lat_ve.cur);
 err_lat:
@@ -651,12 +684,22 @@ static void ve_offline(struct cgroup_subsys_state *css)
 	ve->ve_name = NULL;
 }
 
+static void ve_free_vdso(struct ve_struct *ve)
+{
+	if (ve->vdso_64 == &vdso_image_64)
+		return;
+
+	kfree(ve->vdso_64->data);
+	kfree(ve->vdso_64);
+}
+
 static void ve_destroy(struct cgroup_subsys_state *css)
 {
 	struct ve_struct *ve = css_to_ve(css);
 
 	kmapset_unlink(&ve->sysfs_perms_key, &sysfs_ve_perms_set);
 	ve_log_destroy(ve);
+	ve_free_vdso(ve);
 #if IS_ENABLED(CONFIG_BINFMT_MISC)
 	kfree(ve->binfmt_misc);
 #endif
