@@ -10,6 +10,7 @@
 #include <linux/version.h>
 #include <linux/fs.h>
 #include <linux/file.h>
+#include <uapi/linux/falloc.h>
 
 #include <linux/ploop/ploop.h>
 #include "ploop1_image.h"
@@ -774,6 +775,13 @@ ploop1_prepare_grow(struct ploop_delta * delta, u64 *new_size, int *reloc)
 		/* Feeling irresistable infatuation to relocate ... */
 		delta->io.plo->grow_start = n_present;
 		delta->io.plo->grow_end = n_needed - n_alloced - 1;
+
+		if (delta->io.ops->prepare_reloc) {
+			err = delta->io.ops->prepare_reloc(&delta->io,
+					delta->io.plo->grow_start, *reloc);
+			if (err)
+				return err;
+		}
 
 		/* Does not use rellocated data clusters during grow. */
 		if (delta->holes_bitmap) {
