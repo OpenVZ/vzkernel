@@ -226,6 +226,7 @@ const char *ve_get_release_agent_path(struct cgroup *cgroot)
 	struct per_cgroot_data *data;
 	struct cgroup_rcu_string *str;
 	struct ve_struct *ve;
+
 	ve = rcu_dereference(cgroot->ve_owner);
 	if (!ve)
 		return NULL;
