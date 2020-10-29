@@ -367,6 +367,10 @@ static struct {
 	{ "nf-logger-2-0",	VE_IP_IPTABLES			},
 	{ "nf-logger-7-0",	VE_IP_IPTABLES			}, /* bridge */
 	{ "nf-logger-10-0",	VE_IP_IPTABLES6			},
+
+	{ "nf-logger-2-1",      VE_IP_IPTABLES			},
+	{ "nf-logger-7-1",      VE_IP_IPTABLES			},
+	{ "nf-logger-10-1",     VE_IP_IPTABLES6			},
 };
 
 /*
@@ -471,6 +475,7 @@ static const char * const ve0_allowed_mod[] = {
 	"nfnetlink-subsys-1",		/* NFNL_SUBSYS_CTNETLINK */
 	"nfnetlink-subsys-2",		/* NFNL_SUBSYS_CTNETLINK_EXP */
 	"nfnetlink-subsys-3",		/* NFNL_SUBSYS_QUEUE */
+	"nfnetlink-subsys-4",		/* NFNL_SUBSYS_ULOG */
 
 	/* unix_diag */
 	"net-pf-16-proto-4-type-1",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_LOCAL */
