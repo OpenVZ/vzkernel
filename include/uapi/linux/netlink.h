@@ -115,6 +115,7 @@ struct nlmsgerr {
 #define NETLINK_CAP_ACK		10
 
 #define NETLINK_REPAIR2		127
+#define NETLINK_SETERR		128
 
 struct nl_pktinfo {
 	__u32	group;
