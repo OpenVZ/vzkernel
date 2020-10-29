@@ -268,7 +268,8 @@ F:	drivers/iommu/amd_iommu*.[ch]
 F:	include/linux/amd-iommu.h
 
 AQUANTIA ATLANTIC ETHERNET DRIVER
-M:	David Arcari <darcari@redhat.com>
+M:	Igor Russkikh <irusskik@redhat.com>
+M:	John W. Linville <linville@redhat.com>
 S: 	Maintained
 F:	drivers/net/ethernet/aquantia/
 
@@ -279,23 +280,30 @@ F:	drivers/scsi/arcmsr/
 
 ARM64 PORT (AARCH64 ARCHITECTURE)
 M:	Mark Salter <msalter@redhat.com>
+M:	Mark Langsdorf <mlangsdo@redhat.com>
+M:	Jeremy Linton <jlinton@redhat.com>
 S:	Maintained
 F:	arch/arm64/
 
 ARM ARCHITECTED TIMER DRIVER
 M:	Mark Salter <msalter@redhat.com>
+M:	Mark Langsdorf <mlangsdo@redhat.com>
+M:	Jeremy Linton <jlinton@redhat.com>
 S:	Maintained
 F:	arch/arm64/include/asm/arch_timer.h
 F:	drivers/clocksource/arm_arch_timer.c
 
 ARM INTERRUPT CONTROLLERS (GIC)
 M:	Mark Salter <msalter@redhat.com>
+M:	Jeremy Linton <jlinton@redhat.com>
 S:	Maintained
 F:	drivers/irqchip/irq-gic*
 F:	include/linux/irqchip/arm-gic*
 
 ARM PMU PROFILING AND DEBUGGING
 M:	Mark Salter <msalter@redhat.com>
+M:	Mark Langsdorf <mlangsdo@redhat.com>
+M:	Jeremy Linton <jlinton@redhat.com>
 S:	Maintained
 F:	arch/arm*/kernel/perf_*
 F:	arch/arm/oprofile/common.c
@@ -308,6 +316,8 @@ F:	include/linux/perf/arm_pmu.h
 ARM SMMU DRIVERS
 M:	Jerry Snitselaar <jsnitsel@redhat.com>
 M:	Mark Salter <msalter@redhat.com>
+M:	Mark Langsdorf <mlangsdo@redhat.com>
+M:	Jeremy Linton <jlinton@redhat.com>
 S:	Maintained
 F:	drivers/iommu/arm-smmu.c
 F:	drivers/iommu/arm-smmu-v3.c
@@ -532,6 +542,25 @@ F:	include/crypto/
 F:	include/linux/crypto*
 F:	lib/crypto/
 
+CXGB3 ETHERNET DRIVER (cxgb3)
+M:	Vishal Kulkarni <viskulka@redhat.com>
+M:	John W. Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/chelsio/cxgb3/
+
+CXGB4 ETHERNET DRIVER (cxgb4)
+M:	Vishal Kulkarni <viskulka@redhat.com>
+M:	John W. Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/chelsio/cxgb4/
+
+CXGB4 IWARP DRIVER (IW_CXGB4)
+M:	Vishal Kulkarni <viskulka@redhat.com>
+M:	John W. Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/hw/cxgb4/
+F:	include/uapi/rdma/cxgb4-abi.h
+
 DEVICE DIRECT ACCESS
 M:	Jeff Moyer <jmoyer@redhat.com>
 S:	Maintained
@@ -600,6 +629,11 @@ EDAC/HERM
 M:	Aristeu Rozanski <aris@redhat.com>
 S:	Maintained
 F:	drivers/edac/
+
+EMULEX FC DRIVER
+M:	Ewan D. Milne <emilne@redhat.com>
+S:	Maintained
+F:	drivers/scsi/lpfc
 
 ETHERNET BRIDGE
 M:	Ivan Vecera <ivecera@redhat.com>
@@ -958,6 +992,7 @@ KERNEL VIRTUAL MACHINE FOR AMD-V (KVM/amd)
 M:	Paolo Bonzini <pbonzini@redhat.com>
 M:	Bandan Das <bsd@redhat.com>
 M:	Vitaly Kuznetsov <vkuznets@redhat.com>
+M:	Wei Huang <wehuang@redhat.com>
 L:	rhvirt-patches@redhat.com
 S:	Supported
 F:	arch/x86/include/asm/svm.h
@@ -1118,6 +1153,45 @@ S:	Maintained
 F:	drivers/block/mtip32xx/mtip32xx.c
 F:	drivers/block/mtip32xx/mtip32xx.h
 
+MICROSEMI SMART ARRAY SMARTPQI DRIVER (smartpqi)
+M:	Don Brace <dbrace@redhat.com>
+M:	Tomas Henzl <thenzl@redhat.com>
+S:	Maintained
+F:	drivers/scsi/smartpqi/smartpqi*.[ch]
+F:	drivers/scsi/smartpqi/Kconfig
+F:	drivers/scsi/smartpqi/Makefile
+F:	include/linux/cciss*.h
+F:	include/uapi/linux/cciss*.h
+F:	Documentation/scsi/smartpqi.txt
+
+MLX4 ETHERNET DRIVER (mlx4)
+M:	Alaa Hleihel <ahleihel@redhat.com>
+M:	Kamal Heib <kheib@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/mellanox/mlx4/
+
+MLX4 IB DRIVER (mlx4_ib)
+M:	Alaa Hleihel <ahleihel@redhat.com>
+M:	Kamal Heib <kheib@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/hw/mlx4/
+F:	include/linux/mlx4/
+F:	include/uapi/rdma/mlx4-abi.h
+
+MLX5 ETHERNET DRIVER (mlx5)
+M:	Alaa Hleihel <ahleihel@redhat.com>
+M:	Kamal Heib <kheib@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/mellanox/mlx5/
+
+MLX5 IB DRIVER (mlx5_ib)
+M:	Alaa Hleihel <ahleihel@redhat.com>
+M:	Kamal Heib <kheib@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/hw/mlx5/
+F:	include/linux/mlx5/
+F:	include/uapi/rdma/mlx5-abi.h
+
 MMC LAYER
 M:	Gopal Tiwari <gtiwari@redhat.com>
 S:	Maintained
@@ -1269,6 +1343,7 @@ F:	include/linux/if_team.h
 F:	include/uapi/linux/if_team.h
 
 NETXEN (1/10) GbE SUPPORT
+M:	Manish Chopra <mchopra@redhat.com>
 M:	Tony Camuso <tcamuso@redhat.com>
 S:	Maintained
 F:	drivers/net/ethernet/qlogic/netxen/
@@ -1390,6 +1465,8 @@ F:	drivers/power/
 
 POWER STATE COORDINATION INTERFACE (PSCI)
 M:	Mark Salter <msalter@redhat.com>
+M:	Mark Langsdorf <mlangsdo@redhat.com>
+M:	Jeremy Linton <jlinton@redhat.com>
 S:	Maintained
 F:	drivers/firmware/psci*.c
 F:	include/linux/psci.h
@@ -1419,6 +1496,63 @@ PTP KVM
 M:	Marcelo Tosatti <mtosatti@redhat.com>
 S:	Maintained
 F:	drivers/ptp/ptp_kvm.c
+
+QLOGIC QLA2XXX FC-SCSI DRIVER
+M:	Nilesh Javali <njavali@redhat.com>
+M:	Arun Easi <aeasi@redhat.com>
+M:	Ewan D. Milne <emilne@redhat.com>
+S:	Maintained
+F:	drivers/scsi/qla2xxx/
+
+QLOGIC QLA3XXX NETWORK DRIVER
+M:	Manish Chopra <mchopra@redhat.com>
+M:	John W. Linville <linville@redhat.com>
+S:	Maintained
+F:	Documentation/networking/LICENSE.qla3xxx
+F:	drivers/net/ethernet/qlogic/qla3xxx.*
+
+QLOGIC QLCNIC (1/10)Gb ETHERNET DRIVER
+M:	Manish Chopra <mchopra@redhat.com>
+M:	John W. Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/qlogic/qlcnic/
+
+QLOGIC QL41xxx ISCSI DRIVER
+M:	Nilesh Javali <njavali@redhat.com>
+M:	Chris Leech <cleech@redhat.com>
+S:	Maintained
+F:	drivers/scsi/qedi/
+
+QLOGIC QL41xxx FCOE DRIVER
+M:	Nilesh Javali <njavali@redhat.com>
+M:	Arun Easi <aeasi@redhat.com>
+M:	Chris Leech <cleech@redhat.com>
+S:	Maintained
+F:	drivers/scsi/qedf/
+
+QLOGIC QED NETWORK DRIVER
+M:	Manish Chopra <mchopra@redhat.com>
+M:	John W. Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/qlogic/qed
+
+QLOGIC QEDE ETHERNET NETWORK DRIVER
+M:	Manish Chopra <mchopra@redhat.com>
+M:	John W. Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/qlogic/qede
+
+QLOGIC QEDR RDMA ETHERNET NETWORK DRIVER
+M:	Manish Chopra <mchopra@redhat.com>
+M:	John W. Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/hw/qedr
+
+QLOGIC QLGE 10Gb ETHERNET DRIVER
+M:	Manish Chopra <mchopra@redhat.com>
+M:	John W. Linville <linville@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/qlogic/qlge/
 
 RADOS BLOCK DEVICE (RBD)
 M:	Ilya Dryomov <idryomov@redhat.com>
@@ -1533,10 +1667,30 @@ M:	Jarod Wilson <jarod@redhat.com>
 S:	Maintained
 F:	drivers/net/ethernet/sfc/
 
+SGI (HPE HPC) SPECIFIC
+M:	Frank Ramsay <framsay@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+S:	Maintained
+F:	drivers/char/uv_mmtimer.c
+F:	drivers/misc/sgi-gru/
+F:	drivers/misc/sgi-xp/
+F:	arch/ia64/include/asm/machvec_uv.h
+F:	arch/ia64/include/asm/uv/
+F:	arch/ia64/uv/
+F:	arch/x86/include/asm/uv/
+F:	arch/x86/kernel/apic/x2apic_uv_x.c
+F:	arch/x86/platform/uv/
+
 SKGE 10/100/1000 GIGABIT ETHERNET DRIVER
 M:	Michal Schmidt <mschmidt@redhat.com>
 S:	Maintained
 F:	drivers/net/ethernet/marvell/skge.*
+
+SKY2 10/100/1000 GIGABIT ETHERNET DRIVER
+M:	Jeremy Linton <jlinton@redhat.com>
+M:	Mark Langsdorf <mlangsdo@redhat.com>
+S:	Odd Fixes
+F:	drivers/net/ethernet/marvell/sky2.*
 
 SOFTWARE RAID (Multiple Disks, MD) SUPPORT
 M:	Nigel Croxon <ncroxon@redhat.com>
