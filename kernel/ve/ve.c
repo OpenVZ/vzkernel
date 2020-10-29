@@ -595,9 +595,6 @@ static void ve_drop_context(struct ve_struct *ve)
 	struct nsproxy *ve_ns = ve->ve_ns;
 	struct net *net = ve->ve_netns;
 
-	put_css_set_taskexit(ve->root_css_set);
-	ve->root_css_set = NULL;
-
 	ve->ve_netns = NULL;
 	put_net(net);
 
@@ -605,6 +602,9 @@ static void ve_drop_context(struct ve_struct *ve)
 	rcu_assign_pointer(ve->ve_ns, NULL);
 	synchronize_rcu();
 	put_nsproxy(ve_ns);
+
+	put_css_set_taskexit(ve->root_css_set);
+	ve->root_css_set = NULL;
 
 	ve_hook_iterate_fini(VE_SHUTDOWN_CHAIN, ve);
 
