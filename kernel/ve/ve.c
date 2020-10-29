@@ -426,6 +426,17 @@ static int ve_start_kthreadd(struct ve_struct *ve)
 	return err;
 }
 
+static void ve_set_vdso_time(struct ve_struct *ve, u64 time)
+{
+	u64 *vdso_start_time;
+
+	vdso_start_time = ve->vdso_64->data + ve->vdso_64->sym_ve_start_time;
+	*vdso_start_time = time;
+
+	vdso_start_time = ve->vdso_32->data + ve->vdso_32->sym_ve_start_time;
+	*vdso_start_time = time;
+}
+
 /* under ve->op_sem write-lock */
 static int ve_start_container(struct ve_struct *ve)
 {
@@ -460,6 +471,8 @@ static int ve_start_container(struct ve_struct *ve)
 	if (ve->start_time == 0) {
 		ve->start_time = tsk->start_time;
 		ve->real_start_time = tsk->real_start_time;
+
+		ve_set_vdso_time(ve, ve->start_time);
 	}
 	/* The value is wrong, but it is never compared to process
 	 * start times */
@@ -1044,6 +1057,7 @@ static ssize_t ve_ts_write(struct kernfs_open_file *of, char *buf,
 		case VE_CF_CLOCK_MONOTONIC:
 			now = ktime_get_ns();
 			target = &ve->start_time;
+			ve_set_vdso_time(ve, now - delta_ns);
 			break;
 		case VE_CF_CLOCK_BOOTBASED:
 			now = ktime_get_boot_ns();
