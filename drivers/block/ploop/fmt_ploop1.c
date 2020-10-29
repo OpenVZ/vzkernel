@@ -176,8 +176,8 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 		return 0;
 
 	ret = -ENOMEM;
-	/* Use multiplier 10 for bigger batch and better performance */
-	nr_all_pages = 10 * cluster_size_in_bytes(delta->plo) / PAGE_SIZE;
+	/* Use multiplier 4 for bigger batch and better performance */
+	nr_all_pages = 4 * cluster_size_in_bytes(delta->plo) / PAGE_SIZE;
 	pages = kvzalloc(sizeof(struct page *) * nr_all_pages, GFP_KERNEL);
 	if (!pages)
 		return ret;
