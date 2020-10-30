@@ -748,3 +748,27 @@ int cpu_cgroup_proc_stat(struct cgroup_subsys_state *cpu_css,
 
 	return 0;
 }
+
+int cpu_cgroup_get_stat(struct cgroup_subsys_state *cpu_css,
+			struct cgroup_subsys_state *cpuacct_css,
+			struct kernel_cpustat *kstat)
+{
+	struct task_group *tg = css_tg(cpu_css);
+	int nr_vcpus = tg_nr_cpus(tg);
+	int i;
+
+	kernel_cpustat_zero(kstat);
+
+	if (tg == &root_task_group)
+		return -ENOENT;
+
+	for_each_possible_cpu(i)
+		cpu_cgroup_update_stat(cpu_css, cpuacct_css, i);
+
+	cpu_cgroup_update_vcpustat(cpu_css, cpuacct_css);
+
+	for (i = 0; i < nr_vcpus; i++)
+		kernel_cpustat_add(tg->vcpustat + i, kstat, kstat);
+
+	return 0;
+}
