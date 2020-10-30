@@ -23,37 +23,24 @@ static inline void get_ve0_idle(struct timespec64 *idle)
 	idle->tv_nsec = rem;
 }
 
-static inline void get_veX_idle(struct timespec *idle, struct cgroup* cgrp)
+static inline void get_veX_idle(struct ve_struct *ve, struct timespec64 *idle)
 {
-#if 0
-FIXME:	to be reworked anyway in
-	"Use ve init task's css instead of opening cgroup via vfs"
-
 	struct kernel_cpustat kstat;
 
-	cpu_cgroup_get_stat(cgrp, &kstat);
-	*idle = ns_to_timespec(kstat.cpustat[CPUTIME_IDLE]);
-#endif
+	ve_get_cpu_stat(ve, &kstat);
+	*idle = ns_to_timespec64(kstat.cpustat[CPUTIME_IDLE]);
 }
 
 static int uptime_proc_show(struct seq_file *m, void *v)
 {
 	struct timespec uptime, offset;
 	struct timespec64 idle;
+	struct ve_struct *ve = get_exec_env();
 
-	if (ve_is_super(get_exec_env()))
+	if (ve_is_super(ve))
 		get_ve0_idle(&idle);
-	else {
-		get_ve0_idle(&idle);
-#if 0
-FIXME:  to be reworked anyway in
-        "Use ve init task's css instead of opening cgroup via vfs"
-
-		rcu_read_lock();
-		get_veX_idle(&idle, task_cgroup(current, cpu_cgroup_subsys_id));
-		rcu_read_unlock();
-#endif
-	}
+	else
+		get_veX_idle(ve, &idle);
 
 	get_monotonic_boottime(&uptime);
 #ifdef CONFIG_VE
