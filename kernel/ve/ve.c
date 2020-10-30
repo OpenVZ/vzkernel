@@ -1425,4 +1425,22 @@ int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p)
 	css_put(css);
 	return err;
 }
+
+int cpu_cgroup_get_stat(struct cgroup_subsys_state *cpu_css,
+			struct cgroup_subsys_state *cpuacct_css,
+			struct kernel_cpustat *kstat);
+
+int ve_get_cpu_stat(struct ve_struct *ve, struct kernel_cpustat *kstat)
+{
+	struct cgroup_subsys_state *cpu_css, *cpuacct_css;
+	int err;
+
+	cpu_css = ve_get_init_css(ve, cpu_cgrp_id);
+	cpuacct_css = ve_get_init_css(ve, cpuacct_cgrp_id);
+	err = cpu_cgroup_get_stat(cpu_css, cpuacct_css, kstat);
+	css_put(cpuacct_css);
+	css_put(cpu_css);
+	return err;
+}
+EXPORT_SYMBOL(ve_get_cpu_stat);
 #endif /* CONFIG_CGROUP_SCHED */

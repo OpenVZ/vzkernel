@@ -201,9 +201,11 @@ struct seq_file;
 #if defined(CONFIG_VE) && defined(CONFIG_CGROUP_SCHED)
 int ve_show_cpu_stat(struct ve_struct *ve, struct seq_file *p);
 int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p);
+int ve_get_cpu_stat(struct ve_struct *ve, struct kernel_cpustat *kstat);
 #else
 static inline int ve_show_cpu_stat(struct ve_struct *ve, struct seq_file *p) { return -ENOSYS; }
 static inline int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p) { return -ENOSYS; }
+static inline int ve_get_cpu_stat(struct ve_struct *ve, struct kernel_cpustat *kstat) { return -ENOSYS; }
 #endif
 
 #endif /* _LINUX_VE_H */
