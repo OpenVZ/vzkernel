@@ -141,6 +141,11 @@ static inline struct ve_struct *css_to_ve(struct cgroup_subsys_state *css)
 
 extern struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id);
 
+static u64 ve_get_uptime(struct ve_struct *ve)
+{
+	return ktime_get_boot_ns() - ve->real_start_time;
+}
+
 extern void monotonic_abs_to_ve(clockid_t which_clock, struct timespec64 *tp);
 extern void monotonic_ve_to_abs(clockid_t which_clock, struct timespec64 *tp);
 
