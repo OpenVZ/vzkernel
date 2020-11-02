@@ -658,7 +658,7 @@ struct element {
 	unsigned	flags;
 #define ELEMENT_IMPLICIT	0x0001
 #define ELEMENT_EXPLICIT	0x0002
-#define ELEMENT_MARKED		0x0004
+#define ELEMENT_TAG_SPECIFIED	0x0004
 #define ELEMENT_RENDERED	0x0008
 #define ELEMENT_SKIPPABLE	0x0010
 #define ELEMENT_CONDITIONAL	0x0020
@@ -871,6 +871,7 @@ static struct element *parse_type(struct token **_cursor, struct token *end,
 
 		element->tag &= ~0x1f;
 		element->tag |= strtoul(cursor->value, &p, 10);
+		element->flags |= ELEMENT_TAG_SPECIFIED;
 		if (p - cursor->value != cursor->size)
 			abort();
 		cursor++;
@@ -1353,6 +1354,8 @@ static void render_out_of_line_list(FILE *out)
 			render_opcode(out, "ASN1_OP_END_SET_OF%s,\n", act);
 			render_opcode(out, "_jump_target(%u),\n", entry);
 			break;
+		default:
+			break;
 		}
 		if (e->action)
 			render_opcode(out, "_action(ACT_%s),\n",
@@ -1366,7 +1369,7 @@ static void render_out_of_line_list(FILE *out)
  */
 static void render_element(FILE *out, struct element *e, struct element *tag)
 {
-	struct element *ec;
+	struct element *ec, *x;
 	const char *cond, *act;
 	int entry, skippable = 0, outofline = 0;
 
@@ -1390,7 +1393,8 @@ static void render_element(FILE *out, struct element *e, struct element *tag)
 	act = e->action ? "_ACT" : "";
 	switch (e->compound) {
 	case ANY:
-		render_opcode(out, "ASN1_OP_%sMATCH_ANY%s,", cond, act);
+		render_opcode(out, "ASN1_OP_%sMATCH_ANY%s%s,",
+			      cond, act, skippable ? "_OR_SKIP" : "");
 		if (e->name)
 			render_more(out, "\t\t// %*.*s",
 				    (int)e->name->size, (int)e->name->size,
@@ -1425,15 +1429,17 @@ static void render_element(FILE *out, struct element *e, struct element *tag)
 		break;
 	}
 
-	if (e->name)
+	x = tag ?: e;
+	if (x->name)
 		render_more(out, "\t\t// %*.*s",
-			    (int)e->name->size, (int)e->name->size,
-			    e->name->value);
+			    (int)x->name->size, (int)x->name->size,
+			    x->name->value);
 	render_more(out, "\n");
 
 	/* Render the tag */
-	if (!tag)
+	if (!tag || !(tag->flags & ELEMENT_TAG_SPECIFIED))
 		tag = e;
+
 	if (tag->class == ASN1_UNIV &&
 	    tag->tag != 14 &&
 	    tag->tag != 15 &&
@@ -1455,7 +1461,8 @@ dont_render_tag:
 	case TYPE_REF:
 		render_element(out, e->type->type->element, tag);
 		if (e->action)
-			render_opcode(out, "ASN1_OP_ACT,\n");
+			render_opcode(out, "ASN1_OP_%sACT,\n",
+				      skippable ? "MAYBE_" : "");
 		break;
 
 	case SEQUENCE:
@@ -1529,7 +1536,7 @@ dont_render_tag:
 
 	case CHOICE:
 		for (ec = e->children; ec; ec = ec->next)
-			render_element(out, ec, NULL);
+			render_element(out, ec, ec);
 		if (!skippable)
 			render_opcode(out, "ASN1_OP_COND_FAIL,\n");
 		if (e->action)

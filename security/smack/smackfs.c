@@ -770,7 +770,7 @@ static int cipso_seq_show(struct seq_file *s, void *v)
 	struct list_head  *list = v;
 	struct smack_known *skp =
 		 list_entry(list, struct smack_known, list);
-	struct netlbl_lsm_secattr_catmap *cmp = skp->smk_netlabel.attr.mls.cat;
+	struct netlbl_lsm_catmap *cmp = skp->smk_netlabel.attr.mls.cat;
 	char sep = '/';
 	int i;
 
@@ -787,8 +787,8 @@ static int cipso_seq_show(struct seq_file *s, void *v)
 
 	seq_printf(s, "%s %3d", skp->smk_known, skp->smk_netlabel.attr.mls.lvl);
 
-	for (i = netlbl_secattr_catmap_walk(cmp, 0); i >= 0;
-	     i = netlbl_secattr_catmap_walk(cmp, i + 1)) {
+	for (i = netlbl_catmap_walk(cmp, 0); i >= 0;
+	     i = netlbl_catmap_walk(cmp, i + 1)) {
 		seq_printf(s, "%c%d", sep, i);
 		sep = ',';
 	}
@@ -909,7 +909,7 @@ static ssize_t smk_set_cipso(struct file *file, const char __user *buf,
 
 	rc = smk_netlbl_mls(maplevel, mapcatset, &ncats, SMK_CIPSOLEN);
 	if (rc >= 0) {
-		netlbl_secattr_catmap_free(skp->smk_netlabel.attr.mls.cat);
+		netlbl_catmap_free(skp->smk_netlabel.attr.mls.cat);
 		skp->smk_netlabel.attr.mls.cat = ncats.attr.mls.cat;
 		skp->smk_netlabel.attr.mls.lvl = ncats.attr.mls.lvl;
 		rc = count;
@@ -959,14 +959,14 @@ static int cipso2_seq_show(struct seq_file *s, void *v)
 	struct list_head  *list = v;
 	struct smack_known *skp =
 		 list_entry(list, struct smack_known, list);
-	struct netlbl_lsm_secattr_catmap *cmp = skp->smk_netlabel.attr.mls.cat;
+	struct netlbl_lsm_catmap *cmp = skp->smk_netlabel.attr.mls.cat;
 	char sep = '/';
 	int i;
 
 	seq_printf(s, "%s %3d", skp->smk_known, skp->smk_netlabel.attr.mls.lvl);
 
-	for (i = netlbl_secattr_catmap_walk(cmp, 0); i >= 0;
-	     i = netlbl_secattr_catmap_walk(cmp, i + 1)) {
+	for (i = netlbl_catmap_walk(cmp, 0); i >= 0;
+	     i = netlbl_catmap_walk(cmp, i + 1)) {
 		seq_printf(s, "%c%d", sep, i);
 		sep = ',';
 	}
@@ -2124,16 +2124,16 @@ static const struct file_operations smk_revoke_subj_ops = {
 	.llseek		= generic_file_llseek,
 };
 
-static struct kset *smackfs_kset;
 /**
  * smk_init_sysfs - initialize /sys/fs/smackfs
  *
  */
 static int smk_init_sysfs(void)
 {
-	smackfs_kset = kset_create_and_add("smackfs", NULL, fs_kobj);
-	if (!smackfs_kset)
-		return -ENOMEM;
+	int err;
+	err = sysfs_create_mount_point(fs_kobj, "smackfs");
+	if (err)
+		return err;
 	return 0;
 }
 

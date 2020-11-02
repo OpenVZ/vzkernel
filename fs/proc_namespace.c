@@ -20,15 +20,15 @@ static unsigned mounts_poll(struct file *file, poll_table *wait)
 	struct proc_mounts *p = proc_mounts(file->private_data);
 	struct mnt_namespace *ns = p->ns;
 	unsigned res = POLLIN | POLLRDNORM;
+	int event;
 
 	poll_wait(file, &p->ns->poll, wait);
 
-	br_read_lock(&vfsmount_lock);
-	if (p->m.poll_event != ns->event) {
-		p->m.poll_event = ns->event;
+	event = ACCESS_ONCE(ns->event);
+	if (p->m.poll_event != event) {
+		p->m.poll_event = event;
 		res |= POLLERR | POLLPRI;
 	}
-	br_read_unlock(&vfsmount_lock);
 
 	return res;
 }
@@ -91,6 +91,7 @@ static void show_type(struct seq_file *m, struct super_block *sb)
 
 static int show_vfsmnt(struct seq_file *m, struct vfsmount *mnt)
 {
+	struct proc_mounts *p = proc_mounts(m);
 	struct mount *r = real_mount(mnt);
 	int err = 0;
 	struct path mnt_path = { .dentry = mnt->mnt_root, .mnt = mnt };
@@ -104,7 +105,10 @@ static int show_vfsmnt(struct seq_file *m, struct vfsmount *mnt)
 		mangle(m, r->mnt_devname ? r->mnt_devname : "none");
 	}
 	seq_putc(m, ' ');
-	seq_path(m, &mnt_path, " \t\n\\");
+	/* mountpoints outside of chroot jail will give SEQ_SKIP on this */
+	err = seq_path_root(m, &mnt_path, &p->root, " \t\n\\");
+	if (err)
+		goto out;
 	seq_putc(m, ' ');
 	show_type(m, sb);
 	seq_puts(m, __mnt_is_readonly(mnt) ? " ro" : " rw");
@@ -182,6 +186,7 @@ out:
 
 static int show_vfsstat(struct seq_file *m, struct vfsmount *mnt)
 {
+	struct proc_mounts *p = proc_mounts(m);
 	struct mount *r = real_mount(mnt);
 	struct path mnt_path = { .dentry = mnt->mnt_root, .mnt = mnt };
 	struct super_block *sb = mnt_path.dentry->d_sb;
@@ -191,6 +196,8 @@ static int show_vfsstat(struct seq_file *m, struct vfsmount *mnt)
 	if (sb->s_op->show_devname) {
 		seq_puts(m, "device ");
 		err = sb->s_op->show_devname(m, mnt_path.dentry);
+		if (err)
+			goto out;
 	} else {
 		if (r->mnt_devname) {
 			seq_puts(m, "device ");
@@ -201,7 +208,10 @@ static int show_vfsstat(struct seq_file *m, struct vfsmount *mnt)
 
 	/* mount point */
 	seq_puts(m, " mounted on ");
-	seq_path(m, &mnt_path, " \t\n\\");
+	/* mountpoints outside of chroot jail will give SEQ_SKIP on this */
+	err = seq_path_root(m, &mnt_path, &p->root, " \t\n\\");
+	if (err)
+		goto out;
 	seq_putc(m, ' ');
 
 	/* file system type */
@@ -216,6 +226,7 @@ static int show_vfsstat(struct seq_file *m, struct vfsmount *mnt)
 	}
 
 	seq_putc(m, '\n');
+out:
 	return err;
 }
 
@@ -232,22 +243,15 @@ static int mounts_open_common(struct inode *inode, struct file *file,
 	if (!task)
 		goto err;
 
-	rcu_read_lock();
-	nsp = task_nsproxy(task);
-	if (!nsp) {
-		rcu_read_unlock();
+	task_lock(task);
+	nsp = task->nsproxy;
+	if (!nsp || !nsp->mnt_ns) {
+		task_unlock(task);
 		put_task_struct(task);
 		goto err;
 	}
 	ns = nsp->mnt_ns;
-	if (!ns) {
-		rcu_read_unlock();
-		put_task_struct(task);
-		goto err;
-	}
 	get_mnt_ns(ns);
-	rcu_read_unlock();
-	task_lock(task);
 	if (!task->fs) {
 		task_unlock(task);
 		put_task_struct(task);
@@ -272,6 +276,7 @@ static int mounts_open_common(struct inode *inode, struct file *file,
 	p->root = root;
 	p->m.poll_event = ns->event;
 	p->show = show;
+	p->cached_event = ~0ULL;
 
 	return 0;
 

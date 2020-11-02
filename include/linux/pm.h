@@ -27,6 +27,7 @@
 #include <linux/wait.h>
 #include <linux/timer.h>
 #include <linux/completion.h>
+#include <linux/rh_kabi.h>
 
 /*
  * Callbacks for platform drivers to implement.
@@ -52,6 +53,18 @@ static inline void pm_vt_switch_unregister(struct device *dev)
  */
 
 struct device;
+
+#ifdef CONFIG_PM_SLEEP
+#define SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(suspend_fn, resume_fn) \
+	.suspend_noirq = suspend_fn, \
+	.resume_noirq = resume_fn, \
+	.freeze_noirq = suspend_fn, \
+	.thaw_noirq = resume_fn, \
+	.poweroff_noirq = suspend_fn, \
+	.restore_noirq = resume_fn,
+#else
+#define SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(suspend_fn, resume_fn)
+#endif
 
 #ifdef CONFIG_PM
 extern const char power_group_name[];		/* = "power" */
@@ -311,6 +324,18 @@ struct dev_pm_ops {
 #define SET_SYSTEM_SLEEP_PM_OPS(suspend_fn, resume_fn)
 #endif
 
+#ifdef CONFIG_PM_SLEEP
+#define SET_LATE_SYSTEM_SLEEP_PM_OPS(suspend_fn, resume_fn) \
+	.suspend_late = suspend_fn, \
+	.resume_early = resume_fn, \
+	.freeze_late = suspend_fn, \
+	.thaw_early = resume_fn, \
+	.poweroff_late = suspend_fn, \
+	.restore_early = resume_fn,
+#else
+#define SET_LATE_SYSTEM_SLEEP_PM_OPS(suspend_fn, resume_fn)
+#endif
+
 #ifdef CONFIG_PM_RUNTIME
 #define SET_RUNTIME_PM_OPS(suspend_fn, resume_fn, idle_fn) \
 	.runtime_suspend = suspend_fn, \
@@ -507,11 +532,11 @@ struct pm_domain_data {
 struct pm_subsys_data {
 	spinlock_t lock;
 	unsigned int refcount;
-#ifdef CONFIG_PM_CLK
-	struct list_head clock_list;
-#endif
 #ifdef CONFIG_PM_GENERIC_DOMAINS
 	struct pm_domain_data *domain_data;
+#endif
+#ifdef CONFIG_PM_CLK
+	RH_KABI_EXTEND(struct list_head clock_list)
 #endif
 };
 
@@ -562,6 +587,11 @@ struct dev_pm_info {
 #endif
 	struct pm_subsys_data	*subsys_data;  /* Owned by the subsystem. */
 	struct dev_pm_qos	*qos;
+};
+
+/* This struct is never under KABI restrictions */
+struct dev_pm_info_rh {
+	RH_KABI_EXTEND(void (*set_latency_tolerance)(struct device *, s32))
 };
 
 extern void update_pm_runtime_accounting(struct device *dev);

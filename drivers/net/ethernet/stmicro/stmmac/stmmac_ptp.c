@@ -164,6 +164,7 @@ static struct ptp_clock_info stmmac_ptp_clock_ops = {
 	.n_alarm = 0,
 	.n_ext_ts = 0,
 	.n_per_out = 0,
+	.n_pins = 0,
 	.pps = 0,
 	.adjfreq = stmmac_adjust_freq,
 	.adjtime = stmmac_adjust_time,
@@ -188,7 +189,7 @@ int stmmac_ptp_register(struct stmmac_priv *priv)
 	if (IS_ERR(priv->ptp_clock)) {
 		priv->ptp_clock = NULL;
 		pr_err("ptp_clock_register() failed on %s\n", priv->dev->name);
-	} else
+	} else if (priv->ptp_clock)
 		pr_debug("Added PTP HW clock successfully on %s\n",
 			 priv->dev->name);
 

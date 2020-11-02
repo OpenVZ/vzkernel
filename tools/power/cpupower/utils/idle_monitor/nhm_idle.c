@@ -129,7 +129,7 @@ static int nhm_start(void)
 	int num, cpu;
 	unsigned long long dbg, val;
 
-	nhm_get_count(TSC, &tsc_at_measure_start, 0);
+	nhm_get_count(TSC, &tsc_at_measure_start, base_cpu);
 
 	for (num = 0; num < NHM_CSTATE_COUNT; num++) {
 		for (cpu = 0; cpu < cpu_count; cpu++) {
@@ -137,7 +137,7 @@ static int nhm_start(void)
 			previous_count[num][cpu] = val;
 		}
 	}
-	nhm_get_count(TSC, &dbg, 0);
+	nhm_get_count(TSC, &dbg, base_cpu);
 	dprint("TSC diff: %llu\n", dbg - tsc_at_measure_start);
 	return 0;
 }
@@ -148,7 +148,7 @@ static int nhm_stop(void)
 	unsigned long long dbg;
 	int num, cpu;
 
-	nhm_get_count(TSC, &tsc_at_measure_end, 0);
+	nhm_get_count(TSC, &tsc_at_measure_end, base_cpu);
 
 	for (num = 0; num < NHM_CSTATE_COUNT; num++) {
 		for (cpu = 0; cpu < cpu_count; cpu++) {
@@ -156,7 +156,7 @@ static int nhm_stop(void)
 			current_count[num][cpu] = val;
 		}
 	}
-	nhm_get_count(TSC, &dbg, 0);
+	nhm_get_count(TSC, &dbg, base_cpu);
 	dprint("TSC diff: %llu\n", dbg - tsc_at_measure_end);
 
 	return 0;
@@ -209,7 +209,7 @@ struct cpuidle_monitor intel_nhm_monitor = {
 	.stop			= nhm_stop,
 	.do_register		= intel_nhm_register,
 	.unregister		= intel_nhm_unregister,
-	.needs_root		= 1,
+	.flags.needs_root	= 1,
 	.overflow_s		= 922000000 /* 922337203 seconds TSC overflow
 					       at 20GHz */
 };

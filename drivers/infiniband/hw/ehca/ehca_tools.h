@@ -69,22 +69,22 @@ extern int ehca_debug_level;
 #define ehca_dbg(ib_dev, format, arg...) \
 	do { \
 		if (unlikely(ehca_debug_level)) \
-			dev_printk(KERN_DEBUG, (ib_dev)->dma_device, \
+			dev_printk(KERN_DEBUG, (ib_dev)->dev.parent, \
 				   "PU%04x EHCA_DBG:%s " format "\n", \
 				   raw_smp_processor_id(), __func__, \
 				   ## arg); \
 	} while (0)
 
 #define ehca_info(ib_dev, format, arg...) \
-	dev_info((ib_dev)->dma_device, "PU%04x EHCA_INFO:%s " format "\n", \
+	dev_info((ib_dev)->dev.parent, "PU%04x EHCA_INFO:%s " format "\n", \
 		 raw_smp_processor_id(), __func__, ## arg)
 
 #define ehca_warn(ib_dev, format, arg...) \
-	dev_warn((ib_dev)->dma_device, "PU%04x EHCA_WARN:%s " format "\n", \
+	dev_warn((ib_dev)->dev.parent, "PU%04x EHCA_WARN:%s " format "\n", \
 		 raw_smp_processor_id(), __func__, ## arg)
 
 #define ehca_err(ib_dev, format, arg...) \
-	dev_err((ib_dev)->dma_device, "PU%04x EHCA_ERR:%s " format "\n", \
+	dev_err((ib_dev)->dev.parent, "PU%04x EHCA_ERR:%s " format "\n", \
 		raw_smp_processor_id(), __func__, ## arg)
 
 /* use this one only if no ib_dev available */

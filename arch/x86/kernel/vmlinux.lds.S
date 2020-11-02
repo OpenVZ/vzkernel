@@ -79,6 +79,12 @@ PHDRS {
 	note PT_NOTE FLAGS(0);          /* ___ */
 }
 
+#ifdef CONFIG_PAGE_TABLE_ISOLATION
+#define ALIGN_KAISER()	. = ALIGN(PAGE_SIZE);
+#else
+#define ALIGN_KAISER()
+#endif
+
 SECTIONS
 {
 #ifdef CONFIG_X86_32
@@ -92,16 +98,19 @@ SECTIONS
 	/* Text and read-only data */
 	.text :  AT(ADDR(.text) - LOAD_OFFSET) {
 		_text = .;
+		_stext = .;
 		/* bootstrapping code */
 		HEAD_TEXT
 		. = ALIGN(8);
-		_stext = .;
 		TEXT_TEXT
 		SCHED_TEXT
+		CPUIDLE_TEXT
 		LOCK_TEXT
+		ALIGN_KAISER()
 		KPROBES_TEXT
 		ENTRY_TEXT
 		IRQENTRY_TEXT
+		ALIGN_KAISER()
 		*(.fixup)
 		*(.gnu.warning)
 		/* End of text section */
@@ -111,6 +120,8 @@ SECTIONS
 	NOTES :text :note
 
 	EXCEPTION_TABLE(16) :text = 0x9090
+
+	MC_EXCEPTION_TABLE(16) :text = 0x9090
 
 #if defined(CONFIG_DEBUG_RODATA)
 	/* .text should occupy whole number of pages */
@@ -184,6 +195,8 @@ SECTIONS
 	 * start another segment - init.
 	 */
 	PERCPU_VADDR(INTERNODE_CACHE_BYTES, 0, :percpu)
+	ASSERT(SIZEOF(.data..percpu) < CONFIG_PHYSICAL_START,
+	       "per-CPU data too large - increase CONFIG_PHYSICAL_START")
 #endif
 
 	INIT_TEXT_SECTION(PAGE_SIZE)
@@ -304,6 +317,14 @@ SECTIONS
 		__bss_stop = .;
 	}
 
+	/*
+	 * The memory occupied from _text to here, __end_of_kernel_reserve, is
+	 * automatically reserved in setup_arch(). Anything after here must be
+	 * explicitly reserved using memblock_reserve() or it will be discarded
+	 * and treated as available memory.
+	 */
+	__end_of_kernel_reserve = .;
+
 	. = ALIGN(PAGE_SIZE);
 	.brk : AT(ADDR(.brk) - LOAD_OFFSET) {
 		__brk_base = .;
@@ -312,14 +333,41 @@ SECTIONS
 		__brk_limit = .;
 	}
 
+	. = ALIGN(PAGE_SIZE);		/* keep VO_INIT_SIZE page aligned */
 	_end = .;
+
+#ifdef CONFIG_AMD_MEM_ENCRYPT
+	/*
+	 * SME workarea section: Lives outside of the kernel proper (_text -
+	 * _end) for performing in-place encryption of the kernel during boot.
+	 *
+	 * Resides after _end because even though the .brk section is after
+	 * __end_of_kernel_reserve, the .brk section is later reserved as a
+	 * part of the kernel. It is used in very early boot code and not
+	 * needed after that, so it is located after __end_of_kernel_reserve
+	 * so that it will be discarded and become part of the available
+	 * memory.
+	 *
+	 * Resides on a 2MB boundary to simplify the pagetable setup used for
+	 * the encryption.
+	 */
+	. = ALIGN(HPAGE_SIZE);
+	.sme : AT(ADDR(.sme) - LOAD_OFFSET) {
+		__sme_begin = .;
+		*(.sme)
+		. = ALIGN(HPAGE_SIZE);
+		__sme_end = .;
+	}
+#endif
 
         STABS_DEBUG
         DWARF_DEBUG
 
-	/* Sections to be discarded */
 	DISCARDS
-	/DISCARD/ : { *(.eh_frame) }
+	/DISCARD/ : {
+		*(.eh_frame)
+		*(__func_stack_frame_non_standard)
+	}
 }
 
 
@@ -351,7 +399,7 @@ INIT_PER_CPU(irq_stack_union);
 
 #endif /* CONFIG_X86_32 */
 
-#ifdef CONFIG_KEXEC
+#ifdef CONFIG_KEXEC_CORE
 #include <asm/kexec.h>
 
 . = ASSERT(kexec_control_code_size <= KEXEC_CONTROL_CODE_MAX_SIZE,

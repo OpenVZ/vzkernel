@@ -12,16 +12,18 @@
 #include <asm/processor.h>
 #include <asm/x86_init.h>
 #include <asm/apic.h>
+#include <asm/hpet.h>
 
 #include "irq_remapping.h"
 
 int irq_remapping_enabled;
-
-int disable_irq_remap;
 int irq_remap_broken;
 int disable_sourceid_checking;
 int no_x2apic_optout;
 
+int disable_irq_post = 0;
+
+static int disable_irq_remap;
 static struct irq_remap_ops *remap_ops;
 
 static int msi_alloc_remapped_irq(struct pci_dev *pdev, int irq, int nvec);
@@ -51,26 +53,20 @@ static void irq_remapping_disable_io_apic(void)
 
 static int do_setup_msi_irqs(struct pci_dev *dev, int nvec)
 {
-	int node, ret, sub_handle, index = 0;
+	int ret, sub_handle, nvec_pow2, index = 0;
 	unsigned int irq;
 	struct msi_desc *msidesc;
 
-	nvec = __roundup_pow_of_two(nvec);
-
-	WARN_ON(!list_is_singular(&dev->msi_list));
 	msidesc = list_entry(dev->msi_list.next, struct msi_desc, list);
-	WARN_ON(msidesc->irq);
-	WARN_ON(msidesc->msi_attrib.multiple);
 
-	node = dev_to_node(&dev->dev);
-	irq = __create_irqs(get_nr_irqs_gsi(), nvec, node);
+	irq = irq_alloc_hwirqs_affinity(nvec, dev_to_node(&dev->dev), msidesc->affinity);
 	if (irq == 0)
 		return -ENOSPC;
 
-	msidesc->msi_attrib.multiple = ilog2(nvec);
+	nvec_pow2 = __roundup_pow_of_two(nvec);
 	for (sub_handle = 0; sub_handle < nvec; sub_handle++) {
 		if (!sub_handle) {
-			index = msi_alloc_remapped_irq(dev, irq, nvec);
+			index = msi_alloc_remapped_irq(dev, irq, nvec_pow2);
 			if (index < 0) {
 				ret = index;
 				goto error;
@@ -88,14 +84,13 @@ static int do_setup_msi_irqs(struct pci_dev *dev, int nvec)
 	return 0;
 
 error:
-	destroy_irqs(irq, nvec);
+	irq_free_hwirqs(irq, nvec);
 
 	/*
 	 * Restore altered MSI descriptor fields and prevent just destroyed
 	 * IRQs from tearing down again in default_teardown_msi_irqs()
 	 */
 	msidesc->irq = 0;
-	msidesc->msi_attrib.multiple = 0;
 
 	return ret;
 }
@@ -107,12 +102,11 @@ static int do_setup_msix_irqs(struct pci_dev *dev, int nvec)
 	unsigned int irq;
 
 	node		= dev_to_node(&dev->dev);
-	irq		= get_nr_irqs_gsi();
 	sub_handle	= 0;
 
 	list_for_each_entry(msidesc, &dev->msi_list, list) {
 
-		irq = create_irq_nr(irq, node);
+		irq = irq_alloc_hwirq_affinity(node, msidesc->affinity);
 		if (irq == 0)
 			return -1;
 
@@ -135,7 +129,7 @@ static int do_setup_msix_irqs(struct pci_dev *dev, int nvec)
 	return 0;
 
 error:
-	destroy_irq(irq);
+	irq_free_hwirq(irq);
 	return ret;
 }
 
@@ -148,7 +142,7 @@ static int irq_remapping_setup_msi_irqs(struct pci_dev *dev,
 		return do_setup_msix_irqs(dev, nvec);
 }
 
-void eoi_ioapic_pin_remapped(int apic, int pin, int vector)
+static void eoi_ioapic_pin_remapped(int apic, int pin, int vector)
 {
 	/*
 	 * Intr-remapping uses pin number as the virtual vector
@@ -183,14 +177,18 @@ static __init int setup_irqremap(char *str)
 		return -EINVAL;
 
 	while (*str) {
-		if (!strncmp(str, "on", 2))
+		if (!strncmp(str, "on", 2)) {
 			disable_irq_remap = 0;
-		else if (!strncmp(str, "off", 3))
+			disable_irq_post = 0;
+		} else if (!strncmp(str, "off", 3)) {
 			disable_irq_remap = 1;
-		else if (!strncmp(str, "nosid", 5))
+			disable_irq_post = 1;
+		} else if (!strncmp(str, "nosid", 5))
 			disable_sourceid_checking = 1;
 		else if (!strncmp(str, "no_x2apic_optout", 16))
 			no_x2apic_optout = 1;
+		else if (!strncmp(str, "nopost", 6))
+			disable_irq_post = 1;
 
 		str += strcspn(str, ",");
 		while (*str == ',')
@@ -201,45 +199,44 @@ static __init int setup_irqremap(char *str)
 }
 early_param("intremap", setup_irqremap);
 
-void __init setup_irq_remapping_ops(void)
-{
-	remap_ops = &intel_irq_remap_ops;
-
-#ifdef CONFIG_AMD_IOMMU
-	if (amd_iommu_irq_ops.prepare() == 0)
-		remap_ops = &amd_iommu_irq_ops;
-#endif
-}
-
 void set_irq_remapping_broken(void)
 {
 	irq_remap_broken = 1;
 }
 
-int irq_remapping_supported(void)
+bool irq_remapping_cap(enum irq_remap_cap cap)
 {
-	if (disable_irq_remap)
-		return 0;
+	if (!remap_ops || disable_irq_post)
+		return false;
 
-	if (!remap_ops || !remap_ops->supported)
-		return 0;
-
-	return remap_ops->supported();
+	return (remap_ops->capability & (1 << cap));
 }
+EXPORT_SYMBOL_GPL(irq_remapping_cap);
 
 int __init irq_remapping_prepare(void)
 {
-	if (!remap_ops || !remap_ops->prepare)
-		return -ENODEV;
+	if (disable_irq_remap)
+		return -ENOSYS;
 
-	return remap_ops->prepare();
+	if (intel_irq_remap_ops.prepare() == 0)
+		remap_ops = &intel_irq_remap_ops;
+	else if (IS_ENABLED(CONFIG_AMD_IOMMU) &&
+		 amd_iommu_irq_ops.prepare() == 0)
+		remap_ops = &amd_iommu_irq_ops;
+	else if (IS_ENABLED(CONFIG_HYPERV_IOMMU) &&
+		 hyperv_irq_remap_ops.prepare() == 0)
+		remap_ops = &hyperv_irq_remap_ops;
+	else
+		return -ENOSYS;
+
+	return 0;
 }
 
 int __init irq_remapping_enable(void)
 {
 	int ret;
 
-	if (!remap_ops || !remap_ops->enable)
+	if (!remap_ops->enable)
 		return -ENODEV;
 
 	ret = remap_ops->enable();
@@ -252,22 +249,16 @@ int __init irq_remapping_enable(void)
 
 void irq_remapping_disable(void)
 {
-	if (!irq_remapping_enabled ||
-	    !remap_ops ||
-	    !remap_ops->disable)
-		return;
-
-	remap_ops->disable();
+	if (irq_remapping_enabled && remap_ops->disable)
+		remap_ops->disable();
 }
 
 int irq_remapping_reenable(int mode)
 {
-	if (!irq_remapping_enabled ||
-	    !remap_ops ||
-	    !remap_ops->reenable)
-		return 0;
+	if (irq_remapping_enabled && remap_ops->reenable)
+		return remap_ops->reenable(mode);
 
-	return remap_ops->reenable(mode);
+	return 0;
 }
 
 int __init irq_remap_enable_fault_handling(void)
@@ -275,7 +266,7 @@ int __init irq_remap_enable_fault_handling(void)
 	if (!irq_remapping_enabled)
 		return 0;
 
-	if (!remap_ops || !remap_ops->enable_faulting)
+	if (!remap_ops->enable_faulting)
 		return -ENODEV;
 
 	return remap_ops->enable_faulting();
@@ -286,18 +277,17 @@ int setup_ioapic_remapped_entry(int irq,
 				unsigned int destination, int vector,
 				struct io_apic_irq_attr *attr)
 {
-	if (!remap_ops || !remap_ops->setup_ioapic_entry)
+	if (!remap_ops->setup_ioapic_entry)
 		return -ENODEV;
 
 	return remap_ops->setup_ioapic_entry(irq, entry, destination,
 					     vector, attr);
 }
 
-int set_remapped_irq_affinity(struct irq_data *data, const struct cpumask *mask,
-			      bool force)
+static int set_remapped_irq_affinity(struct irq_data *data,
+				     const struct cpumask *mask, bool force)
 {
-	if (!config_enabled(CONFIG_SMP) || !remap_ops ||
-	    !remap_ops->set_affinity)
+	if (!config_enabled(CONFIG_SMP) || !remap_ops->set_affinity)
 		return 0;
 
 	return remap_ops->set_affinity(data, mask, force);
@@ -307,10 +297,7 @@ void free_remapped_irq(int irq)
 {
 	struct irq_cfg *cfg = irq_get_chip_data(irq);
 
-	if (!remap_ops || !remap_ops->free_irq)
-		return;
-
-	if (irq_remapped(cfg))
+	if (irq_remapped(cfg) && remap_ops->free_irq)
 		remap_ops->free_irq(irq);
 }
 
@@ -322,13 +309,13 @@ void compose_remapped_msi_msg(struct pci_dev *pdev,
 
 	if (!irq_remapped(cfg))
 		native_compose_msi_msg(pdev, irq, dest, msg, hpet_id);
-	else if (remap_ops && remap_ops->compose_msi_msg)
+	else if (remap_ops->compose_msi_msg)
 		remap_ops->compose_msi_msg(pdev, irq, dest, msg, hpet_id);
 }
 
 static int msi_alloc_remapped_irq(struct pci_dev *pdev, int irq, int nvec)
 {
-	if (!remap_ops || !remap_ops->msi_alloc_irq)
+	if (!remap_ops->msi_alloc_irq)
 		return -ENODEV;
 
 	return remap_ops->msi_alloc_irq(pdev, irq, nvec);
@@ -337,7 +324,7 @@ static int msi_alloc_remapped_irq(struct pci_dev *pdev, int irq, int nvec)
 static int msi_setup_remapped_irq(struct pci_dev *pdev, unsigned int irq,
 				  int index, int sub_handle)
 {
-	if (!remap_ops || !remap_ops->msi_setup_irq)
+	if (!remap_ops->msi_setup_irq)
 		return -ENODEV;
 
 	return remap_ops->msi_setup_irq(pdev, irq, index, sub_handle);
@@ -345,11 +332,38 @@ static int msi_setup_remapped_irq(struct pci_dev *pdev, unsigned int irq,
 
 int setup_hpet_msi_remapped(unsigned int irq, unsigned int id)
 {
-	if (!remap_ops || !remap_ops->setup_hpet_msi)
+	int ret;
+
+	if (!remap_ops->alloc_hpet_msi)
 		return -ENODEV;
 
-	return remap_ops->setup_hpet_msi(irq, id);
+	ret = remap_ops->alloc_hpet_msi(irq, id);
+	if (ret)
+		return -EINVAL;
+
+	return default_setup_hpet_msi(irq, id);
 }
+
+/**
+ *	irq_set_vcpu_affinity - Set vcpu affinity for the interrupt
+ *	@irq: interrupt number to set affinity
+ *	@vcpu_info: vCPU specific data
+ *
+ *	This function uses the vCPU specific data to set the vCPU
+ *	affinity for an irq. The vCPU specific data is passed from
+ *	outside, such as KVM. One example code path is as below:
+ *	KVM -> IOMMU -> irq_set_vcpu_affinity().
+ */
+int irq_set_vcpu_affinity(unsigned int irq, void *vcpu_info)
+{
+	struct irq_cfg *cfg = irq_get_chip_data(irq);
+
+	if (!irq_remapped(cfg) || !remap_ops->irq_set_vcpu_affinity)
+		return -ENOSYS;
+
+	return remap_ops->irq_set_vcpu_affinity(irq, vcpu_info);
+}
+EXPORT_SYMBOL_GPL(irq_set_vcpu_affinity);
 
 void panic_if_irq_remap(const char *msg)
 {

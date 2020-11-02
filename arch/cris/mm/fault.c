@@ -8,7 +8,7 @@
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/wait.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <arch/system.h>
 
 extern int find_fixup_code(struct pt_regs *);
@@ -110,11 +110,11 @@ do_page_fault(unsigned long address, struct pt_regs *regs,
 	info.si_code = SEGV_MAPERR;
 
 	/*
-	 * If we're in an interrupt or "atomic" operation or have no
+	 * If we're in an interrupt, have pagefaults disabled or have no
 	 * user context, we must not take the fault.
 	 */
 
-	if (in_atomic() || !mm)
+	if (faulthandler_disabled() || !mm)
 		goto no_context;
 
 retry:
@@ -166,7 +166,7 @@ retry:
 	 * the fault.
 	 */
 
-	fault = handle_mm_fault(mm, vma, address, flags);
+	fault = handle_mm_fault(vma, address, flags);
 
 	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current))
 		return;

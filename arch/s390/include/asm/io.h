@@ -34,10 +34,16 @@ static inline void * phys_to_virt(unsigned long address)
 {
 	return (void *) address;
 }
+/*
+ * RHEL specific: It is for prevent build fail because in rhel missing commit:
+ * 92820a5f9974 ("s390: remove virt_to_phys implementation")
+ */
+#define phys_to_virt phys_to_virt
 
-void *xlate_dev_mem_ptr(unsigned long phys);
 #define xlate_dev_mem_ptr xlate_dev_mem_ptr
-void unxlate_dev_mem_ptr(unsigned long phys, void *addr);
+void *xlate_dev_mem_ptr(phys_addr_t phys);
+#define unxlate_dev_mem_ptr unxlate_dev_mem_ptr
+void unxlate_dev_mem_ptr(phys_addr_t phys, void *addr);
 
 /*
  * Convert a virtual cached pointer to an uncached pointer

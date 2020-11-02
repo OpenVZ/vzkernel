@@ -33,4 +33,7 @@ struct alias_prop {
 
 extern struct mutex of_aliases_mutex;
 extern struct list_head aliases_lookup;
+
+extern void __of_sysfs_remove_bin_file(struct device_node *np,
+				       struct property *prop);
 #endif /* _LINUX_OF_PRIVATE_H */

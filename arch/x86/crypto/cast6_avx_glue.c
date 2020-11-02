@@ -330,13 +330,9 @@ static int xts_cast6_setkey(struct crypto_tfm *tfm, const u8 *key,
 	u32 *flags = &tfm->crt_flags;
 	int err;
 
-	/* key consists of keys of equal size concatenated, therefore
-	 * the length must be even
-	 */
-	if (keylen % 2) {
-		*flags |= CRYPTO_TFM_RES_BAD_KEY_LEN;
-		return -EINVAL;
-	}
+	err = xts_check_key(tfm, key, keylen);
+	if (err)
+		return err;
 
 	/* first half of xts-key is for crypt */
 	err = __cast6_setkey(&ctx->crypt_ctx, key, keylen / 2, flags);
@@ -372,7 +368,8 @@ static struct crypto_alg cast6_algs[10] = { {
 	.cra_name		= "__ecb-cast6-avx",
 	.cra_driver_name	= "__driver-ecb-cast6-avx",
 	.cra_priority		= 0,
-	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
+	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER |
+				  CRYPTO_ALG_INTERNAL,
 	.cra_blocksize		= CAST6_BLOCK_SIZE,
 	.cra_ctxsize		= sizeof(struct cast6_ctx),
 	.cra_alignmask		= 0,
@@ -391,7 +388,8 @@ static struct crypto_alg cast6_algs[10] = { {
 	.cra_name		= "__cbc-cast6-avx",
 	.cra_driver_name	= "__driver-cbc-cast6-avx",
 	.cra_priority		= 0,
-	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
+	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER |
+				  CRYPTO_ALG_INTERNAL,
 	.cra_blocksize		= CAST6_BLOCK_SIZE,
 	.cra_ctxsize		= sizeof(struct cast6_ctx),
 	.cra_alignmask		= 0,
@@ -410,7 +408,8 @@ static struct crypto_alg cast6_algs[10] = { {
 	.cra_name		= "__ctr-cast6-avx",
 	.cra_driver_name	= "__driver-ctr-cast6-avx",
 	.cra_priority		= 0,
-	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
+	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER |
+				  CRYPTO_ALG_INTERNAL,
 	.cra_blocksize		= 1,
 	.cra_ctxsize		= sizeof(struct cast6_ctx),
 	.cra_alignmask		= 0,
@@ -430,7 +429,8 @@ static struct crypto_alg cast6_algs[10] = { {
 	.cra_name		= "__lrw-cast6-avx",
 	.cra_driver_name	= "__driver-lrw-cast6-avx",
 	.cra_priority		= 0,
-	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
+	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER |
+				  CRYPTO_ALG_INTERNAL,
 	.cra_blocksize		= CAST6_BLOCK_SIZE,
 	.cra_ctxsize		= sizeof(struct cast6_lrw_ctx),
 	.cra_alignmask		= 0,
@@ -453,7 +453,8 @@ static struct crypto_alg cast6_algs[10] = { {
 	.cra_name		= "__xts-cast6-avx",
 	.cra_driver_name	= "__driver-xts-cast6-avx",
 	.cra_priority		= 0,
-	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
+	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER |
+				  CRYPTO_ALG_INTERNAL,
 	.cra_blocksize		= CAST6_BLOCK_SIZE,
 	.cra_ctxsize		= sizeof(struct cast6_xts_ctx),
 	.cra_alignmask		= 0,
@@ -611,4 +612,4 @@ module_exit(cast6_exit);
 
 MODULE_DESCRIPTION("Cast6 Cipher Algorithm, AVX optimized");
 MODULE_LICENSE("GPL");
-MODULE_ALIAS("cast6");
+MODULE_ALIAS_CRYPTO("cast6");
