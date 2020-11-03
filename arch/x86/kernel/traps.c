@@ -526,6 +526,9 @@ static int check_cpuid_fault(struct pt_regs *regs, long error_code)
 	if (error_code != 0)
 		return 0;
 
+	if (test_thread_flag(TIF_NOCPUID))
+		return 0;
+
 	addr = convert_ip_to_linear(current, regs);
 	if (get_user(opcode, (unsigned short __user *)addr))
 		return 0;

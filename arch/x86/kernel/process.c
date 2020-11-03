@@ -209,7 +209,8 @@ static void set_cpuid_faulting(bool on)
 static void disable_cpuid(void)
 {
 	preempt_disable();
-	if (!test_and_set_thread_flag(TIF_NOCPUID)) {
+	if (!test_and_set_thread_flag(TIF_NOCPUID) ||
+		test_thread_flag(TIF_CPUID_OVERRIDE)) {
 		/*
 		 * Must flip the CPU state synchronously with
 		 * TIF_NOCPUID in the current running context.
@@ -222,7 +223,8 @@ static void disable_cpuid(void)
 static void enable_cpuid(void)
 {
 	preempt_disable();
-	if (test_and_clear_thread_flag(TIF_NOCPUID)) {
+	if (test_and_clear_thread_flag(TIF_NOCPUID) &&
+		!test_thread_flag(TIF_CPUID_OVERRIDE)) {
 		/*
 		 * Must flip the CPU state synchronously with
 		 * TIF_NOCPUID in the current running context.
@@ -505,6 +507,7 @@ void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p)
 {
 	struct thread_struct *prev, *next;
 	unsigned long tifp, tifn;
+	bool prev_cpuid, next_cpuid;
 
 	prev = &prev_p->thread;
 	next = &next_p->thread;
@@ -529,8 +532,10 @@ void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p)
 	if ((tifp ^ tifn) & _TIF_NOTSC)
 		cr4_toggle_bits_irqsoff(X86_CR4_TSD);
 
-	if ((tifp ^ tifn) & _TIF_NOCPUID)
-		set_cpuid_faulting(!!(tifn & _TIF_NOCPUID));
+	prev_cpuid = (tifp & _TIF_NOCPUID) || (tifp & _TIF_CPUID_OVERRIDE);
+	next_cpuid = (tifn & _TIF_NOCPUID) || (tifn & _TIF_CPUID_OVERRIDE);
+	if (prev_cpuid != next_cpuid)
+		set_cpuid_faulting(next_cpuid);
 
 	if (likely(!((tifp | tifn) & _TIF_SPEC_FORCE_UPDATE))) {
 		__speculation_ctrl_update(tifp, tifn);

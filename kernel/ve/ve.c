@@ -816,6 +816,7 @@ static void ve_attach(struct cgroup_taskset *tset)
 		/* Leave parent exec domain */
 		task->parent_exec_id--;
 
+		set_tsk_thread_flag(task, TIF_CPUID_OVERRIDE);
 		task->task_ve = ve;
 	}
 }

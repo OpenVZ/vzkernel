@@ -6,7 +6,8 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/ve.h>
-#include <asm/uaccess.h>
+#include <linux/veowner.h>
+#include <linux/uaccess.h>
 
 struct cpuid_override_entry {
 	unsigned int op;
