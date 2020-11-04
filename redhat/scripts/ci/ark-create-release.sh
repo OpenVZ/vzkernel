@@ -44,7 +44,7 @@ else
 	git checkout --detach os-build && git describe
 	RELEASE_BRANCHES=""
 fi
-MR_PATCHES=$(gitlab project-merge-request list --project-id=${PROJECT_ID} \
+MR_PATCHES=$(gitlab project-merge-request list --project-id="$PROJECT_ID" \
 	--labels="Include in Releases" --state=opened | grep -v "^$" | sort | \
 	awk '{ print "https://gitlab.com/cki-project/kernel-ark/-/merge_requests/" $2 ".patch" }')
 for patch_url in $MR_PATCHES; do
