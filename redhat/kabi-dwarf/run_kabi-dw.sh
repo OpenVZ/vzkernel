@@ -21,10 +21,11 @@
 # Usage:
 # 	./run_kabi-dw.sh generate whitelist module_dir kabi_dir
 # 	./run_kabi-dw.sh compare kabi_dir1 kabi_dir2
+# shellcheck disable=SC2164
 
-DIR=$(dirname ${0})
-DIR=$(cd $DIR; pwd)
-PROG=$0
+DIR=$(dirname "$0")
+DIR=$(cd "$DIR"; pwd)
+PROG="$0"
 
 KABIDW=kabi-dw
 
@@ -43,11 +44,11 @@ generate() {
 	SRC=$3
 	DST=$4
 
-	if [ -d ${DST} ]; then \
-		rm -rf ${DST}
+	if [ -d "$DST" ]; then \
+		rm -rf "$DST"
 	fi
 
-	${KABIDW} generate -r -s ${WHITELIST} -o ${DST} ${SRC}
+	${KABIDW} generate -r -s "$WHITELIST" -o "$DST" "$SRC"
 }
 
 compare() {
@@ -63,10 +64,14 @@ if [ $# -lt 1 ]; then
 	usage
 fi
 
-if [ $1 == "generate" ]; then
-	generate $@
-elif [ $1 == "compare" ]; then
-	compare $@
-else
-	usage
-fi
+case "$1" in
+    generate )
+	generate "$@"
+        ;;
+    compare )
+        compare "$@"
+        ;;
+    * )
+        usage
+        ;;
+esac
