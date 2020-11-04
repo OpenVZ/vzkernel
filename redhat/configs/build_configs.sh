@@ -6,9 +6,9 @@
 
 PACKAGE_NAME="${1:-kernel}" # defines the package name used
 SUBARCH="${2:-}" # defines a specific arch
-SCRIPT="$(readlink -f $0)"
+SCRIPT=$(readlink -f "$0")
 OUTPUT_DIR="$PWD"
-SCRIPT_DIR="$(dirname $SCRIPT)"
+SCRIPT_DIR=$(dirname "$SCRIPT")
 
 if [ -z "$3" ]; then
 	cat flavors > .flavors
@@ -19,7 +19,7 @@ fi
 LANG=en_US.UTF-8
 
 # to handle this script being a symlink
-cd $SCRIPT_DIR
+cd "$SCRIPT_DIR"
 
 set errexit
 set nounset
@@ -40,14 +40,15 @@ die()
 function combine_config_layer()
 {
 	dir=$1
-	file="config-$(echo $dir | sed -e 's|/|-|g')"
+	file="config-${dir//\//-}"
 
-	if [ $(ls $dir/ | grep -c "^CONFIG_") -eq 0 ]; then
-		touch $file
+	# shellcheck disable=SC2010
+	if [ "$(ls "$dir"/ | grep -c "^CONFIG_")" -eq 0 ]; then
+		touch "$file"
 		return
 	fi
 
-	cat $dir/CONFIG_* > $file
+	cat "$dir"/CONFIG_* > "$file"
 }
 
 function merge_configs()
@@ -66,14 +67,13 @@ function merge_configs()
 	skip_if_missing=""
 	for o in $order
 	do
-		for config in $(echo $configs | sed -e 's/:/ /g')
+		for config in ${configs//:/ }
 		do
 			cfile="config-$o-$config"
 
-			test -n "$skip_if_missing" && test ! -e $cfile && continue
+			test -n "$skip_if_missing" && test ! -e "$cfile" && continue
 
-			perl merge.pl $cfile config-merging > config-merged
-			if [ ! $? -eq 0 ]; then
+			if ! perl merge.pl "$cfile" config-merging > config-merged; then
 				die "Failed to merge $cfile"
 			fi
 			mv config-merged config-merging
@@ -84,19 +84,19 @@ function merge_configs()
 		skip_if_missing="1"
 	done
 	if [ "x$arch" == "xaarch64" ]; then
-		echo "# arm64" > $name
+		echo "# arm64" > "$name"
 	elif [ "x$arch" == "xppc64le" ]; then
-		echo "# powerpc" > $name
+		echo "# powerpc" > "$name"
 	elif [ "x$arch" == "xs390x" ]; then
-		echo "# s390" > $name
+		echo "# s390" > "$name"
 	elif [ "x$arch" == "xarmv7hl" ]; then
-		echo "# arm" > $name
+		echo "# arm" > "$name"
 	elif [ "x$arch" == "xi686" ]; then
-		echo "# i386" > $name
+		echo "# i386" > "$name"
 	else
-		echo "# $arch" > $name
+		echo "# $arch" > "$name"
 	fi
-	sort config-merging >> $name
+	sort config-merging >> "$name"
 	rm -f config-merged config-merging
 	echo "done"
 }
@@ -105,27 +105,27 @@ function build_flavor()
 {
 	flavor=$1
 	control_file="priority".$flavor
-	while read line
+	while read -r line
 	do
-		if [ $(echo "$line" | grep -c "^#") -ne 0 ]; then
+		if [ "$(echo "$line" | grep -c "^#")" -ne 0 ]; then
 			continue
-		elif [ $(echo "$line" | grep -c "^$") -ne 0 ]; then
+		elif [ "$(echo "$line" | grep -c "^$")" -ne 0 ]; then
 			continue
-		elif [ $(echo "$line" | grep -c "^EMPTY") -ne 0 ]; then
+		elif [ "$(echo "$line" | grep -c "^EMPTY")" -ne 0 ]; then
 			empty=$(echo "$line" | cut -f2 -d"=")
 			for a in $empty
 			do
-				echo "# EMPTY" > $OUTPUT_DIR/$PACKAGE_NAME-$a-$flavor.config
+				echo "# EMPTY" > "$OUTPUT_DIR/$PACKAGE_NAME-$a-$flavor".config
 
 			done
-		elif [ $(echo "$line" | grep -c "^ORDER") -ne 0 ]; then
+		elif [ "$(echo "$line" | grep -c "^ORDER")" -ne 0 ]; then
 			order=$(echo "$line" | cut -f2 -d"=")
 			for o in $order
 			do
-				glist=$(find $o -type d)
+				glist=$(find "$o" -type d)
 				for d in $glist
 				do
-					combine_config_layer $d
+					combine_config_layer "$d"
 				done
 			done
 		else
@@ -141,14 +141,14 @@ function build_flavor()
 				esac
 			fi
 
-			merge_configs $arch $configs "$order" $flavor
+			merge_configs "$arch" "$configs" "$order" "$flavor"
 		fi
-	done < $control_file
+	done < "$control_file"
 }
 
-while read line
+while read -r line
 do
-	build_flavor $line
+	build_flavor "$line"
 done < .flavors
 
 cleanup
