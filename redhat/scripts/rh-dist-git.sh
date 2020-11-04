@@ -10,6 +10,7 @@
 # $7: dwarf-bases kabi tarball
 # $8: zstream build
 # $9: package name
+# shellcheck disable=SC2164
 
 rhdistgit_branch=$1;
 rhdistgit_cache=$2;
@@ -24,8 +25,8 @@ rhel_major=${10};
 rhpkg_bin=${11};
 srpm_name=${12};
 
-redhat=$(dirname $0)/..;
-topdir=$redhat/..;
+redhat=$(dirname "$0")/..;
+topdir="$redhat"/..;
 
 function die
 {
@@ -36,7 +37,7 @@ function die
 function upload()
 {
 	[ -n "$RH_DIST_GIT_TEST" ] && return
-	$rhpkg_bin upload "$@" >/dev/null || die "uploading $@";
+	$rhpkg_bin upload "$@" >/dev/null || die "uploading $*";
 }
 
 if [ -z "$rhdistgit_branch" ]; then
@@ -46,43 +47,45 @@ fi
 
 echo "Cloning the repository"
 # clone the dist-git, considering cache
-tmpdir=$($redhat/scripts/clone_tree.sh "$rhdistgit_server" "$rhdistgit_cache" "$rhdistgit_tmp" "$package_name" "$rhel_major" "$rhpkg_bin");
+tmpdir=$("$redhat"/scripts/clone_tree.sh "$rhdistgit_server" "$rhdistgit_cache" "$rhdistgit_tmp" "$package_name" "$rhel_major" "$rhpkg_bin");
 
 echo "Switching the branch"
 # change in the correct branch
-cd $tmpdir/$package_name;
-$rhpkg_bin switch-branch $rhdistgit_branch || die "switching to branch $rhdistgit_branch";
+cd "$tmpdir/$package_name";
+$rhpkg_bin switch-branch "$rhdistgit_branch" || die "switching to branch $rhdistgit_branch";
 
 echo "Copying updated files"
 # copy the required files (redhat/git/files)
-$redhat/scripts/expand_srpm.sh "$topdir" "$tmpdir" "$package_name" "$srpm_name";
+"$redhat"/scripts/expand_srpm.sh "$topdir" "$tmpdir" "$package_name" "$srpm_name";
 
 echo "Uploading new tarballs"
 # upload tarballs
-sed -i "/linux-.*.tar.xz/d" $tmpdir/$package_name/{sources,.gitignore};
+sed -i "/linux-.*.tar.xz/d" "$tmpdir/$package_name"/{sources,.gitignore};
 upload_list="$rhdistgit_tarball"
 
 # Only upload kernel-abi-whitelists tarball if its release counter changed.
 if [ "$rhdistgit_zstream_flag" == "no" ]; then
-	if ! grep -q "$rhdistgit_kabi_tarball" $tmpdir/$package_name/sources; then
-		sed -i "/kernel-abi-whitelists.*.tar.bz2/d" $tmpdir/$package_name/{sources,.gitignore};
+	if ! grep -q "$rhdistgit_kabi_tarball" "$tmpdir/$package_name"/sources; then
+		sed -i "/kernel-abi-whitelists.*.tar.bz2/d" "$tmpdir/$package_name"/{sources,.gitignore};
 		upload_list="$upload_list $rhdistgit_kabi_tarball"
 	fi
-	if ! grep -q "$rhdistgit_kabidw_tarball" $tmpdir/$package_name/sources; then
-		sed -i "/kernel-kabi-dw-.*.tar.bz2/d" $tmpdir/$package_name/{sources,.gitignore};
+	if ! grep -q "$rhdistgit_kabidw_tarball" "$tmpdir/$package_name"/sources; then
+		sed -i "/kernel-kabi-dw-.*.tar.bz2/d" "$tmpdir/$package_name"/{sources,.gitignore};
 		upload_list="$upload_list $rhdistgit_kabidw_tarball"
 	fi
 fi
 
+# We depend on word splitting here:
+# shellcheck disable=SC2086
 upload $upload_list
 
 echo "Creating diff for review ($tmpdir/diff) and changelog"
 # diff the result (redhat/cvs/dontdiff). note: diff reuturns 1 if
 # differences were found
-diff -X $redhat/git/dontdiff -upr $tmpdir/$package_name $redhat/rpm/SOURCES/ > $tmpdir/diff;
+diff -X "$redhat"/git/dontdiff -upr "$tmpdir/$package_name" "$redhat"/rpm/SOURCES/ > "$tmpdir"/diff;
 # creating the changelog file
-$redhat/scripts/create_distgit_changelog.sh $redhat/rpm/SOURCES/$package_name.spec \
-	"$rhdistgit_zstream_flag" "$package_name" >$tmpdir/changelog
+"$redhat"/scripts/create_distgit_changelog.sh "$redhat/rpm/SOURCES/$package_name".spec \
+	"$rhdistgit_zstream_flag" "$package_name" >"$tmpdir"/changelog
 
 # all done
 echo "$tmpdir"
