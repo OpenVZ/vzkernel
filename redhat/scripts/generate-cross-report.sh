@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # This script is called by the cross compile targets in redhat/Makefile.cross.
 # The script outputs information for use by the maintainers to confirm that
@@ -21,44 +21,43 @@ cat /etc/redhat-release
 
 # System name
 echo -n "System name: "
-HOSTNAME=`hostname`
+HOSTNAME=$(hostname)
 
 if [ -e ~/.rpmmacros ]; then
-	cat ~/.rpmmacros | grep smp_mflags >& /dev/null
-	if [ $? -eq 0 ]; then
-		smpflags=`cat ~/.rpmmacros | awk -F " " ' { print $2 } '`
+	if grep -q smp_mflags ~/.rpmmacros; then
+		smpflags=$(awk -F " " ' { print $2 } ' ~/.rpmmacros )
 		echo "$HOSTNAME with $smpflags"
 	fi
 else
-	echo $HOSTNAME
+	echo "$HOSTNAME"
 fi
 
 # Last known tag
-lasttag=`git describe --abbrev=0 --tags`
+lasttag=$(git describe --abbrev=0 --tags)
 echo "Built on: $lasttag"
 
 # Arches built?
 # would have to be passed in on command line as string?
 echo -n "Arch built: "
-echo $1
+echo "$1"
 
 # Was CROSS_COMPILE set to use non-standard compilers?
 if [ "$CROSS_COMPILE" ]; then
-	crossbin=$(whereis -b ${CROSS_COMPILE}gcc | cut -d: -f2 | cut -d' ' -f2)
+	crossbin=$(whereis -b "$CROSS_COMPILE"gcc | cut -d: -f2 | cut -d' ' -f2)
 	echo "==============================================================================="
 	echo "For patch submissions, use only supported cross-compilers for testing."
 	echo "CROSS_COMPILE set to: $CROSS_COMPILE"
 else
-	crossbin=$(whereis -b ${1}-linux-gnu-gcc | cut -d: -f2 | cut -d' ' -f2)
+	crossbin=$(whereis -b "$1"-linux-gnu-gcc | cut -d: -f2 | cut -d' ' -f2)
 fi
-test -x $crossbin && echo "Cross-compiler used: $crossbin"
+test -x "$crossbin" && echo "Cross-compiler used: $crossbin"
 
 
 echo "==============================================================================="
 echo "For patch submissions this can optionally be included to show the changes"
 echo "that were compiled into the tree."
 echo "diffstat output (relative to $lasttag)"
-git diff $lasttag | diffstat
+git diff "$lasttag" | diffstat
 
 echo "==============================================================================="
 echo "==============================================================================="
