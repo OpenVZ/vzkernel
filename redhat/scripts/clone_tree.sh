@@ -19,25 +19,25 @@ function die
 	exit 1;
 }
 
-date=`date +"%Y-%m-%d"`
-tmp="$(mktemp -d --tmpdir="$tmp_dir" RHEL$rhel_major.$date.XXXXXXXX)";
-cd $tmp || die "Unable to create temporary directory";
+date=$(date +"%Y-%m-%d")
+tmp="$(mktemp -d --tmpdir="$tmp_dir" RHEL"$rhel_major"."$date".XXXXXXXX)";
+cd "$tmp" || die "Unable to create temporary directory";
 
-if [ -n "$repo" -a -n "$local" ]; then
-	git clone --reference $local $repo $package_name >/dev/null || die "Unable to clone using local cache";
+if [[ -n $repo && -n $local ]]; then
+	git clone --reference "$local" "$repo" "$package_name" >/dev/null || die "Unable to clone using local cache";
 	# if there're tarballs present that are listed in the "sources" file,
 	# copy them or it'll be downloaded again
 	if [ -e "$local/sources" ]; then
-		for i in $(cat "$local/sources"); do
+		while IFS= read -r i; do
 			if [ -f "$local/$i" ]; then
 				cp "$local/$i" "$tmp/kernel/";
 			fi
-		done
+		done < "$local"/sources
 	fi
 else
 	echo "No local repo, cloning using $rhpkg_bin" >&2;
-	$rhpkg_bin clone $package_name >/dev/null || die "Unable to clone using $rhpkg_bin";
+	$rhpkg_bin clone "$package_name" >/dev/null || die "Unable to clone using $rhpkg_bin";
 fi
 
-echo $tmp;
+echo "$tmp";
 
