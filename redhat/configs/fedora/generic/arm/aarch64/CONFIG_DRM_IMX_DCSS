@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_DRM_IMX_DCSS is not set
+CONFIG_DRM_IMX_DCSS=m

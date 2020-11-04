@@ -20,4 +20,4 @@
 # 
 # 
 # 
-# CONFIG_DWMAC_INTEL_PLAT is not set
+CONFIG_DWMAC_INTEL_PLAT=m

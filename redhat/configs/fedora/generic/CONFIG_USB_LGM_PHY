@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_USB_LGM_PHY is not set
+CONFIG_USB_LGM_PHY=m

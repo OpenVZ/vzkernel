@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_ARM_SMMU_V3_SVA is not set
+CONFIG_ARM_SMMU_V3_SVA=y

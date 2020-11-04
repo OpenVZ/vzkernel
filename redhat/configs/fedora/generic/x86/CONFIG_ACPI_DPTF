@@ -21,4 +21,4 @@
 # 
 # 
 # 
-# CONFIG_ACPI_DPTF is not set
+CONFIG_ACPI_DPTF=y

@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_JOYSTICK_ADC is not set
+CONFIG_JOYSTICK_ADC=m

@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_ADXRS290 is not set
+CONFIG_ADXRS290=m

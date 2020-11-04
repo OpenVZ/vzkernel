@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_TYPEC_STUSB160X is not set
+CONFIG_TYPEC_STUSB160X=m

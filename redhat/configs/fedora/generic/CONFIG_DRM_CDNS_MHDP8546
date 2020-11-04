@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_DRM_CDNS_MHDP8546 is not set
+CONFIG_DRM_CDNS_MHDP8546=m

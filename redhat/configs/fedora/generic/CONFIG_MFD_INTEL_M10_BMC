@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_MFD_INTEL_M10_BMC is not set
+CONFIG_MFD_INTEL_M10_BMC=m

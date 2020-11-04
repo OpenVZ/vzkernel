@@ -21,4 +21,4 @@
 # 
 # 
 # 
-# CONFIG_DPTF_PCH_FIVR is not set
+CONFIG_DPTF_PCH_FIVR=m

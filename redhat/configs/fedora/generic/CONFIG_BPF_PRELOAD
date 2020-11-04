@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_BPF_PRELOAD is not set
+CONFIG_BPF_PRELOAD=y

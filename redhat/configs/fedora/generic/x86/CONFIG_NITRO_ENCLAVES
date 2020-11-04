@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_NITRO_ENCLAVES is not set
+CONFIG_NITRO_ENCLAVES=m

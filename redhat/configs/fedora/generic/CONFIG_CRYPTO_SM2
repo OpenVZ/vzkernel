@@ -20,4 +20,4 @@
 # 
 # 
 # 
-# CONFIG_CRYPTO_SM2 is not set
+CONFIG_CRYPTO_SM2=m
