@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Arguments
 #    SNAPSHOT: indicates whether or not this is based on an upstream tag. 1
@@ -30,10 +30,10 @@ HIDE_REDHAT=1;
 HIDE_UNSUPPORTED_ARCH=1;
 # override LC_TIME to avoid date conflicts when building the srpm
 LC_TIME=
-STAMP=$(echo $MARKER | cut -f 1 -d '-' | sed -e "s/v//");
+# STAMP=$(echo $MARKER | cut -f 1 -d '-' | sed -e "s/v//"); # unused
 RPM_VERSION="$RPMVERSION-$PKGRELEASE";
 
-echo >$clogf
+echo > "$clogf"
 
 lasttag=$(git rev-list --first-parent --grep="^\[redhat\] kernel-${RPMVERSION}" --max-count=1 HEAD)
 # if we didn't find the proper tag, assume this is the first release
@@ -46,7 +46,7 @@ if [ -z "$lasttag" ]; then
 	lasttag=$MARKER
 fi
 echo "Gathering new log entries since $lasttag"
-git format-patch --no-renames -k --stdout ^master ${lasttag}.. -- ":!/redhat/rhdocs" | awk '
+git format-patch --no-renames -k --stdout ^master "$lasttag".. -- ":!/redhat/rhdocs" | awk '
 BEGIN{TYPE="PATCHJUNK"; }
 	# add an entry to changelog
 	function changelog(subjectline, nameline, zstream)
@@ -163,44 +163,44 @@ BEGIN{TYPE="PATCHJUNK"; }
 	{ if (TYPE == "PATCHJUNK") { next; } }
 	{ if (TYPE == "HEADER") { next; } }
 
-' SOURCES=$SOURCES SPECFILE=$SPECFILE CLOGF=$clogf ZSTREAM=$ZSTREAM_FLAG
+' SOURCES="$SOURCES" SPECFILE="$SPECFILE" CLOGF="$clogf" ZSTREAM="$ZSTREAM_FLAG"
 
-cat $clogf | grep -v "tagging $RPM_VERSION" > $clogf.stripped
-cp $clogf.stripped $clogf
+grep -v "tagging $RPM_VERSION" "$clogf" > "$clogf.stripped"
+cp "$clogf.stripped" "$clogf"
 
-if [ "x$HIDE_REDHAT" == "x1" ]; then
-	cat $clogf | grep -v -e "^- \[redhat\]" |
-		sed -e 's!\[Fedora\]!!g' > $clogf.stripped
-	cp $clogf.stripped $clogf
+if [ "$HIDE_REDHAT" = "1" ]; then
+	grep -v -e "^- \[redhat\]" "$clogf" |
+		sed -e 's!\[Fedora\]!!g' > "$clogf.stripped"
+	cp "$clogf.stripped" "$clogf"
 fi
 
-if [ "x$HIDE_UNSUPPORTED_ARCH" == "x1" ]; then
-	cat $clogf | egrep -v "^- \[(alpha|arc|arm|avr32|blackfin|c6x|cris|frv|h8300|hexagon|ia64|m32r|m68k|metag|microblaze|mips|mn10300|openrisc|parisc|score|sh|sparc|tile|um|unicore32|xtensa)\]" > $clogf.stripped
-	cp $clogf.stripped $clogf
+if [ "$HIDE_UNSUPPORTED_ARCH" = "1" ]; then
+	grep -E -v "^- \[(alpha|arc|arm|avr32|blackfin|c6x|cris|frv|h8300|hexagon|ia64|m32r|m68k|metag|microblaze|mips|mn10300|openrisc|parisc|score|sh|sparc|tile|um|unicore32|xtensa)\]" "$clogf" > "$clogf.stripped"
+	cp "$clogf.stripped" "$clogf"
 fi
 
 # If the markers aren't the same then this a rebase.
 # This means we need to zap entries that are already present in the changelog.
 if [ "$MARKER" != "$LAST_MARKER" ]; then
 	# awk trick to get all unique lines
-	awk '!seen[$0]++' $CHANGELOG $clogf > $clogf.unique
+	awk '!seen[$0]++' "$CHANGELOG" "$clogf" > "$clogf.unique"
 	# sed trick to get the end of the changelog minus the line
-	sed -e '1,/# END OF CHANGELOG/ d' $clogf.unique > $clogf.tmp
+	sed -e '1,/# END OF CHANGELOG/ d' "$clogf.unique" > "$clogf.tmp"
 	# Add an explicit entry to indicate a rebase.
-	echo "" > $clogf
-	echo -e "- $MARKER rebase" | cat $clogf.tmp - >> $clogf
-	rm $clogf.tmp $clogf.unique
+	echo "" > "$clogf"
+	echo -e "- $MARKER rebase" | cat "$clogf.tmp" - >> "$clogf"
+	rm "$clogf.tmp" "$clogf.unique"
 fi
 
 # HACK temporary hack until single tree workflow
 # Don't reprint all the ark-patches again.
-if [ -n "$(git log --oneline --first-parent --grep="Merge ark patches" ${lasttag}..)" ]; then
+if [ -n "$(git log --oneline --first-parent --grep="Merge ark patches" "$lasttag"..)" ]; then
 	# Throw away the clogf and just print the summary merge
-	echo "" > $clogf
-	echo "- Merge ark-patches" >> $clogf
+	echo "" > "$clogf"
+	echo "- Merge ark-patches" >> "$clogf"
 fi
 
-LENGTH=$(wc -l $clogf | awk '{print $1}')
+LENGTH=$(wc -l "$clogf" | awk '{print $1}')
 
 #the changelog was created in reverse order
 #also remove the blank on top, if it exists
@@ -208,16 +208,16 @@ LENGTH=$(wc -l $clogf | awk '{print $1}')
 cname="$(git var GIT_COMMITTER_IDENT |sed 's/>.*/>/')"
 cdate="$(LC_ALL=C date +"%a %b %d %Y")"
 cversion="[$RPM_VERSION]";
-tac $clogf | sed "1{/^$/d; /^- /i\
+tac "$clogf" | sed "1{/^$/d; /^- /i\
 * $cdate $cname $cversion
-	}" > $clogf.rev
+	}" > "$clogf.rev"
 
 if [ "$LENGTH" = 0 ]; then
-	rm -f $clogf.rev; touch $clogf.rev
+	rm -f "$clogf.rev"; touch "$clogf.rev"
 fi
 
-cat $clogf.rev $CHANGELOG > $clogf.full
-mv -f $clogf.full $CHANGELOG
+cat "$clogf.rev" "$CHANGELOG" > "$clogf.full"
+mv -f "$clogf.full" "$CHANGELOG"
 
 if [ "$SNAPSHOT" = 0 ]; then
 	# This is based off a tag on Linus's tree (e.g. v5.5 or v5.5-rc5).
@@ -247,7 +247,7 @@ test -n "$SPECFILE" &&
 	s/%%DISTRO_BUILD%%/$DISTRO_BUILD/
 	s/%%RELEASED_KERNEL%%/$RELEASED_KERNEL/
 	s/%%DEBUG_BUILDS_ENABLED%%/$DEBUG_BUILDS_ENABLED/
-	s/%%TARBALL_VERSION%%/$TARFILE_RELEASE/" $SPECFILE
+	s/%%TARBALL_VERSION%%/$TARFILE_RELEASE/" "$SPECFILE"
 
 echo "MARKER is $MARKER"
 
@@ -261,11 +261,13 @@ EXCLUDE_FILES=":(exclude,top).get_maintainer.conf \
 		:(exclude,top)configs"
 
 if [ "$SINGLE_TARBALL" = 0 ]; then
-	git diff -p --no-renames --stat $MARKER..  $EXCLUDE_FILES \
-		> $SOURCES/patch-${RPMVERSION}-redhat.patch
+	# May need to preserve word splitting in EXCLUDE_FILES
+	# shellcheck disable=SC2086
+	git diff -p --no-renames --stat "$MARKER"..  $EXCLUDE_FILES \
+		> "$SOURCES"/patch-"$RPMVERSION"-redhat.patch
 else
 	# Need an empty file for dist-git compatibility
-	touch $SOURCES/patch-${RPMVERSION}-redhat.patch
+	touch "$SOURCES"/patch-"$RPMVERSION"-redhat.patch
 fi
 
 # generate Patchlist.changelog file that holds the shas and commits not
@@ -278,10 +280,14 @@ ARK_COMMIT_URL="https://gitlab.com/cki-project/kernel-ark/-/commit"
 # <ark_commit_url>/<sha>
 #  <sha> <description>
 #
+# May need to preserve word splitting in EXCLUDE_FILES
+# shellcheck disable=SC2086
 git log --no-merges --pretty=oneline --no-decorate master.. $EXCLUDE_FILES | \
 	sed "s!^\([^ ]*\)!$ARK_COMMIT_URL/\1\n &!; s!\$!\n!" \
-	> $SOURCES/Patchlist.changelog
+	> "$SOURCES"/Patchlist.changelog
 
+# We depend on work splitting of BUILDOPTS
+# shellcheck disable=SC2086
 for opt in $BUILDOPTS; do
 	add_opt=
 	[ -z "${opt##+*}" ] && add_opt="_with_${opt#?}"
@@ -289,4 +295,4 @@ for opt in $BUILDOPTS; do
 	[ -n "$add_opt" ] && sed -i "s/^\\(# The following build options\\)/%define $add_opt 1\\n\\1/" $SPECFILE
 done
 
-rm -f $clogf{,.rev,.stripped};
+rm -f "$clogf"{,.rev,.stripped};
