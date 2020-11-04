@@ -13,7 +13,7 @@
 # if there's already a cross-compiler specified, assume we're done
 if [ "$ARCH" ]; then
 	if [ "$CROSS_COMPILE" ]; then
-		crossbin=$(whereis -b ${CROSS_COMPILE}gcc | cut -d: -f2 | cut -d' ' -f2)
+		crossbin=$(whereis -b "$CROSS_COMPILE"gcc | cut -d: -f2 | cut -d' ' -f2)
 		if [ "$crossbin" ]; then
 			echo "Using $crossbin as the cross-compiler."
 			exit 0
@@ -27,8 +27,7 @@ fi
 # if we're not root, all we can do now is see what's installed
 if [ "$(whoami)" != "root" ]; then
 	echo "Checking for RHEL7 cross compile packages.  If this fails, run \"make dist-cross-download\" as root."
-	rpm -q $@
-	if [ $? == 0 ]; then
+	if rpm -q "$@" >& /dev/null; then
 		echo "Compilers found."
 		exit 0
 	else
@@ -38,11 +37,11 @@ if [ "$(whoami)" != "root" ]; then
 fi
 
 # if everything is installed then exit successfully
-rpm -q $@ && exit 0
+rpm -q "$@" && exit 0
 
 # install epel-release if necessary
-rpm -q epel-release >& /dev/null
-if [ $? -ne 0 ]; then
+
+if ! rpm -q epel-release >& /dev/null; then
 	wget -nd -r -l1 --no-parent -A "epel-release*.rpm" http://dl.fedoraproject.org/pub/epel/7/x86_64/e/
 	rpm -ivh epel-release*.rpm
 	# clean up
@@ -50,6 +49,6 @@ if [ $? -ne 0 ]; then
 fi
 
 # install list of rpms for cross compile
-yum -y install $@
+yum -y install "$@"
 
 exit 0
