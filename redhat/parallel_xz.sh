@@ -23,4 +23,4 @@ test "$procgroup" = 1 && exec xargs -r xz
 # xz has some startup cost. If files are really small,
 # this cost might be significant. To combat this,
 # process several files (in sequence) by each xz process via -n 16:
-exec xargs -r -n 16 -P $procgroup xz
+exec xargs -r -n 16 -P "$procgroup" xz
