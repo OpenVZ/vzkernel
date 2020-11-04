@@ -34,8 +34,8 @@ To fix this issue:
 
 1. \`git rebase upstream ark-patches\`
 2. Use your soft, squishy brain to resolve the conflict as you see fit. If it is
-   non-trivial and has an \"Upstream Status: RHEL only\" tag, contact the author
-   and ask them to rebase the patch.
+   non-trivial and has an \"Upstream Status: RHEL only\" tag, ask the author
+   to rebase the patch.
 3. \`if git tag -v $UPSTREAM_REF; then git branch ark/patches/$UPSTREAM_REF && git push upstream ark/patches/$UPSTREAM_REF; fi\`
 4. \`git push -f upstream ark-patches\`
 "
@@ -72,13 +72,19 @@ elif [ -n "$REPORT_BUGS" ]; then
 		CONFLICT=$(git am --show-current-patch)
 		COMMIT=$(git am --show-current-patch | head -n1 | awk '{print $2}' | cut -c 1-12)
 		TITLE=$(printf "Unable to automatically rebase commit %s" "$COMMIT")
+		# shellcheck disable=SC2059     # There is a multi-line pattern in ISSUE_TEMPLATE;
+		# wiki says there is no good rewrite and recommends disabling warning.
 		DESC=$(printf "$ISSUE_TEMPLATE" "$COMMIT" "$CONFLICT")
+		# shellcheck disable=SC2086
+		# GITLAB_CONFIG_OPT DEPENDS on word splitting:
 		OPEN_ISSUES=$(gitlab $GITLAB_CONFIG_OPT project-issue list --project-id "$PROJECT_ID" --search "$TITLE")
 		if [ -n "$OPEN_ISSUES" ]; then
 			echo "Skipping filing an issue about commit $COMMIT; already exists as $OPEN_ISSUES"
 			continue
 		fi
 
+		# shellcheck disable=SC2086
+		# GITLAB_CONFIG_OPT DEPENDS on word splitting:
 		if gitlab $GITLAB_CONFIG_OPT project-issue create --project-id "$PROJECT_ID" \
 			--title "$TITLE" --description "$DESC" --labels "Patch Rebase"; then
 			if git rebase --skip; then
