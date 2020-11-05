@@ -1,0 +1,15 @@
+# CONFIG_BPF_PRELOAD_UMD:
+# 
+# This builds bpf_preload kernel module with embedded user mode driver.
+# Symbol: BPF_PRELOAD_UMD [=m]
+# Type  : tristate
+# Defined at kernel/bpf/preload/Kconfig:19
+#   Prompt: bpf_preload kernel module with user mode driver
+#   Depends on: BPF_PRELOAD [=y] && CC_CAN_LINK [=y] && (m && MODULES [=y] || CC_CAN_LINK_STATIC [=y])
+#   Location:
+#     -> General setup
+#       -> Preload BPF file system with kernel specific program and map iterators (BPF_PRELOAD [=y])
+# 
+# 
+# 
+CONFIG_BPF_PRELOAD_UMD=m

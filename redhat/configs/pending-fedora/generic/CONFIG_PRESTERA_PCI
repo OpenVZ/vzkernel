@@ -1,0 +1,23 @@
+# CONFIG_PRESTERA_PCI:
+# 
+# This is implementation of PCI interface support for Marvell Prestera
+# Switch ASICs family.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called prestera_pci.
+# 
+# Symbol: PRESTERA_PCI [=m]
+# Type  : tristate
+# Defined at drivers/net/ethernet/marvell/prestera/Kconfig:16
+#   Prompt: PCI interface driver for Marvell Prestera Switch ASICs family
+#   Depends on: NETDEVICES [=y] && ETHERNET [=y] && NET_VENDOR_MARVELL [=y] && PCI [=y] && HAS_IOMEM [=y] && PRESTERA [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Ethernet driver support (ETHERNET [=y])
+#           -> Marvell devices (NET_VENDOR_MARVELL [=y])
+#             -> Marvell Prestera Switch ASICs support (PRESTERA [=m])
+# 
+# 
+# 
+CONFIG_PRESTERA_PCI=m
