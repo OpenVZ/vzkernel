@@ -532,7 +532,7 @@ ext4_file_read(
 	if (IS_DAX(file_inode(iocb->ki_filp)))
 		return ext4_file_dax_read(iocb, iovp, nr_segs, pos);
 #endif
-	return generic_file_aio_read2(iocb, iovp, nr_segs, pos);
+	return generic_file_aio_read(iocb, iovp, nr_segs, pos);
 }
 
 const struct file_operations_extend  ext4_file_operations = {
