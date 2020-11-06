@@ -229,13 +229,27 @@ notrace static int __always_inline do_realtime(struct timespec *ts)
 	return mode;
 }
 
+static inline u64 divu64(u64 dividend, u32 divisor, u64 *remainder)
+{
+	/* 32-bit wants __udivsi3() and fails to link, so fallback to iter */
+#ifndef BUILD_VDSO32
+	u64 res;
+
+	res = dividend/divisor;
+	*remainder = dividend % divisor;
+	return res;
+#else
+	return __iter_div_u64_rem(dividend, divisor, remainder);
+#endif
+}
+
 static inline void timespec_sub_ns(struct timespec *ts, u64 ns)
 {
 	if ((s64)ns <= 0) {
-		ts->tv_sec += __iter_div_u64_rem(-ns, NSEC_PER_SEC, &ns);
+		ts->tv_sec += divu64(-ns, NSEC_PER_SEC, &ns);
 		ts->tv_nsec = ns;
 	} else {
-		ts->tv_sec -= __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
+		ts->tv_sec -= divu64(ns, NSEC_PER_SEC, &ns);
 		if (ns) {
 			ts->tv_sec--;
 			ns = NSEC_PER_SEC - ns;
