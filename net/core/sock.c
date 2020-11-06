@@ -786,6 +786,7 @@ set_sndbuf:
 		goto set_sndbuf;
 
 	case SO_RCVBUF:
+unpriv_rcvbuf:
 		/* Don't error on this BSD doesn't and if you think
 		 * about it this is right. Otherwise apps have to
 		 * play 'guess the biggest size' games. RCVBUF/SNDBUF
@@ -817,10 +818,14 @@ set_rcvbuf:
 		break;
 
 	case SO_RCVBUFFORCE:
-		if (!capable(CAP_NET_ADMIN)) {
+		if (!ve_capable(CAP_NET_ADMIN)) {
 			ret = -EPERM;
 			break;
 		}
+
+		/* nft utility uses this sockopt in CentOS 8 env */
+		if (!ve_is_super(get_exec_env()))
+			goto unpriv_rcvbuf;
 
 		/* No negative values (to prevent underflow, as val will be
 		 * multiplied by 2).
