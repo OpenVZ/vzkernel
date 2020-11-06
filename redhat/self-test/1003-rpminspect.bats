@@ -4,14 +4,14 @@
     [ "$result" = 1 ]
 }
 
-@test "rpmlint" {
-    if ! test -x /usr/bin/rpmlint
+@test "rpminspect" {
+    if ! test -x /usr/bin/rpminspect
     then
-        skip "The rpmlint package is not installed"
+        skip "The rpminspect package is not installed"
     else
-        skip "Skip rpmlint test pending kernel.spec.template changes"
+        skip "Skip rpminspect test pending fixes"
     fi
     srpm=$(find "$BATS_TEST_DIRNAME"/.. -name "*.rpm")
-    run rpmlint $srpm
+    run rpminspect $srpm
     [ "$status" = 0 ]
 }
