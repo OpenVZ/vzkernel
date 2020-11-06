@@ -11,6 +11,7 @@
  * 've.c' helper file performing VE sub-system initialization
  */
 
+#include <linux/cpuid_override.h>
 #include <linux/ctype.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -827,6 +828,7 @@ static void ve_attach(struct cgroup_taskset *tset)
 {
 	struct cgroup_subsys_state *css;
 	struct task_struct *task;
+	extern struct cpuid_override_table __rcu *cpuid_override;
 
 	cgroup_taskset_for_each(task, css, tset) {
 		struct ve_struct *ve = css_to_ve(css);
@@ -842,7 +844,8 @@ static void ve_attach(struct cgroup_taskset *tset)
 		/* Leave parent exec domain */
 		task->task_struct_rh->parent_exec_id--;
 
-		set_tsk_thread_flag(task, TIF_CPUID_OVERRIDE);
+		if (cpuid_override_on())
+			set_tsk_thread_flag(task, TIF_CPUID_OVERRIDE);
 		task->task_ve = ve;
 	}
 }
