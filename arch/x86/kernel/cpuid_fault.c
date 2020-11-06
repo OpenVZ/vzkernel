@@ -1,3 +1,4 @@
+#include <linux/cpuid_override.h>
 #include <linux/gfp.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
@@ -9,25 +10,7 @@
 #include <linux/veowner.h>
 #include <linux/uaccess.h>
 
-struct cpuid_override_entry {
-	unsigned int op;
-	unsigned int count;
-	bool has_count;
-	unsigned int eax;
-	unsigned int ebx;
-	unsigned int ecx;
-	unsigned int edx;
-};
-
-#define MAX_CPUID_OVERRIDE_ENTRIES	16
-
-struct cpuid_override_table {
-	struct rcu_head rcu_head;
-	int size;
-	struct cpuid_override_entry entries[MAX_CPUID_OVERRIDE_ENTRIES];
-};
-
-static struct cpuid_override_table __rcu *cpuid_override __read_mostly;
+struct cpuid_override_table __rcu *cpuid_override __read_mostly;
 static DEFINE_SPINLOCK(cpuid_override_lock);
 
 static void cpuid_override_update(struct cpuid_override_table *new_table)
