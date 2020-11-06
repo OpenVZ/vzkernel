@@ -986,8 +986,7 @@ static void mem_cgroup_sum_all_stat_events(struct mem_cgroup *memcg,
 	int i;
 	int cpu;
 
-	get_online_cpus();
-	for_each_online_cpu(cpu) {
+	for_each_possible_cpu(cpu) {
 		unsigned long *pcpu_stats = per_cpu(memcg->stat->count, cpu);
 		unsigned long *pcpu_events = per_cpu(memcg->stat->events, cpu);
 
@@ -997,19 +996,6 @@ static void mem_cgroup_sum_all_stat_events(struct mem_cgroup *memcg,
 		for (i = 0; i < MEM_CGROUP_EVENTS_NSTATS; i++)
 			events[i] = pcpu_events[i];
 	}
-
-#ifdef CONFIG_HOTPLUG_CPU
-	spin_lock(&memcg->pcp_counter_lock);
-
-	for (i = 0; i < MEM_CGROUP_STAT_NSTATS; i++)
-		stats[i] += memcg->nocpu_base.count[i];
-
-	for (i = 0; i < MEM_CGROUP_EVENTS_NSTATS; i++)
-		events[i] = memcg->nocpu_base.events[i];
-
-	spin_unlock(&memcg->pcp_counter_lock);
-#endif
-	put_online_cpus();
 	return;
 }
 
