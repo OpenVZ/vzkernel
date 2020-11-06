@@ -65,15 +65,16 @@ struct cpu_flags {
 };
 
 static DEFINE_PER_CPU(struct cpu_flags, cpu_flags);
+static DEFINE_SPINLOCK(cpu_flags_lock);
 
 static void init_cpu_flags(void *dummy)
 {
 	int cpu = smp_processor_id();
-	struct cpu_flags *flags = &per_cpu(cpu_flags, cpu);
+	struct cpu_flags flags;
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
 	unsigned int eax, ebx, ecx, edx;
 
-	memcpy(flags->val, c->x86_capability, NCAPINTS * sizeof(u32));
+	memcpy(&flags, c->x86_capability, sizeof(flags));
 
 	/*
 	 * Clear feature bits masked using cpuid masking/faulting.
@@ -81,26 +82,30 @@ static void init_cpu_flags(void *dummy)
 
 	if (c->cpuid_level >= 0x00000001) {
 		__do_cpuid_fault(0x00000001, 0, &eax, &ebx, &ecx, &edx);
-		flags->val[4] &= ecx;
-		flags->val[0] &= edx;
+		flags.val[4] &= ecx;
+		flags.val[0] &= edx;
 	}
 
 	if (c->cpuid_level >= 0x00000007) {
 		__do_cpuid_fault(0x00000007, 0, &eax, &ebx, &ecx, &edx);
-		flags->val[9] &= ebx;
+		flags.val[9] &= ebx;
 	}
 
 	if ((c->extended_cpuid_level & 0xffff0000) == 0x80000000 &&
 	    c->extended_cpuid_level >= 0x80000001) {
 		__do_cpuid_fault(0x80000001, 0, &eax, &ebx, &ecx, &edx);
-		flags->val[6] &= ecx;
-		flags->val[1] &= edx;
+		flags.val[6] &= ecx;
+		flags.val[1] &= edx;
 	}
 
 	if (c->cpuid_level >= 0x0000000d) {
 		__do_cpuid_fault(0x0000000d, 1, &eax, &ebx, &ecx, &edx);
-		flags->val[10] &= eax;
+		flags.val[10] &= eax;
 	}
+
+	spin_lock(&cpu_flags_lock);
+	memcpy(&per_cpu(cpu_flags, cpu), &flags, sizeof(flags));
+	spin_unlock(&cpu_flags_lock);
 }
 
 static int show_cpuinfo(struct seq_file *m, void *v)
@@ -108,6 +113,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	struct cpuinfo_x86 *c = v;
 	unsigned int cpu;
 	int is_super = ve_is_super(get_exec_env());
+	struct cpu_flags ve_flags;
 	int i;
 
 	cpu = c->cpu_index;
@@ -147,12 +153,19 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	show_cpuinfo_core(m, c, cpu);
 	show_cpuinfo_misc(m, c);
 
+	if (!is_super) {
+		spin_lock_irq(&cpu_flags_lock);
+		memcpy(&ve_flags, &per_cpu(cpu_flags, cpu), sizeof(ve_flags));
+		spin_unlock_irq(&cpu_flags_lock);
+	}
+
+
 	seq_puts(m, "flags\t\t:");
 	for (i = 0; i < 32*NCAPINTS; i++)
 		if (x86_cap_flags[i] != NULL &&
 				((is_super && cpu_has(c, i)) ||
 				 (!is_super && test_bit(i, (unsigned long *)
-							&per_cpu(cpu_flags, cpu)))))
+							&ve_flags))))
 			seq_printf(m, " %s", x86_cap_flags[i]);
 
 	seq_puts(m, "\nbugs\t\t:");
