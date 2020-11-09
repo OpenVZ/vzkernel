@@ -1,0 +1,19 @@
+# CONFIG_PINCTRL_MSM8226:
+# 
+# This is the pinctrl, pinmux, pinconf and gpiolib driver for the
+# Qualcomm Technologies Inc TLMM block found on the Qualcomm
+# Technologies Inc MSM8226 platform.
+# 
+# Symbol: PINCTRL_MSM8226 [=n]
+# Type  : tristate
+# Defined at drivers/pinctrl/qcom/Kconfig:65
+#   Prompt: Qualcomm 8226 pin controller driver
+#   Depends on: PINCTRL [=y] && (ARCH_QCOM [=y] || COMPILE_TEST [=n]) && GPIOLIB [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Pin controllers (PINCTRL [=y])
+# Selects: PINCTRL_MSM [=y]
+# 
+# 
+# 
+CONFIG_PINCTRL_MSM8226=m

@@ -1,0 +1,20 @@
+# CONFIG_INTEL_MEI_VIRTIO:
+# 
+# This module implements mei hw emulation over virtio transport.
+# The module will be called mei_virtio.
+# Enable this if your virtual machine supports virtual mei
+# device over virtio.
+# 
+# Symbol: INTEL_MEI_VIRTIO [=n]
+# Type  : tristate
+# Defined at drivers/misc/mei/Kconfig:49
+#   Prompt: Intel MEI interface emulation with virtio framework
+#   Depends on: X86 [=y] && PCI [=y] && VIRTIO_PCI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Misc devices
+# Selects: INTEL_MEI [=m]
+# 
+# 
+# 
+CONFIG_INTEL_MEI_VIRTIO=m

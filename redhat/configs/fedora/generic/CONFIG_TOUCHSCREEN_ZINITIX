@@ -1,0 +1,24 @@
+# CONFIG_TOUCHSCREEN_ZINITIX:
+# 
+# Say Y here if you have a touchscreen using Zinitix bt541,
+# or something similar enough.
+# 
+# If unsure, say N.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called zinitix.
+# 
+# Symbol: TOUCHSCREEN_ZINITIX [=n]
+# Type  : tristate
+# Defined at drivers/input/touchscreen/Kconfig:1325
+#   Prompt: Zinitix touchscreen support
+#   Depends on: !UML && INPUT [=y] && INPUT_TOUCHSCREEN [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Input device support
+#         -> Generic input layer (needed for keyboard, mouse, ...) (INPUT [=y])
+#           -> Touchscreens (INPUT_TOUCHSCREEN [=y])
+# 
+# 
+# 
+CONFIG_TOUCHSCREEN_ZINITIX=m

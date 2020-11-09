@@ -1,0 +1,21 @@
+# CONFIG_RTC_DRV_RV3032:
+# 
+# If you say yes here you get support for the Micro Crystal
+# RV3032.
+# 
+# This driver can also be built as a module. If so, the module
+# will be called rtc-rv3032.
+# 
+# Symbol: RTC_DRV_RV3032 [=n]
+# Type  : tristate
+# Defined at drivers/rtc/Kconfig:672
+#   Prompt: Micro Crystal RV3032
+#   Depends on: RTC_CLASS [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Real Time Clock (RTC_CLASS [=y])
+# Selects: REGMAP_I2C [=y]
+# 
+# 
+# 
+CONFIG_RTC_DRV_RV3032=m

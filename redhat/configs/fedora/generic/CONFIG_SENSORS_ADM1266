@@ -1,0 +1,22 @@
+# CONFIG_SENSORS_ADM1266:
+# 
+# If you say yes here you get hardware monitoring support for Analog
+# Devices ADM1266 Cascadable Super Sequencer.
+# 
+# This driver can also be built as a module. If so, the module will
+# be called adm1266.
+# 
+# Symbol: SENSORS_ADM1266 [=n]
+# Type  : tristate
+# Defined at drivers/hwmon/pmbus/Kconfig:29
+#   Prompt: Analog Devices ADM1266 Sequencer
+#   Depends on: HWMON [=y] && PMBUS [=m] && GPIOLIB [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+#         -> PMBus support (PMBUS [=m])
+# Selects: CRC8 [=m]
+# 
+# 
+# 
+CONFIG_SENSORS_ADM1266=m

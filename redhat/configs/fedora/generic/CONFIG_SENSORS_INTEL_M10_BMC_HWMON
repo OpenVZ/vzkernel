@@ -1,0 +1,21 @@
+# CONFIG_SENSORS_INTEL_M10_BMC_HWMON:
+# 
+# This driver provides support for the hardware monitoring functionality
+# on Intel MAX10 BMC chip.
+# 
+# This BMC Chip is used on Intel FPGA PCIe Acceleration Cards (PAC). Its
+# sensors monitor various telemetry data of different components on the
+# card, e.g. board temperature, FPGA core temperature/voltage/current.
+# 
+# Symbol: SENSORS_INTEL_M10_BMC_HWMON [=n]
+# Type  : tristate
+# Defined at drivers/hwmon/Kconfig:2087
+#   Prompt: Intel MAX10 BMC Hardware Monitoring
+#   Depends on: HWMON [=y] && MFD_INTEL_M10_BMC [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+# 
+# 
+# 
+CONFIG_SENSORS_INTEL_M10_BMC_HWMON=m
