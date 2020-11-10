@@ -938,6 +938,15 @@ static int kaio_alloc_sync(struct ploop_io * io, loff_t pos, loff_t len)
 
 	return err;
 }
+static int kaio_invalidate_cache(struct ploop_io *io)
+{
+	struct inode *inode = io->files.inode;
+
+	if (!inode->i_op->fastmap)
+		return 0;
+
+	return invalidate_inode_pages2(io->files.mapping);
+}
 
 static int kaio_open(struct ploop_io * io)
 {
@@ -953,6 +962,7 @@ static int kaio_open(struct ploop_io * io)
 	io->files.bdev = io->files.inode->i_sb->s_bdev;
 
 	mutex_lock(&io->files.inode->i_mutex);
+	kaio_invalidate_cache(io);
 	err = ploop_kaio_open(file, delta->flags & PLOOP_FMT_RDONLY);
 	mutex_unlock(&io->files.inode->i_mutex);
 
@@ -1005,6 +1015,10 @@ static int kaio_prepare_snapshot(struct ploop_io * io, struct ploop_snapdata *sd
 		return err;
 	}
 
+	mutex_lock(&io->files.inode->i_mutex);
+	kaio_invalidate_cache(io);
+	mutex_unlock(&io->files.inode->i_mutex);
+
 	sd->file = file;
 	return 0;
 }
@@ -1024,6 +1038,10 @@ static int kaio_complete_snapshot(struct ploop_io * io, struct ploop_snapdata *s
 	mutex_unlock(&io->plo->sysfs_mutex);
 
 	ploop_kaio_downgrade(io->files.mapping);
+
+	mutex_lock(&io->files.inode->i_mutex);
+	kaio_invalidate_cache(io);
+	mutex_unlock(&io->files.inode->i_mutex);
 
 	if (io->fsync_thread) {
 		kthread_stop(io->fsync_thread);
@@ -1057,6 +1075,10 @@ static int kaio_prepare_merge(struct ploop_io * io, struct ploop_snapdata *sd)
 	err = vfs_fsync(file, 0);
 	if (err)
 		goto prep_merge_done;
+
+	mutex_lock(&io->files.inode->i_mutex);
+	kaio_invalidate_cache(io);
+	mutex_unlock(&io->files.inode->i_mutex);
 
 	err = ploop_kaio_upgrade(io->files.mapping);
 	if (err)
