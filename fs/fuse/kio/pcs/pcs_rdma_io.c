@@ -1183,7 +1183,6 @@ struct pcs_rdmaio* pcs_rdma_create(int hdr_size, struct rdma_cm_id *cmid,
 				   int queue_depth, struct pcs_rpc *ep)
 {
 	struct pcs_rdmaio *rio;
-	struct rio_rx *rx;
 	struct ib_cq_init_attr cq_attr = {};
 	struct ib_qp_init_attr qp_attr = {};
 	int recv_queue_depth = queue_depth * 2 + 2;
@@ -1304,21 +1303,10 @@ struct pcs_rdmaio* pcs_rdma_create(int hdr_size, struct rdma_cm_id *cmid,
 		goto free_cq;
 	}
 
-	for (rx = rio->rx_descs; rx - rio->rx_descs < recv_queue_depth; rx++)
-		if (rio_rx_post(rio, rx, RIO_MSG_SIZE)) {
-			TRACE("rio_rx_post failed: rio: 0x%p\n", rio);
-			break;
-		}
-
-	if (rio->n_rx_posted != recv_queue_depth)
-		goto free_qp;
-
 	TRACE("rio: 0x%p, dev: 0x%p, queue_depth: %d\n", rio, rio->dev, queue_depth);
 
 	return rio;
 
-free_qp:
-	rdma_destroy_qp(rio->cmid);
 free_cq:
 	ib_destroy_cq(rio->cq);
 free_dev:
@@ -1331,6 +1319,19 @@ free_rio:
 	pcs_rpc_put(rio->netio.parent);
 	kfree(rio);
 	return NULL;
+}
+
+int pcs_rdma_established(struct pcs_rdmaio *rio)
+{
+	struct rio_rx *rx;
+
+	for (rx = rio->rx_descs; rx - rio->rx_descs < rio->recv_queue_depth; rx++)
+		if (rio_rx_post(rio, rx, RIO_MSG_SIZE)) {
+			TRACE("rio_rx_post failed: rio: 0x%p\n", rio);
+			break;
+		}
+
+	return rio->n_rx_posted == rio->recv_queue_depth ? 0 : -EINVAL;
 }
 
 static void rio_cleanup(struct pcs_rdmaio *rio)
