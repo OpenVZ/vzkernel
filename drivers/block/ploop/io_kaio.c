@@ -1237,6 +1237,8 @@ kaio_fastmap(struct ploop_io *io, struct bio *orig_bio,
 				   orig_bio->bi_rw & REQ_WRITE);
 	if (ret < 0) {
 		io->plo->st.fast_neg_noem++;
+		if (ret == -EBUSY)
+			io->plo->st.write_back_pending++;
 		return 1;
 	}
 
