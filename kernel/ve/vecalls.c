@@ -32,11 +32,6 @@
 #include <linux/veowner.h>
 #include <linux/device_cgroup.h>
 
-static u64 ve_get_uptime(struct ve_struct *ve)
-{
-	return ktime_get_boot_ns() - ve->real_start_time;
-}
-
 static int fill_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
 {
 	struct ve_struct *ve;
