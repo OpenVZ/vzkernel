@@ -80,6 +80,10 @@ static int pcs_rdma_cm_event_handler(struct rdma_cm_id *cmid,
 			break;
 		case RDMA_CM_EVENT_ESTABLISHED:
 			cmid->context = &rc->rio->id;
+			if (pcs_rdma_established(rc->rio)) {
+				TRACE("pcs_rdma_established failed, rio: 0x%p\n", rc->rio);
+				rc->cm_event = RDMA_CM_EVENT_REJECTED;
+			}
 			complete(&rc->cm_done);
 			break;
 		case RDMA_CM_EVENT_REJECTED:
