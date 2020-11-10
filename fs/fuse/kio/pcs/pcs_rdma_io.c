@@ -798,6 +798,11 @@ static int rio_handle_rx_immediate(struct pcs_rdmaio *rio, char *buf, int len,
 	int offset = rio->hdr_size;
 	struct iov_iter it;
 
+	if (rio->throttled) {
+		*throttle = 1;
+		return 0;
+	}
+
 	if (len < rio->hdr_size) {
 		TRACE("rio read short msg: %d < %d, rio: 0x%p\n", len,
 		      rio->hdr_size, rio);
@@ -949,7 +954,7 @@ static void rio_handle_rx(struct pcs_rdmaio *rio, struct rio_rx *rx,
 			return;
 		}
 	} else
-		list_add(&rx->list, &rio->pended_rxs);
+		list_add_tail(&rx->list, &rio->pended_rxs);
 
 	if (!pended)
 		rio->n_peer_credits += credits;
