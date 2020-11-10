@@ -106,6 +106,7 @@ struct pcs_rdmaio
 
 struct pcs_rdmaio* pcs_rdma_create(int hdr_size, struct rdma_cm_id *cmid,
 		int queue_depth, struct pcs_rpc *ep);
+int pcs_rdma_established(struct pcs_rdmaio *rio);
 void pcs_rdma_destroy(struct pcs_rdmaio *rio);
 void pcs_rdma_ioconn_destruct(struct pcs_ioconn *ioconn);
 
