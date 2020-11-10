@@ -132,6 +132,7 @@ static int ext4_fastmap(struct inode *inode, sector_t lblk_sec,
 	bool unaligned_aio, found, locked = false;
 	struct ext4_map_blocks map;
 	loff_t pos = lblk_sec << 9;
+	int err;
 
 	if (!S_ISREG(inode->i_mode))
 		return -ENOENT;
@@ -152,6 +153,7 @@ static int ext4_fastmap(struct inode *inode, sector_t lblk_sec,
 		locked = true;
 	}
 
+	err = -EBUSY;
 	if (unlikely(mapping_needs_writeback(mapping)))
 		goto err_maybe_unlock;
 
@@ -163,6 +165,7 @@ static int ext4_fastmap(struct inode *inode, sector_t lblk_sec,
 		locked = false;
 	}
 
+	err = -ENOENT;
 	if (unlikely(ext4_test_inode_state(inode,
 				EXT4_STATE_DIOREAD_LOCK))) {
 		goto err_dio_end;
@@ -181,7 +184,7 @@ err_dio_end:
 err_maybe_unlock:
 	if (locked)
 		mutex_unlock(&inode->i_mutex);
-	return -ENOENT;
+	return err;
 }
 
 static ssize_t ext4_write_checks(struct kiocb *iocb, struct iov_iter *iter, loff_t *pos)
