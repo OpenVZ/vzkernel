@@ -580,15 +580,18 @@ static void ve_stop_kthread(struct ve_struct *ve)
 static void ve_grab_context(struct ve_struct *ve)
 {
 	struct task_struct *tsk = current;
+	struct nsproxy *ve_ns;
 
 	get_task_struct(tsk);
 	ve->init_task = tsk;
 	ve->root_css_set = tsk->cgroups;
 	get_css_set(ve->root_css_set);
 	ve->init_cred = (struct cred *)get_current_cred();
-	rcu_assign_pointer(ve->ve_ns, get_nsproxy(tsk->nsproxy));
-	ve->ve_netns =  get_net(ve->ve_ns->net_ns);
+	ve_ns = get_nsproxy(tsk->nsproxy);
+	ve->ve_netns =  get_net(ve_ns->net_ns);
 	synchronize_rcu();
+
+	rcu_assign_pointer(ve->ve_ns, ve_ns);
 }
 
 static void ve_drop_context(struct ve_struct *ve)
