@@ -339,7 +339,7 @@ static int proc_dointvec_pidmax(struct ctl_table *table, int write,
 	struct ctl_table tmp;
 
 	tmp = *table;
-	tmp.data = &current->nsproxy->pid_ns->pid_max;
+	tmp.data = &task_active_pid_ns(current)->pid_max;
 	return proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
 }
 
