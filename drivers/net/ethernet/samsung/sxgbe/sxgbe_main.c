@@ -298,8 +298,8 @@ static int sxgbe_init_phy(struct net_device *ndev)
 	/* Stop Advertising 1000BASE Capability if interface is not GMII */
 	if ((phy_iface == PHY_INTERFACE_MODE_MII) ||
 	    (phy_iface == PHY_INTERFACE_MODE_RMII))
-		phydev->advertising &= ~(SUPPORTED_1000baseT_Half |
-					 SUPPORTED_1000baseT_Full);
+		phy_set_max_speed(phydev, SPEED_1000);
+
 	if (phydev->phy_id == 0) {
 		phy_disconnect(phydev);
 		return -ENODEV;
@@ -1575,7 +1575,7 @@ static int sxgbe_poll(struct napi_struct *napi, int budget)
  *   netdev structure and arrange for the device to be reset to a sane state
  *   in order to transmit a new packet.
  */
-static void sxgbe_tx_timeout(struct net_device *dev)
+static void sxgbe_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct sxgbe_priv_data *priv = netdev_priv(dev);
 

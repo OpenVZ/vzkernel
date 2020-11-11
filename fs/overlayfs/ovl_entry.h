@@ -19,15 +19,22 @@ struct ovl_config {
 	bool index;
 	bool nfs_export;
 	int xino;
+	bool metacopy;
 };
 
 struct ovl_sb {
 	struct super_block *sb;
 	dev_t pseudo_dev;
+	/* Unusable (conflicting) uuid */
+	bool bad_uuid;
+	/* Used as a lower layer (but maybe also as upper) */
+	bool is_lower;
 };
 
 struct ovl_layer {
 	struct vfsmount *mnt;
+	/* Trap in ovl inode cache */
+	struct inode *trap;
 	struct ovl_sb *fs;
 	/* Index of this layer in fs root (upper idx == 0) */
 	int idx;
@@ -36,18 +43,18 @@ struct ovl_layer {
 };
 
 struct ovl_path {
-	struct ovl_layer *layer;
+	const struct ovl_layer *layer;
 	struct dentry *dentry;
 };
 
 /* private information held for overlayfs's superblock */
 struct ovl_fs {
 	struct vfsmount *upper_mnt;
-	unsigned int numlower;
-	/* Number of unique lower sb that differ from upper sb */
-	unsigned int numlowerfs;
-	struct ovl_layer *lower_layers;
-	struct ovl_sb *lower_fs;
+	unsigned int numlayer;
+	/* Number of unique fs among layers including upper fs */
+	unsigned int numfs;
+	const struct ovl_layer *layers;
+	struct ovl_sb *fs;
 	/* workbasedir is the path at workdir= mount option */
 	struct dentry *workbasedir;
 	/* workdir is the 'work' directory under workbasedir */
@@ -64,9 +71,21 @@ struct ovl_fs {
 	/* Did we take the inuse lock? */
 	bool upperdir_locked;
 	bool workdir_locked;
-	/* Inode numbers in all layers do not use the high xino_bits */
-	unsigned int xino_bits;
+	/* Traps in ovl inode cache */
+	struct inode *upperdir_trap;
+	struct inode *workbasedir_trap;
+	struct inode *workdir_trap;
+	struct inode *indexdir_trap;
+	/* -1: disabled, 0: same fs, 1..32: number of unused ino bits */
+	int xino_mode;
+	/* For allocation of non-persistent inode numbers */
+	atomic_long_t last_ino;
 };
+
+static inline struct ovl_fs *OVL_FS(struct super_block *sb)
+{
+	return (struct ovl_fs *)sb->s_fs_info;
+}
 
 /* private information held for every overlayfs dentry */
 struct ovl_entry {
@@ -88,7 +107,10 @@ static inline struct ovl_entry *OVL_E(struct dentry *dentry)
 }
 
 struct ovl_inode {
-	struct ovl_dir_cache *cache;
+	union {
+		struct ovl_dir_cache *cache;	/* directory */
+		struct inode *lowerdata;	/* regular file */
+	};
 	const char *redirect;
 	u64 version;
 	unsigned long flags;

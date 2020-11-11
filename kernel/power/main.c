@@ -15,17 +15,17 @@
 #include <linux/workqueue.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
+#include <linux/suspend.h>
+#include <linux/syscalls.h>
 
 #include "power.h"
-
-DEFINE_MUTEX(pm_mutex);
 
 #ifdef CONFIG_PM_SLEEP
 
 void lock_system_sleep(void)
 {
 	current->flags |= PF_FREEZER_SKIP;
-	mutex_lock(&pm_mutex);
+	mutex_lock(&system_transition_mutex);
 }
 EXPORT_SYMBOL_GPL(lock_system_sleep);
 
@@ -37,8 +37,9 @@ void unlock_system_sleep(void)
 	 *
 	 * Reason:
 	 * Fundamentally, we just don't need it, because freezing condition
-	 * doesn't come into effect until we release the pm_mutex lock,
-	 * since the freezer always works with pm_mutex held.
+	 * doesn't come into effect until we release the
+	 * system_transition_mutex lock, since the freezer always works with
+	 * system_transition_mutex held.
 	 *
 	 * More importantly, in the case of hibernation,
 	 * unlock_system_sleep() gets called in snapshot_read() and
@@ -47,9 +48,17 @@ void unlock_system_sleep(void)
 	 * enter the refrigerator, thus causing hibernation to lockup.
 	 */
 	current->flags &= ~PF_FREEZER_SKIP;
-	mutex_unlock(&pm_mutex);
+	mutex_unlock(&system_transition_mutex);
 }
 EXPORT_SYMBOL_GPL(unlock_system_sleep);
+
+void ksys_sync_helper(void)
+{
+	pr_info("Syncing filesystems ... ");
+	ksys_sync();
+	pr_cont("done.\n");
+}
+EXPORT_SYMBOL_GPL(ksys_sync_helper);
 
 /* Routines for PM-transition notifications */
 

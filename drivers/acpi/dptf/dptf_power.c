@@ -31,8 +31,7 @@ static ssize_t name##_show(struct device *dev,\
 			   struct device_attribute *attr,\
 			   char *buf)\
 {\
-	struct platform_device *pdev = to_platform_device(dev);\
-	struct acpi_device *acpi_dev = platform_get_drvdata(pdev);\
+	struct acpi_device *acpi_dev = dev_get_drvdata(dev);\
 	unsigned long long val;\
 	acpi_status status;\
 \
@@ -108,6 +107,7 @@ static int dptf_power_remove(struct platform_device *pdev)
 
 static const struct acpi_device_id int3407_device_ids[] = {
 	{"INT3407", 0},
+	{"INTC1047", 0},
 	{"", 0},
 };
 MODULE_DEVICE_TABLE(acpi, int3407_device_ids);

@@ -29,8 +29,6 @@
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
 
-#include <drm/drmP.h>
-
 #include "nouveau_drv.h"
 #include "nouveau_hwmon.h"
 
@@ -69,8 +67,8 @@ nouveau_hwmon_set_temp1_auto_point1_temp(struct device *d,
 	struct nvkm_therm *therm = nvxx_therm(&drm->client.device);
 	long value;
 
-	if (kstrtol(buf, 10, &value) == -EINVAL)
-		return count;
+	if (kstrtol(buf, 10, &value))
+		return -EINVAL;
 
 	therm->attr_set(therm, NVKM_THERM_ATTR_THRS_FAN_BOOST,
 			value / 1000);
@@ -102,8 +100,8 @@ nouveau_hwmon_set_temp1_auto_point1_temp_hyst(struct device *d,
 	struct nvkm_therm *therm = nvxx_therm(&drm->client.device);
 	long value;
 
-	if (kstrtol(buf, 10, &value) == -EINVAL)
-		return count;
+	if (kstrtol(buf, 10, &value))
+		return -EINVAL;
 
 	therm->attr_set(therm, NVKM_THERM_ATTR_THRS_FAN_BOOST_HYST,
 			value / 1000);
@@ -156,7 +154,7 @@ nouveau_hwmon_set_pwm1_min(struct device *d, struct device_attribute *a,
 	long value;
 	int ret;
 
-	if (kstrtol(buf, 10, &value) == -EINVAL)
+	if (kstrtol(buf, 10, &value))
 		return -EINVAL;
 
 	ret = therm->attr_set(therm, NVKM_THERM_ATTR_FAN_MIN_DUTY, value);
@@ -179,7 +177,7 @@ nouveau_hwmon_set_pwm1_max(struct device *d, struct device_attribute *a,
 	long value;
 	int ret;
 
-	if (kstrtol(buf, 10, &value) == -EINVAL)
+	if (kstrtol(buf, 10, &value))
 		return -EINVAL;
 
 	ret = therm->attr_set(therm, NVKM_THERM_ATTR_FAN_MAX_DUTY, value);
@@ -428,6 +426,8 @@ nouveau_temp_read(struct device *dev, u32 attr, int channel, long *val)
 
 	switch (attr) {
 	case hwmon_temp_input:
+		if (drm_dev->switch_power_state != DRM_SWITCH_POWER_ON)
+			return -EINVAL;
 		ret = nvkm_therm_temp_get(therm);
 		*val = ret < 0 ? ret : (ret * 1000);
 		break;
@@ -474,6 +474,8 @@ nouveau_fan_read(struct device *dev, u32 attr, int channel, long *val)
 
 	switch (attr) {
 	case hwmon_fan_input:
+		if (drm_dev->switch_power_state != DRM_SWITCH_POWER_ON)
+			return -EINVAL;
 		*val = nvkm_therm_fan_sense(therm);
 		break;
 	default:
@@ -496,6 +498,8 @@ nouveau_in_read(struct device *dev, u32 attr, int channel, long *val)
 
 	switch (attr) {
 	case hwmon_in_input:
+		if (drm_dev->switch_power_state != DRM_SWITCH_POWER_ON)
+			return -EINVAL;
 		ret = nvkm_volt_get(volt);
 		*val = ret < 0 ? ret : (ret / 1000);
 		break;
@@ -527,6 +531,8 @@ nouveau_pwm_read(struct device *dev, u32 attr, int channel, long *val)
 		*val = therm->attr_get(therm, NVKM_THERM_ATTR_FAN_MODE);
 		break;
 	case hwmon_pwm_input:
+		if (drm_dev->switch_power_state != DRM_SWITCH_POWER_ON)
+			return -EINVAL;
 		*val = therm->fan_get(therm);
 		break;
 	default:
@@ -548,6 +554,8 @@ nouveau_power_read(struct device *dev, u32 attr, int channel, long *val)
 
 	switch (attr) {
 	case hwmon_power_input:
+		if (drm_dev->switch_power_state != DRM_SWITCH_POWER_ON)
+			return -EINVAL;
 		*val = nvkm_iccsense_read_all(iccsense);
 		break;
 	case hwmon_power_max:
@@ -733,7 +741,7 @@ nouveau_hwmon_init(struct drm_device *dev)
 			special_groups[i++] = &pwm_fan_sensor_group;
 	}
 
-	special_groups[i] = 0;
+	special_groups[i] = NULL;
 	hwmon_dev = hwmon_device_register_with_info(dev->dev, "nouveau", dev,
 							&nouveau_chip_info,
 							special_groups);

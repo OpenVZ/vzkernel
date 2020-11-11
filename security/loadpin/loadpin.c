@@ -49,8 +49,6 @@ static struct super_block *pinned_root;
 static DEFINE_SPINLOCK(pinned_root_spinlock);
 
 #ifdef CONFIG_SYSCTL
-static int zero;
-static int one = 1;
 
 static struct ctl_path loadpin_sysctl_path[] = {
 	{ .procname = "kernel", },
@@ -65,8 +63,8 @@ static struct ctl_table loadpin_sysctl_table[] = {
 		.maxlen         = sizeof(int),
 		.mode           = 0644,
 		.proc_handler   = proc_dointvec_minmax,
-		.extra1         = &zero,
-		.extra2         = &one,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
 	},
 	{ }
 };
@@ -173,9 +171,15 @@ static int loadpin_read_file(struct file *file, enum kernel_read_file_id id)
 	return 0;
 }
 
+static int loadpin_load_data(enum kernel_load_data_id id)
+{
+	return loadpin_read_file(NULL, (enum kernel_read_file_id) id);
+}
+
 static struct security_hook_list loadpin_hooks[] __lsm_ro_after_init = {
 	LSM_HOOK_INIT(sb_free_security, loadpin_sb_free_security),
 	LSM_HOOK_INIT(kernel_read_file, loadpin_read_file),
+	LSM_HOOK_INIT(kernel_load_data, loadpin_load_data),
 };
 
 void __init loadpin_add_hooks(void)

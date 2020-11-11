@@ -214,9 +214,31 @@ head907d_olut_set(struct nv50_head *head, struct nv50_head_atom *asyh)
 }
 
 void
-head907d_olut(struct nv50_head *head, struct nv50_head_atom *asyh)
+head907d_olut_load(struct drm_color_lut *in, int size, void __iomem *mem)
 {
-	asyh->olut.mode = 7;
+	for (; size--; in++, mem += 8) {
+		writew(drm_color_lut_extract(in->  red, 14) + 0x6000, mem + 0);
+		writew(drm_color_lut_extract(in->green, 14) + 0x6000, mem + 2);
+		writew(drm_color_lut_extract(in-> blue, 14) + 0x6000, mem + 4);
+	}
+
+	/* INTERPOLATE modes require a "next" entry to interpolate with,
+	 * so we replicate the last entry to deal with this for now.
+	 */
+	writew(readw(mem - 8), mem + 0);
+	writew(readw(mem - 6), mem + 2);
+	writew(readw(mem - 4), mem + 4);
+}
+
+bool
+head907d_olut(struct nv50_head *head, struct nv50_head_atom *asyh, int size)
+{
+	if (size != 256 && size != 1024)
+		return false;
+
+	asyh->olut.mode = size == 1024 ? 4 : 7;
+	asyh->olut.load = head907d_olut_load;
+	return true;
 }
 
 void
@@ -267,6 +289,7 @@ head907d = {
 	.view = head907d_view,
 	.mode = head907d_mode,
 	.olut = head907d_olut,
+	.olut_size = 1024,
 	.olut_set = head907d_olut_set,
 	.olut_clr = head907d_olut_clr,
 	.core_calc = head507d_core_calc,

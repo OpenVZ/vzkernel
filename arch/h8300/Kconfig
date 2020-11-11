@@ -15,7 +15,6 @@ config H8300
 	select OF
 	select OF_IRQ
 	select OF_EARLY_FLATTREE
-	select HAVE_MEMBLOCK
 	select TIMER_OF
 	select H8300_TMR8
 	select HAVE_KERNEL_GZIP
@@ -26,9 +25,6 @@ config H8300
 	select DMA_DIRECT_OPS
 
 config CPU_BIG_ENDIAN
-	def_bool y
-
-config RWSEM_GENERIC_SPINLOCK
 	def_bool y
 
 config GENERIC_HWEIGHT

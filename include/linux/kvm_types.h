@@ -32,7 +32,7 @@ struct kvm_memslots;
 
 enum kvm_mr_change;
 
-#include <asm/types.h>
+#include <linux/types.h>
 
 /*
  * Address types:
@@ -49,6 +49,8 @@ typedef unsigned long  gva_t;
 typedef u64            gpa_t;
 typedef u64            gfn_t;
 
+#define GPA_INVALID	(~(gpa_t)0)
+
 typedef unsigned long  hva_t;
 typedef u64            hpa_t;
 typedef u64            hfn_t;
@@ -61,6 +63,13 @@ struct gfn_to_hva_cache {
 	unsigned long hva;
 	unsigned long len;
 	struct kvm_memory_slot *memslot;
+};
+
+struct gfn_to_pfn_cache {
+	u64 generation;
+	gfn_t gfn;
+	kvm_pfn_t pfn;
+	bool dirty;
 };
 
 #endif /* __KVM_TYPES_H__ */

@@ -576,6 +576,7 @@ struct mlx5_ifc_fpga_ipsec_sa {
 enum fpga_tls_cmds {
 	CMD_SETUP_STREAM		= 0x1001,
 	CMD_TEARDOWN_STREAM		= 0x1002,
+	CMD_RESYNC_RX			= 0x1003,
 };
 
 #define MLX5_TLS_1_2 (0)
@@ -607,7 +608,7 @@ struct mlx5_ifc_tls_cmd_bits {
 struct mlx5_ifc_tls_resp_bits {
 	u8         syndrome[0x20];
 	u8         stream_id[0x20];
-	u8         reserverd[0x40];
+	u8         reserved[0x40];
 };
 
 #define MLX5_TLS_COMMAND_SIZE (0x100)

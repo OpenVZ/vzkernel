@@ -24,6 +24,7 @@
 #include <crypto/internal/hash.h>
 #include <linux/tls.h>
 #include <net/tls.h>
+#include <net/tls_toe.h>
 
 #include "t4fw_api.h"
 #include "t4_msg.h"
@@ -146,6 +147,11 @@ struct chtls_dev {
 	unsigned int send_page_order;
 	int max_host_sndbuf;
 	struct key_map kmap;
+};
+
+struct chtls_listen {
+	struct chtls_dev *cdev;
+	struct sock *sk;
 };
 
 struct chtls_hws {

@@ -186,6 +186,13 @@ static int ravb_ptp_extts(struct ptp_clock_info *ptp,
 	struct net_device *ndev = priv->ndev;
 	unsigned long flags;
 
+	/* Reject requests with unsupported flags */
+	if (req->flags & ~(PTP_ENABLE_FEATURE |
+			   PTP_RISING_EDGE |
+			   PTP_FALLING_EDGE |
+			   PTP_STRICT_FLAGS))
+		return -EOPNOTSUPP;
+
 	if (req->index)
 		return -EINVAL;
 
@@ -200,7 +207,6 @@ static int ravb_ptp_extts(struct ptp_clock_info *ptp,
 		ravb_write(ndev, GIE_PTCS, GIE);
 	else
 		ravb_write(ndev, GID_PTCD, GID);
-	mmiowb();
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	return 0;
@@ -215,6 +221,10 @@ static int ravb_ptp_perout(struct ptp_clock_info *ptp,
 	struct ravb_ptp_perout *perout;
 	unsigned long flags;
 	int error = 0;
+
+	/* Reject requests with unsupported flags */
+	if (req->flags)
+		return -EOPNOTSUPP;
 
 	if (req->index)
 		return -EINVAL;
@@ -263,7 +273,6 @@ static int ravb_ptp_perout(struct ptp_clock_info *ptp,
 		else
 			ravb_write(ndev, GID_PTMD0, GID);
 	}
-	mmiowb();
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	return error;
@@ -335,7 +344,6 @@ void ravb_ptp_init(struct net_device *ndev, struct platform_device *pdev)
 	spin_lock_irqsave(&priv->lock, flags);
 	ravb_wait(ndev, GCCR, GCCR_TCR, GCCR_TCR_NOREQ);
 	ravb_modify(ndev, GCCR, GCCR_TCSS, GCCR_TCSS_ADJGPTP);
-	mmiowb();
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	priv->ptp.clock = ptp_clock_register(&priv->ptp.info, &pdev->dev);

@@ -2631,6 +2631,15 @@ static const struct alg_test_desc alg_test_descs[] = {
 			.cipher = __VECS(tf_cbc_tv_template)
 		},
 	}, {
+#if IS_ENABLED(CONFIG_CRYPTO_PAES_S390)
+		.alg = "cbc-paes-s390",
+		.fips_allowed = 1,
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = __VECS(aes_cbc_tv_template)
+		}
+	}, {
+#endif
 		.alg = "cbcmac(aes)",
 		.fips_allowed = 1,
 		.test = alg_test_hash,
@@ -2647,6 +2656,13 @@ static const struct alg_test_desc alg_test_descs[] = {
 				.dec = __VECS(aes_ccm_dec_tv_template)
 			}
 		}
+	}, {
+		.alg = "cfb(aes)",
+		.test = alg_test_skcipher,
+		.fips_allowed = 1,
+		.suite = {
+			.cipher = __VECS(aes_cfb_tv_template)
+		},
 	}, {
 		.alg = "chacha20",
 		.test = alg_test_skcipher,
@@ -2673,6 +2689,7 @@ static const struct alg_test_desc alg_test_descs[] = {
 	}, {
 		.alg = "crc32",
 		.test = alg_test_hash,
+		.fips_allowed = 1,
 		.suite = {
 			.hash = __VECS(crc32_tv_template)
 		}
@@ -2754,6 +2771,15 @@ static const struct alg_test_desc alg_test_descs[] = {
 			.cipher = __VECS(tf_ctr_tv_template)
 		}
 	}, {
+#if IS_ENABLED(CONFIG_CRYPTO_PAES_S390)
+		.alg = "ctr-paes-s390",
+		.fips_allowed = 1,
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = __VECS(aes_ctr_tv_template)
+		}
+	}, {
+#endif
 		.alg = "cts(cbc(aes))",
 		.test = alg_test_skcipher,
 		.suite = {
@@ -3043,6 +3069,15 @@ static const struct alg_test_desc alg_test_descs[] = {
 			.cipher = __VECS(xtea_tv_template)
 		}
 	}, {
+#if IS_ENABLED(CONFIG_CRYPTO_PAES_S390)
+		.alg = "ecb-paes-s390",
+		.fips_allowed = 1,
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = __VECS(aes_tv_template)
+		}
+	}, {
+#endif
 		.alg = "ecdh",
 		.test = alg_test_kpp,
 		.fips_allowed = 1,
@@ -3558,6 +3593,15 @@ static const struct alg_test_desc alg_test_descs[] = {
 			.cipher = __VECS(tf_xts_tv_template)
 		}
 	}, {
+#if IS_ENABLED(CONFIG_CRYPTO_PAES_S390)
+		.alg = "xts-paes-s390",
+		.fips_allowed = 1,
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = __VECS(aes_xts_tv_template)
+		}
+	}, {
+#endif
 		.alg = "xts4096(paes)",
 		.test = alg_test_null,
 		.fips_allowed = 1,

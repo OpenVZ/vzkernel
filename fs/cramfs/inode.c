@@ -418,9 +418,12 @@ static int cramfs_physmem_mmap(struct file *file, struct vm_area_struct *vma)
 		int i;
 		vma->vm_flags |= VM_MIXEDMAP;
 		for (i = 0; i < pages && !ret; i++) {
+			vm_fault_t vmf;
 			unsigned long off = i * PAGE_SIZE;
 			pfn_t pfn = phys_to_pfn_t(address + off, PFN_DEV);
-			ret = vm_insert_mixed(vma, vma->vm_start + off, pfn);
+			vmf = vmf_insert_mixed(vma, vma->vm_start + off, pfn);
+			if (vmf & VM_FAULT_ERROR)
+				ret = vm_fault_to_errno(vmf, 0);
 		}
 	}
 
@@ -593,6 +596,8 @@ static int cramfs_finalize_super(struct super_block *sb,
 
 	/* Set it all up.. */
 	sb->s_flags |= SB_RDONLY;
+	sb->s_time_min = 0;
+	sb->s_time_max = 0;
 	sb->s_op = &cramfs_ops;
 	root = get_cramfs_inode(sb, cramfs_root, 0);
 	if (IS_ERR(root))
@@ -977,6 +982,14 @@ MODULE_ALIAS_FS("cramfs");
 static int __init init_cramfs_fs(void)
 {
 	int rv;
+
+	/* Deprecate cramfs because there aren't many users for it
+	 * and we want to steer users towards squashfs so we don't
+	 * have to maintain multiple such filesystems in RHEL.
+	 */
+	printk(KERN_WARNING "cramfs is deprecated and is slated for removal in "
+	      "a future RHEL release. Please use an alternative file system "
+	      "like squashfs.\n");
 
 	rv = cramfs_uncompress_init();
 	if (rv < 0)

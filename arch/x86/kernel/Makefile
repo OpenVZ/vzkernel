@@ -62,6 +62,7 @@ obj-y			+= tsc.o tsc_msr.o io_delay.o rtc.o
 obj-y			+= pci-iommu_table.o
 obj-y			+= resource.o
 obj-y			+= irqflags.o
+obj-y			+= spec_ctrl.o
 
 obj-y				+= process.o
 obj-y				+= fpu/
@@ -149,4 +150,8 @@ ifeq ($(CONFIG_X86_64),y)
 
 	obj-$(CONFIG_MMCONF_FAM10H)	+= mmconf-fam10h_64.o
 	obj-y				+= vsmp_64.o
+endif
+
+ifdef CONFIG_EFI
+obj-$(CONFIG_IMA)			+= ima_arch.o
 endif

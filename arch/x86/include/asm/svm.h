@@ -52,6 +52,7 @@ enum {
 	INTERCEPT_MWAIT,
 	INTERCEPT_MWAIT_COND,
 	INTERCEPT_XSETBV,
+	INTERCEPT_RDPRU,
 };
 
 
@@ -95,7 +96,6 @@ struct __attribute__ ((__packed__)) vmcb_control_area {
 	u8 reserved_6[8];	/* Offset 0xe8 */
 	u64 avic_logical_id;	/* Offset 0xf0 */
 	u64 avic_physical_id;	/* Offset 0xf8 */
-	u8 reserved_7[768];
 };
 
 
@@ -202,8 +202,16 @@ struct __attribute__ ((__packed__)) vmcb_save_area {
 	u64 last_excp_to;
 };
 
+
+static inline void __unused_size_checks(void)
+{
+	BUILD_BUG_ON(sizeof(struct vmcb_save_area) != 0x298);
+	BUILD_BUG_ON(sizeof(struct vmcb_control_area) != 256);
+}
+
 struct __attribute__ ((__packed__)) vmcb {
 	struct vmcb_control_area control;
+	u8 reserved_control[1024 - sizeof(struct vmcb_control_area)];
 	struct vmcb_save_area save;
 };
 
@@ -289,12 +297,5 @@ struct __attribute__ ((__packed__)) vmcb {
 #define SVM_EXITINFO_REG_MASK 0x0F
 
 #define SVM_CR0_SELECTIVE_MASK (X86_CR0_TS | X86_CR0_MP)
-
-#define SVM_VMLOAD ".byte 0x0f, 0x01, 0xda"
-#define SVM_VMRUN  ".byte 0x0f, 0x01, 0xd8"
-#define SVM_VMSAVE ".byte 0x0f, 0x01, 0xdb"
-#define SVM_CLGI   ".byte 0x0f, 0x01, 0xdd"
-#define SVM_STGI   ".byte 0x0f, 0x01, 0xdc"
-#define SVM_INVLPGA ".byte 0x0f, 0x01, 0xdf"
 
 #endif

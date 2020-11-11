@@ -28,8 +28,6 @@
 const struct nf_br_ops __rcu *nf_br_ops __read_mostly;
 EXPORT_SYMBOL_GPL(nf_br_ops);
 
-static struct lock_class_key bridge_netdev_addr_lock_key;
-
 /* net device transmit always called with BH disabled */
 netdev_tx_t br_dev_xmit(struct sk_buff *skb, struct net_device *dev)
 {
@@ -67,11 +65,11 @@ netdev_tx_t br_dev_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (IS_ENABLED(CONFIG_INET) &&
 	    (eth->h_proto == htons(ETH_P_ARP) ||
 	     eth->h_proto == htons(ETH_P_RARP)) &&
-	    br->neigh_suppress_enabled) {
+	    br_opt_get(br, BROPT_NEIGH_SUPPRESS_ENABLED)) {
 		br_do_proxy_suppress_arp(skb, br, vid, NULL);
 	} else if (IS_ENABLED(CONFIG_IPV6) &&
 		   skb->protocol == htons(ETH_P_IPV6) &&
-		   br->neigh_suppress_enabled &&
+		   br_opt_get(br, BROPT_NEIGH_SUPPRESS_ENABLED) &&
 		   pskb_may_pull(skb, sizeof(struct ipv6hdr) +
 				 sizeof(struct nd_msg)) &&
 		   ipv6_hdr(skb)->nexthdr == IPPROTO_ICMPV6) {
@@ -111,11 +109,6 @@ out:
 	return NETDEV_TX_OK;
 }
 
-static void br_set_lockdep_class(struct net_device *dev)
-{
-	lockdep_set_class(&dev->addr_list_lock, &bridge_netdev_addr_lock_key);
-}
-
 static int br_dev_init(struct net_device *dev)
 {
 	struct net_bridge *br = netdev_priv(dev);
@@ -144,7 +137,6 @@ static int br_dev_init(struct net_device *dev)
 		br_vlan_flush(br);
 		br_fdb_hash_fini(br);
 	}
-	br_set_lockdep_class(dev);
 
 	return err;
 }
@@ -228,7 +220,7 @@ static int br_change_mtu(struct net_device *dev, int new_mtu)
 	dev->mtu = new_mtu;
 
 	/* this flag will be cleared if the MTU was automatically adjusted */
-	br->mtu_set_by_user = true;
+	br_opt_toggle(br, BROPT_MTU_SET_BY_USER, true);
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	/* remember the MTU in the rtable for PMTU */
 	dst_metric_set(&br->fake_rtable.dst, RTAX_MTU, new_mtu);
@@ -344,7 +336,7 @@ void br_netpoll_disable(struct net_bridge_port *p)
 
 	p->np = NULL;
 
-	__netpoll_free_async(np);
+	__netpoll_free(np);
 }
 
 #endif
@@ -393,6 +385,7 @@ static const struct net_device_ops br_netdev_ops = {
 	.ndo_fdb_add		 = br_fdb_add,
 	.ndo_fdb_del		 = br_fdb_delete,
 	.ndo_fdb_dump		 = br_fdb_dump,
+	.ndo_fdb_get		 = br_fdb_get,
 	.ndo_bridge_getlink	 = br_getlink,
 	.ndo_bridge_setlink	 = br_setlink,
 	.ndo_bridge_dellink	 = br_dellink,

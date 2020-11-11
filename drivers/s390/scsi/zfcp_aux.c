@@ -4,7 +4,7 @@
  *
  * Module interface and handling of zfcp data structures.
  *
- * Copyright IBM Corp. 2002, 2013
+ * Copyright IBM Corp. 2002, 2020
  */
 
 /*
@@ -25,6 +25,7 @@
  *            Martin Petermann
  *            Sven Schuetz
  *            Steffen Maier
+ *	      Benjamin Block
  */
 
 #define KMSG_COMPONENT "zfcp"
@@ -36,6 +37,7 @@
 #include "zfcp_ext.h"
 #include "zfcp_fc.h"
 #include "zfcp_reqlist.h"
+#include "zfcp_diag.h"
 
 #define ZFCP_BUS_ID_SIZE	20
 
@@ -123,6 +125,9 @@ err_out:
 static int __init zfcp_module_init(void)
 {
 	int retval = -ENOMEM;
+
+	if (zfcp_experimental_dix)
+		pr_warn("DIX is enabled. It is experimental and might cause problems\n");
 
 	zfcp_fsf_qtcb_cache = zfcp_cache_hw_align("zfcp_fsf_qtcb",
 						  sizeof(struct fsf_qtcb));
@@ -275,16 +280,16 @@ static void zfcp_free_low_mem_buffers(struct zfcp_adapter *adapter)
  */
 int zfcp_status_read_refill(struct zfcp_adapter *adapter)
 {
-	while (atomic_read(&adapter->stat_miss) > 0)
+	while (atomic_add_unless(&adapter->stat_miss, -1, 0))
 		if (zfcp_fsf_status_read(adapter->qdio)) {
+			atomic_inc(&adapter->stat_miss); /* undo add -1 */
 			if (atomic_read(&adapter->stat_miss) >=
 			    adapter->stat_read_buf_num) {
 				zfcp_erp_adapter_reopen(adapter, 0, "axsref1");
 				return 1;
 			}
 			break;
-		} else
-			atomic_dec(&adapter->stat_miss);
+		}
 	return 0;
 }
 
@@ -360,6 +365,9 @@ struct zfcp_adapter *zfcp_adapter_enqueue(struct ccw_device *ccw_device)
 
 	adapter->erp_action.adapter = adapter;
 
+	if (zfcp_diag_adapter_setup(adapter))
+		goto failed;
+
 	if (zfcp_qdio_setup(adapter))
 		goto failed;
 
@@ -412,8 +420,7 @@ struct zfcp_adapter *zfcp_adapter_enqueue(struct ccw_device *ccw_device)
 
 	adapter->stat_read_buf_num = FSF_STATUS_READS_RECOM;
 
-	if (!zfcp_scsi_adapter_register(adapter))
-		return adapter;
+	return adapter;
 
 failed:
 	zfcp_adapter_unregister(adapter);
@@ -454,6 +461,7 @@ void zfcp_adapter_release(struct kref *ref)
 	dev_set_drvdata(&adapter->ccw_device->dev, NULL);
 	zfcp_fc_gs_destroy(adapter);
 	zfcp_free_low_mem_buffers(adapter);
+	zfcp_diag_adapter_free(adapter);
 	kfree(adapter->req_list);
 	kfree(adapter->fc_stats);
 	kfree(adapter->stats_reset_data);

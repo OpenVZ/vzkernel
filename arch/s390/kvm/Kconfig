@@ -31,6 +31,7 @@ config KVM
 	select HAVE_KVM_IRQFD
 	select HAVE_KVM_IRQ_ROUTING
 	select HAVE_KVM_INVALID_WAKEUPS
+	select HAVE_KVM_NO_POLL
 	select SRCU
 	select KVM_VFIO
 	---help---
@@ -54,9 +55,5 @@ config KVM_S390_UCONTROL
 	  controlled by userspace.
 
 	  If unsure, say N.
-
-# OK, it's a little counter-intuitive to do this, but it puts it neatly under
-# the virtualization menu.
-source drivers/vhost/Kconfig
 
 endif # VIRTUALIZATION

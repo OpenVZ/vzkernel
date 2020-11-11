@@ -33,7 +33,7 @@ static u8 tag_lsb;
 static u64 tag_val;
 static u64 va_mask;
 
-static void compute_layout(void)
+__init void kvm_compute_layout(void)
 {
 	phys_addr_t idmap_addr = __pa_symbol(__hyp_idmap_text_start);
 	u64 hyp_va_msb;
@@ -121,9 +121,6 @@ void __init kvm_update_va_mask(struct alt_instr *alt,
 
 	BUG_ON(nr_inst != 5);
 
-	if (!has_vhe() && !va_mask)
-		compute_layout();
-
 	for (i = 0; i < nr_inst; i++) {
 		u32 rd, rn, insn, oinsn;
 
@@ -167,9 +164,6 @@ void kvm_patch_vector_branch(struct alt_instr *alt,
 		return;
 	}
 
-	if (!va_mask)
-		compute_layout();
-
 	/*
 	 * Compute HYP VA by using the same computation as kern_hyp_va()
 	 */
@@ -181,11 +175,10 @@ void kvm_patch_vector_branch(struct alt_instr *alt,
 	addr |= ((u64)origptr & GENMASK_ULL(10, 7));
 
 	/*
-	 * Branch to the second instruction in the vectors in order to
-	 * avoid the initial store on the stack (which we already
-	 * perform in the hardening vectors).
+	 * Branch over the preamble in order to avoid the initial store on
+	 * the stack (which we already perform in the hardening vectors).
 	 */
-	addr += AARCH64_INSN_SIZE;
+	addr += KVM_VECTOR_PREAMBLE;
 
 	/* stp x0, x1, [sp, #-16]! */
 	insn = aarch64_insn_gen_load_store_pair(AARCH64_INSN_REG_0,

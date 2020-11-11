@@ -10,7 +10,8 @@ extern struct exception_table_entry __stop___ex_table[];
 
 #if defined(CONFIG_X86_64)
 extern char __end_rodata_hpage_align[];
-extern char __entry_trampoline_start[], __entry_trampoline_end[];
 #endif
+
+extern char __end_of_kernel_reserve[];
 
 #endif	/* _ASM_X86_SECTIONS_H */

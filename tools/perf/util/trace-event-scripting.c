@@ -24,10 +24,9 @@
 #include <string.h>
 #include <errno.h>
 
-#include "../perf.h"
 #include "debug.h"
-#include "util.h"
 #include "trace-event.h"
+#include <linux/zalloc.h>
 
 struct scripting_context *scripting_context;
 
@@ -43,7 +42,7 @@ static int stop_script_unsupported(void)
 
 static void process_event_unsupported(union perf_event *event __maybe_unused,
 				      struct perf_sample *sample __maybe_unused,
-				      struct perf_evsel *evsel __maybe_unused,
+				      struct evsel *evsel __maybe_unused,
 				      struct addr_location *al __maybe_unused)
 {
 }
@@ -66,7 +65,7 @@ static int python_start_script_unsupported(const char *script __maybe_unused,
 	return -1;
 }
 
-static int python_generate_script_unsupported(struct pevent *pevent
+static int python_generate_script_unsupported(struct tep_handle *pevent
 					      __maybe_unused,
 					      const char *outfile
 					      __maybe_unused)
@@ -130,7 +129,7 @@ static int perl_start_script_unsupported(const char *script __maybe_unused,
 	return -1;
 }
 
-static int perl_generate_script_unsupported(struct pevent *pevent
+static int perl_generate_script_unsupported(struct tep_handle *pevent
 					    __maybe_unused,
 					    const char *outfile __maybe_unused)
 {

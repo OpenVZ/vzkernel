@@ -79,7 +79,10 @@ static inline void acpi_disable_pci(void)
 extern int (*acpi_suspend_lowlevel)(void);
 
 /* Physical address to resume after wakeup */
-#define acpi_wakeup_address ((unsigned long)(real_mode_header->wakeup_start))
+static inline unsigned long acpi_get_wakeup_address(void)
+{
+	return ((unsigned long)(real_mode_header->wakeup_start));
+}
 
 /*
  * Check if the CPU can handle C2 and deeper
@@ -142,6 +145,8 @@ static inline u64 acpi_arch_get_root_pointer(void)
 
 void acpi_generic_reduced_hw_init(void);
 
+u64 x86_default_get_root_pointer(void);
+
 #else /* !CONFIG_ACPI */
 
 #define acpi_lapic 0
@@ -152,6 +157,11 @@ static inline void acpi_disable_pci(void) { }
 static inline void disable_acpi(void) { }
 
 static inline void acpi_generic_reduced_hw_init(void) { }
+
+static inline u64 x86_default_get_root_pointer(void)
+{
+	return 0;
+}
 
 #endif /* !CONFIG_ACPI */
 

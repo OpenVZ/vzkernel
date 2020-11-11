@@ -129,6 +129,7 @@ struct acpi_irq_parse_one_ctx {
 	unsigned int index;
 	unsigned long *res_flags;
 	struct irq_fwspec *fwspec;
+	bool skip_producer_check;
 };
 
 /**
@@ -196,11 +197,12 @@ static acpi_status acpi_irq_parse_one_cb(struct acpi_resource *ares,
 		fwnode = acpi_gsi_domain_id;
 		acpi_irq_parse_one_match(fwnode, irq->interrupts[ctx->index],
 					 irq->triggering, irq->polarity,
-					 irq->sharable, ctx);
+					 irq->shareable, ctx);
 		return AE_CTRL_TERMINATE;
 	case ACPI_RESOURCE_TYPE_EXTENDED_IRQ:
 		eirq = &ares->data.extended_irq;
-		if (eirq->producer_consumer == ACPI_PRODUCER)
+		if (!ctx->skip_producer_check &&
+		    eirq->producer_consumer == ACPI_PRODUCER)
 			return AE_OK;
 		if (ctx->index >= eirq->interrupt_count) {
 			ctx->index -= eirq->interrupt_count;
@@ -209,7 +211,7 @@ static acpi_status acpi_irq_parse_one_cb(struct acpi_resource *ares,
 		fwnode = acpi_get_irq_source_fwhandle(&eirq->resource_source);
 		acpi_irq_parse_one_match(fwnode, eirq->interrupts[ctx->index],
 					 eirq->triggering, eirq->polarity,
-					 eirq->sharable, ctx);
+					 eirq->shareable, ctx);
 		return AE_CTRL_TERMINATE;
 	}
 
@@ -235,8 +237,19 @@ static acpi_status acpi_irq_parse_one_cb(struct acpi_resource *ares,
 static int acpi_irq_parse_one(acpi_handle handle, unsigned int index,
 			      struct irq_fwspec *fwspec, unsigned long *flags)
 {
-	struct acpi_irq_parse_one_ctx ctx = { -EINVAL, index, flags, fwspec };
+	struct acpi_irq_parse_one_ctx ctx = { -EINVAL, index, flags, fwspec, false };
 
+	/*
+	 * Firmware on arm64-based HPE m400 platform incorrectly marks
+	 * its UART interrupt as ACPI_PRODUCER rather than ACPI_CONSUMER.
+	 * Don't do the producer/consumer check for that device.
+	 */
+	if (IS_ENABLED(CONFIG_ARM64)) {
+		struct acpi_device *adev = acpi_bus_get_acpi_device(handle);
+
+		if (adev && !strcmp(acpi_device_hid(adev), "APMC0D08"))
+			ctx.skip_producer_check = true;
+	}
 	acpi_walk_resources(handle, METHOD_NAME__CRS, acpi_irq_parse_one_cb, &ctx);
 	return ctx.rc;
 }
@@ -295,3 +308,29 @@ void __init acpi_set_irq_model(enum acpi_irq_model_id model,
 	acpi_irq_model = model;
 	acpi_gsi_domain_id = fwnode;
 }
+
+/**
+ * acpi_irq_create_hierarchy - Create a hierarchical IRQ domain with the default
+ *                             GSI domain as its parent.
+ * @flags:      Irq domain flags associated with the domain
+ * @size:       Size of the domain.
+ * @fwnode:     Optional fwnode of the interrupt controller
+ * @ops:        Pointer to the interrupt domain callbacks
+ * @host_data:  Controller private data pointer
+ */
+struct irq_domain *acpi_irq_create_hierarchy(unsigned int flags,
+					     unsigned int size,
+					     struct fwnode_handle *fwnode,
+					     const struct irq_domain_ops *ops,
+					     void *host_data)
+{
+	struct irq_domain *d = irq_find_matching_fwnode(acpi_gsi_domain_id,
+							DOMAIN_BUS_ANY);
+
+	if (!d)
+		return NULL;
+
+	return irq_domain_create_hierarchy(d, flags, size, fwnode, ops,
+					   host_data);
+}
+EXPORT_SYMBOL_GPL(acpi_irq_create_hierarchy);

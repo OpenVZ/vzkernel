@@ -58,7 +58,6 @@ MODULE_PARM_DESC(sync_start, "On by Default: Driver load will not complete "
 			     "until the card startup has completed.");
 
 static DEFINE_IDA(rsxx_disk_ida);
-static DEFINE_SPINLOCK(rsxx_ida_lock);
 
 /* --------------------Debugfs Setup ------------------- */
 
@@ -771,26 +770,17 @@ static int rsxx_pci_probe(struct pci_dev *dev,
 	card->dev = dev;
 	pci_set_drvdata(dev, card);
 
-	do {
-		if (!ida_pre_get(&rsxx_disk_ida, GFP_KERNEL)) {
-			st = -ENOMEM;
-			goto failed_ida_get;
-		}
-
-		spin_lock(&rsxx_ida_lock);
-		st = ida_get_new(&rsxx_disk_ida, &card->disk_id);
-		spin_unlock(&rsxx_ida_lock);
-	} while (st == -EAGAIN);
-
-	if (st)
+	st = ida_alloc(&rsxx_disk_ida, GFP_KERNEL);
+	if (st < 0)
 		goto failed_ida_get;
+	card->disk_id = st;
 
 	st = pci_enable_device(dev);
 	if (st)
 		goto failed_enable;
 
 	pci_set_master(dev);
-	pci_set_dma_max_seg_size(dev, RSXX_HW_BLK_SIZE);
+	dma_set_max_seg_size(&dev->dev, RSXX_HW_BLK_SIZE);
 
 	st = pci_set_dma_mask(dev, DMA_BIT_MASK(64));
 	if (st) {
@@ -985,9 +975,7 @@ failed_request_regions:
 failed_dma_mask:
 	pci_disable_device(dev);
 failed_enable:
-	spin_lock(&rsxx_ida_lock);
-	ida_remove(&rsxx_disk_ida, card->disk_id);
-	spin_unlock(&rsxx_ida_lock);
+	ida_free(&rsxx_disk_ida, card->disk_id);
 failed_ida_get:
 	kfree(card);
 
@@ -1026,8 +1014,10 @@ static void rsxx_pci_remove(struct pci_dev *dev)
 
 	cancel_work_sync(&card->event_work);
 
+	destroy_workqueue(card->event_wq);
 	rsxx_destroy_dev(card);
 	rsxx_dma_destroy(card);
+	destroy_workqueue(card->creg_ctrl.creg_wq);
 
 	spin_lock_irqsave(&card->irq_lock, flags);
 	rsxx_disable_ier_and_isr(card, CR_INTR_ALL);
@@ -1050,6 +1040,7 @@ static void rsxx_pci_remove(struct pci_dev *dev)
 	pci_disable_device(dev);
 	pci_release_regions(dev);
 
+	ida_free(&rsxx_disk_ida, card->disk_id);
 	kfree(card);
 }
 

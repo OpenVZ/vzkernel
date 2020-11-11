@@ -8,6 +8,8 @@
 #include <linux/types.h>
 #include <net/route.h>
 
+#include <linux/rh_kabi.h>
+
 #define LWTUNNEL_HASH_BITS   7
 #define LWTUNNEL_HASH_SIZE   (1 << LWTUNNEL_HASH_BITS)
 
@@ -30,6 +32,11 @@ struct lwtunnel_state {
 	int		(*orig_output)(struct net *net, struct sock *sk, struct sk_buff *skb);
 	int		(*orig_input)(struct sk_buff *);
 	struct		rcu_head rcu;
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 	__u8            data[0];
 };
 
@@ -126,6 +133,8 @@ int lwtunnel_cmp_encap(struct lwtunnel_state *a, struct lwtunnel_state *b);
 int lwtunnel_output(struct net *net, struct sock *sk, struct sk_buff *skb);
 int lwtunnel_input(struct sk_buff *skb);
 int lwtunnel_xmit(struct sk_buff *skb);
+int bpf_lwt_push_ip_encap(struct sk_buff *skb, void *hdr, u32 len,
+			  bool ingress);
 
 static inline void lwtunnel_set_redirect(struct dst_entry *dst)
 {

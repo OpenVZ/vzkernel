@@ -8,9 +8,7 @@ config SUPERH
 	select HAVE_PATA_PLATFORM
 	select CLKDEV_LOOKUP
 	select HAVE_IDE if HAS_IOPORT_MAP
-	select HAVE_MEMBLOCK
 	select HAVE_MEMBLOCK_NODE_MAP
-	select NO_BOOTMEM
 	select ARCH_DISCARD_MEMBLOCK
 	select HAVE_OPROFILE
 	select HAVE_GENERIC_DMA_COHERENT
@@ -88,12 +86,6 @@ config ARCH_DEFCONFIG
 	string
 	default "arch/sh/configs/shx3_defconfig" if SUPERH32
 	default "arch/sh/configs/cayman_defconfig" if SUPERH64
-
-config RWSEM_GENERIC_SPINLOCK
-	def_bool y
-
-config RWSEM_XCHGADD_ALGORITHM
-	bool
 
 config GENERIC_BUG
 	def_bool y

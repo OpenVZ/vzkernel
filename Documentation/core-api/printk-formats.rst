@@ -13,6 +13,10 @@ Integer types
 
 	If variable is of Type,		use printk format specifier:
 	------------------------------------------------------------
+		char			%hhd or %hhx
+		unsigned char		%hhu or %hhx
+		short int		%hd or %hx
+		unsigned short int	%hu or %hx
 		int			%d or %x
 		unsigned int		%u or %x
 		long			%ld or %lx
@@ -21,6 +25,10 @@ Integer types
 		unsigned long long	%llu or %llx
 		size_t			%zu or %zx
 		ssize_t			%zd or %zx
+		s8			%hhd or %hhx
+		u8			%hhu or %hhx
+		s16			%hd or %hx
+		u16			%hu or %hx
 		s32			%d or %x
 		u32			%u or %x
 		s64			%lld or %llx
@@ -50,6 +58,14 @@ A raw pointer value may be printed with %p which will hash the address
 before printing. The kernel also supports extended specifiers for printing
 pointers of different types.
 
+Some of the extended specifiers print the data on the given address instead
+of printing the address itself. In this case, the following error messages
+might be printed instead of the unreachable information::
+
+	(null)	 data on plain NULL address
+	(efault) data on invalid address
+	(einval) invalid data on a valid address
+
 Plain Pointers
 --------------
 
@@ -62,6 +78,18 @@ hashed to prevent leaking information about the kernel memory layout. This
 has the added benefit of providing a unique identifier. On 64-bit machines
 the first 32 bits are zeroed. The kernel will print ``(ptrval)`` until it
 gathers enough entropy. If you *really* want the address see %px below.
+
+Error Pointers
+--------------
+
+::
+
+	%pe	-ENOSPC
+
+For printing error pointers (i.e. a pointer for which IS_ERR() is true)
+as a symbolic error name. Error values for which no symbolic name is
+known are printed in decimal, while a non-ERR_PTR passed as the
+argument to %pe gets treated as ordinary %p.
 
 Symbols/Function Pointers
 -------------------------
@@ -93,6 +121,20 @@ The ``B`` specifier results in the symbol name with offsets and should be
 used when printing stack backtraces. The specifier takes into
 consideration the effect of compiler optimisations which may occur
 when tail-calls are used and marked with the noreturn GCC attribute.
+
+Probed Pointers from BPF / tracing
+----------------------------------
+
+::
+
+	%pks	kernel string
+	%pus	user string
+
+The ``k`` and ``u`` specifiers are used for printing prior probed memory from
+either kernel memory (k) or user memory (u). The subsequent ``s`` specifier
+results in printing a string. For direct use in regular vsnprintf() the (k)
+and (u) annotation is ignored, however, when used out of BPF's bpf_trace_printk(),
+for example, it reads the memory it is pointing to without faulting.
 
 Kernel Pointers
 ---------------
@@ -376,15 +418,15 @@ correctness of the format string and va_list arguments.
 
 Passed by reference.
 
-kobjects
---------
+Device tree nodes
+-----------------
 
 ::
 
 	%pOF[fnpPcCF]
 
 
-For printing kobject based structs (device nodes). Default behaviour is
+For printing device tree node structures. Default behaviour is
 equivalent to %pOFf.
 
 	- f - device node full_name
@@ -412,6 +454,24 @@ Examples::
 
 Passed by reference.
 
+Time and date (struct rtc_time)
+-------------------------------
+
+::
+
+	%ptR		YYYY-mm-ddTHH:MM:SS
+	%ptRd		YYYY-mm-dd
+	%ptRt		HH:MM:SS
+	%ptR[dt][r]
+
+For printing date and time as represented by struct rtc_time structure in
+human readable format.
+
+By default year will be incremented by 1900 and month by 1. Use %ptRr (raw)
+to suppress this behaviour.
+
+Passed by reference.
+
 struct clk
 ----------
 
@@ -420,9 +480,8 @@ struct clk
 	%pC	pll1
 	%pCn	pll1
 
-For printing struct clk structures. %pC and %pCn print the name
-(Common Clock Framework) or address (legacy clock framework) of the
-structure.
+For printing struct clk structures. %pC and %pCn print the name of the clock
+(Common Clock Framework) or a unique 32-bit ID (legacy clock framework).
 
 Passed by reference.
 

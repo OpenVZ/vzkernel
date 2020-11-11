@@ -21,6 +21,10 @@
 #include <asm/ptrace.h>
 #include <asm/code-patching.h>
 
+#ifdef CONFIG_PPC64
+#include "internal.h"
+#endif
+
 #define BHRB_MAX_ENTRIES	32
 #define BHRB_TARGET		0x0000000000000002
 #define BHRB_PREDICTION		0x0000000000000001
@@ -128,11 +132,15 @@ static inline void power_pmu_bhrb_disable(struct perf_event *event) {}
 static void power_pmu_sched_task(struct perf_event_context *ctx, bool sched_in) {}
 static inline void power_pmu_bhrb_read(struct cpu_hw_events *cpuhw) {}
 static void pmao_restore_workaround(bool ebb) { }
-static bool use_ic(u64 event)
+#endif /* CONFIG_PPC32 */
+
+bool is_sier_available(void)
 {
+	if (ppmu->flags & PPMU_HAS_SIER)
+		return true;
+
 	return false;
 }
-#endif /* CONFIG_PPC32 */
 
 static bool regs_use_siar(struct pt_regs *regs)
 {
@@ -521,6 +529,7 @@ static void power_pmu_bhrb_read(struct cpu_hw_events *cpuhw)
 		}
 	}
 	cpuhw->bhrb_stack.nr = u_index;
+	cpuhw->bhrb_stack.hw_idx = -1ULL;
 	return;
 }
 
@@ -714,14 +723,6 @@ static void pmao_restore_workaround(bool ebb)
 	mtspr(SPRN_PMC6, pmcs[5]);
 }
 
-static bool use_ic(u64 event)
-{
-	if (cpu_has_feature(CPU_FTR_POWER9_DD1) &&
-			(event == 0x200f2 || event == 0x300f2))
-		return true;
-
-	return false;
-}
 #endif /* CONFIG_PPC64 */
 
 static void perf_event_interrupt(struct pt_regs *regs);
@@ -1046,7 +1047,6 @@ static u64 check_and_compute_delta(u64 prev, u64 val)
 static void power_pmu_read(struct perf_event *event)
 {
 	s64 val, delta, prev;
-	struct cpu_hw_events *cpuhw = this_cpu_ptr(&cpu_hw_events);
 
 	if (event->hw.state & PERF_HES_STOPPED)
 		return;
@@ -1056,13 +1056,6 @@ static void power_pmu_read(struct perf_event *event)
 
 	if (is_ebb_event(event)) {
 		val = read_pmc(event->hw.idx);
-		if (use_ic(event->attr.config)) {
-			val = mfspr(SPRN_IC);
-			if (val > cpuhw->ic_init)
-				val = val - cpuhw->ic_init;
-			else
-				val = val + (0 - cpuhw->ic_init);
-		}
 		local64_set(&event->hw.prev_count, val);
 		return;
 	}
@@ -1076,13 +1069,6 @@ static void power_pmu_read(struct perf_event *event)
 		prev = local64_read(&event->hw.prev_count);
 		barrier();
 		val = read_pmc(event->hw.idx);
-		if (use_ic(event->attr.config)) {
-			val = mfspr(SPRN_IC);
-			if (val > cpuhw->ic_init)
-				val = val - cpuhw->ic_init;
-			else
-				val = val + (0 - cpuhw->ic_init);
-		}
 		delta = check_and_compute_delta(prev, val);
 		if (!delta)
 			return;
@@ -1469,7 +1455,7 @@ static int collect_events(struct perf_event *group, int max_count,
 }
 
 /*
- * Add a event to the PMU.
+ * Add an event to the PMU.
  * If all events are not already frozen, then we disable and
  * re-enable the PMU in order to get hw_perf_enable to do the
  * actual work of reconfiguring the PMU.
@@ -1535,20 +1521,13 @@ nocheck:
 					event->attr.branch_sample_type);
 	}
 
-	/*
-	 * Workaround for POWER9 DD1 to use the Instruction Counter
-	 * register value for instruction counting
-	 */
-	if (use_ic(event->attr.config))
-		cpuhw->ic_init = mfspr(SPRN_IC);
-
 	perf_pmu_enable(event->pmu);
 	local_irq_restore(flags);
 	return ret;
 }
 
 /*
- * Remove a event from the PMU.
+ * Remove an event from the PMU.
  */
 static void power_pmu_del(struct perf_event *event, int ef_flags)
 {
@@ -1742,7 +1721,7 @@ static int power_pmu_commit_txn(struct pmu *pmu)
 /*
  * Return 1 if we might be able to put event on a limited PMC,
  * or 0 if not.
- * A event can only go on a limited PMC if it counts something
+ * An event can only go on a limited PMC if it counts something
  * that a limited PMC can count, doesn't require interrupts, and
  * doesn't exclude any processor mode.
  */
@@ -2301,3 +2280,27 @@ int register_power_pmu(struct power_pmu *pmu)
 			  power_pmu_prepare_cpu, NULL);
 	return 0;
 }
+
+#ifdef CONFIG_PPC64
+static int __init init_ppc64_pmu(void)
+{
+	/* run through all the pmu drivers one at a time */
+	if (!init_power5_pmu())
+		return 0;
+	else if (!init_power5p_pmu())
+		return 0;
+	else if (!init_power6_pmu())
+		return 0;
+	else if (!init_power7_pmu())
+		return 0;
+	else if (!init_power8_pmu())
+		return 0;
+	else if (!init_power9_pmu())
+		return 0;
+	else if (!init_ppc970_pmu())
+		return 0;
+	else
+		return init_generic_compat_pmu();
+}
+early_initcall(init_ppc64_pmu);
+#endif

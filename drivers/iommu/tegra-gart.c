@@ -267,7 +267,7 @@ static void gart_iommu_domain_free(struct iommu_domain *domain)
 }
 
 static int gart_iommu_map(struct iommu_domain *domain, unsigned long iova,
-			  phys_addr_t pa, size_t bytes, int prot)
+			  phys_addr_t pa, size_t bytes, int prot, gfp_t gfp)
 {
 	struct gart_domain *gart_domain = to_gart_domain(domain);
 	struct gart_device *gart = gart_domain->gart;
@@ -300,7 +300,7 @@ static int gart_iommu_map(struct iommu_domain *domain, unsigned long iova,
 }
 
 static size_t gart_iommu_unmap(struct iommu_domain *domain, unsigned long iova,
-			       size_t bytes)
+			       size_t bytes, struct iommu_iotlb_gather *gather)
 {
 	struct gart_domain *gart_domain = to_gart_domain(domain);
 	struct gart_device *gart = gart_domain->gart;
@@ -377,7 +377,6 @@ static const struct iommu_ops gart_iommu_ops = {
 	.remove_device	= gart_iommu_remove_device,
 	.device_group	= generic_device_group,
 	.map		= gart_iommu_map,
-	.map_sg		= default_iommu_map_sg,
 	.unmap		= gart_iommu_unmap,
 	.iova_to_phys	= gart_iommu_iova_to_phys,
 	.pgsize_bitmap	= GART_IOMMU_PGSIZES,

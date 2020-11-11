@@ -21,6 +21,7 @@ Core utilities
    local_ops
    workqueue
    genericirq
+   xarray
    flexible-arrays
    librs
    genalloc
@@ -28,6 +29,7 @@ Core utilities
    printk-formats
    circular-buffers
    gfp_mask-from-fs-io
+   padata
 
 Interfaces for kernel debugging
 ===============================

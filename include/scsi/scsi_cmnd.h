@@ -4,6 +4,7 @@
 
 #include <linux/dma-mapping.h>
 #include <linux/blkdev.h>
+#include <linux/t10-pi.h>
 #include <linux/list.h>
 #include <linux/types.h>
 #include <linux/timer.h>
@@ -11,10 +12,10 @@
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_request.h>
 
+#include <linux/rh_kabi.h>
+
 struct Scsi_Host;
 struct scsi_driver;
-
-#include <scsi/scsi_device.h>
 
 /*
  * MAX_COMMAND_SIZE is:
@@ -59,8 +60,13 @@ struct scsi_pointer {
 #define SCMD_TAGGED		(1 << 0)
 #define SCMD_UNCHECKED_ISA_DMA	(1 << 1)
 #define SCMD_INITIALIZED	(1 << 2)
+#define SCMD_LAST		(1 << 3)
 /* flags preserved across unprep / reprep */
 #define SCMD_PRESERVED_FLAGS	(SCMD_UNCHECKED_ISA_DMA | SCMD_INITIALIZED)
+
+/* for scmd->state */
+#define SCMD_STATE_COMPLETE	0
+#define SCMD_STATE_INFLIGHT	1
 
 struct scsi_cmnd {
 	struct scsi_request req;
@@ -120,11 +126,11 @@ struct scsi_cmnd {
 	struct request *request;	/* The command we are
 				   	   working on */
 
-#define SCSI_SENSE_BUFFERSIZE 	96
 	unsigned char *sense_buffer;
 				/* obtained by REQUEST SENSE when
 				 * CHECK CONDITION is received on original
-				 * command (auto-sense) */
+				 * command (auto-sense). Length must be
+				 * SCSI_SENSE_BUFFERSIZE bytes. */
 
 	/* Low-level done function - can be used by low-level driver to point
 	 *        to completion function.  Not used by mid/upper level code. */
@@ -146,8 +152,19 @@ struct scsi_cmnd {
 
 	int result;		/* Status code from lower level driver */
 	int flags;		/* Command flags */
+	unsigned long state;	/* Command completion state */
 
 	unsigned char tag;	/* SCSI-II queued command tag */
+
+	/* FOR RH USE ONLY
+	 *
+	 * The following padding has been inserted before ABI freeze to
+	 * allow extending the structure while preserving ABI.
+	 */
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 };
 
 /*
@@ -172,7 +189,7 @@ extern void *scsi_kmap_atomic_sg(struct scatterlist *sg, int sg_count,
 				 size_t *offset, size_t *len);
 extern void scsi_kunmap_atomic_sg(void *virt);
 
-extern int scsi_init_io(struct scsi_cmnd *cmd);
+extern blk_status_t scsi_init_io(struct scsi_cmnd *cmd);
 
 #ifdef CONFIG_SCSI_DMA
 extern int scsi_dma_map(struct scsi_cmnd *cmd);
@@ -209,23 +226,6 @@ static inline int scsi_get_resid(struct scsi_cmnd *cmd)
 
 #define scsi_for_each_sg(cmd, sg, nseg, __i)			\
 	for_each_sg(scsi_sglist(cmd), sg, nseg, __i)
-
-static inline int scsi_bidi_cmnd(struct scsi_cmnd *cmd)
-{
-	return blk_bidi_rq(cmd->request) &&
-		(cmd->request->next_rq->special != NULL);
-}
-
-static inline struct scsi_data_buffer *scsi_in(struct scsi_cmnd *cmd)
-{
-	return scsi_bidi_cmnd(cmd) ?
-		cmd->request->next_rq->special : &cmd->sdb;
-}
-
-static inline struct scsi_data_buffer *scsi_out(struct scsi_cmnd *cmd)
-{
-	return &cmd->sdb;
-}
 
 static inline int scsi_sg_copy_from_buffer(struct scsi_cmnd *cmd,
 					   void *buf, int buflen)
@@ -313,12 +313,6 @@ static inline unsigned int scsi_prot_interval(struct scsi_cmnd *scmd)
 	return scmd->device->sector_size;
 }
 
-static inline u32 scsi_prot_ref_tag(struct scsi_cmnd *scmd)
-{
-	return blk_rq_pos(scmd->request) >>
-		(ilog2(scsi_prot_interval(scmd)) - 9) & 0xffffffff;
-}
-
 static inline unsigned scsi_prot_sg_count(struct scsi_cmnd *cmd)
 {
 	return cmd->prot_sdb ? cmd->prot_sdb->table.nents : 0;
@@ -354,7 +348,7 @@ static inline void set_driver_byte(struct scsi_cmnd *cmd, char status)
 
 static inline unsigned scsi_transfer_length(struct scsi_cmnd *scmd)
 {
-	unsigned int xfer_len = scsi_out(scmd)->length;
+	unsigned int xfer_len = scmd->sdb.length;
 	unsigned int prot_interval = scsi_prot_interval(scmd);
 
 	if (scmd->prot_flags & SCSI_PROT_TRANSFER_PI)

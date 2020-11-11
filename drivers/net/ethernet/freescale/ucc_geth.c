@@ -1742,17 +1742,7 @@ static int init_phy(struct net_device *dev)
 	if (priv->phy_interface == PHY_INTERFACE_MODE_SGMII)
 		uec_configure_serdes(dev);
 
-	phydev->supported &= (SUPPORTED_MII |
-			      SUPPORTED_Autoneg |
-			      ADVERTISED_10baseT_Half |
-			      ADVERTISED_10baseT_Full |
-			      ADVERTISED_100baseT_Half |
-			      ADVERTISED_100baseT_Full);
-
-	if (priv->max_speed == SPEED_1000)
-		phydev->supported |= ADVERTISED_1000baseT_Full;
-
-	phydev->advertising = phydev->supported;
+	phy_set_max_speed(phydev, priv->max_speed);
 
 	priv->phydev = phydev;
 
@@ -3548,7 +3538,7 @@ static void ucc_geth_timeout_work(struct work_struct *work)
  * ucc_geth_timeout gets called when a packet has not been
  * transmitted after a set amount of time.
  */
-static void ucc_geth_timeout(struct net_device *dev)
+static void ucc_geth_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct ucc_geth_private *ugeth = netdev_priv(dev);
 

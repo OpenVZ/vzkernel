@@ -781,7 +781,8 @@ static int netlbl_unlabel_addrinfo_get(struct genl_info *info,
 {
 	u32 addr_len;
 
-	if (info->attrs[NLBL_UNLABEL_A_IPV4ADDR]) {
+	if (info->attrs[NLBL_UNLABEL_A_IPV4ADDR] &&
+	    info->attrs[NLBL_UNLABEL_A_IPV4MASK]) {
 		addr_len = nla_len(info->attrs[NLBL_UNLABEL_A_IPV4ADDR]);
 		if (addr_len != sizeof(struct in_addr) &&
 		    addr_len != nla_len(info->attrs[NLBL_UNLABEL_A_IPV4MASK]))
@@ -1316,57 +1317,57 @@ unlabel_staticlistdef_return:
 static const struct genl_ops netlbl_unlabel_genl_ops[] = {
 	{
 	.cmd = NLBL_UNLABEL_C_STATICADD,
+	.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 	.flags = GENL_ADMIN_PERM,
-	.policy = netlbl_unlabel_genl_policy,
 	.doit = netlbl_unlabel_staticadd,
 	.dumpit = NULL,
 	},
 	{
 	.cmd = NLBL_UNLABEL_C_STATICREMOVE,
+	.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 	.flags = GENL_ADMIN_PERM,
-	.policy = netlbl_unlabel_genl_policy,
 	.doit = netlbl_unlabel_staticremove,
 	.dumpit = NULL,
 	},
 	{
 	.cmd = NLBL_UNLABEL_C_STATICLIST,
+	.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 	.flags = 0,
-	.policy = netlbl_unlabel_genl_policy,
 	.doit = NULL,
 	.dumpit = netlbl_unlabel_staticlist,
 	},
 	{
 	.cmd = NLBL_UNLABEL_C_STATICADDDEF,
+	.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 	.flags = GENL_ADMIN_PERM,
-	.policy = netlbl_unlabel_genl_policy,
 	.doit = netlbl_unlabel_staticadddef,
 	.dumpit = NULL,
 	},
 	{
 	.cmd = NLBL_UNLABEL_C_STATICREMOVEDEF,
+	.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 	.flags = GENL_ADMIN_PERM,
-	.policy = netlbl_unlabel_genl_policy,
 	.doit = netlbl_unlabel_staticremovedef,
 	.dumpit = NULL,
 	},
 	{
 	.cmd = NLBL_UNLABEL_C_STATICLISTDEF,
+	.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 	.flags = 0,
-	.policy = netlbl_unlabel_genl_policy,
 	.doit = NULL,
 	.dumpit = netlbl_unlabel_staticlistdef,
 	},
 	{
 	.cmd = NLBL_UNLABEL_C_ACCEPT,
+	.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 	.flags = GENL_ADMIN_PERM,
-	.policy = netlbl_unlabel_genl_policy,
 	.doit = netlbl_unlabel_accept,
 	.dumpit = NULL,
 	},
 	{
 	.cmd = NLBL_UNLABEL_C_LIST,
+	.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 	.flags = 0,
-	.policy = netlbl_unlabel_genl_policy,
 	.doit = netlbl_unlabel_list,
 	.dumpit = NULL,
 	},
@@ -1377,6 +1378,7 @@ static struct genl_family netlbl_unlabel_gnl_family __ro_after_init = {
 	.name = NETLBL_NLTYPE_UNLABELED_NAME,
 	.version = NETLBL_PROTO_VERSION,
 	.maxattr = NLBL_UNLABEL_A_MAX,
+	.policy = netlbl_unlabel_genl_policy,
 	.module = THIS_MODULE,
 	.ops = netlbl_unlabel_genl_ops,
 	.n_ops = ARRAY_SIZE(netlbl_unlabel_genl_ops),

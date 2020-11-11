@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/dma-direct.h>
 #include <linux/dma-debug.h>
+#include <linux/iommu.h>
 #include <linux/dmar.h>
 #include <linux/export.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/gfp.h>
 #include <linux/pci.h>
 
@@ -17,7 +18,7 @@
 
 static bool disable_dac_quirk __read_mostly;
 
-const struct dma_map_ops *dma_ops = &dma_direct_ops;
+const struct dma_map_ops *dma_ops;
 EXPORT_SYMBOL(dma_ops);
 
 #ifdef CONFIG_IOMMU_DEBUG
@@ -34,24 +35,7 @@ int no_iommu __read_mostly;
 /* Set this to 1 if there is a HW IOMMU in the system */
 int iommu_detected __read_mostly = 0;
 
-/*
- * This variable becomes 1 if iommu=pt is passed on the kernel command line.
- * If this variable is 1, IOMMU implementations do no DMA translation for
- * devices and allow every device to access to whole physical memory. This is
- * useful if a user wants to use an IOMMU only for KVM device assignment to
- * guests and not for driver dma translation.
- */
-int iommu_pass_through __read_mostly;
-
 extern struct iommu_table_entry __iommu_table[], __iommu_table_end[];
-
-/* Dummy device used for NULL arguments (normally ISA). */
-struct device x86_dma_fallback_dev = {
-	.init_name = "fallback device",
-	.coherent_dma_mask = ISA_DMA_BIT_MASK,
-	.dma_mask = &x86_dma_fallback_dev.coherent_dma_mask,
-};
-EXPORT_SYMBOL(x86_dma_fallback_dev);
 
 void __init pci_iommu_alloc(void)
 {
@@ -70,18 +54,6 @@ void __init pci_iommu_alloc(void)
 		}
 	}
 }
-
-bool arch_dma_alloc_attrs(struct device **dev)
-{
-	if (!*dev)
-		*dev = &x86_dma_fallback_dev;
-
-	if (!is_device_dma_capable(*dev))
-		return false;
-	return true;
-
-}
-EXPORT_SYMBOL(arch_dma_alloc_attrs);
 
 /*
  * See <Documentation/x86/x86_64/boot-options.txt> for the iommu kernel
@@ -134,7 +106,9 @@ static __init int iommu_setup(char *p)
 			swiotlb = 1;
 #endif
 		if (!strncmp(p, "pt", 2))
-			iommu_pass_through = 1;
+			iommu_set_default_passthrough(true);
+		if (!strncmp(p, "nopt", 4))
+			iommu_set_default_translated(true);
 
 		gart_parse_options(p);
 
@@ -155,9 +129,6 @@ static int __init pci_iommu_init(void)
 {
 	struct iommu_table_entry *p;
 
-#ifdef CONFIG_PCI
-	dma_debug_add_bus(&pci_bus_type);
-#endif
 	x86_init.iommu.iommu_init();
 
 	for (p = __iommu_table; p < __iommu_table_end; p++) {
@@ -175,7 +146,7 @@ rootfs_initcall(pci_iommu_init);
 
 static int via_no_dac_cb(struct pci_dev *pdev, void *data)
 {
-	pdev->dev.dma_32bit_limit = true;
+	pdev->dev.bus_dma_limit = DMA_BIT_MASK(32);
 	return 0;
 }
 

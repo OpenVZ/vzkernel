@@ -28,6 +28,7 @@
 #define CPACF_KMCTR		0xb92d		/* MSA4 */
 #define CPACF_PRNO		0xb93c		/* MSA5 */
 #define CPACF_KMA		0xb929		/* MSA8 */
+#define CPACF_KDSA		0xb93a		/* MSA9 */
 
 /*
  * En/decryption modifier bits
@@ -92,6 +93,10 @@
 #define CPACF_KIMD_SHA_1	0x01
 #define CPACF_KIMD_SHA_256	0x02
 #define CPACF_KIMD_SHA_512	0x03
+#define CPACF_KIMD_SHA3_224	0x20
+#define CPACF_KIMD_SHA3_256	0x21
+#define CPACF_KIMD_SHA3_384	0x22
+#define CPACF_KIMD_SHA3_512	0x23
 #define CPACF_KIMD_GHASH	0x41
 
 /*
@@ -102,6 +107,10 @@
 #define CPACF_KLMD_SHA_1	0x01
 #define CPACF_KLMD_SHA_256	0x02
 #define CPACF_KLMD_SHA_512	0x03
+#define CPACF_KLMD_SHA3_224	0x20
+#define CPACF_KLMD_SHA3_256	0x21
+#define CPACF_KLMD_SHA3_384	0x22
+#define CPACF_KLMD_SHA3_512	0x23
 
 /*
  * function codes for the KMAC (COMPUTE MESSAGE AUTHENTICATION CODE)

@@ -9,7 +9,7 @@
  */
 
 #include <linux/version.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
 #include <linux/inetdevice.h>
@@ -1043,7 +1043,7 @@ static int vector_net_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		vector_send(vp->tx_queue);
 		return NETDEV_TX_OK;
 	}
-	if (skb->xmit_more) {
+	if (netdev_xmit_more()) {
 		mod_timer(&vp->tl, vp->coalesce);
 		return NETDEV_TX_OK;
 	}
@@ -1274,7 +1274,7 @@ static void vector_net_set_multicast_list(struct net_device *dev)
 	return;
 }
 
-static void vector_net_tx_timeout(struct net_device *dev)
+static void vector_net_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct vector_private *vp = netdev_priv(dev);
 
@@ -1580,7 +1580,7 @@ static int __init vector_setup(char *str)
 				 str, error);
 		return 1;
 	}
-	new = alloc_bootmem(sizeof(*new));
+	new = memblock_alloc(sizeof(*new), 0);
 	INIT_LIST_HEAD(&new->list);
 	new->unit = n;
 	new->arguments = str;

@@ -4,9 +4,12 @@
 
 #include "nouveau_display.h"
 
+struct nv50_msto;
+
 struct nv50_disp {
 	struct nvif_disp *disp;
 	struct nv50_core *core;
+	struct nvif_object caps;
 
 #define NV50_DISP_SYNC(c, o)                                ((c) * 0x040 + (o))
 #define NV50_DISP_CORE_NTFY                       NV50_DISP_SYNC(0      , 0x00)
@@ -41,9 +44,12 @@ struct nv50_disp_interlock {
 		NV50_DISP_INTERLOCK__SIZE
 	} type;
 	u32 data;
+	u32 wimm;
 };
 
 void corec37d_ntfy_init(struct nouveau_bo *, u32);
+
+void head907d_olut_load(struct drm_color_lut *, int size, void __iomem *);
 
 struct nv50_chan {
 	struct nvif_object user;
@@ -75,14 +81,14 @@ void evo_kick(u32 *, struct nv50_dmac *);
 
 #define evo_mthd(p, m, s) do {						\
 	const u32 _m = (m), _s = (s);					\
-	if (drm_debug & DRM_UT_KMS)					\
+	if (drm_debug_enabled(DRM_UT_KMS))				\
 		pr_err("%04x %d %s\n", _m, _s, __func__);		\
 	*((p)++) = ((_s << 18) | _m);					\
 } while(0)
 
 #define evo_data(p, d) do {						\
 	const u32 _d = (d);						\
-	if (drm_debug & DRM_UT_KMS)					\
+	if (drm_debug_enabled(DRM_UT_KMS))				\
 		pr_err("\t%08x\n", _d);					\
 	*((p)++) = _d;							\
 } while(0)

@@ -35,6 +35,8 @@
 #include <asm/sysreg.h>
 #include <asm/tlbflush.h>
 
+extern bool rodata_full;
+
 static inline void contextidr_thread_switch(struct task_struct *next)
 {
 	if (!IS_ENABLED(CONFIG_PID_IN_CONTEXTIDR))
@@ -72,6 +74,9 @@ extern u64 idmap_ptrs_per_pgd;
 
 static inline bool __cpu_uses_extended_idmap(void)
 {
+	if (IS_ENABLED(CONFIG_ARM64_USER_VA_BITS_52))
+		return false;
+
 	return unlikely(idmap_t0sz != TCR_T0SZ(VA_BITS));
 }
 
@@ -147,12 +152,25 @@ static inline void cpu_replace_ttbr1(pgd_t *pgdp)
 	extern ttbr_replace_func idmap_cpu_replace_ttbr1;
 	ttbr_replace_func *replace_phys;
 
-	phys_addr_t pgd_phys = virt_to_phys(pgdp);
+	/* phys_to_ttbr() zeros lower 2 bits of ttbr with 52-bit PA */
+	phys_addr_t ttbr1 = phys_to_ttbr(virt_to_phys(pgdp));
+
+	if (system_supports_cnp() && !WARN_ON(pgdp != lm_alias(swapper_pg_dir))) {
+		/*
+		 * cpu_replace_ttbr1() is used when there's a boot CPU
+		 * up (i.e. cpufeature framework is not up yet) and
+		 * latter only when we enable CNP via cpufeature's
+		 * enable() callback.
+		 * Also we rely on the cpu_hwcap bit being set before
+		 * calling the enable() function.
+		 */
+		ttbr1 |= TTBR_CNP_BIT;
+	}
 
 	replace_phys = (void *)__pa_symbol(idmap_cpu_replace_ttbr1);
 
 	cpu_install_idmap();
-	replace_phys(pgd_phys);
+	replace_phys(ttbr1);
 	cpu_uninstall_idmap();
 }
 
@@ -168,7 +186,10 @@ static inline void cpu_replace_ttbr1(pgd_t *pgdp)
 #define destroy_context(mm)		do { } while(0)
 void check_and_switch_context(struct mm_struct *mm, unsigned int cpu);
 
-#define init_new_context(tsk,mm)	({ atomic64_set(&(mm)->context.id, 0); 0; })
+#define init_new_context(tsk,mm)			\
+	({ atomic64_set(&(mm)->context.id, 0);		\
+	   atomic_set(&(mm)->context.nr_active_mm, 0);	\
+	   0; })
 
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
 static inline void update_saved_ttbr0(struct task_struct *tsk,
@@ -196,6 +217,23 @@ static inline void update_saved_ttbr0(struct task_struct *tsk,
 static inline void
 enter_lazy_tlb(struct mm_struct *mm, struct task_struct *tsk)
 {
+	unsigned int cpu = smp_processor_id();
+	if (per_cpu(cpu_not_lazy_tlb, cpu) &&
+	    is_idle_task(tsk)) {
+		per_cpu(cpu_not_lazy_tlb, cpu) = false;
+		if (!system_uses_ttbr0_pan())
+			cpu_set_reserved_ttbr0();
+		/*
+		 * DSB will flush the speculative pagetable walks on
+		 * the old asid. It's required before decreasing
+		 * nr_active_mm because after decreasing nr_active_mm
+		 * the tlbi broadcast may not happen on the unloaded
+		 * asid before the pagetables are freed.
+		 */
+		dsb(ish);
+		atomic_dec(&mm->context.nr_active_mm);
+	}
+	VM_WARN_ON(atomic_read(&mm->context.nr_active_mm) < 0);
 	/*
 	 * We don't actually care about the ttbr0 mapping, so point it at the
 	 * zero page.
@@ -203,10 +241,8 @@ enter_lazy_tlb(struct mm_struct *mm, struct task_struct *tsk)
 	update_saved_ttbr0(tsk, &init_mm);
 }
 
-static inline void __switch_mm(struct mm_struct *next)
+static inline void __switch_mm(struct mm_struct *next, unsigned int cpu)
 {
-	unsigned int cpu = smp_processor_id();
-
 	/*
 	 * init_mm.pgd does not contain any user mappings and it is always
 	 * active for kernel addresses in TTBR1. Just set the reserved TTBR0.
@@ -223,8 +259,27 @@ static inline void
 switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	  struct task_struct *tsk)
 {
-	if (prev != next)
-		__switch_mm(next);
+	unsigned int cpu = smp_processor_id();
+
+	if (!per_cpu(cpu_not_lazy_tlb, cpu)) {
+		per_cpu(cpu_not_lazy_tlb, cpu) = true;
+		atomic_inc(&next->context.nr_active_mm);
+		__switch_mm(next, cpu);
+	} else if (prev != next) {
+		atomic_inc(&next->context.nr_active_mm);
+		__switch_mm(next, cpu);
+		/*
+		 * DSB will flush the speculative pagetable walks on
+		 * the old asid. It's required before decreasing
+		 * nr_active_mm because after decreasing nr_active_mm
+		 * the tlbi broadcast may not happen on the unloaded
+		 * asid before the pagetables are freed.
+		 */
+		dsb(ish);
+		atomic_dec(&prev->context.nr_active_mm);
+	}
+	VM_WARN_ON(!atomic_read(&next->context.nr_active_mm));
+	VM_WARN_ON(atomic_read(&prev->context.nr_active_mm) < 0);
 
 	/*
 	 * Update the saved TTBR0_EL1 of the scheduled-in task as the previous

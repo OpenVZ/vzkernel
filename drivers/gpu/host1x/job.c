@@ -197,8 +197,7 @@ unpin:
 
 static int do_relocs(struct host1x_job *job, struct host1x_job_gather *g)
 {
-	u32 last_page = ~0;
-	void *cmdbuf_page_addr = NULL;
+	void *cmdbuf_addr = NULL;
 	struct host1x_bo *cmdbuf = g->bo;
 	unsigned int i;
 
@@ -220,28 +219,22 @@ static int do_relocs(struct host1x_job *job, struct host1x_job_gather *g)
 			goto patch_reloc;
 		}
 
-		if (last_page != reloc->cmdbuf.offset >> PAGE_SHIFT) {
-			if (cmdbuf_page_addr)
-				host1x_bo_kunmap(cmdbuf, last_page,
-						 cmdbuf_page_addr);
+		if (!cmdbuf_addr) {
+			cmdbuf_addr = host1x_bo_mmap(cmdbuf);
 
-			cmdbuf_page_addr = host1x_bo_kmap(cmdbuf,
-					reloc->cmdbuf.offset >> PAGE_SHIFT);
-			last_page = reloc->cmdbuf.offset >> PAGE_SHIFT;
-
-			if (unlikely(!cmdbuf_page_addr)) {
+			if (unlikely(!cmdbuf_addr)) {
 				pr_err("Could not map cmdbuf for relocation\n");
 				return -ENOMEM;
 			}
 		}
 
-		target = cmdbuf_page_addr + (reloc->cmdbuf.offset & ~PAGE_MASK);
+		target = cmdbuf_addr + reloc->cmdbuf.offset;
 patch_reloc:
 		*target = reloc_addr;
 	}
 
-	if (cmdbuf_page_addr)
-		host1x_bo_kunmap(cmdbuf, last_page, cmdbuf_page_addr);
+	if (cmdbuf_addr)
+		host1x_bo_munmap(cmdbuf, cmdbuf_addr);
 
 	return 0;
 }
@@ -447,7 +440,8 @@ out:
 	return err;
 }
 
-static inline int copy_gathers(struct host1x_job *job, struct device *dev)
+static inline int copy_gathers(struct device *host, struct host1x_job *job,
+			       struct device *dev)
 {
 	struct host1x_firewall fw;
 	size_t size = 0;
@@ -470,12 +464,12 @@ static inline int copy_gathers(struct host1x_job *job, struct device *dev)
 	 * Try a non-blocking allocation from a higher priority pools first,
 	 * as awaiting for the allocation here is a major performance hit.
 	 */
-	job->gather_copy_mapped = dma_alloc_wc(dev, size, &job->gather_copy,
+	job->gather_copy_mapped = dma_alloc_wc(host, size, &job->gather_copy,
 					       GFP_NOWAIT);
 
 	/* the higher priority allocation failed, try the generic-blocking */
 	if (!job->gather_copy_mapped)
-		job->gather_copy_mapped = dma_alloc_wc(dev, size,
+		job->gather_copy_mapped = dma_alloc_wc(host, size,
 						       &job->gather_copy,
 						       GFP_KERNEL);
 	if (!job->gather_copy_mapped)
@@ -523,7 +517,7 @@ int host1x_job_pin(struct host1x_job *job, struct device *dev)
 		goto out;
 
 	if (IS_ENABLED(CONFIG_TEGRA_HOST1X_FIREWALL)) {
-		err = copy_gathers(job, dev);
+		err = copy_gathers(host->dev, job, dev);
 		if (err)
 			goto out;
 	}
@@ -584,7 +578,7 @@ void host1x_job_unpin(struct host1x_job *job)
 	job->num_unpins = 0;
 
 	if (job->gather_copy_size)
-		dma_free_wc(job->channel->dev, job->gather_copy_size,
+		dma_free_wc(host->dev, job->gather_copy_size,
 			    job->gather_copy_mapped, job->gather_copy);
 }
 EXPORT_SYMBOL(host1x_job_unpin);

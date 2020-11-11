@@ -25,99 +25,83 @@
 
 #include "display_mode_lib.h"
 #include "dc_features.h"
+#include "dcn20/display_mode_vba_20.h"
+#include "dcn20/display_rq_dlg_calc_20.h"
+#include "dcn20/display_mode_vba_20v2.h"
+#include "dcn20/display_rq_dlg_calc_20v2.h"
+#include "dcn21/display_mode_vba_21.h"
+#include "dcn21/display_rq_dlg_calc_21.h"
 
-static const struct _vcs_dpi_ip_params_st dcn1_0_ip = {
-	.rob_buffer_size_kbytes = 64,
-	.det_buffer_size_kbytes = 164,
-	.dpte_buffer_size_in_pte_reqs = 42,
-	.dpp_output_buffer_pixels = 2560,
-	.opp_output_buffer_lines = 1,
-	.pixel_chunk_size_kbytes = 8,
-	.pte_enable = 1,
-	.pte_chunk_size_kbytes = 2,
-	.meta_chunk_size_kbytes = 2,
-	.writeback_chunk_size_kbytes = 2,
-	.line_buffer_size_bits = 589824,
-	.max_line_buffer_lines = 12,
-	.IsLineBufferBppFixed = 0,
-	.LineBufferFixedBpp = -1,
-	.writeback_luma_buffer_size_kbytes = 12,
-	.writeback_chroma_buffer_size_kbytes = 8,
-	.max_num_dpp = 4,
-	.max_num_wb = 2,
-	.max_dchub_pscl_bw_pix_per_clk = 4,
-	.max_pscl_lb_bw_pix_per_clk = 2,
-	.max_lb_vscl_bw_pix_per_clk = 4,
-	.max_vscl_hscl_bw_pix_per_clk = 4,
-	.max_hscl_ratio = 4,
-	.max_vscl_ratio = 4,
-	.hscl_mults = 4,
-	.vscl_mults = 4,
-	.max_hscl_taps = 8,
-	.max_vscl_taps = 8,
-	.dispclk_ramp_margin_percent = 1,
-	.underscan_factor = 1.10,
-	.min_vblank_lines = 14,
-	.dppclk_delay_subtotal = 90,
-	.dispclk_delay_subtotal = 42,
-	.dcfclk_cstate_latency = 10,
-	.max_inter_dcn_tile_repeaters = 8,
-	.can_vstartup_lines_exceed_vsync_plus_back_porch_lines_minus_one = 0,
-	.bug_forcing_LC_req_same_size_fixed = 0,
+const struct dml_funcs dml20_funcs = {
+	.validate = dml20_ModeSupportAndSystemConfigurationFull,
+	.recalculate = dml20_recalculate,
+	.rq_dlg_get_dlg_reg = dml20_rq_dlg_get_dlg_reg,
+	.rq_dlg_get_rq_reg = dml20_rq_dlg_get_rq_reg
 };
 
-static const struct _vcs_dpi_soc_bounding_box_st dcn1_0_soc = {
-	.sr_exit_time_us = 9.0,
-	.sr_enter_plus_exit_time_us = 11.0,
-	.urgent_latency_us = 4.0,
-	.writeback_latency_us = 12.0,
-	.ideal_dram_bw_after_urgent_percent = 80.0,
-	.max_request_size_bytes = 256,
-	.downspread_percent = 0.5,
-	.dram_page_open_time_ns = 50.0,
-	.dram_rw_turnaround_time_ns = 17.5,
-	.dram_return_buffer_per_channel_bytes = 8192,
-	.round_trip_ping_latency_dcfclk_cycles = 128,
-	.urgent_out_of_order_return_per_channel_bytes = 256,
-	.channel_interleave_bytes = 256,
-	.num_banks = 8,
-	.num_chans = 2,
-	.vmm_page_size_bytes = 4096,
-	.dram_clock_change_latency_us = 17.0,
-	.writeback_dram_clock_change_latency_us = 23.0,
-	.return_bus_width_bytes = 64,
+const struct dml_funcs dml20v2_funcs = {
+	.validate = dml20v2_ModeSupportAndSystemConfigurationFull,
+	.recalculate = dml20v2_recalculate,
+	.rq_dlg_get_dlg_reg = dml20v2_rq_dlg_get_dlg_reg,
+	.rq_dlg_get_rq_reg = dml20v2_rq_dlg_get_rq_reg
 };
 
-static void set_soc_bounding_box(struct _vcs_dpi_soc_bounding_box_st *soc, enum dml_project project)
+const struct dml_funcs dml21_funcs = {
+        .validate = dml21_ModeSupportAndSystemConfigurationFull,
+        .recalculate = dml21_recalculate,
+        .rq_dlg_get_dlg_reg = dml21_rq_dlg_get_dlg_reg,
+        .rq_dlg_get_rq_reg = dml21_rq_dlg_get_rq_reg
+};
+
+void dml_init_instance(struct display_mode_lib *lib,
+		const struct _vcs_dpi_soc_bounding_box_st *soc_bb,
+		const struct _vcs_dpi_ip_params_st *ip_params,
+		enum dml_project project)
 {
+	lib->soc = *soc_bb;
+	lib->ip = *ip_params;
+	lib->project = project;
 	switch (project) {
-	case DML_PROJECT_RAVEN1:
-		*soc = dcn1_0_soc;
+	case DML_PROJECT_NAVI10:
+		lib->funcs = dml20_funcs;
 		break;
+	case DML_PROJECT_NAVI10v2:
+		lib->funcs = dml20v2_funcs;
+		break;
+        case DML_PROJECT_DCN21:
+                lib->funcs = dml21_funcs;
+                break;
+
 	default:
-		ASSERT(0);
 		break;
 	}
 }
 
-static void set_ip_params(struct _vcs_dpi_ip_params_st *ip, enum dml_project project)
+const char *dml_get_status_message(enum dm_validation_status status)
 {
-	switch (project) {
-	case DML_PROJECT_RAVEN1:
-		*ip = dcn1_0_ip;
-		break;
-	default:
-		ASSERT(0);
-		break;
+	switch (status) {
+	case DML_VALIDATION_OK:                   return "Validation OK";
+	case DML_FAIL_SCALE_RATIO_TAP:            return "Scale ratio/tap";
+	case DML_FAIL_SOURCE_PIXEL_FORMAT:        return "Source pixel format";
+	case DML_FAIL_VIEWPORT_SIZE:              return "Viewport size";
+	case DML_FAIL_TOTAL_V_ACTIVE_BW:          return "Total vertical active bandwidth";
+	case DML_FAIL_DIO_SUPPORT:                return "DIO support";
+	case DML_FAIL_NOT_ENOUGH_DSC:             return "Not enough DSC Units";
+	case DML_FAIL_DSC_CLK_REQUIRED:           return "DSC clock required";
+	case DML_FAIL_URGENT_LATENCY:             return "Urgent latency";
+	case DML_FAIL_REORDERING_BUFFER:          return "Re-ordering buffer";
+	case DML_FAIL_DISPCLK_DPPCLK:             return "Dispclk and Dppclk";
+	case DML_FAIL_TOTAL_AVAILABLE_PIPES:      return "Total available pipes";
+	case DML_FAIL_NUM_OTG:                    return "Number of OTG";
+	case DML_FAIL_WRITEBACK_MODE:             return "Writeback mode";
+	case DML_FAIL_WRITEBACK_LATENCY:          return "Writeback latency";
+	case DML_FAIL_WRITEBACK_SCALE_RATIO_TAP:  return "Writeback scale ratio/tap";
+	case DML_FAIL_CURSOR_SUPPORT:             return "Cursor support";
+	case DML_FAIL_PITCH_SUPPORT:              return "Pitch support";
+	case DML_FAIL_PTE_BUFFER_SIZE:            return "PTE buffer size";
+	case DML_FAIL_DSC_INPUT_BPC:              return "DSC input bpc";
+	case DML_FAIL_PREFETCH_SUPPORT:           return "Prefetch support";
+	case DML_FAIL_V_RATIO_PREFETCH:           return "Vertical ratio prefetch";
+	default:                                  return "Unknown Status";
 	}
 }
-
-void dml_init_instance(struct display_mode_lib *lib, enum dml_project project)
-{
-	if (lib->project != project) {
-		set_soc_bounding_box(&lib->soc, project);
-		set_ip_params(&lib->ip, project);
-		lib->project = project;
-	}
-}
-

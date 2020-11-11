@@ -364,15 +364,8 @@ ltq_etop_mdio_probe(struct net_device *dev)
 		return PTR_ERR(phydev);
 	}
 
-	phydev->supported &= (SUPPORTED_10baseT_Half
-			      | SUPPORTED_10baseT_Full
-			      | SUPPORTED_100baseT_Half
-			      | SUPPORTED_100baseT_Full
-			      | SUPPORTED_Autoneg
-			      | SUPPORTED_MII
-			      | SUPPORTED_TP);
+	phy_set_max_speed(phydev, SPEED_100);
 
-	phydev->advertising = phydev->supported;
 	phy_attached_info(phydev);
 
 	return 0;
@@ -563,14 +556,6 @@ ltq_etop_set_multicast_list(struct net_device *dev)
 	spin_unlock_irqrestore(&priv->lock, flags);
 }
 
-static u16
-ltq_etop_select_queue(struct net_device *dev, struct sk_buff *skb,
-		      void *accel_priv, select_queue_fallback_t fallback)
-{
-	/* we are currently only using the first queue */
-	return 0;
-}
-
 static int
 ltq_etop_init(struct net_device *dev)
 {
@@ -615,7 +600,7 @@ err_hw:
 }
 
 static void
-ltq_etop_tx_timeout(struct net_device *dev)
+ltq_etop_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	int err;
 
@@ -641,7 +626,7 @@ static const struct net_device_ops ltq_eth_netdev_ops = {
 	.ndo_set_mac_address = ltq_etop_set_mac_address,
 	.ndo_validate_addr = eth_validate_addr,
 	.ndo_set_rx_mode = ltq_etop_set_multicast_list,
-	.ndo_select_queue = ltq_etop_select_queue,
+	.ndo_select_queue = dev_pick_tx_zero,
 	.ndo_init = ltq_etop_init,
 	.ndo_tx_timeout = ltq_etop_tx_timeout,
 };

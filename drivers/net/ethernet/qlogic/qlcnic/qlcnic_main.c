@@ -56,7 +56,7 @@ static int qlcnic_probe(struct pci_dev *pdev, const struct pci_device_id *ent);
 static void qlcnic_remove(struct pci_dev *pdev);
 static int qlcnic_open(struct net_device *netdev);
 static int qlcnic_close(struct net_device *netdev);
-static void qlcnic_tx_timeout(struct net_device *netdev);
+static void qlcnic_tx_timeout(struct net_device *netdev, unsigned int txqueue);
 static void qlcnic_attach_work(struct work_struct *work);
 static void qlcnic_fwinit_work(struct work_struct *work);
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -399,7 +399,8 @@ static int qlcnic_fdb_del(struct ndmsg *ndm, struct nlattr *tb[],
 
 static int qlcnic_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
 			struct net_device *netdev,
-			const unsigned char *addr, u16 vid, u16 flags)
+			const unsigned char *addr, u16 vid, u16 flags,
+			struct netlink_ext_ack *extack)
 {
 	struct qlcnic_adapter *adapter = netdev_priv(netdev);
 	int err = 0;
@@ -3075,7 +3076,7 @@ static void qlcnic_dump_rings(struct qlcnic_adapter *adapter)
 
 }
 
-static void qlcnic_tx_timeout(struct net_device *netdev)
+static void qlcnic_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 {
 	struct qlcnic_adapter *adapter = netdev_priv(netdev);
 
@@ -3975,7 +3976,6 @@ static void qlcnic_82xx_io_resume(struct pci_dev *pdev)
 	u32 state;
 	struct qlcnic_adapter *adapter = pci_get_drvdata(pdev);
 
-	pci_cleanup_aer_uncorrect_error_status(pdev);
 	state = QLC_SHARED_REG_RD32(adapter, QLCNIC_CRB_DEV_STATE);
 	if (state == QLCNIC_DEV_READY && test_and_clear_bit(__QLCNIC_AER,
 							    &adapter->state))
@@ -4173,13 +4173,14 @@ static void
 qlcnic_config_indev_addr(struct qlcnic_adapter *adapter,
 			struct net_device *dev, unsigned long event)
 {
+	const struct in_ifaddr *ifa;
 	struct in_device *indev;
 
 	indev = in_dev_get(dev);
 	if (!indev)
 		return;
 
-	for_ifa(indev) {
+	in_dev_for_each_ifa_rtnl(ifa, indev) {
 		switch (event) {
 		case NETDEV_UP:
 			qlcnic_config_ipaddr(adapter,
@@ -4192,7 +4193,7 @@ qlcnic_config_indev_addr(struct qlcnic_adapter *adapter,
 		default:
 			break;
 		}
-	} endfor_ifa(indev);
+	}
 
 	in_dev_put(indev);
 }

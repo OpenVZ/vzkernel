@@ -15,7 +15,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <sys/resource.h>
-#include "libbpf.h"
+#include <bpf/libbpf.h>
 #include "bpf_load.h"
 #include "trace_helpers.h"
 
@@ -28,6 +28,11 @@ static void print_ksym(__u64 addr)
 	if (!addr)
 		return;
 	sym = ksym_search(addr);
+	if (!sym) {
+		printf("ksym not found. Is kallsyms loaded?\n");
+		return;
+	}
+
 	if (PRINT_RAW_ADDR)
 		printf("%s/%llx;", sym->name, addr);
 	else

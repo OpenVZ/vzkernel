@@ -91,6 +91,8 @@ static char *rtas_event_type(int type)
 			return "Dump Notification Event";
 		case RTAS_TYPE_PRRN:
 			return "Platform Resource Reassignment Event";
+		case RTAS_TYPE_HOTPLUG:
+			return "Hotplug Event";
 	}
 
 	return rtas_type[0];
@@ -274,25 +276,14 @@ void pSeries_log_error(char *buf, unsigned int err_type, int fatal)
 }
 
 #ifdef CONFIG_PPC_PSERIES
-static s32 prrn_update_scope;
-
-static void prrn_work_fn(struct work_struct *work)
+static void handle_prrn_event(s32 scope)
 {
 	/*
 	 * For PRRN, we must pass the negative of the scope value in
 	 * the RTAS event.
 	 */
-	pseries_devicetree_update(-prrn_update_scope);
+	pseries_devicetree_update(-scope);
 	numa_update_cpu_topology(false);
-}
-
-static DECLARE_WORK(prrn_work, prrn_work_fn);
-
-static void prrn_schedule_update(u32 scope)
-{
-	flush_work(&prrn_work);
-	prrn_update_scope = scope;
-	schedule_work(&prrn_work);
 }
 
 static void handle_rtas_event(const struct rtas_error_log *log)
@@ -303,7 +294,7 @@ static void handle_rtas_event(const struct rtas_error_log *log)
 	/* For PRRN Events the extended log length is used to denote
 	 * the scope for calling rtas update-nodes.
 	 */
-	prrn_schedule_update(rtas_error_extended_log_length(log));
+	handle_prrn_event(rtas_error_extended_log_length(log));
 }
 
 #else
@@ -342,7 +333,7 @@ static ssize_t rtas_log_read(struct file * file, char __user * buf,
 
 	count = rtas_error_log_buffer_max;
 
-	if (!access_ok(VERIFY_WRITE, buf, count))
+	if (!access_ok(buf, count))
 		return -EFAULT;
 
 	tmp = kmalloc(count, GFP_KERNEL);

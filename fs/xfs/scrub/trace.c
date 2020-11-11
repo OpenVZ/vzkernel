@@ -10,21 +10,15 @@
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
 #include "xfs_mount.h"
-#include "xfs_defer.h"
-#include "xfs_da_format.h"
 #include "xfs_inode.h"
 #include "xfs_btree.h"
-#include "xfs_trans.h"
-#include "xfs_bit.h"
-#include "scrub/xfs_scrub.h"
 #include "scrub/scrub.h"
-#include "scrub/common.h"
 
 /* Figure out which block the btree cursor was pointing to. */
 static inline xfs_fsblock_t
-xfs_scrub_btree_cur_fsbno(
-	struct xfs_btree_cur		*cur,
-	int				level)
+xchk_btree_cur_fsbno(
+	struct xfs_btree_cur	*cur,
+	int			level)
 {
 	if (level < cur->bc_nlevels && cur->bc_bufs[level])
 		return XFS_DADDR_TO_FSB(cur->bc_mp, cur->bc_bufs[level]->b_bn);

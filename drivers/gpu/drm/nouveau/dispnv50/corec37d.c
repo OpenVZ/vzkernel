@@ -22,9 +22,26 @@
 #include "core.h"
 #include "head.h"
 
+#include <nvif/class.h>
 #include <nouveau_bo.h>
 
-static void
+#include <nvif/timer.h>
+
+void
+corec37d_wndw_owner(struct nv50_core *core)
+{
+	const u32 windows = 8; /*XXX*/
+	u32 *push, i;
+	if ((push = evo_wait(&core->chan, 2 * windows))) {
+		for (i = 0; i < windows; i++) {
+			evo_mthd(push, 0x1000 + (i * 0x080), 1);
+			evo_data(push, i >> 1);
+		}
+		evo_kick(push, &core->chan);
+	}
+}
+
+void
 corec37d_update(struct nv50_core *core, u32 *interlock, bool ntfy)
 {
 	u32 *push;
@@ -71,25 +88,47 @@ corec37d_ntfy_init(struct nouveau_bo *bo, u32 offset)
 	nouveau_bo_wr32(bo, offset / 4 + 3, 0x00000000);
 }
 
-void
+int corec37d_caps_init(struct nouveau_drm *drm, struct nv50_disp *disp)
+{
+	int ret;
+
+	ret = nvif_object_init(&disp->disp->object, 0, GV100_DISP_CAPS,
+			       NULL, 0, &disp->caps);
+	if (ret) {
+		NV_ERROR(drm,
+			 "Failed to init notifier caps region: %d\n",
+			 ret);
+		return ret;
+	}
+
+	ret = nvif_object_map(&disp->caps, NULL, 0);
+	if (ret) {
+		NV_ERROR(drm,
+			 "Failed to map notifier caps region: %d\n",
+			 ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static void
 corec37d_init(struct nv50_core *core)
 {
 	const u32 windows = 8; /*XXX*/
 	u32 *push, i;
-	if ((push = evo_wait(&core->chan, 2 + 6 * windows + 2))) {
+	if ((push = evo_wait(&core->chan, 2 + 5 * windows))) {
 		evo_mthd(push, 0x0208, 1);
 		evo_data(push, core->chan.sync.handle);
 		for (i = 0; i < windows; i++) {
-			evo_mthd(push, 0x1000 + (i * 0x080), 3);
-			evo_data(push, i >> 1);
-			evo_data(push, 0x00000017);
+			evo_mthd(push, 0x1004 + (i * 0x080), 2);
+			evo_data(push, 0x0000001f);
 			evo_data(push, 0x00000000);
 			evo_mthd(push, 0x1010 + (i * 0x080), 1);
 			evo_data(push, 0x00127fff);
 		}
-		evo_mthd(push, 0x0200, 1);
-		evo_data(push, 0x00000001);
 		evo_kick(push, &core->chan);
+		core->assign_windows = true;
 	}
 }
 
@@ -97,8 +136,10 @@ static const struct nv50_core_func
 corec37d = {
 	.init = corec37d_init,
 	.ntfy_init = corec37d_ntfy_init,
+	.caps_init = corec37d_caps_init,
 	.ntfy_wait_done = corec37d_ntfy_wait_done,
 	.update = corec37d_update,
+	.wndw.owner = corec37d_wndw_owner,
 	.head = &headc37d,
 	.sor = &sorc37d,
 };

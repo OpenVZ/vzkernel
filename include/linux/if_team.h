@@ -74,6 +74,11 @@ struct team_port {
 	long mode_priv[0];
 };
 
+static inline struct team_port *team_port_get_rcu(const struct net_device *dev)
+{
+	return rcu_dereference(dev->rx_handler_data);
+}
+
 static inline bool team_port_enabled(struct team_port *port)
 {
 	return port->index != -1;
@@ -82,6 +87,19 @@ static inline bool team_port_enabled(struct team_port *port)
 static inline bool team_port_txable(struct team_port *port)
 {
 	return port->linkup && team_port_enabled(port);
+}
+
+static inline bool team_port_dev_txable(const struct net_device *port_dev)
+{
+	struct team_port *port;
+	bool txable;
+
+	rcu_read_lock();
+	port = team_port_get_rcu(port_dev);
+	txable = port ? team_port_txable(port) : false;
+	rcu_read_unlock();
+
+	return txable;
 }
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -209,6 +227,7 @@ struct team {
 		atomic_t count_pending;
 		struct delayed_work dw;
 	} mcast_rejoin;
+	struct lock_class_key team_lock_key;
 	long mode_priv[TEAM_MODE_PRIV_LONGS];
 };
 
