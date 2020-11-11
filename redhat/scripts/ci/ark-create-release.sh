@@ -33,6 +33,7 @@ if [ -n "$BASE_RELEASE" ]; then
 fi
 
 git checkout os-build
+touch localversion
 make dist-release
 
 if git tag -v "$UPSTREAM_REF" > /dev/null 2>&1; then
@@ -50,7 +51,6 @@ for patch_url in $MR_PATCHES; do
 	curl -sL "$patch_url" | git am
 done
 
-touch localversion
 make dist-release
 make dist-release-tag
 RELEASE=$(git describe)
