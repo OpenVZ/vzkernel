@@ -55,13 +55,13 @@ struct vz_load_avg {
 };
 
 struct vz_cpu_stat {
-	unsigned long			user_jif;
-	unsigned long			nice_jif;
-	unsigned long			system_jif;
-	unsigned long			uptime_jif;
-	__u64				idle_clk;
-	__u64				strv_clk;
-	__u64				uptime_clk;
+	unsigned long			user_jif;	/* clock_t */
+	unsigned long			nice_jif;	/* clock_t */
+	unsigned long			system_jif	/* clock_t */;
+	unsigned long			uptime_jif	/* clock_t */;
+	__u64				idle_clk;	/* ns */
+	__u64				strv_clk;	/* deprecated */
+	__u64				uptime_clk;	/* ns */
 	struct vz_load_avg		avenrun[3];	/* loadavg data */
 };
 
