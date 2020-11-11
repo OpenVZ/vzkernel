@@ -304,9 +304,13 @@ dist-release-changed: setup-source
 	@cp $(SOURCES)/$(CHANGELOG) $(REDHAT)/$(CHANGELOG)
 	@echo $(MARKER) > $(REDHAT)/marker
 	@# if neither changelog nor marker was updated, skip bumping a release
-	git diff-index --quiet HEAD && (echo "Nothing changed, skipping updates"; exit 0) || true
-	$(REDHAT)/scripts/new_release.sh $(REDHAT) $(__YSTREAM) $(__ZSTREAM)
-	@$(MAKE) dist-release-finish
+	@git update-index -q --really-refresh
+	@if git diff-index --quiet HEAD; then \
+		echo "Nothing changed, skipping updates"; \
+	else \
+		$(REDHAT)/scripts/new_release.sh $(REDHAT) $(__YSTREAM) $(__ZSTREAM); \
+		$(MAKE) dist-release-finish; \
+	fi
 dist-release: dist-clean-sources
 	@$(MAKE) dist-release-changed
 dist-release-tag:
