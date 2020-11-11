@@ -19,6 +19,7 @@
 #include <linux/compat.h>
 #include <linux/uaccess.h>
 #include <linux/mount.h>
+#include <linux/uuid.h>
 
 #include "f2fs.h"
 #include "node.h"

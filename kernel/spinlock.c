@@ -115,6 +115,20 @@ BUILD_LOCK_OPS(write, rwlock);
 
 #endif
 
+/* BEGIN_SPINLOCK */
+#ifdef CONFIG_QUEUED_SPINLOCKS
+#undef _raw_spin_lock
+#undef _raw_spin_lock_irq
+
+void __lockfunc _raw_qspin_lock(raw_spinlock_t *lock)
+		__attribute__((weak, alias("_raw_spin_lock")));
+EXPORT_SYMBOL(_raw_qspin_lock);
+
+void __lockfunc _raw_qspin_lock_irq(raw_spinlock_t *lock)
+		__attribute__((weak, alias("_raw_spin_lock_irq")));
+EXPORT_SYMBOL(_raw_qspin_lock_irq);
+#endif
+
 #ifndef CONFIG_INLINE_SPIN_TRYLOCK
 int __lockfunc _raw_spin_trylock(raw_spinlock_t *lock)
 {
@@ -163,13 +177,14 @@ void __lockfunc _raw_spin_lock_bh(raw_spinlock_t *lock)
 EXPORT_SYMBOL(_raw_spin_lock_bh);
 #endif
 
-#ifdef CONFIG_UNINLINE_SPIN_UNLOCK
+#ifndef CONFIG_UNINLINE_SPIN_UNLOCK
+#undef _raw_spin_unlock
+#endif
 void __lockfunc _raw_spin_unlock(raw_spinlock_t *lock)
 {
 	__raw_spin_unlock(lock);
 }
 EXPORT_SYMBOL(_raw_spin_unlock);
-#endif
 
 #ifndef CONFIG_INLINE_SPIN_UNLOCK_IRQRESTORE
 void __lockfunc _raw_spin_unlock_irqrestore(raw_spinlock_t *lock, unsigned long flags)
@@ -194,7 +209,9 @@ void __lockfunc _raw_spin_unlock_bh(raw_spinlock_t *lock)
 }
 EXPORT_SYMBOL(_raw_spin_unlock_bh);
 #endif
+/* END_SPINLOCK */
 
+/* BEGIN_RWLOCK */
 #ifndef CONFIG_INLINE_READ_TRYLOCK
 int __lockfunc _raw_read_trylock(rwlock_t *lock)
 {
@@ -338,6 +355,7 @@ void __lockfunc _raw_write_unlock_bh(rwlock_t *lock)
 }
 EXPORT_SYMBOL(_raw_write_unlock_bh);
 #endif
+/* END_RWLOCK */
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 
@@ -348,6 +366,15 @@ void __lockfunc _raw_spin_lock_nested(raw_spinlock_t *lock, int subclass)
 	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
 }
 EXPORT_SYMBOL(_raw_spin_lock_nested);
+
+void __lockfunc _raw_spin_lock_bh_nested(raw_spinlock_t *lock, int subclass)
+{
+	local_bh_disable();
+	preempt_disable();
+	spin_acquire(&lock->dep_map, subclass, 0, _RET_IP_);
+	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+}
+EXPORT_SYMBOL(_raw_spin_lock_bh_nested);
 
 unsigned long __lockfunc _raw_spin_lock_irqsave_nested(raw_spinlock_t *lock,
 						   int subclass)

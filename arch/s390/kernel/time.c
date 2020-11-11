@@ -39,6 +39,7 @@
 #include <linux/gfp.h>
 #include <linux/kprobes.h>
 #include <asm/uaccess.h>
+#include <asm/facility.h>
 #include <asm/delay.h>
 #include <asm/div64.h>
 #include <asm/vdso.h>
@@ -57,6 +58,25 @@ u64 sched_clock_base_cc = -1;	/* Force to data section. */
 EXPORT_SYMBOL_GPL(sched_clock_base_cc);
 
 static DEFINE_PER_CPU(struct clock_event_device, comparators);
+
+unsigned char ptff_function_mask[16];
+unsigned long lpar_offset;
+
+/*
+ * Get time offsets with PTFF
+ */
+void __init ptff_init(void)
+{
+	struct ptff_qto qto;
+
+	if (!test_facility(28))
+		return;
+	ptff(&ptff_function_mask, sizeof(ptff_function_mask), PTFF_QAF);
+
+	/* get LPAR offset */
+	if (ptff_query(PTFF_QTO) && ptff(&qto, sizeof(qto), PTFF_QTO) == 0)
+		lpar_offset = qto.tod_epoch_difference;
+}
 
 /*
  * Scheduler clock - returns current time in nanosec units.
@@ -92,7 +112,6 @@ void clock_comparator_work(void)
 	struct clock_event_device *cd;
 
 	S390_lowcore.clock_comparator = -1ULL;
-	set_clock_comparator(S390_lowcore.clock_comparator);
 	cd = &__get_cpu_var(comparators);
 	cd->event_handler(cd);
 }
@@ -109,20 +128,10 @@ static void fixup_clock_comparator(unsigned long long delta)
 	set_clock_comparator(S390_lowcore.clock_comparator);
 }
 
-static int s390_next_ktime(ktime_t expires,
+static int s390_next_event(unsigned long delta,
 			   struct clock_event_device *evt)
 {
-	struct timespec ts;
-	u64 nsecs;
-
-	ts.tv_sec = ts.tv_nsec = 0;
-	monotonic_to_bootbased(&ts);
-	nsecs = ktime_to_ns(ktime_add(timespec_to_ktime(ts), expires));
-	do_div(nsecs, 125);
-	S390_lowcore.clock_comparator = sched_clock_base_cc + (nsecs << 9);
-	/* Program the maximum value if we have an overflow (== year 2042) */
-	if (unlikely(S390_lowcore.clock_comparator < sched_clock_base_cc))
-		S390_lowcore.clock_comparator = -1ULL;
+	S390_lowcore.clock_comparator = get_tod_clock() + delta;
 	set_clock_comparator(S390_lowcore.clock_comparator);
 	return 0;
 }
@@ -147,15 +156,14 @@ void init_cpu_timer(void)
 	cpu = smp_processor_id();
 	cd = &per_cpu(comparators, cpu);
 	cd->name		= "comparator";
-	cd->features		= CLOCK_EVT_FEAT_ONESHOT |
-				  CLOCK_EVT_FEAT_KTIME;
+	cd->features		= CLOCK_EVT_FEAT_ONESHOT;
 	cd->mult		= 16777;
 	cd->shift		= 12;
 	cd->min_delta_ns	= 1;
 	cd->max_delta_ns	= LONG_MAX;
 	cd->rating		= 400;
 	cd->cpumask		= cpumask_of(cpu);
-	cd->set_next_ktime	= s390_next_ktime;
+	cd->set_next_event	= s390_next_event;
 	cd->set_mode		= s390_set_mode;
 
 	clockevents_register_device(cd);
@@ -202,7 +210,7 @@ void read_boot_clock(struct timespec *ts)
 	tod_to_timeval(sched_clock_base_cc - TOD_UNIX_EPOCH, ts);
 }
 
-static cycle_t read_tod_clock(struct clocksource *cs)
+static u64 read_tod_clock(struct clocksource *cs)
 {
 	return get_tod_clock();
 }
@@ -222,21 +230,43 @@ struct clocksource * __init clocksource_default_clock(void)
 	return &clocksource_tod;
 }
 
-void update_vsyscall_old(struct timespec *wall_time, struct timespec *wtm,
-			struct clocksource *clock, u32 mult)
+void update_vsyscall(struct timekeeper *tk)
 {
-	if (clock != &clocksource_tod)
+	u64 nsecps;
+
+	if (tk->tkr_mono.clock != &clocksource_tod)
 		return;
 
 	/* Make userspace gettimeofday spin until we're done. */
 	++vdso_data->tb_update_count;
 	smp_wmb();
-	vdso_data->xtime_tod_stamp = clock->cycle_last;
-	vdso_data->xtime_clock_sec = wall_time->tv_sec;
-	vdso_data->xtime_clock_nsec = wall_time->tv_nsec;
-	vdso_data->wtom_clock_sec = wtm->tv_sec;
-	vdso_data->wtom_clock_nsec = wtm->tv_nsec;
-	vdso_data->ntp_mult = mult;
+	vdso_data->xtime_tod_stamp = tk->tkr_mono.clock->cycle_last;
+	vdso_data->xtime_clock_sec = tk->xtime_sec;
+	vdso_data->xtime_clock_nsec = tk->tkr_mono.xtime_nsec;
+	vdso_data->wtom_clock_sec =
+		tk->xtime_sec + tk->wall_to_monotonic.tv_sec;
+	vdso_data->wtom_clock_nsec = tk->tkr_mono.xtime_nsec +
+		+ (tk->wall_to_monotonic.tv_nsec << tk->tkr_mono.shift);
+	nsecps = (u64) NSEC_PER_SEC << tk->tkr_mono.shift;
+	while (vdso_data->wtom_clock_nsec >= nsecps) {
+		vdso_data->wtom_clock_nsec -= nsecps;
+		vdso_data->wtom_clock_sec++;
+	}
+
+	vdso_data->xtime_coarse_sec = tk->xtime_sec;
+	vdso_data->xtime_coarse_nsec =
+		(long)(tk->tkr_mono.xtime_nsec >> tk->tkr_mono.shift);
+	vdso_data->wtom_coarse_sec =
+		vdso_data->xtime_coarse_sec + tk->wall_to_monotonic.tv_sec;
+	vdso_data->wtom_coarse_nsec =
+		vdso_data->xtime_coarse_nsec + tk->wall_to_monotonic.tv_nsec;
+	while (vdso_data->wtom_coarse_nsec >= NSEC_PER_SEC) {
+		vdso_data->wtom_coarse_nsec -= NSEC_PER_SEC;
+		vdso_data->wtom_coarse_sec++;
+	}
+
+	vdso_data->tk_mult = tk->tkr_mono.mult;
+	vdso_data->tk_shift = tk->tkr_mono.shift;
 	smp_wmb();
 	++vdso_data->tb_update_count;
 }
@@ -265,11 +295,11 @@ void __init time_init(void)
 	stp_reset();
 
 	/* request the clock comparator external interrupt */
-	if (register_external_interrupt(0x1004, clock_comparator_interrupt))
-                panic("Couldn't request external interrupt 0x1004");
+	if (register_external_irq(EXT_IRQ_CLK_COMP, clock_comparator_interrupt))
+		panic("Couldn't request external interrupt 0x1004");
 
 	/* request the timing alert external interrupt */
-	if (register_external_interrupt(0x1406, timing_alert_interrupt))
+	if (register_external_irq(EXT_IRQ_TIMING_ALERT, timing_alert_interrupt))
 		panic("Couldn't request external interrupt 0x1406");
 
 	if (clocksource_register(&clocksource_tod) != 0)
@@ -329,11 +359,11 @@ static unsigned long clock_sync_flags;
 #define CLOCK_SYNC_STP		3
 
 /*
- * The synchronous get_clock function. It will write the current clock
- * value to the clock pointer and return 0 if the clock is in sync with
- * the external time source. If the clock mode is local it will return
- * -EOPNOTSUPP and -EAGAIN if the clock is not in sync with the external
- * reference.
+ * The get_clock function for the physical clock. It will get the current
+ * TOD clock, subtract the LPAR offset and write the result to *clock.
+ * The function returns 0 if the clock is in sync with the external time
+ * source. If the clock mode is local it will return -EOPNOTSUPP and
+ * -EAGAIN if the clock is not in sync with the external reference.
  */
 int get_sync_clock(unsigned long long *clock)
 {
@@ -342,7 +372,7 @@ int get_sync_clock(unsigned long long *clock)
 
 	sw_ptr = &get_cpu_var(clock_sync_word);
 	sw0 = atomic_read(sw_ptr);
-	*clock = get_tod_clock();
+	*clock = get_tod_clock() - lpar_offset;
 	sw1 = atomic_read(sw_ptr);
 	put_cpu_var(clock_sync_word);
 	if (sw0 == sw1 && (sw0 & 0x80000000U))
@@ -744,6 +774,7 @@ static int etr_sync_clock(void *data)
 	unsigned long long clock, old_clock, delay, delta;
 	struct clock_sync_data *etr_sync;
 	struct etr_aib *sync_port, *aib;
+	struct ptff_qto qto;
 	int port;
 	int rc;
 
@@ -787,6 +818,10 @@ static int etr_sync_clock(void *data)
 			etr_sync->in_sync = -EAGAIN;
 			rc = -EAGAIN;
 		} else {
+			if (ptff_query(PTFF_QTO) &&
+			    ptff(&qto, sizeof(qto), PTFF_QTO) == 0)
+				/* Update LPAR offset */
+				lpar_offset = qto.tod_epoch_difference;
 			etr_sync->in_sync = 1;
 			rc = 0;
 		}
@@ -1517,6 +1552,7 @@ static int stp_sync_clock(void *data)
 	static int first;
 	unsigned long long old_clock, delta;
 	struct clock_sync_data *stp_sync;
+	struct ptff_qto qto;
 	int rc;
 
 	stp_sync = data;
@@ -1541,6 +1577,10 @@ static int stp_sync_clock(void *data)
 		rc = chsc_sstpc(stp_page, STP_OP_SYNC, 0);
 		if (rc == 0) {
 			delta = adjust_time(old_clock, get_tod_clock(), 0);
+			if (ptff_query(PTFF_QTO) &&
+			    ptff(&qto, sizeof(qto), PTFF_QTO) == 0)
+				/* Update LPAR offset */
+				lpar_offset = qto.tod_epoch_difference;
 			fixup_clock_comparator(delta);
 			rc = chsc_sstpi(stp_page, &stp_info,
 					sizeof(struct stp_sstpi));

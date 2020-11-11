@@ -20,6 +20,7 @@
 
 #include <asm/uaccess.h>
 
+#include "tick-internal.h"
 
 struct timer_list_iter {
 	int cpu;
@@ -28,8 +29,6 @@ struct timer_list_iter {
 };
 
 typedef void (*print_fn_t)(struct seq_file *m, unsigned int *classes);
-
-DECLARE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases);
 
 /*
  * This allows printing both to /proc/timer_list and
@@ -184,7 +183,7 @@ static void print_cpu(struct seq_file *m, int cpu, u64 now)
 		P_ns(idle_sleeptime);
 		P_ns(iowait_sleeptime);
 		P(last_jiffies);
-		P(next_jiffies);
+		P(next_timer);
 		P_ns(idle_expires);
 		SEQ_printf(m, "jiffies: %Lu\n",
 			   (unsigned long long)jiffies);
@@ -256,7 +255,7 @@ static void timer_list_show_tickdevices_header(struct seq_file *m)
 
 static inline void timer_list_header(struct seq_file *m, u64 now)
 {
-	SEQ_printf(m, "Timer List Version: v0.7\n");
+	SEQ_printf(m, "Timer List Version: v0.8\n");
 	SEQ_printf(m, "HRTIMER_MAX_CLOCK_BASES: %d\n", HRTIMER_MAX_CLOCK_BASES);
 	SEQ_printf(m, "now at %Ld nsecs\n", (unsigned long long)now);
 	SEQ_printf(m, "\n");
@@ -265,10 +264,9 @@ static inline void timer_list_header(struct seq_file *m, u64 now)
 static int timer_list_show(struct seq_file *m, void *v)
 {
 	struct timer_list_iter *iter = v;
-	u64 now = ktime_to_ns(ktime_get());
 
 	if (iter->cpu == -1 && !iter->second_pass)
-		timer_list_header(m, now);
+		timer_list_header(m, iter->now);
 	else if (!iter->second_pass)
 		print_cpu(m, iter->cpu, iter->now);
 #ifdef CONFIG_GENERIC_CLOCKEVENTS
@@ -298,33 +296,41 @@ void sysrq_timer_list_show(void)
 	return;
 }
 
+static void *move_iter(struct timer_list_iter *iter, loff_t offset)
+{
+	for (; offset; offset--) {
+		iter->cpu = cpumask_next(iter->cpu, cpu_online_mask);
+		if (iter->cpu >= nr_cpu_ids) {
+#ifdef CONFIG_GENERIC_CLOCKEVENTS
+			if (!iter->second_pass) {
+				iter->cpu = -1;
+				iter->second_pass = true;
+			} else
+				return NULL;
+#else
+			return NULL;
+#endif
+		}
+	}
+	return iter;
+}
+
 static void *timer_list_start(struct seq_file *file, loff_t *offset)
 {
 	struct timer_list_iter *iter = file->private;
 
-	if (!*offset) {
-		iter->cpu = -1;
+	if (!*offset)
 		iter->now = ktime_to_ns(ktime_get());
-	} else if (iter->cpu >= nr_cpu_ids) {
-#ifdef CONFIG_GENERIC_CLOCKEVENTS
-		if (!iter->second_pass) {
-			iter->cpu = -1;
-			iter->second_pass = true;
-		} else
-			return NULL;
-#else
-		return NULL;
-#endif
-	}
-	return iter;
+	iter->cpu = -1;
+	iter->second_pass = false;
+	return move_iter(iter, *offset);
 }
 
 static void *timer_list_next(struct seq_file *file, void *v, loff_t *offset)
 {
 	struct timer_list_iter *iter = file->private;
-	iter->cpu = cpumask_next(iter->cpu, cpu_online_mask);
 	++*offset;
-	return timer_list_start(file, offset);
+	return move_iter(iter, 1);
 }
 
 static void timer_list_stop(struct seq_file *seq, void *v)

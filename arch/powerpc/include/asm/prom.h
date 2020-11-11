@@ -1,4 +1,3 @@
-#include <linux/of.h>	/* linux/of.h gets to determine #include ordering */
 #ifndef _POWERPC_PROM_H
 #define _POWERPC_PROM_H
 #ifdef __KERNEL__
@@ -22,6 +21,13 @@
 
 #define HAVE_ARCH_DEVTREE_FIXUPS
 
+/* These includes should be removed once implicit includes are cleaned up. */
+#include <linux/of.h>
+#include <linux/of_fdt.h>
+#include <linux/of_address.h>
+#include <linux/of_irq.h>
+#include <linux/platform_device.h>
+
 /*
  * OF address retreival & translation
  */
@@ -30,16 +36,12 @@
 extern u64 of_translate_dma_address(struct device_node *dev,
 				    const __be32 *in_addr);
 
-#ifdef CONFIG_PCI
-extern unsigned long pci_address_to_pio(phys_addr_t address);
-#define pci_address_to_pio pci_address_to_pio
-#endif	/* CONFIG_PCI */
-
 /* Parse the ibm,dma-window property of an OF node into the busno, phys and
  * size parameters.
  */
-void of_parse_dma_window(struct device_node *dn, const void *dma_window_prop,
-		unsigned long *busno, unsigned long *phys, unsigned long *size);
+void of_parse_dma_window(struct device_node *dn, const __be32 *dma_window,
+			 unsigned long *busno, unsigned long *phys,
+			 unsigned long *size);
 
 extern void kdump_move_device_tree(void);
 
@@ -49,14 +51,9 @@ struct device_node *of_get_cpu_node(int cpu, unsigned int *thread);
 /* cache lookup */
 struct device_node *of_find_next_cache_node(struct device_node *np);
 
-#ifdef CONFIG_NUMA
-extern int of_node_to_nid(struct device_node *device);
-#else
-static inline int of_node_to_nid(struct device_node *device) { return 0; }
-#endif
-#define of_node_to_nid of_node_to_nid
-
 extern void of_instantiate_rtc(void);
+
+extern int of_get_ibm_chip_id(struct device_node *np);
 
 /* The of_drconf_cell struct defines the layout of the LMB array
  * specified in the device tree property
@@ -129,6 +126,8 @@ struct of_drconf_cell {
 #define OV5_XCMO		0x0440	/* Page Coalescing */
 #define OV5_TYPE1_AFFINITY	0x0580	/* Type 1 NUMA affinity */
 #define OV5_PRRN		0x0540	/* Platform Resource Reassignment */
+#define OV5_RESIZE_HPT		0x0601  /* Hash Page Table resizing */
+#define OV5_HP_EVT		0x0604	/* Hot Plug Event support */
 #define OV5_PFO_HW_RNG		0x0E80	/* PFO Random Number Generator */
 #define OV5_PFO_HW_842		0x0E40	/* PFO Compression Accelerator */
 #define OV5_PFO_HW_ENCR		0x0E20	/* PFO Encryption Accelerator */
@@ -136,21 +135,6 @@ struct of_drconf_cell {
 
 /* Option Vector 6: IBM PAPR hints */
 #define OV6_LINUX		0x02	/* Linux is our OS */
-
-/*
- * The architecture vector has an array of PVR mask/value pairs,
- * followed by # option vectors - 1, followed by the option vectors.
- */
-extern unsigned char ibm_architecture_vec[];
-
-/* These includes are put at the bottom because they may contain things
- * that are overridden by this file.  Ideally they shouldn't be included
- * by this file, but there are a bunch of .c files that currently depend
- * on it.  Eventually they will be cleaned up. */
-#include <linux/of_fdt.h>
-#include <linux/of_address.h>
-#include <linux/of_irq.h>
-#include <linux/platform_device.h>
 
 #endif /* __KERNEL__ */
 #endif /* _POWERPC_PROM_H */

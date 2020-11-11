@@ -1,6 +1,8 @@
 # UAPI Header export list
 include include/uapi/asm-generic/Kbuild.asm
 
+generic-y += bpf_perf_event.h
+genhdr-y  += bpf_perf_event.h
 header-y += auxvec.h
 header-y += bitsperlong.h
 header-y += bootx.h
@@ -15,11 +17,12 @@ header-y += ioctls.h
 header-y += ipcbuf.h
 header-y += kvm.h
 header-y += kvm_para.h
-header-y += linkage.h
 header-y += mman.h
 header-y += msgbuf.h
 header-y += nvram.h
+header-y += opal-prd.h
 header-y += param.h
+header-y += perf_event.h
 header-y += poll.h
 header-y += posix_types.h
 header-y += ps3fb.h

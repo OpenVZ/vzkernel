@@ -46,38 +46,12 @@
 
 static struct class *cpuid_class;
 
-struct cpuid_regs {
-	u32 eax, ebx, ecx, edx;
-};
-
 static void cpuid_smp_cpuid(void *cmd_block)
 {
 	struct cpuid_regs *cmd = (struct cpuid_regs *)cmd_block;
 
 	cpuid_count(cmd->eax, cmd->ecx,
 		    &cmd->eax, &cmd->ebx, &cmd->ecx, &cmd->edx);
-}
-
-static loff_t cpuid_seek(struct file *file, loff_t offset, int orig)
-{
-	loff_t ret;
-	struct inode *inode = file->f_mapping->host;
-
-	mutex_lock(&inode->i_mutex);
-	switch (orig) {
-	case 0:
-		file->f_pos = offset;
-		ret = file->f_pos;
-		break;
-	case 1:
-		file->f_pos += offset;
-		ret = file->f_pos;
-		break;
-	default:
-		ret = -EINVAL;
-	}
-	mutex_unlock(&inode->i_mutex);
-	return ret;
 }
 
 static ssize_t cpuid_read(struct file *file, char __user *buf,
@@ -132,12 +106,12 @@ static int cpuid_open(struct inode *inode, struct file *file)
  */
 static const struct file_operations cpuid_fops = {
 	.owner = THIS_MODULE,
-	.llseek = cpuid_seek,
+	.llseek = no_seek_end_llseek,
 	.read = cpuid_read,
 	.open = cpuid_open,
 };
 
-static __cpuinit int cpuid_device_create(int cpu)
+static int cpuid_device_create(int cpu)
 {
 	struct device *dev;
 
@@ -151,9 +125,8 @@ static void cpuid_device_destroy(int cpu)
 	device_destroy(cpuid_class, MKDEV(CPUID_MAJOR, cpu));
 }
 
-static int __cpuinit cpuid_class_cpu_callback(struct notifier_block *nfb,
-					      unsigned long action,
-					      void *hcpu)
+static int cpuid_class_cpu_callback(struct notifier_block *nfb,
+				    unsigned long action, void *hcpu)
 {
 	unsigned int cpu = (unsigned long)hcpu;
 	int err = 0;
@@ -199,14 +172,15 @@ static int __init cpuid_init(void)
 		goto out_chrdev;
 	}
 	cpuid_class->devnode = cpuid_devnode;
-	get_online_cpus();
+
+	cpu_notifier_register_begin();
 	for_each_online_cpu(i) {
 		err = cpuid_device_create(i);
 		if (err != 0)
 			goto out_class;
 	}
-	register_hotcpu_notifier(&cpuid_class_cpu_notifier);
-	put_online_cpus();
+	__register_hotcpu_notifier(&cpuid_class_cpu_notifier);
+	cpu_notifier_register_done();
 
 	err = 0;
 	goto out;
@@ -216,7 +190,7 @@ out_class:
 	for_each_online_cpu(i) {
 		cpuid_device_destroy(i);
 	}
-	put_online_cpus();
+	cpu_notifier_register_done();
 	class_destroy(cpuid_class);
 out_chrdev:
 	__unregister_chrdev(CPUID_MAJOR, 0, NR_CPUS, "cpu/cpuid");
@@ -228,13 +202,13 @@ static void __exit cpuid_exit(void)
 {
 	int cpu = 0;
 
-	get_online_cpus();
+	cpu_notifier_register_begin();
 	for_each_online_cpu(cpu)
 		cpuid_device_destroy(cpu);
 	class_destroy(cpuid_class);
 	__unregister_chrdev(CPUID_MAJOR, 0, NR_CPUS, "cpu/cpuid");
-	unregister_hotcpu_notifier(&cpuid_class_cpu_notifier);
-	put_online_cpus();
+	__unregister_hotcpu_notifier(&cpuid_class_cpu_notifier);
+	cpu_notifier_register_done();
 }
 
 module_init(cpuid_init);

@@ -889,8 +889,8 @@ static int aaci_probe_ac97(struct aaci *aaci)
 static void aaci_free_card(struct snd_card *card)
 {
 	struct aaci *aaci = card->private_data;
-	if (aaci->base)
-		iounmap(aaci->base);
+
+	iounmap(aaci->base);
 }
 
 static struct aaci *aaci_init_card(struct amba_device *dev)
@@ -899,8 +899,8 @@ static struct aaci *aaci_init_card(struct amba_device *dev)
 	struct snd_card *card;
 	int err;
 
-	err = snd_card_create(SNDRV_DEFAULT_IDX1, SNDRV_DEFAULT_STR1,
-			      THIS_MODULE, sizeof(struct aaci), &card);
+	err = snd_card_new(&dev->dev, SNDRV_DEFAULT_IDX1, SNDRV_DEFAULT_STR1,
+			   THIS_MODULE, sizeof(struct aaci), &card);
 	if (err < 0)
 		return NULL;
 
@@ -1055,8 +1055,6 @@ static int aaci_probe(struct amba_device *dev,
 	if (ret)
 		goto out;
 
-	snd_card_set_dev(aaci->card, &dev->dev);
-
 	ret = snd_card_register(aaci->card);
 	if (ret == 0) {
 		dev_info(&dev->dev, "%s\n", aaci->card->longname);
@@ -1075,8 +1073,6 @@ static int aaci_probe(struct amba_device *dev,
 static int aaci_remove(struct amba_device *dev)
 {
 	struct snd_card *card = amba_get_drvdata(dev);
-
-	amba_set_drvdata(dev, NULL);
 
 	if (card) {
 		struct aaci *aaci = card->private_data;

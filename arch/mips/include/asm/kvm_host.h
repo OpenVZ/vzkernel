@@ -26,6 +26,7 @@
 #define KVM_PRIVATE_MEM_SLOTS 	0
 
 #define KVM_COALESCED_MMIO_PAGE_OFFSET 1
+#define KVM_HALT_POLL_NS_DEFAULT 500000
 
 /* Don't support huge pages */
 #define KVM_HPAGE_GFN_SHIFT(x)	0
@@ -71,36 +72,33 @@
 #define CAUSEB_DC       27
 #define CAUSEF_DC       (_ULCAST_(1)   << 27)
 
-struct kvm;
-struct kvm_run;
-struct kvm_vcpu;
-struct kvm_interrupt;
-
 extern atomic_t kvm_mips_instance;
-extern pfn_t(*kvm_mips_gfn_to_pfn) (struct kvm *kvm, gfn_t gfn);
-extern void (*kvm_mips_release_pfn_clean) (pfn_t pfn);
-extern bool(*kvm_mips_is_error_pfn) (pfn_t pfn);
+extern kvm_pfn_t(*kvm_mips_gfn_to_pfn) (struct kvm *kvm, gfn_t gfn);
+extern void (*kvm_mips_release_pfn_clean) (kvm_pfn_t pfn);
+extern bool(*kvm_mips_is_error_pfn) (kvm_pfn_t pfn);
 
 struct kvm_vm_stat {
-	u32 remote_tlb_flush;
+	ulong remote_tlb_flush;
 };
 
 struct kvm_vcpu_stat {
-	u32 wait_exits;
-	u32 cache_exits;
-	u32 signal_exits;
-	u32 int_exits;
-	u32 cop_unusable_exits;
-	u32 tlbmod_exits;
-	u32 tlbmiss_ld_exits;
-	u32 tlbmiss_st_exits;
-	u32 addrerr_st_exits;
-	u32 addrerr_ld_exits;
-	u32 syscall_exits;
-	u32 resvd_inst_exits;
-	u32 break_inst_exits;
-	u32 flush_dcache_exits;
-	u32 halt_wakeup;
+	u64 wait_exits;
+	u64 cache_exits;
+	u64 signal_exits;
+	u64 int_exits;
+	u64 cop_unusable_exits;
+	u64 tlbmod_exits;
+	u64 tlbmiss_ld_exits;
+	u64 tlbmiss_st_exits;
+	u64 addrerr_st_exits;
+	u64 addrerr_ld_exits;
+	u64 syscall_exits;
+	u64 resvd_inst_exits;
+	u64 break_inst_exits;
+	u64 flush_dcache_exits;
+	u64 halt_successful_poll;
+	u64 halt_attempted_poll;
+	u64 halt_wakeup;
 };
 
 enum kvm_mips_exit_types {
@@ -659,5 +657,7 @@ extern void mips32_SyncICache(unsigned long addr, unsigned long size);
 extern int kvm_mips_dump_stats(struct kvm_vcpu *vcpu);
 extern unsigned long kvm_mips_get_ramsize(struct kvm *kvm);
 
+static inline void kvm_arch_vcpu_blocking(struct kvm_vcpu *vcpu) {}
+static inline void kvm_arch_vcpu_unblocking(struct kvm_vcpu *vcpu) {}
 
 #endif /* __MIPS_KVM_HOST_H__ */

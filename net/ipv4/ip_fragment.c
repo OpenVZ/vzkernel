@@ -56,13 +56,58 @@
 
 static int sysctl_ipfrag_max_dist __read_mostly = 64;
 
+/* Use skb->cb to track consecutive/adjacent fragments coming at
+ * the end of the queue. Nodes in the rb-tree queue will
+ * contain "runs" of one or more adjacent fragments.
+ *
+ * Invariants:
+ * - next_frag is NULL at the tail of a "run";
+ * - the head of a "run" has the sum of all fragment lengths in frag_run_len.
+ */
 struct ipfrag_skb_cb
 {
 	struct inet_skb_parm	h;
 	int			offset;
+	struct sk_buff		*next_frag;
+	int			frag_run_len;
 };
 
 #define FRAG_CB(skb)	((struct ipfrag_skb_cb *)((skb)->cb))
+
+static void ip4_frag_init_run(struct sk_buff *skb)
+{
+	BUILD_BUG_ON(sizeof(struct ipfrag_skb_cb) > sizeof(skb->cb));
+
+	FRAG_CB(skb)->next_frag = NULL;
+	FRAG_CB(skb)->frag_run_len = skb->len;
+}
+
+/* Append skb to the last "run". */
+static void ip4_frag_append_to_last_run(struct inet_frag_queue *q,
+					struct sk_buff *skb)
+{
+	RB_CLEAR_NODE(&skb->rbnode);
+	FRAG_CB(skb)->next_frag = NULL;
+
+	FRAG_CB(q->last_run_head)->frag_run_len += skb->len;
+	FRAG_CB(q->fragments_tail)->next_frag = skb;
+	q->fragments_tail = skb;
+}
+
+/* Create a new "run" with the skb. */
+static void ip4_frag_create_run(struct inet_frag_queue *q, struct sk_buff *skb)
+{
+	if (q->last_run_head)
+		rb_link_node(&skb->rbnode, &q->last_run_head->rbnode,
+			     &q->last_run_head->rbnode.rb_right);
+	else
+		rb_link_node(&skb->rbnode, NULL, &q->rb_fragments.rb_node);
+	rb_insert_color(&skb->rbnode, &q->rb_fragments);
+
+	ip4_frag_init_run(skb);
+	q->fragments_tail = skb;
+	q->last_run_head = skb;
+}
 
 /* Describe an entry in the "incomplete datagrams" queue. */
 struct ipq {
@@ -74,6 +119,7 @@ struct ipq {
 	__be16		id;
 	u8		protocol;
 	u8		ecn; /* RFC3168 support */
+	u16		max_df_size; /* largest frag with DF set seen */
 	int             iif;
 	unsigned int    rid;
 	struct inet_peer *peer;
@@ -96,8 +142,8 @@ int ip_frag_mem(struct net *net)
 	return sum_frag_mem_limit(&net->ipv4.frags);
 }
 
-static int ip_frag_reasm(struct ipq *qp, struct sk_buff *prev,
-			 struct net_device *dev);
+static int ip_frag_reasm(struct ipq *qp, struct sk_buff *skb,
+			 struct sk_buff *prev_tail, struct net_device *dev);
 
 struct ip4_create_arg {
 	struct iphdr *iph;
@@ -106,6 +152,7 @@ struct ip4_create_arg {
 
 static unsigned int ipqhashfn(__be16 id, __be32 saddr, __be32 daddr, u8 prot)
 {
+	net_get_random_once(&ip4_frags.rnd, sizeof(ip4_frags.rnd));
 	return jhash_3words((__force u32)id << 16 | prot,
 			    (__force u32)saddr, (__force u32)daddr,
 			    ip4_frags.rnd) & (INETFRAGS_HASHSZ - 1);
@@ -193,8 +240,11 @@ static void ip_evictor(struct net *net)
  */
 static void ip_expire(unsigned long arg)
 {
+	struct sk_buff *head = NULL;
+	const struct iphdr *iph;
 	struct ipq *qp;
 	struct net *net;
+	int err;
 
 	qp = container_of((struct inet_frag_queue *) arg, struct ipq, q);
 	net = container_of(qp->q.net, struct net, ipv4.frags);
@@ -209,40 +259,63 @@ static void ip_expire(unsigned long arg)
 	IP_INC_STATS_BH(net, IPSTATS_MIB_REASMTIMEOUT);
 	IP_INC_STATS_BH(net, IPSTATS_MIB_REASMFAILS);
 
-	if ((qp->q.last_in & INET_FRAG_FIRST_IN) && qp->q.fragments != NULL) {
-		struct sk_buff *head = qp->q.fragments;
-		const struct iphdr *iph;
-		int err;
+	if (!(qp->q.last_in & INET_FRAG_FIRST_IN))
+		goto out;
 
-		rcu_read_lock();
-		head->dev = dev_get_by_index_rcu(net, qp->iif);
-		if (!head->dev)
-			goto out_rcu_unlock;
-
-		/* skb has no dst, perform route lookup again */
-		iph = ip_hdr(head);
-		err = ip_route_input_noref(head, iph->daddr, iph->saddr,
-					   iph->tos, head->dev);
-		if (err)
-			goto out_rcu_unlock;
-
-		/*
-		 * Only an end host needs to send an ICMP
-		 * "Fragment Reassembly Timeout" message, per RFC792.
-		 */
-		if (qp->user == IP_DEFRAG_AF_PACKET ||
-		    (qp->user == IP_DEFRAG_CONNTRACK_IN &&
-		     skb_rtable(head)->rt_type != RTN_LOCAL))
-			goto out_rcu_unlock;
-
-
-		/* Send an ICMP "Fragment Reassembly Timeout" message. */
-		icmp_send(head, ICMP_TIME_EXCEEDED, ICMP_EXC_FRAGTIME, 0);
-out_rcu_unlock:
-		rcu_read_unlock();
+	/* sk_buff::dev and sk_buff::rbnode are unionized. So we
+	 * pull the head out of the tree in order to be able to
+	 * deal with head->dev.
+	 */
+	if (qp->q.fragments) {
+		head = qp->q.fragments;
+		qp->q.fragments = head->next;
+	} else {
+		head = skb_rb_first(&qp->q.rb_fragments);
+		if (!head)
+			goto out;
+		if (FRAG_CB(head)->next_frag)
+			rb_replace_node(&head->rbnode,
+					&FRAG_CB(head)->next_frag->rbnode,
+					&qp->q.rb_fragments);
+		else
+			rb_erase(&head->rbnode, &qp->q.rb_fragments);
+		memset(&head->rbnode, 0, sizeof(head->rbnode));
+		barrier();
 	}
+	if (head == qp->q.fragments_tail)
+		qp->q.fragments_tail = NULL;
+
+	sub_frag_mem_limit(&qp->q, head->truesize);
+
+	rcu_read_lock();
+	head->dev = dev_get_by_index_rcu(net, qp->iif);
+	if (!head->dev)
+		goto out_rcu_unlock;
+
+	/* skb has no dst, perform route lookup again */
+	iph = ip_hdr(head);
+	err = ip_route_input_noref(head, iph->daddr, iph->saddr,
+				   iph->tos, head->dev);
+	if (err)
+		goto out_rcu_unlock;
+
+	/*
+	 * Only an end host needs to send an ICMP
+	 * "Fragment Reassembly Timeout" message, per RFC792.
+	 */
+	if (qp->user == IP_DEFRAG_AF_PACKET ||
+	    (qp->user == IP_DEFRAG_CONNTRACK_IN &&
+	     skb_rtable(head)->rt_type != RTN_LOCAL))
+		goto out_rcu_unlock;
+
+	/* Send an ICMP "Fragment Reassembly Timeout" message. */
+	icmp_send(head, ICMP_TIME_EXCEEDED, ICMP_EXC_FRAGTIME, 0);
+out_rcu_unlock:
+	rcu_read_unlock();
 out:
 	spin_unlock(&qp->q.lock);
+	if (head)
+		kfree_skb(head);
 	ipq_put(qp);
 }
 
@@ -285,7 +358,7 @@ static inline int ip_frag_too_far(struct ipq *qp)
 	end = atomic_inc_return(&peer->rid);
 	qp->rid = end;
 
-	rc = qp->q.fragments && (end - start) > max;
+	rc = qp->q.fragments_tail && (end - start) > max;
 
 	if (rc) {
 		struct net *net;
@@ -299,7 +372,6 @@ static inline int ip_frag_too_far(struct ipq *qp)
 
 static int ip_frag_reinit(struct ipq *qp)
 {
-	struct sk_buff *fp;
 	unsigned int sum_truesize = 0;
 
 	if (!mod_timer(&qp->q.timer, jiffies + qp->q.net->timeout)) {
@@ -307,21 +379,16 @@ static int ip_frag_reinit(struct ipq *qp)
 		return -ETIMEDOUT;
 	}
 
-	fp = qp->q.fragments;
-	do {
-		struct sk_buff *xp = fp->next;
-
-		sum_truesize += fp->truesize;
-		kfree_skb(fp);
-		fp = xp;
-	} while (fp);
+	sum_truesize = inet_frag_rbtree_purge(&qp->q.rb_fragments);
 	sub_frag_mem_limit(&qp->q, sum_truesize);
 
 	qp->q.last_in = 0;
 	qp->q.len = 0;
 	qp->q.meat = 0;
 	qp->q.fragments = NULL;
+	qp->q.rb_fragments = RB_ROOT;
 	qp->q.fragments_tail = NULL;
+	qp->q.last_run_head = NULL;
 	qp->iif = 0;
 	qp->ecn = 0;
 
@@ -331,8 +398,11 @@ static int ip_frag_reinit(struct ipq *qp)
 /* Add new segment to existing queue. */
 static int ip_frag_queue(struct ipq *qp, struct sk_buff *skb)
 {
-	struct sk_buff *prev, *next;
+	struct net *net = container_of(qp->q.net, struct net, ipv4.frags);
+	struct rb_node **rbn, *parent;
+	struct sk_buff *skb1, *prev_tail;
 	struct net_device *dev;
+	unsigned int fragsize;
 	int flags, offset;
 	int ihl, end;
 	int err = -ENOENT;
@@ -356,7 +426,7 @@ static int ip_frag_queue(struct ipq *qp, struct sk_buff *skb)
 	ihl = ip_hdrlen(skb);
 
 	/* Determine the position of this fragment. */
-	end = offset + skb->len - ihl;
+	end = offset + skb->len - skb_network_offset(skb) - ihl;
 	err = -EINVAL;
 
 	/* Is this the final fragment? */
@@ -386,101 +456,70 @@ static int ip_frag_queue(struct ipq *qp, struct sk_buff *skb)
 		goto err;
 
 	err = -ENOMEM;
-	if (pskb_pull(skb, ihl) == NULL)
+	if (!pskb_pull(skb, skb_network_offset(skb) + ihl))
 		goto err;
 
 	err = pskb_trim_rcsum(skb, end - offset);
 	if (err)
 		goto err;
 
-	/* Find out which fragments are in front and at the back of us
-	 * in the chain of fragments so far.  We must know where to put
-	 * this fragment, right?
-	 */
-	prev = qp->q.fragments_tail;
-	if (!prev || FRAG_CB(prev)->offset < offset) {
-		next = NULL;
-		goto found;
-	}
-	prev = NULL;
-	for (next = qp->q.fragments; next != NULL; next = next->next) {
-		if (FRAG_CB(next)->offset >= offset)
-			break;	/* bingo! */
-		prev = next;
-	}
-
-found:
-	/* We found where to put this one.  Check for overlap with
-	 * preceding fragment, and, if needed, align things so that
-	 * any overlaps are eliminated.
-	 */
-	if (prev) {
-		int i = (FRAG_CB(prev)->offset + prev->len) - offset;
-
-		if (i > 0) {
-			offset += i;
-			err = -EINVAL;
-			if (end <= offset)
-				goto err;
-			err = -ENOMEM;
-			if (!pskb_pull(skb, i))
-				goto err;
-			if (skb->ip_summed != CHECKSUM_UNNECESSARY)
-				skb->ip_summed = CHECKSUM_NONE;
-		}
-	}
-
-	err = -ENOMEM;
-
-	while (next && FRAG_CB(next)->offset < end) {
-		int i = end - FRAG_CB(next)->offset; /* overlap is 'i' bytes */
-
-		if (i < next->len) {
-			/* Eat head of the next overlapped fragment
-			 * and leave the loop. The next ones cannot overlap.
-			 */
-			if (!pskb_pull(next, i))
-				goto err;
-			FRAG_CB(next)->offset += i;
-			qp->q.meat -= i;
-			if (next->ip_summed != CHECKSUM_UNNECESSARY)
-				next->ip_summed = CHECKSUM_NONE;
-			break;
-		} else {
-			struct sk_buff *free_it = next;
-
-			/* Old fragment is completely overridden with
-			 * new one drop it.
-			 */
-			next = next->next;
-
-			if (prev)
-				prev->next = next;
-			else
-				qp->q.fragments = next;
-
-			qp->q.meat -= free_it->len;
-			sub_frag_mem_limit(&qp->q, free_it->truesize);
-			kfree_skb(free_it);
-		}
-	}
-
-	FRAG_CB(skb)->offset = offset;
-
-	/* Insert this fragment in the chain of fragments. */
-	skb->next = next;
-	if (!next)
-		qp->q.fragments_tail = skb;
-	if (prev)
-		prev->next = skb;
-	else
-		qp->q.fragments = skb;
-
+	/* Note : skb->rbnode and skb->dev share the same location. */
 	dev = skb->dev;
+	/* Makes sure compiler wont do silly aliasing games */
+	barrier();
+
+	/* RFC5722, Section 4, amended by Errata ID : 3089
+	 *                          When reassembling an IPv6 datagram, if
+	 *   one or more its constituent fragments is determined to be an
+	 *   overlapping fragment, the entire datagram (and any constituent
+	 *   fragments) MUST be silently discarded.
+	 *
+	 * We do the same here for IPv4 (and increment an snmp counter).
+	 */
+
+	/* Find out where to put this fragment.  */
+	prev_tail = qp->q.fragments_tail;
+	if (!prev_tail)
+		ip4_frag_create_run(&qp->q, skb);  /* First fragment. */
+	else if (FRAG_CB(prev_tail)->offset + prev_tail->len < end) {
+		/* This is the common case: skb goes to the end. */
+		/* Detect and discard overlaps. */
+		if (offset < FRAG_CB(prev_tail)->offset + prev_tail->len)
+			goto discard_qp;
+		if (offset == FRAG_CB(prev_tail)->offset + prev_tail->len)
+			ip4_frag_append_to_last_run(&qp->q, skb);
+		else
+			ip4_frag_create_run(&qp->q, skb);
+	} else {
+		/* Binary search. Note that skb can become the first fragment,
+		 * but not the last (covered above).
+		 */
+		rbn = &qp->q.rb_fragments.rb_node;
+		do {
+			parent = *rbn;
+			skb1 = rb_to_skb(parent);
+			if (end <= FRAG_CB(skb1)->offset)
+				rbn = &parent->rb_left;
+			else if (offset >= FRAG_CB(skb1)->offset +
+						FRAG_CB(skb1)->frag_run_len)
+				rbn = &parent->rb_right;
+			else /* Found an overlap with skb1. */
+				goto discard_qp;
+		} while (*rbn);
+		/* Here we have parent properly set, and rbn pointing to
+		 * one of its NULL left/right children. Insert skb.
+		 */
+		ip4_frag_init_run(skb);
+		rb_link_node(&skb->rbnode, parent, rbn);
+		rb_insert_color(&skb->rbnode, &qp->q.rb_fragments);
+	}
+
 	if (dev) {
 		qp->iif = dev->ifindex;
 		skb->dev = NULL;
 	}
+	FRAG_CB(skb)->offset = offset;
+
 	qp->q.stamp = skb->tstamp;
 	qp->q.meat += skb->len;
 	qp->ecn |= ecn;
@@ -488,16 +527,21 @@ found:
 	if (offset == 0)
 		qp->q.last_in |= INET_FRAG_FIRST_IN;
 
+	fragsize = skb->len + ihl;
+
+	if (fragsize > qp->q.max_size)
+		qp->q.max_size = fragsize;
+
 	if (ip_hdr(skb)->frag_off & htons(IP_DF) &&
-	    skb->len + ihl > qp->q.max_size)
-		qp->q.max_size = skb->len + ihl;
+	    fragsize > qp->max_df_size)
+		qp->max_df_size = fragsize;
 
 	if (qp->q.last_in == (INET_FRAG_FIRST_IN | INET_FRAG_LAST_IN) &&
 	    qp->q.meat == qp->q.len) {
 		unsigned long orefdst = skb->_skb_refdst;
 
 		skb->_skb_refdst = 0UL;
-		err = ip_frag_reasm(qp, prev, dev);
+		err = ip_frag_reasm(qp, skb, prev_tail, dev);
 		skb->_skb_refdst = orefdst;
 		return err;
 	}
@@ -506,24 +550,33 @@ found:
 	inet_frag_lru_move(&qp->q);
 	return -EINPROGRESS;
 
+discard_qp:
+	ipq_kill(qp);
+	err = -EINVAL;
+	IP_INC_STATS_BH(net, IPSTATS_MIB_REASM_OVERLAPS);
 err:
 	kfree_skb(skb);
 	return err;
 }
 
+static bool ip_frag_coalesce_ok(const struct ipq *qp)
+{
+	return qp->user == IP_DEFRAG_LOCAL_DELIVER;
+}
 
 /* Build a new IP datagram from all its fragments. */
-
-static int ip_frag_reasm(struct ipq *qp, struct sk_buff *prev,
-			 struct net_device *dev)
+static int ip_frag_reasm(struct ipq *qp, struct sk_buff *skb,
+			 struct sk_buff *prev_tail, struct net_device *dev)
 {
 	struct net *net = container_of(qp->q.net, struct net, ipv4.frags);
 	struct iphdr *iph;
-	struct sk_buff *fp, *head = qp->q.fragments;
+	struct sk_buff *fp, *head = skb_rb_first(&qp->q.rb_fragments);
+	struct sk_buff **nextp; /* To build frag_list. */
+	struct rb_node *rbn;
+	int sum_truesize;
 	int len;
 	int ihlen;
 	int err;
-	int sum_truesize;
 	u8 ecn;
 
 	ipq_kill(qp);
@@ -534,25 +587,26 @@ static int ip_frag_reasm(struct ipq *qp, struct sk_buff *prev,
 		goto out_fail;
 	}
 	/* Make the one we just received the head. */
-	if (prev) {
-		head = prev->next;
-		fp = skb_clone(head, GFP_ATOMIC);
+	if (head != skb) {
+		fp = skb_clone(skb, GFP_ATOMIC);
 		if (!fp)
 			goto out_nomem;
-
-		fp->next = head->next;
-		if (!fp->next)
+		FRAG_CB(fp)->next_frag = FRAG_CB(skb)->next_frag;
+		if (RB_EMPTY_NODE(&skb->rbnode))
+			FRAG_CB(prev_tail)->next_frag = fp;
+		else
+			rb_replace_node(&skb->rbnode, &fp->rbnode,
+					&qp->q.rb_fragments);
+		if (qp->q.fragments_tail == skb)
 			qp->q.fragments_tail = fp;
-		prev->next = fp;
-
-		skb_morph(head, qp->q.fragments);
-		head->next = qp->q.fragments->next;
-
-		consume_skb(qp->q.fragments);
-		qp->q.fragments = head;
+		skb_morph(skb, head);
+		FRAG_CB(skb)->next_frag = FRAG_CB(head)->next_frag;
+		rb_replace_node(&head->rbnode, &skb->rbnode,
+				&qp->q.rb_fragments);
+		consume_skb(head);
+		head = skb;
 	}
 
-	WARN_ON(head == NULL);
 	WARN_ON(FRAG_CB(head)->offset != 0);
 
 	/* Allocate a new buffer for the datagram. */
@@ -576,60 +630,106 @@ static int ip_frag_reasm(struct ipq *qp, struct sk_buff *prev,
 
 		if ((clone = alloc_skb(0, GFP_ATOMIC)) == NULL)
 			goto out_nomem;
-		clone->next = head->next;
-		head->next = clone;
 		skb_shinfo(clone)->frag_list = skb_shinfo(head)->frag_list;
 		skb_frag_list_init(head);
 		for (i = 0; i < skb_shinfo(head)->nr_frags; i++)
 			plen += skb_frag_size(&skb_shinfo(head)->frags[i]);
 		clone->len = clone->data_len = head->data_len - plen;
-		head->data_len -= clone->len;
-		head->len -= clone->len;
+		head->truesize += clone->truesize;
 		clone->csum = 0;
 		clone->ip_summed = head->ip_summed;
 		add_frag_mem_limit(&qp->q, clone->truesize);
+		skb_shinfo(head)->frag_list = clone;
+		nextp = &clone->next;
+	} else {
+		nextp = &skb_shinfo(head)->frag_list;
 	}
 
 	skb_push(head, head->data - skb_network_header(head));
 
+	/* Traverse the tree in order, to build frag_list. */
+	fp = FRAG_CB(head)->next_frag;
+	rbn = rb_next(&head->rbnode);
+	rb_erase(&head->rbnode, &qp->q.rb_fragments);
+
 	sum_truesize = head->truesize;
-	for (fp = head->next; fp;) {
-		bool headstolen;
-		int delta;
-		struct sk_buff *next = fp->next;
+	while (rbn || fp) {
+		/* fp points to the next sk_buff in the current run;
+		 * rbn points to the next run.
+		 */
+		/* Go through the current run. */
+		while (fp) {
+			struct sk_buff *next_frag = FRAG_CB(fp)->next_frag;
+			bool stolen;
+			int delta;
 
-		sum_truesize += fp->truesize;
-		if (head->ip_summed != fp->ip_summed)
-			head->ip_summed = CHECKSUM_NONE;
-		else if (head->ip_summed == CHECKSUM_COMPLETE)
-			head->csum = csum_add(head->csum, fp->csum);
+			sum_truesize += fp->truesize;
+			if (head->ip_summed != fp->ip_summed)
+				head->ip_summed = CHECKSUM_NONE;
+			else if (head->ip_summed == CHECKSUM_COMPLETE)
+				head->csum = csum_add(head->csum, fp->csum);
 
-		if (skb_try_coalesce(head, fp, &headstolen, &delta)) {
-			kfree_skb_partial(fp, headstolen);
-		} else {
-			if (!skb_shinfo(head)->frag_list)
-				skb_shinfo(head)->frag_list = fp;
-			head->data_len += fp->len;
-			head->len += fp->len;
-			head->truesize += fp->truesize;
+			if (ip_frag_coalesce_ok(qp) &&
+			    skb_try_coalesce(head, fp, &stolen, &delta)) {
+				kfree_skb_partial(fp, stolen);
+			} else {
+				fp->prev = NULL;
+				memset(&fp->rbnode, 0, sizeof(fp->rbnode));
+
+				head->data_len += fp->len;
+				head->len += fp->len;
+				head->truesize += fp->truesize;
+
+				*nextp = fp;
+				nextp = &fp->next;
+			}
+
+			fp = next_frag;
 		}
-		fp = next;
+		/* Move to the next run. */
+		if (rbn) {
+			struct rb_node *rbnext = rb_next(rbn);
+
+			fp = rb_to_skb(rbn);
+			rb_erase(rbn, &qp->q.rb_fragments);
+			rbn = rbnext;
+		}
 	}
 	sub_frag_mem_limit(&qp->q, sum_truesize);
 
+	*nextp = NULL;
 	head->next = NULL;
+	head->prev = NULL;
 	head->dev = dev;
 	head->tstamp = qp->q.stamp;
-	IPCB(head)->frag_max_size = qp->q.max_size;
+	IPCB(head)->frag_max_size = max(qp->max_df_size, qp->q.max_size);
 
 	iph = ip_hdr(head);
-	/* max_size != 0 implies at least one fragment had IP_DF set */
-	iph->frag_off = qp->q.max_size ? htons(IP_DF) : 0;
 	iph->tot_len = htons(len);
 	iph->tos |= ecn;
+
+	/* When we set IP_DF on a refragmented skb we must also force a
+	 * call to ip_fragment to avoid forwarding a DF-skb of size s while
+	 * original sender only sent fragments of size f (where f < s).
+	 *
+	 * We only set DF/IPSKB_FRAG_PMTU if such DF fragment was the largest
+	 * frag seen to avoid sending tiny DF-fragments in case skb was built
+	 * from one very small df-fragment and one large non-df frag.
+	 */
+	if (qp->max_df_size == qp->q.max_size) {
+		IPCB(head)->flags |= IPSKB_FRAG_PMTU;
+		iph->frag_off = htons(IP_DF);
+	} else {
+		iph->frag_off = 0;
+	}
+
+	ip_send_check(iph);
+
 	IP_INC_STATS_BH(net, IPSTATS_MIB_REASMOKS);
 	qp->q.fragments = NULL;
+	qp->q.rb_fragments = RB_ROOT;
 	qp->q.fragments_tail = NULL;
+	qp->q.last_run_head = NULL;
 	return 0;
 
 out_nomem:
@@ -652,6 +752,7 @@ int ip_defrag(struct sk_buff *skb, u32 user)
 
 	net = skb->dev ? dev_net(skb->dev) : dev_net(skb_dst(skb)->dev);
 	IP_INC_STATS_BH(net, IPSTATS_MIB_REASMREQDS);
+	skb_orphan(skb);
 
 	/* Start by cleaning up the memory. */
 	ip_evictor(net);
@@ -678,37 +779,62 @@ EXPORT_SYMBOL(ip_defrag);
 struct sk_buff *ip_check_defrag(struct sk_buff *skb, u32 user)
 {
 	struct iphdr iph;
+	int netoff;
 	u32 len;
 
 	if (skb->protocol != htons(ETH_P_IP))
 		return skb;
 
-	if (!skb_copy_bits(skb, 0, &iph, sizeof(iph)))
+	netoff = skb_network_offset(skb);
+
+	if (skb_copy_bits(skb, netoff, &iph, sizeof(iph)) < 0)
 		return skb;
 
 	if (iph.ihl < 5 || iph.version != 4)
 		return skb;
 
 	len = ntohs(iph.tot_len);
-	if (skb->len < len || len < (iph.ihl * 4))
+	if (skb->len < netoff + len || len < (iph.ihl * 4))
 		return skb;
 
 	if (ip_is_fragment(&iph)) {
 		skb = skb_share_check(skb, GFP_ATOMIC);
 		if (skb) {
-			if (!pskb_may_pull(skb, iph.ihl*4))
+			if (!pskb_may_pull(skb, netoff + iph.ihl * 4))
 				return skb;
-			if (pskb_trim_rcsum(skb, len))
+			if (pskb_trim_rcsum(skb, netoff + len))
 				return skb;
 			memset(IPCB(skb), 0, sizeof(struct inet_skb_parm));
 			if (ip_defrag(skb, user))
 				return NULL;
-			skb->rxhash = 0;
+			skb_clear_hash(skb);
 		}
 	}
 	return skb;
 }
 EXPORT_SYMBOL(ip_check_defrag);
+
+unsigned int inet_frag_rbtree_purge(struct rb_root *root)
+{
+	struct rb_node *p = rb_first(root);
+	unsigned int sum = 0;
+
+	while (p) {
+		struct sk_buff *skb = rb_entry(p, struct sk_buff, rbnode);
+
+		p = rb_next(p);
+		rb_erase(&skb->rbnode, root);
+		while (skb) {
+			struct sk_buff *next = FRAG_CB(skb)->next_frag;
+
+			sum += skb->truesize;
+			kfree_skb(skb);
+			skb = next;
+		}
+	}
+	return sum;
+}
+EXPORT_SYMBOL(inet_frag_rbtree_purge);
 
 #ifdef CONFIG_SYSCTL
 static int zero;

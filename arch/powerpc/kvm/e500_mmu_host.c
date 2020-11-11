@@ -165,9 +165,9 @@ void kvmppc_map_magic(struct kvm_vcpu *vcpu)
 	struct kvm_book3e_206_tlb_entry magic;
 	ulong shared_page = ((ulong)vcpu->arch.shared) & PAGE_MASK;
 	unsigned int stid;
-	pfn_t pfn;
+	kvm_pfn_t pfn;
 
-	pfn = (pfn_t)virt_to_phys((void *)shared_page) >> PAGE_SHIFT;
+	pfn = (kvm_pfn_t)virt_to_phys((void *)shared_page) >> PAGE_SHIFT;
 	get_page(pfn_to_page(pfn));
 
 	preempt_disable();
@@ -248,7 +248,7 @@ static inline int tlbe_is_writable(struct kvm_book3e_206_tlb_entry *tlbe)
 
 static inline void kvmppc_e500_ref_setup(struct tlbe_ref *ref,
 					 struct kvm_book3e_206_tlb_entry *gtlbe,
-					 pfn_t pfn)
+					 kvm_pfn_t pfn)
 {
 	ref->pfn = pfn;
 	ref->flags |= E500_TLB_VALID;
@@ -305,7 +305,7 @@ static void kvmppc_e500_setup_stlbe(
 	int tsize, struct tlbe_ref *ref, u64 gvaddr,
 	struct kvm_book3e_206_tlb_entry *stlbe)
 {
-	pfn_t pfn = ref->pfn;
+	kvm_pfn_t pfn = ref->pfn;
 	u32 pr = vcpu->arch.shared->msr & MSR_PR;
 
 	BUG_ON(!(ref->flags & E500_TLB_VALID));
@@ -575,6 +575,12 @@ void kvmppc_mmu_map(struct kvm_vcpu *vcpu, u64 eaddr, gpa_t gpaddr,
 		BUG();
 		break;
 	}
+}
+
+int kvmppc_load_last_inst(struct kvm_vcpu *vcpu, enum instruction_type type,
+			  u32 *instr)
+{
+	return EMULATE_AGAIN;
 }
 
 /************* MMU Notifiers *************/

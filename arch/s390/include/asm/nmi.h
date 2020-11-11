@@ -38,7 +38,7 @@ struct mci {
 	__u32 pm :  1; /* 22 psw program mask and cc validity */
 	__u32 ia :  1; /* 23 psw instruction address validity */
 	__u32 fa :  1; /* 24 failing storage address validity */
-	__u32	 :  1; /* 25 */
+	__u32 vr :  1; /* 25 vector register validity */
 	__u32 ec :  1; /* 26 external damage code validity */
 	__u32 fp :  1; /* 27 floating point register validity */
 	__u32 gr :  1; /* 28 general register validity */
@@ -48,7 +48,9 @@ struct mci {
 	__u32 ie :  1; /* 32 indirect storage error */
 	__u32 ar :  1; /* 33 access register validity */
 	__u32 da :  1; /* 34 delayed access exception */
-	__u32	 :  7; /* 35-41 */
+	__u32    :  1; /* 35 */
+	__u32 gs :  1; /* 36 guarded storage registers */
+	__u32    :  5; /* 37-41 */
 	__u32 pr :  1; /* 42 tod programmable register validity */
 	__u32 fc :  1; /* 43 fp control register validity */
 	__u32 ap :  1; /* 44 ancillary report */
@@ -56,6 +58,14 @@ struct mci {
 	__u32 ct :  1; /* 46 cpu timer validity */
 	__u32 cc :  1; /* 47 clock comparator validity */
 	__u32	 : 16; /* 47-63 */
+};
+
+#define MCESA_ORIGIN_MASK	(~0x3ffUL)
+#define MCESA_LC_MASK		(0xfUL)
+
+struct mcesa {
+	u8 vector_save_area[1024];
+	u8 guarded_storage_save_area[32];
 };
 
 struct pt_regs;

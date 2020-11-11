@@ -8,6 +8,7 @@ struct dma_attrs;
 struct scatterlist;
 
 extern int swiotlb_force;
+extern int swiotlb_panic_on_full;
 
 /*
  * Maximum allowable number of contiguous slabs to map,
@@ -27,6 +28,7 @@ int swiotlb_init_with_tbl(char *tlb, unsigned long nslabs, int verbose);
 extern unsigned long swiotlb_nr_tbl(void);
 unsigned long swiotlb_size_or_default(void);
 extern int swiotlb_late_init_with_tbl(char *tlb, unsigned long nslabs);
+extern void __init swiotlb_update_mem_attributes(void);
 
 /*
  * Enumeration for sync targets
@@ -111,9 +113,17 @@ swiotlb_dma_supported(struct device *hwdev, u64 mask);
 
 #ifdef CONFIG_SWIOTLB
 extern void __init swiotlb_free(void);
+size_t swiotlb_max_mapping_size(struct device *dev);
 #else
 static inline void swiotlb_free(void) { }
+
+static inline size_t swiotlb_max_mapping_size(struct device *dev)
+{
+	return SIZE_MAX;
+}
+
 #endif
 
 extern void swiotlb_print_info(void);
+extern int is_swiotlb_buffer(phys_addr_t paddr);
 #endif /* __LINUX_SWIOTLB_H */

@@ -56,18 +56,12 @@ void dccp_time_wait(struct sock *sk, int state, int timeo)
 #if IS_ENABLED(CONFIG_IPV6)
 		if (tw->tw_family == PF_INET6) {
 			const struct ipv6_pinfo *np = inet6_sk(sk);
-			struct inet6_timewait_sock *tw6;
 
-			tw->tw_ipv6_offset = inet6_tw_offset(sk->sk_prot);
-			tw6 = inet6_twsk((struct sock *)tw);
-			tw6->tw_v6_daddr = np->daddr;
-			tw6->tw_v6_rcv_saddr = np->rcv_saddr;
+			tw->tw_v6_daddr = sk->sk_v6_daddr;
+			tw->tw_v6_rcv_saddr = sk->sk_v6_rcv_saddr;
 			tw->tw_ipv6only = np->ipv6only;
 		}
 #endif
-		/* Linkage updates. */
-		__inet_twsk_hashdance(tw, sk, &dccp_hashinfo);
-
 		/* Get the TIME_WAIT timeout firing. */
 		if (timeo < rto)
 			timeo = rto;
@@ -75,6 +69,9 @@ void dccp_time_wait(struct sock *sk, int state, int timeo)
 		tw->tw_timeout = DCCP_TIMEWAIT_LEN;
 		if (state == DCCP_TIME_WAIT)
 			timeo = DCCP_TIMEWAIT_LEN;
+
+		/* Linkage updates. */
+		__inet_twsk_hashdance(tw, sk, &dccp_hashinfo);
 
 		inet_twsk_schedule(tw, &dccp_death_row, timeo,
 				   DCCP_TIMEWAIT_LEN);
@@ -207,7 +204,13 @@ struct sock *dccp_check_req(struct sock *sk, struct sk_buff *skb,
 
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);
-	inet_csk_reqsk_queue_add(sk, req, child);
+
+	if (!inet_csk_reqsk_queue_add(sk, req, child)) {
+		bh_unlock_sock(child);
+		sock_put(child);
+		reqsk_free(req);
+		return NULL;
+	}
 out:
 	return child;
 listen_overflow:
@@ -269,10 +272,10 @@ int dccp_reqsk_init(struct request_sock *req,
 {
 	struct dccp_request_sock *dreq = dccp_rsk(req);
 
-	inet_rsk(req)->rmt_port	  = dccp_hdr(skb)->dccph_sport;
-	inet_rsk(req)->loc_port	  = dccp_hdr(skb)->dccph_dport;
-	inet_rsk(req)->acked	  = 0;
-	dreq->dreq_timestamp_echo = 0;
+	inet_rsk(req)->ir_rmt_port = dccp_hdr(skb)->dccph_sport;
+	inet_rsk(req)->ir_num	   = ntohs(dccp_hdr(skb)->dccph_dport);
+	inet_rsk(req)->acked	   = 0;
+	dreq->dreq_timestamp_echo  = 0;
 
 	/* inherit feature negotiation options from listening socket */
 	return dccp_feat_clone_list(&dp->dccps_featneg, &dreq->dreq_featneg);

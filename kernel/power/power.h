@@ -2,6 +2,7 @@
 #include <linux/suspend_ioctls.h>
 #include <linux/utsname.h>
 #include <linux/freezer.h>
+#include <linux/compiler.h>
 
 struct swsusp_info {
 	struct new_utsname	uts;
@@ -11,7 +12,7 @@ struct swsusp_info {
 	unsigned long		image_pages;
 	unsigned long		pages;
 	unsigned long		size;
-} __attribute__((aligned(PAGE_SIZE)));
+} __aligned(PAGE_SIZE);
 
 #ifdef CONFIG_HIBERNATION
 /* kernel/power/snapshot.c */
@@ -36,6 +37,8 @@ static inline char *check_image_kernel(struct swsusp_info *info)
 			"architecture specific data" : NULL;
 }
 #endif /* CONFIG_ARCH_HIBERNATION_HEADER */
+
+extern int hibernate_resume_nonboot_cpu_disable(void);
 
 /*
  * Keep some memory free so that I/O operations can succeed without paging

@@ -20,7 +20,7 @@
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/of_device.h>
-#include <linux/of_i2c.h>
+#include <linux/of_graph.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/types.h>
@@ -413,12 +413,12 @@ static int fimc_md_parse_port_node(struct fimc_md *fmd,
 		return 0;
 
 	v4l2_of_parse_endpoint(ep, &endpoint);
-	if (WARN_ON(endpoint.port == 0) || index >= FIMC_MAX_SENSORS)
+	if (WARN_ON(endpoint.base.port == 0) || index >= FIMC_MAX_SENSORS)
 		return -EINVAL;
 
-	pd->mux_id = (endpoint.port - 1) & 0x1;
+	pd->mux_id = (endpoint.base.port - 1) & 0x1;
 
-	rem = v4l2_of_get_remote_port_parent(ep);
+	rem = of_graph_get_remote_port_parent(ep);
 	of_node_put(ep);
 	if (rem == NULL) {
 		v4l2_info(&fmd->v4l2_dev, "Remote device at %s not found\n",
@@ -438,13 +438,13 @@ static int fimc_md_parse_port_node(struct fimc_md *fmd,
 		return -EINVAL;
 	}
 
-	if (fimc_input_is_parallel(endpoint.port)) {
+	if (fimc_input_is_parallel(endpoint.base.port)) {
 		if (endpoint.bus_type == V4L2_MBUS_PARALLEL)
 			pd->sensor_bus_type = FIMC_BUS_TYPE_ITU_601;
 		else
 			pd->sensor_bus_type = FIMC_BUS_TYPE_ITU_656;
 		pd->flags = endpoint.bus.parallel.flags;
-	} else if (fimc_input_is_mipi_csi(endpoint.port)) {
+	} else if (fimc_input_is_mipi_csi(endpoint.base.port)) {
 		/*
 		 * MIPI CSI-2: only input mux selection and
 		 * the sensor's clock frequency is needed.
@@ -452,7 +452,7 @@ static int fimc_md_parse_port_node(struct fimc_md *fmd,
 		pd->sensor_bus_type = FIMC_BUS_TYPE_MIPI_CSI2;
 	} else {
 		v4l2_err(&fmd->v4l2_dev, "Wrong port id (%u) at node %s\n",
-			 endpoint.port, rem->full_name);
+			 endpoint.base.port, rem->full_name);
 	}
 	/*
 	 * For FIMC-IS handled sensors, that are placed under i2c-isp device
@@ -1441,9 +1441,9 @@ static int fimc_md_probe(struct platform_device *pdev)
 err_unlock:
 	mutex_unlock(&fmd->media_dev.graph_mutex);
 err_clk:
-	media_device_unregister(&fmd->media_dev);
 	fimc_md_put_clocks(fmd);
 	fimc_md_unregister_entities(fmd);
+	media_device_unregister(&fmd->media_dev);
 err_md:
 	v4l2_device_unregister(&fmd->v4l2_dev);
 	return ret;

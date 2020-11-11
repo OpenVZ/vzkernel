@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 obj-stk1160-ac97-$(CONFIG_VIDEO_STK1160_AC97) := stk1160-ac97.o
 
 stk1160-y := 	stk1160-core.o \

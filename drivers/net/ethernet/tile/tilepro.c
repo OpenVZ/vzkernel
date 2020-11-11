@@ -798,9 +798,6 @@ static bool tile_net_poll_aux(struct tile_net_cpu *info, int index)
 	if (!hash_default)
 		__inv_buffer(buf, len);
 
-	/* ISSUE: Is this needed? */
-	dev->last_rx = jiffies;
-
 #ifdef TILE_NET_DUMP_PACKETS
 	dump_packet(buf, len, "rx");
 #endif /* TILE_NET_DUMP_PACKETS */
@@ -1965,7 +1962,7 @@ static int tile_net_tx(struct sk_buff *skb, struct net_device *dev)
 
 
 	/* Save the timestamp. */
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 
 
 #ifdef TILE_NET_PARANOIA

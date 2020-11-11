@@ -22,8 +22,6 @@
 #include <asm/prom.h>
 #include <asm/pci-bridge.h>
 
-#include <asm-generic/pci-dma-compat.h>
-
 #define PCIBIOS_MIN_IO		0x1000
 #define PCIBIOS_MIN_MEM		0x10000000
 
@@ -43,11 +41,6 @@ struct pci_dev;
  * bus numbers (don't do that on ppc64 yet !)
  */
 #define pcibios_assign_all_busses()	0
-
-static inline void pcibios_penalize_isa_irq(int irq, int active)
-{
-	/* We don't do dynamic PCI IRQ allocation */
-}
 
 #ifdef CONFIG_PCI
 extern void set_pci_dma_ops(struct dma_map_ops *dma_ops);

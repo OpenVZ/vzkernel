@@ -11,6 +11,7 @@
 #include <linux/types.h>
 #include <asm/ptrace.h>
 #include <asm/cpu.h>
+#include <asm/types.h>
 
 #ifdef CONFIG_32BIT
 
@@ -30,6 +31,11 @@ struct save_area {
 	u32	gp_regs[16];
 	u32	ctrl_regs[16];
 } __packed;
+
+struct save_area_ext {
+	struct save_area	sa;
+	__vector128		vx_regs[32];
+};
 
 struct _lowcore {
 	psw_t	restart_psw;			/* 0x0000 */
@@ -139,12 +145,16 @@ struct _lowcore {
 	__u32	percpu_offset;			/* 0x02f0 */
 	__u32	machine_flags;			/* 0x02f4 */
 	__u32	ftrace_func;			/* 0x02f8 */
-	__u8	pad_0x02fc[0x0300-0x02fc];	/* 0x02fc */
+	__u32	spinlock_lockval;		/* 0x02fc */
 
 	/* Interrupt response block */
 	__u8	irb[64];			/* 0x0300 */
 
-	__u8	pad_0x0340[0x0e00-0x0340];	/* 0x0340 */
+	__u8	pad_0x0340[0x0400-0x0340];	/* 0x0340 */
+
+	/* br %r1 trampoline */
+	__u16	br_r1_trampoline;		/* 0x0400 */
+	__u8	pad_0x0402[0x0e00-0x0402];	/* 0x0402 */
 
 	/*
 	 * 0xe00 contains the address of the IPL Parameter Information
@@ -159,7 +169,8 @@ struct _lowcore {
 	__u8	pad_0x0e1c[0x0f00-0x0e1c];	/* 0x0e1c */
 
 	/* Extended facility list */
-	__u64	stfle_fac_list[32];		/* 0x0f00 */
+	__u64	stfle_fac_list[16];		/* 0x0f00 */
+	__u64	alt_stfle_fac_list[16];		/* 0x0f80 */
 } __packed;
 
 #else /* CONFIG_32BIT */
@@ -182,6 +193,11 @@ struct save_area {
 	u32	acc_regs[16];
 	u64	ctrl_regs[16];
 } __packed;
+
+struct save_area_ext {
+	struct save_area	sa;
+	__vector128		vx_regs[32];
+};
 
 struct _lowcore {
 	__u8	pad_0x0000[0x0014-0x0000];	/* 0x0000 */
@@ -275,7 +291,14 @@ struct _lowcore {
 	/* Address space pointer. */
 	__u64	kernel_asce;			/* 0x0358 */
 	__u64	user_asce;			/* 0x0360 */
-	__u64	current_pid;			/* 0x0368 */
+
+	/*
+	 * The lpp and current_pid fields form a
+	 * 64-bit value that is set as program
+	 * parameter with the LPP instruction.
+	 */
+	__u32	lpp;				/* 0x0368 */
+	__u32	current_pid;			/* 0x036c */
 
 	/* SMP info area */
 	__u32	cpu_nr;				/* 0x0370 */
@@ -285,7 +308,8 @@ struct _lowcore {
 	__u64	machine_flags;			/* 0x0388 */
 	__u64	ftrace_func;			/* 0x0390 */
 	__u64	gmap;				/* 0x0398 */
-	__u8	pad_0x03a0[0x0400-0x03a0];	/* 0x03a0 */
+	__u32	spinlock_lockval;		/* 0x03a0 */
+	__u8	pad_0x03a4[0x0400-0x03a4];	/* 0x03a4 */
 
 	/* Interrupt response block. */
 	__u8	irb[64];			/* 0x0400 */
@@ -293,7 +317,11 @@ struct _lowcore {
 	/* Per cpu primary space access list */
 	__u32	paste[16];			/* 0x0440 */
 
-	__u8	pad_0x0480[0x0e00-0x0480];	/* 0x0480 */
+	__u8	pad_0x0480[0x0500-0x0480];	/* 0x0480 */
+
+	/* br %r1 trampoline */
+	__u16	br_r1_trampoline;		/* 0x0500 */
+	__u8	pad_0x0502[0x0e00-0x0502];	/* 0x0502 */
 
 	/*
 	 * 0xe00 contains the address of the IPL Parameter Information
@@ -308,8 +336,12 @@ struct _lowcore {
 	__u8	pad_0x0e20[0x0f00-0x0e20];	/* 0x0e20 */
 
 	/* Extended facility list */
-	__u64	stfle_fac_list[32];		/* 0x0f00 */
-	__u8	pad_0x1000[0x11b8-0x1000];	/* 0x1000 */
+	__u64	stfle_fac_list[16];		/* 0x0f00 */
+	__u64	alt_stfle_fac_list[16];		/* 0x0f80 */
+	__u8	pad_0x1000[0x11b0-0x1000];	/* 0x1000 */
+
+	/* Pointer to the machine check extended save area */
+	__u64	mcesad;				/* 0x11b0 */
 
 	/* 64 bit extparam used for pfault/diag 250: defined by architecture */
 	__u64	ext_params2;			/* 0x11B8 */
@@ -333,8 +365,6 @@ struct _lowcore {
 
 	/* Transaction abort diagnostic block */
 	__u8	pgm_tdb[256];			/* 0x1800 */
-
-	/* align to the top of the prefix area */
 	__u8	pad_0x1900[0x2000-0x1900];	/* 0x1900 */
 } __packed;
 

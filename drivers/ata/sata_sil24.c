@@ -386,6 +386,7 @@ static struct scsi_host_template sil24_sht = {
 	.can_queue		= SIL24_MAX_CMDS,
 	.sg_tablesize		= SIL24_MAX_SGE,
 	.dma_boundary		= ATA_DMA_BOUNDARY,
+	.tag_alloc_policy	= BLK_TAG_ALLOC_FIFO,
 };
 
 static struct ata_port_operations sil24_ops = {
@@ -1041,6 +1042,7 @@ static void sil24_error_intr(struct ata_port *ap)
 			pmp = (context >> 5) & 0xf;
 
 			if (pmp < ap->nr_pmp_links) {
+				gmb();
 				link = &ap->pmp_link[pmp];
 				ehi = &link->eh_info;
 				qc = ata_qc_from_tag(ap, link->active_tag);
@@ -1152,8 +1154,8 @@ static irqreturn_t sil24_interrupt(int irq, void *dev_instance)
 	status = readl(host_base + HOST_IRQ_STAT);
 
 	if (status == 0xffffffff) {
-		printk(KERN_ERR DRV_NAME ": IRQ status == 0xffffffff, "
-		       "PCI fault or device removal?\n");
+		dev_err(host->dev, "IRQ status == 0xffffffff, "
+			"PCI fault or device removal?\n");
 		goto out;
 	}
 

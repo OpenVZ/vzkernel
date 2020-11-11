@@ -20,6 +20,7 @@
 
 #include <asm/msr.h>
 #include <asm/cpufeature.h>
+#include <asm/cpu_device_id.h>
 
 #include "cpufreq_governor.h"
 
@@ -85,13 +86,16 @@ static unsigned int amd_powersave_bias_target(struct cpufreq_policy *policy,
 		if (data->freq_prev == policy->cur)
 			freq_next = policy->cur;
 
-		if (freq_next > policy->cur)
+		if (freq_next > policy->cur) {
+			gmb();
 			freq_next = policy->cur;
-		else if (freq_next < policy->cur)
+		} else if (freq_next < policy->cur) {
+			gmb();
 			freq_next = policy->min;
-		else {
+		} else {
 			unsigned int index;
 
+			gmb();
 			cpufreq_frequency_table_target(policy,
 				od_info->freq_table, policy->cur - 1,
 				CPUFREQ_RELATION_H, &index);

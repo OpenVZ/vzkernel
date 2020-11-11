@@ -93,9 +93,6 @@ void inet_frags_init(struct inet_frags *f)
 	}
 	rwlock_init(&f->lock);
 
-	f->rnd = (u32) ((num_physpages ^ (num_physpages>>7)) ^
-				   (jiffies ^ (jiffies >> 6)));
-
 	setup_timer(&f->secret_timer, inet_frag_secret_rebuild,
 			(unsigned long)f);
 	f->secret_timer.expires = jiffies + f->secret_interval;
@@ -125,8 +122,6 @@ void inet_frags_exit_net(struct netns_frags *nf, struct inet_frags *f)
 	local_bh_disable();
 	inet_frag_evictor(nf, f, true);
 	local_bh_enable();
-
-	percpu_counter_destroy(&nf->mem);
 }
 EXPORT_SYMBOL(inet_frags_exit_net);
 
@@ -181,12 +176,16 @@ void inet_frag_destroy(struct inet_frag_queue *q, struct inet_frags *f,
 	/* Release all fragment data. */
 	fp = q->fragments;
 	nf = q->net;
-	while (fp) {
-		struct sk_buff *xp = fp->next;
+	if (fp) {
+		do {
+			struct sk_buff *xp = fp->next;
 
-		sum_truesize += fp->truesize;
-		frag_kfree_skb(nf, f, fp);
-		fp = xp;
+			sum_truesize += fp->truesize;
+			frag_kfree_skb(nf, f, fp);
+			fp = xp;
+		} while (fp);
+	} else {
+		sum_truesize = inet_frag_rbtree_purge(&q->rb_fragments);
 	}
 	sum = sum_truesize + f->qsize;
 	if (work)
@@ -211,7 +210,7 @@ int inet_frag_evictor(struct netns_frags *nf, struct inet_frags *f, bool force)
 	}
 
 	work = frag_mem_limit(nf) - nf->low_thresh;
-	while (work > 0) {
+	while (work > 0 || force) {
 		spin_lock(&nf->lru_lock);
 
 		if (list_empty(&nf->lru_list)) {
@@ -247,8 +246,6 @@ static struct inet_frag_queue *inet_frag_intern(struct netns_frags *nf,
 {
 	struct inet_frag_bucket *hb;
 	struct inet_frag_queue *qp;
-#ifdef CONFIG_SMP
-#endif
 	unsigned int hash;
 
 	read_lock(&f->lock); /* Protects against hash rebuild */
@@ -283,9 +280,10 @@ static struct inet_frag_queue *inet_frag_intern(struct netns_frags *nf,
 
 	atomic_inc(&qp->refcnt);
 	hlist_add_head(&qp->list, &hb->chain);
+	inet_frag_lru_add(nf, qp);
 	spin_unlock(&hb->chain_lock);
 	read_unlock(&f->lock);
-	inet_frag_lru_add(nf, qp);
+
 	return qp;
 }
 
