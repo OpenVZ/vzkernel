@@ -296,7 +296,8 @@ dist-rpm-baseonly: dist-sources
 
 
 # unless you know what you're doing, you don't want to use the next four ones
-dist-release-finish:
+dist-release-finish: setup-source
+	@cp $(SOURCES)/$(CHANGELOG) $(REDHAT)/$(CHANGELOG)
 	@git add $(REDHAT)/$(CHANGELOG)
 	@git add $(REDHAT)/marker
 	@git commit -s ../Makefile.rhelver $(REDHAT)/marker $(REDHAT)/$(CHANGELOG) $(PACKAGE_NAME).spec.template -m "[redhat] $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PREBUILD)$(BUILD)$(BUILDID)"
@@ -308,6 +309,7 @@ dist-release-changed: setup-source
 	@if git diff-index --quiet HEAD; then \
 		echo "Nothing changed, skipping updates"; \
 	else \
+		git checkout -- $(REDHAT)/$(CHANGELOG); \
 		$(REDHAT)/scripts/new_release.sh $(REDHAT) $(__YSTREAM) $(__ZSTREAM); \
 		$(MAKE) dist-release-finish; \
 	fi
