@@ -76,12 +76,20 @@ void get_avenrun(unsigned long *loads, unsigned long offset, int shift)
 	loads[2] = (avenrun[2] + offset) << shift;
 }
 
-void get_avenrun_ve(unsigned long *loads, unsigned long offset, int shift)
+int get_avenrun_tg(struct task_group *tg, unsigned long *loads,
+		   unsigned long offset, int shift)
 {
-	struct task_group *tg = task_group(current);
+	/* Get current tg if not provided. */
+	tg = tg ? tg : task_group(current);
+
+	if (tg == &root_task_group)
+		return -ENOSYS;
+
 	loads[0] = (tg->avenrun[0] + offset) << shift;
 	loads[1] = (tg->avenrun[1] + offset) << shift;
 	loads[2] = (tg->avenrun[2] + offset) << shift;
+
+	return 0;
 }
 
 long calc_load_fold_active(struct rq *this_rq, long adjust)
