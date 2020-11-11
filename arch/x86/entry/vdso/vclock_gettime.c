@@ -24,7 +24,7 @@
 
 #define gtod (&VVAR(vsyscall_gtod_data))
 
-u64 ve_start_time;
+u64 ve_start_time 	__attribute__((visibility("hidden")));
 
 extern int __vdso_clock_gettime(clockid_t clock, struct timespec *ts);
 extern int __vdso_gettimeofday(struct timeval *tv, struct timezone *tz);
