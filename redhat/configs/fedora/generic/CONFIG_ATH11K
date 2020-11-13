@@ -1,1 +1,1 @@
-# CONFIG_ATH11K is not set
+CONFIG_ATH11K=m
