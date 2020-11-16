@@ -1,0 +1,19 @@
+# CONFIG_QRTR_TUN:
+# 
+# Say Y here to expose a character device that allows user space to
+# implement endpoints of QRTR, for purpose of tunneling data to other
+# hosts or testing purposes.
+# 
+# Symbol: QRTR_TUN [=n]
+# Type  : tristate
+# Defined at net/qrtr/Kconfig:24
+#   Prompt: TUN device for Qualcomm IPC Router
+#   Depends on: NET [=y] && QRTR [=m]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Qualcomm IPC Router support (QRTR [=m])
+# 
+# 
+# 
+# CONFIG_QRTR_TUN is not set

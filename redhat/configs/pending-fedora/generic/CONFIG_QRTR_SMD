@@ -1,0 +1,18 @@
+# CONFIG_QRTR_SMD:
+# 
+# Say Y here to support SMD based ipcrouter channels.  SMD is the
+# most common transport for IPC Router.
+# 
+# Symbol: QRTR_SMD [=n]
+# Type  : tristate
+# Defined at net/qrtr/Kconfig:17
+#   Prompt: SMD IPC Router channels
+#   Depends on: NET [=y] && QRTR [=m] && (RPMSG [=m] || COMPILE_TEST [=n] && RPMSG [=m]=n)
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Qualcomm IPC Router support (QRTR [=m])
+# 
+# 
+# 
+# CONFIG_QRTR_SMD is not set
