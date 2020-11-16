@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_ATH11K_PCI is not set
+CONFIG_ATH11K_PCI=m

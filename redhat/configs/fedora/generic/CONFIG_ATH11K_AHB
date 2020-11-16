@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_ATH11K_AHB is not set
+CONFIG_ATH11K_AHB=m
