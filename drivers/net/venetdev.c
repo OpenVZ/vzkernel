@@ -464,6 +464,20 @@ static int venet_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	stats = venet_stats(dev, smp_processor_id());
 	ve = dev_net(dev)->owner_ve;
+	/*
+	 * vzctl configures tc on Host for shaping basing on skb->marks
+	 * which are set by venet_acct_mark() basing on VE src and dst
+	 * ip address, thus vz specific marks are needed on Host only.
+	 *
+	 * On the other hand someone might set own marks inside a
+	 * Container with xt_mark funtionality, thus vz specific marks
+	 * are unexpected and undesirable inside a Container.
+	 *
+	 * => if the packet goes in VE0 -> VE direction, drop the skb
+	 * mark used for vz traffic shaping.
+	 */
+	if (ve_is_super(ve))
+		skb->mark = 0;
 
 	if (skb->protocol == __constant_htons(ETH_P_IP)) {
 		struct iphdr *iph;
