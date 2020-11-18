@@ -34,6 +34,17 @@ venet_acct_in_hook_v6(const struct nf_hook_ops *hook,
 
 	if (in->flags & IFF_LOOPBACK)
 		goto out;
+	/*
+	 * For VE:  let's account only traffic which crosses the coundary
+	 *	    VE0->VE.
+	 *
+	 * For VE0: let's account all the traffic as it always was.
+	 * There can be extra accounting in case of traffic between
+	 * Docker Containers in VE0.
+	 */
+	if (!ve_is_super(in->nd_net->owner_ve) &&
+	    !(in->features & NETIF_F_VENET))
+		goto out;
 
 	venet_acct_classify_add_incoming(in->nd_net->owner_ve->stat, skb);
 out:
@@ -53,6 +64,15 @@ venet_acct_out_hook_v6(const struct nf_hook_ops *hook,
 	if (out->flags & IFF_LOOPBACK)
 		goto out;
 	if (dst && (dst->dev->flags & IFF_LOOPBACK))
+		goto out;
+	/*
+	 * Don't account and mark VE traffic if it does not cross VE/VE0
+	 * boundary.
+	 * For VE0 there can be extra accounting in case of traffic
+	 * between Docker Containers in VE0.
+	 */
+	if (!(ve_is_super(out->nd_net->owner_ve)) &&
+	    dst && !(dst->dev->features & NETIF_F_VENET))
 		goto out;
 
 	skb->protocol = __constant_htons(ETH_P_IPV6);
