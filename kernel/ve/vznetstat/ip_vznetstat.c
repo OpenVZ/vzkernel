@@ -43,6 +43,17 @@ static unsigned int venet_acct_in_hook(const struct nf_hook_ops *hook,
 	/* Skip loopback dev */
 	if (in == dev_net(in)->loopback_dev)
 		goto out;
+	/*
+	 * For VE:  let's account only traffic which crosses the coundary
+	 *	    VE0->VE.
+	 *
+	 * For VE0: let's account all the traffic as it always was.
+	 * There can be extra accounting in case of traffic between
+	 * Docker Containers in VE0.
+	 */
+	if (!ve_is_super(in->nd_net->owner_ve) &&
+	    !(in->features & NETIF_F_VENET))
+		goto out;
 
 #if VZNS_DEBUG
 	printk("%s: in %s, out %s, size %d, in->owner_env=%s\n",
@@ -91,6 +102,15 @@ static unsigned int venet_acct_out_hook(const struct nf_hook_ops *hook,
 	 * Then, @out is eth0 and we skip @skb in the above check.
 	 */
 	if (dst && (dst->dev->flags & IFF_LOOPBACK))
+		goto out;
+	/*
+	 * Don't account and mark VE traffic if it does not cross VE/VE0
+	 * boundary.
+	 * For VE0 there can be extra accounting in case of traffic
+	 * between Docker Containers in VE0.
+	 */
+	if (!(ve_is_super(out->nd_net->owner_ve)) &&
+	    dst && !(dst->dev->features & NETIF_F_VENET))
 		goto out;
 
 	/* Paranoia */
