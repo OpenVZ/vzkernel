@@ -149,6 +149,15 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
 		goto drop;
 	}
 
+	/*
+	 * If skb is going from VE0 to VE via veth,
+	 * drop the vz specific mark used for traffic shaping.
+	 * See comment in venet_xmit() for details.
+	 */
+	if (dev->features & NETIF_F_VENET &&
+	    ve_is_super(dev_net(dev)->owner_ve))
+		skb->mark = 0;
+
 	if (likely(dev_forward_skb(rcv, skb) == NET_RX_SUCCESS)) {
 		struct pcpu_vstats *stats = this_cpu_ptr(dev->vstats);
 
