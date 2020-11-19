@@ -47,6 +47,8 @@
 #define MCI_STATUS_SYNDV	BIT_ULL(53)  /* synd reg. valid */
 #define MCI_STATUS_DEFERRED	BIT_ULL(44)  /* uncorrected error, deferred exception */
 #define MCI_STATUS_POISON	BIT_ULL(43)  /* access poisonous data */
+#define MCI_STATUS_SCRUB        BIT_ULL(40)  /* Error detected during scrub operation */
+
 
 /*
  * McaX field if set indicates a given bank supports MCA extensions:
@@ -357,6 +359,7 @@ extern void apei_mce_report_mem_error(int corrected,
 /* These may be used by multiple smca_hwid_mcatypes */
 enum smca_bank_types {
 	SMCA_LS = 0,	/* Load Store */
+	SMCA_LS_V2,     /* Load Store */
 	SMCA_IF,	/* Instruction Fetch */
 	SMCA_L2_CACHE,	/* L2 Cache */
 	SMCA_DE,	/* Decoder Unit */
