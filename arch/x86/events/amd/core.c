@@ -13,6 +13,10 @@
 static DEFINE_PER_CPU(unsigned long, perf_nmi_tstamp);
 static unsigned long perf_nmi_window;
 
+/* AMD Event 0xFFF: Merge.  Used with Large Increment per Cycle events */
+#define AMD_MERGE_EVENT ((0xFULL << 32) | 0xFFULL)
+#define AMD_MERGE_EVENT_ENABLE (AMD_MERGE_EVENT | ARCH_PERFMON_EVENTSEL_ENABLE)
+
 static __initconst const u64 amd_hw_cache_event_ids
 				[PERF_COUNT_HW_CACHE_MAX]
 				[PERF_COUNT_HW_CACHE_OP_MAX]
@@ -179,6 +183,30 @@ static inline int amd_pmu_addr_offset(int index, bool eventsel)
 	return offset;
 }
 
+/*
+ * AMD64 events are detected based on their event codes.
+ */
+static inline unsigned int amd_get_event_code(struct hw_perf_event *hwc)
+{
+	return ((hwc->config >> 24) & 0x0f00) | (hwc->config & 0x00ff);
+}
+
+static inline bool amd_is_pair_event_code(struct hw_perf_event *hwc)
+{
+	if (!(x86_pmu.flags & PMU_FL_PAIR))
+		return false;
+
+	switch (amd_get_event_code(hwc)) {
+	case 0x003:     return true;    /* Retired SSE/AVX FLOPs */
+	default:        return false;
+	}
+}
+
+static inline int amd_is_nb_event(struct hw_perf_event *hwc)
+{
+	return (hwc->config & 0xe0) == 0xe0;
+}
+
 static int amd_core_hw_config(struct perf_event *event)
 {
 	if (event->attr.exclude_host && event->attr.exclude_guest)
@@ -194,20 +222,10 @@ static int amd_core_hw_config(struct perf_event *event)
 	else if (event->attr.exclude_guest)
 		event->hw.config |= AMD64_EVENTSEL_HOSTONLY;
 
+	if ((x86_pmu.flags & PMU_FL_PAIR) && amd_is_pair_event_code(&event->hw))
+		event->hw.flags |= PERF_X86_EVENT_PAIR;
+
 	return 0;
-}
-
-/*
- * AMD64 events are detected based on their event codes.
- */
-static inline unsigned int amd_get_event_code(struct hw_perf_event *hwc)
-{
-	return ((hwc->config >> 24) & 0x0f00) | (hwc->config & 0x00ff);
-}
-
-static inline int amd_is_nb_event(struct hw_perf_event *hwc)
-{
-	return (hwc->config & 0xe0) == 0xe0;
 }
 
 static inline int amd_has_nb(struct cpu_hw_events *cpuc)
@@ -580,6 +598,16 @@ static void amd_put_event_constraints(struct cpu_hw_events *cpuc,
 		__amd_put_nb_event_constraints(cpuc, event);
 }
 
+static void amd_put_event_constraints_f17h(struct cpu_hw_events *cpuc,
+					  struct perf_event *event)
+{
+       struct hw_perf_event *hwc = &event->hw;
+
+       if (is_counter_pair(hwc))
+	       --cpuc->n_pair;
+}
+
+
 PMU_FORMAT_ATTR(event,	"config:0-7,32-35");
 PMU_FORMAT_ATTR(umask,	"config:8-15"	);
 PMU_FORMAT_ATTR(edge,	"config:18"	);
@@ -742,6 +770,20 @@ amd_get_event_constraints_f15h(struct cpu_hw_events *cpuc, int idx,
 	}
 }
 
+static struct event_constraint pair_constraint;
+
+static struct event_constraint *
+amd_get_event_constraints_f17h(struct cpu_hw_events *cpuc, int idx,
+			       struct perf_event *event)
+{
+	struct hw_perf_event *hwc = &event->hw;
+
+	if (amd_is_pair_event_code(hwc))
+		return &pair_constraint;
+
+	return &unconstrained;
+}
+
 static ssize_t amd_event_sysfs_show(char *page, u64 config)
 {
 	u64 event = (config & ARCH_PERFMON_EVENTSEL_EVENT) |
@@ -785,45 +827,56 @@ static __initconst const struct x86_pmu amd_pmu = {
 
 static int __init amd_core_pmu_init(void)
 {
-	if (!cpu_has_perfctr_core)
-		return 0;
+       u64 even_ctr_mask = 0ULL;
+       int i;
 
-	/* Avoid calulating the value each time in the NMI handler */
-	perf_nmi_window = msecs_to_jiffies(100);
+       if (!boot_cpu_has(X86_FEATURE_PERFCTR_CORE))
+               return 0;
 
-	switch (boot_cpu_data.x86) {
-	case 0x15:
-		pr_cont("Fam15h ");
-		x86_pmu.get_event_constraints = amd_get_event_constraints_f15h;
-		break;
-	case 0x17:
-		pr_cont("Fam17h ");
-		/*
-		 * In family 17h, there are no event constraints in the PMC hardware.
-		 * We fallback to using default amd_get_event_constraints.
-		 */
-		break;
-	default:
-		pr_err("core perfctr but no constraints; unknown hardware!\n");
-		return -ENODEV;
-	}
+       /* Avoid calculating the value each time in the NMI handler */
+       perf_nmi_window = msecs_to_jiffies(100);
 
-	/*
-	 * If core performance counter extensions exists, we must use
-	 * MSR_F15H_PERF_CTL/MSR_F15H_PERF_CTR msrs. See also
-	 * amd_pmu_addr_offset().
-	 */
-	x86_pmu.eventsel	= MSR_F15H_PERF_CTL;
-	x86_pmu.perfctr		= MSR_F15H_PERF_CTR;
-	x86_pmu.num_counters	= AMD64_NUM_COUNTERS_CORE;
-	/*
-	 * AMD Core perfctr has separate MSRs for the NB events, see
-	 * the amd/uncore.c driver.
-	 */
-	x86_pmu.amd_nb_constraints = 0;
+       /*
+        * If core performance counter extensions exists, we must use
+        * MSR_F15H_PERF_CTL/MSR_F15H_PERF_CTR msrs. See also
+        * amd_pmu_addr_offset().
+        */
+       x86_pmu.eventsel        = MSR_F15H_PERF_CTL;
+       x86_pmu.perfctr         = MSR_F15H_PERF_CTR;
+       x86_pmu.num_counters    = AMD64_NUM_COUNTERS_CORE;
+       /*
+        * AMD Core perfctr has separate MSRs for the NB events, see
+        * the amd/uncore.c driver.
+        */
+       x86_pmu.amd_nb_constraints = 0;
 
-	pr_cont("core perfctr, ");
-	return 0;
+       if (boot_cpu_data.x86 == 0x15) {
+               pr_cont("Fam15h ");
+               x86_pmu.get_event_constraints = amd_get_event_constraints_f15h;
+       }
+       if (boot_cpu_data.x86 >= 0x17) {
+               pr_cont("Fam17h+ ");
+               /*
+                * Family 17h and compatibles have constraints for Large
+                * Increment per Cycle events: they may only be assigned an
+                * even numbered counter that has a consecutive adjacent odd
+                * numbered counter following it.
+                */
+               for (i = 0; i < x86_pmu.num_counters - 1; i += 2)
+                       even_ctr_mask |= 1 << i;
+
+               pair_constraint = (struct event_constraint)
+                                   __EVENT_CONSTRAINT(0, even_ctr_mask, 0,
+                                   x86_pmu.num_counters / 2, 0,
+                                   PERF_X86_EVENT_PAIR);
+               x86_pmu.get_event_constraints = amd_get_event_constraints_f17h;
+               x86_pmu.put_event_constraints = amd_put_event_constraints_f17h;
+               x86_pmu.perf_ctr_pair_en = AMD_MERGE_EVENT_ENABLE;
+               x86_pmu.flags |= PMU_FL_PAIR;
+       }
+
+       pr_cont("core perfctr, ");
+       return 0;
 }
 
 __init int amd_pmu_init(void)
