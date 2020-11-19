@@ -192,6 +192,7 @@ enum {
  * with the SVE bit in EPT PTEs.
  */
 #define SPTE_SPECIAL_MASK (1ULL << 62)
+#define SPTE_MMIO_MASK (3ULL << 52)
 
 /* apic attention bits */
 #define KVM_APIC_CHECK_VAPIC	0
@@ -1040,6 +1041,7 @@ struct kvm_x86_ops {
 	void (*handle_external_intr)(struct kvm_vcpu *vcpu);
 	bool (*mpx_supported)(void);
 
+	bool (*pku_supported)(void);
 	int (*check_nested_events)(struct kvm_vcpu *vcpu, bool external_intr);
 
 	void (*sched_in)(struct kvm_vcpu *kvm, int cpu);
