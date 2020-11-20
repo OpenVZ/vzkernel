@@ -6843,8 +6843,6 @@ static void mem_cgroup_css_offline(struct cgroup *cont)
 	mem_cgroup_free_all(memcg);
 	mem_cgroup_reparent_charges(memcg);
 
-	vmpressure_cleanup(&memcg->vmpressure);
-
 	/*
 	 * A cgroup can be destroyed while somebody is waiting for its
 	 * oom context, in which case the context will never be unlocked
@@ -6899,7 +6897,7 @@ static void mem_cgroup_css_free(struct cgroup *cont)
 	mem_cgroup_reparent_charges(memcg);
 
 	cancel_work_sync(&memcg->high_work);
-
+	vmpressure_cleanup(&memcg->vmpressure);
 	memcg_destroy_kmem(memcg);
 	memcg_free_shrinker_maps(memcg);
 	__mem_cgroup_free(memcg);
