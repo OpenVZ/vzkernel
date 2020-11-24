@@ -1,4 +1,4 @@
-TOPDIR:=$(shell git rev-parse --show-toplevel)
+TOPDIR:=$(shell $(GIT) rev-parse --show-toplevel)
 REDHAT:=$(TOPDIR)/redhat
 include $(TOPDIR)/Makefile.rhelver
 
@@ -6,11 +6,11 @@ RPMBUILD := $(shell if [ -x "/usr/bin/rpmbuild" ]; then echo rpmbuild; \
                    else echo rpm; fi)
 
 MACH :=  $(shell uname -m)
-RPMKVERSION:=$(shell git show HEAD:Makefile | sed -ne '/^VERSION\ =\ /{s///;p;q}')
-RPMKPATCHLEVEL:=$(shell git show HEAD:Makefile | sed -ne '/^PATCHLEVEL\ =\ /{s///;p;q}')
-RPMKSUBLEVEL:=$(shell git show HEAD:Makefile | sed -ne '/^SUBLEVEL\ =\ /{s///;p;q}')
-RPMKEXTRAVERSION:=$(shell git show HEAD:Makefile | sed -ne '/^EXTRAVERSION\ =\ /{s///;p;q}')
-GITID:= $(shell git log --max-count=1 --pretty=format:%H)
+RPMKVERSION:=$(shell $(GIT) show HEAD:Makefile | sed -ne '/^VERSION\ =\ /{s///;p;q}')
+RPMKPATCHLEVEL:=$(shell $(GIT) show HEAD:Makefile | sed -ne '/^PATCHLEVEL\ =\ /{s///;p;q}')
+RPMKSUBLEVEL:=$(shell $(GIT) show HEAD:Makefile | sed -ne '/^SUBLEVEL\ =\ /{s///;p;q}')
+RPMKEXTRAVERSION:=$(shell $(GIT) show HEAD:Makefile | sed -ne '/^EXTRAVERSION\ =\ /{s///;p;q}')
+GITID:= $(shell $(GIT) log --max-count=1 --pretty=format:%H)
 # marker is git tag which we base off of for exporting patches
 # Make sure marker uses RPMKPATCHLEVEL and RPMKEXTRAVERSION from the kernel
 # makefile as opposed to any adjusted version for snapshotting.
@@ -42,8 +42,8 @@ else
 endif
 ifeq ($(VERSION_ON_UPSTREAM),1)
   # master is expected to track mainline.
-  MERGE_BASE:=$(shell git merge-base HEAD master)
-  _TAG:=$(shell git describe $(MERGE_BASE))
+  MERGE_BASE:=$(shell $(GIT) merge-base HEAD master)
+  _TAG:=$(shell $(GIT) describe $(MERGE_BASE))
   # a snapshot off of a tagged git is of the form [tag]-[cnt]-g[hash]
   SNAPSHOT:=$(shell echo $(_TAG) | grep -c '\-g')
 else
