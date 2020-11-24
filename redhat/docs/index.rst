@@ -28,16 +28,24 @@ Once GitLab finishes forking the repository (this can take a while):
 
 ::
 
+   # Setup mirroring of kernel-ark to your fork.  This helps keep your
+   # fork in sync with the kernel-ark project and avoids setting up a second
+   # remote tree to manage.
+   #
+   # Goto: https://gitlab.com/<your gitlab name>/kernel-ark/-/settings/repository
+   # Click on 'Mirroring repositories'
+   # Enter in Git Repository URL: https://gitlab.com/cki-project/kernel-ark.git
+   # Ensure 'Mirror direction' is 'Pull'
+   # Password is blank and checkboxes can be left blank (your choice)
+   # Click 'Mirror Repository'  (will take 20 minutes to establish)
+   #
    # Cloning with these URLs requires that you have an SSH key registered with GitLab
    # If you've not yet set up keys, you can clone with with:
    # git clone https://gitlab.com/<your gitlab name>/kernel-ark.git && cd kernel-ark
-   # git remote add -f upstream https://gitlab.com/cki-project/kernel-ark.git
    git clone git@gitlab.com:<your gitlab name>/kernel-ark.git && cd kernel-ark
-   git remote add -f upstream git@gitlab.com:cki-project/kernel-ark.git
 
    # Install build dependencies
    sudo dnf install -y make gcc flex bison bzip2 rpm-build
-   git checkout upstream/ark-latest
    # If you're on Fedora, you need to run:
    # ln -s /usr/bin/python3 /usr/libexec/platform-python
    make dist-srpm
@@ -48,18 +56,12 @@ Building an SRPM
 ----------------
 
 The configuration and build scripts are in the ``os-build`` branch and
-are regularly updated to work with Linus's master branch. To build an
-SRPM, start by checking out the source tree you'd like to build. In this
-example, we'll assume that is Linus's master branch, but it could just
-as easily be Fedora's ``ark-patches`` branch (Linus's tree + Fedora
-patches) , a sub-system maintainer's tree, or your own creation.
+are regularly updated to work with Linus's master branch.
 
 ::
 
-   git checkout linus/master
-   git merge -m "Merge branch 'os-build'"  os-build
-   # Fedora carries a patch to alter this setting, so we need to change the configuration to build a vanilla tree.
-   # If you're targeting RHEL and have brew/rhpkg installed, use "make DIST=.elrdy dist-srpm" instead
+   git checkout os-build
+   git pull
    make dist-srpm
 
 You can now build the SRPM however you like:
@@ -70,6 +72,7 @@ You can now build the SRPM however you like:
    mock redhat/rpm/SRPMS/kernel*src.rpm
    # Build the SRPM in Fedora's Koji
    koji build --scratch rawhide redhat/rpm/SRPMS/kernel*src.rpm
+   koji build --scratch eln redhat/rpm/SRPMS/kernel*src.rpm
 
 Want to add a patch? Just git-cherry-pick it or apply it with git-am and
 re-run ``make dist-srpm``. Change configurations in ``redhat/configs/``

@@ -63,13 +63,6 @@ along with the configuration and build scripts. They can be checked out
 and built into RPMs. The ``master`` branch points to the latest version
 of these branches.
 
-rhpatches
-~~~~~~~~~
-
-This branch is no longer used. Previously, it held the Red Hat patches
-for the kernel as a quilt series and remains for historical reasons.
-Patch history up to v5.4 is available in this branch.
-
 Tags
 ----
 

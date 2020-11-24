@@ -38,9 +38,9 @@ Patches
 
 Quick start:
 
-1. ``git fetch upstream``
-2. ``git checkout upstream/os-build && git checkout -b my-build-change``
-3. Make a change to a file or files in ``redhat/``.
+1. ``git fetch orgin``
+2. ``git checkout -b my-build-change origin/os-build``
+3. Make a change to a file.
 4. Add your changes with ``git add -A``.
 5. Commit your changes and write a nice commit message that explains the
    change: ``git commit -s``.
