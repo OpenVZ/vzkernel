@@ -166,7 +166,10 @@ dist-clean-rpmdirs:
 		rm -rf $$i; \
 	done;
 
-dist-clean: dist-clean-sources dist-clean-configs dist-clean-rpmdirs
+dist-clean-scripts:
+	@rm -f dist-dump-variables.sh
+
+dist-clean: dist-clean-sources dist-clean-configs dist-clean-rpmdirs dist-clean-scripts
 
 dist-stub-key:
 	@echo "Copying pre-generated keys";
@@ -389,6 +392,20 @@ dist-get-latest:
 dist-os-version:
 	@echo "OSVERSION: $(RHEL_MAJOR).$(RHEL_MINOR)"
 
+.EXPORT_ALL_VARIABLES:
+.PHONY: dist-dump-variables
+dist-dump-variables:
+	grep "^[ 	]*[a-zA-Z_][a-zA-Z_0-9]*[ 	]*[:?]*=" $(REDHAT)/Makefile.common | sed -e 's/[ 	]*\([a-zA-Z_][a-zA-Z_0-9]*\).*/echo "\1=$$\1"/' | sort | uniq > dist-dump-variables.sh
+	chmod +x $(REDHAT)/dist-dump-variables.sh
+	@$(REDHAT)/dist-dump-variables.sh
+
+dist-self-test:
+	@if test -x /usr/bin/bats; then \
+		bats $(REDHAT)/self-test/*.bats ; \
+	else \
+		echo "dist-self-test: The bats package is not installed" ; \
+	fi
+
 dist-help:
 	@echo  'Cleaning targets:'
 	@echo  '  dist-clean          - Clean redhat/configs/ and redhat/rpm/ directories.'
@@ -506,4 +523,5 @@ dist-full-help:
 	@echo  '                    development tag.'
 	@echo  '  dist-os-version - Displays the current Red Hat Enterprise Linux versioni'
 	@echo  '                    target used by the current branch/tree.'
+	@echo  '  dist-self-test  - Runs self-tests from the redhat/self-test directory'
 	@echo  ''
