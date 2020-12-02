@@ -220,18 +220,17 @@ setup-source: dist-git-version-check dist-clean-sources
 	@$(REDHAT)/genspec.sh $(SOURCES) $(SOURCES)/$(SPECFILE) $(SOURCES)/$(CHANGELOG) $(PKGRELEASE) $(RPMKVERSION) $(RPMKPATCHLEVEL) $(RPMKSUBLEVEL) $(DISTRO_BUILD) $(RELEASED_KERNEL) $(SPECRELEASE) $(__ZSTREAM) "$(BUILDOPTS)" $(MARKER) `cat $(REDHAT)/marker` $(SINGLE_TARBALL) $(TARFILE_RELEASE) $(SNAPSHOT) $(BUILDID)
 	@cp $(SOURCES)/$(SPECFILE) $(SOURCES)/../SPECS/
 
-sources-rh: $(TARBALL)
+generate-testpatch-tmp:
+	@(GIT) diff --no-renames HEAD ":(exclude,top).get_maintainer.conf" \
+		":(exclude,top).gitattributes" \
+		":(exclude,top).gitignore" \
+		":(exclude,top)makefile" \
+		":(exclude,top)Makefile.rhelver" \
+		":(exclude,top)redhat" > $(TESTPATCH).tmp
+
+sources-rh: $(TARBALL) generate-testpatch-tmp
 	@cp -l $(TARBALL) $(SOURCES)/ || cp $(TARBALL) $(SOURCES)/
 	@touch $(TESTPATCH)
-	@$(GIT) diff --no-renames HEAD > $(TESTPATCH).tmp
-	@# 1) filterdiff will return crap from the patches it just filtered,
-	@#    that's why egrep is needed so if there're changes under redhat/
-	@#    but not everywhere else, it will be empty just like
-	@#    linux-kernel-test.patch
-	@# 2) egrep -v will return "1" if it sucessfully removed index and diff
-	@#    lines, which will be considered an error
-	@($(FILTERDIFF) $(TESTPATCH).tmp | egrep -v "^index|^diff" >$(TESTPATCH).tmp2; true)
-	@mv $(TESTPATCH).tmp2 $(TESTPATCH).tmp
 	@diff $(TESTPATCH).tmp $(TESTPATCH) > /dev/null || \
 		echo "WARNING: There are uncommitted changes in your tree or the changes are not in sync with linux-kernel-test.patch.  Either commit the changes or run 'make dist-test-patch'"
 	@rm $(TESTPATCH).tmp
@@ -268,9 +267,7 @@ sources-rh: $(TARBALL)
 
 dist-sources: setup-source dist-configs-check dist-kabi dist-kabi-dup sources-rh
 
-dist-test-patch:
-	@$(GIT) diff --no-renames HEAD > $(TESTPATCH);
-	@($(FILTERDIFF) $(TESTPATCH) | egrep -v "^index|^diff" >$(TESTPATCH).tmp; true)
+dist-test-patch: generate-testpatch-tmp
 	@mv $(TESTPATCH).tmp $(TESTPATCH);
 
 dist-all-rpms: dist-sources
