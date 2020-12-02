@@ -1,1 +1,1 @@
-# CONFIG_EVM is not set
+CONFIG_EVM=y
