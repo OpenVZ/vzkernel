@@ -368,7 +368,7 @@ static int start_kthread(struct trace_array *tr)
 {
 	struct task_struct *kthread;
 
-	if (WARN_ON(hwlat_kthread))
+	if (hwlat_kthread)
 		return 0;
 
 	kthread = kthread_create(kthread_fn, NULL, "hwlatd");
