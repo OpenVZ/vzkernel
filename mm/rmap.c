@@ -1729,14 +1729,14 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 	 * The page lock not only makes sure that page->mapping cannot
 	 * suddenly be NULLified by truncation, it makes sure that the
 	 * structure at mapping cannot be freed and reused yet,
-	 * so we can safely take mapping->i_mmap_mutex.
+	 * so we can safely take mapping->i_mmap_rwsem.
 	 */
 	VM_BUG_ON(!PageLocked(page));
 
 	if (!mapping)
 		return ret;
 	pgoff = page_to_pgoff(page);
-	mutex_lock_nested(&mapping->i_mmap_mutex, SINGLE_DEPTH_NESTING);
+	down_write_nested(&mapping->i_mmap_rwsem, SINGLE_DEPTH_NESTING);
 	vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff, pgoff) {
 		unsigned long address = vma_address(page, vma);
 
