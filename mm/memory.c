@@ -1434,9 +1434,9 @@ static void unmap_single_vma(struct mmu_gather *tlb,
 			 * safe to do nothing in this case.
 			 */
 			if (vma->vm_file) {
-				mutex_lock(&vma->vm_file->f_mapping->i_mmap_mutex);
+				i_mmap_lock_write(vma->vm_file->f_mapping);
 				__unmap_hugepage_range_final(tlb, vma, start, end, NULL);
-				mutex_unlock(&vma->vm_file->f_mapping->i_mmap_mutex);
+				i_mmap_unlock_write(vma->vm_file->f_mapping);
 			}
 		} else
 			unmap_page_range(tlb, vma, start, end, details);
@@ -2702,10 +2702,10 @@ void unmap_mapping_range(struct address_space *mapping,
 	if (details.last_index < details.first_index)
 		details.last_index = ULONG_MAX;
 
-	mutex_lock(&mapping->i_mmap_mutex);
+	i_mmap_lock_write(mapping);
 	if (unlikely(!RB_EMPTY_ROOT(&mapping->i_mmap)))
 		unmap_mapping_range_tree(&mapping->i_mmap, &details);
-	mutex_unlock(&mapping->i_mmap_mutex);
+	i_mmap_unlock_write(mapping);
 }
 EXPORT_SYMBOL(unmap_mapping_range);
 
@@ -4362,14 +4362,14 @@ restart:
 
 	mutex_lock_nested(&peer->i_mmap_mutex, SINGLE_DEPTH_NESTING);
 	if (!peer->i_peer_file) {
-		mutex_unlock(&peer->i_mmap_mutex);
+		i_mmap_unlock_write(peer);
 		goto restart;
 	}
-	mutex_lock(&mapping->i_mmap_mutex);
+	i_mmap_lock_write(mapping);
 	rcu_assign_pointer(mapping->i_peer_file, peer->i_peer_file);
 	list_add(&mapping->i_peer_list, &peer->i_peer_list);
-	mutex_unlock(&mapping->i_mmap_mutex);
-	mutex_unlock(&peer->i_mmap_mutex);
+	i_mmap_unlock_write(mapping);
+	i_mmap_unlock_write(peer);
 
 	invalidate_mapping_pages(mapping, 0, -1);
 
@@ -4392,11 +4392,11 @@ static bool synchronize_mapping_faults_vma(struct address_space *mapping,
 	vma->vm_private_data2 = vma;
 
 	atomic_inc(&mm->mm_count);
-	mutex_unlock(&mapping->i_mmap_mutex);
+	i_mmap_unlock_write(mapping);
 	down_write(&mm->mmap_sem);
 	up_write(&mm->mmap_sem);
 	mmdrop(mm);
-	mutex_lock(&mapping->i_mmap_mutex);
+	i_mmap_lock_write(mapping);
 
 	return true;
 }
@@ -4421,7 +4421,7 @@ void close_mapping_peer(struct address_space *mapping)
 	if (!file)
 		return;
 
-	mutex_lock(&mapping->i_mmap_mutex);
+	i_mmap_lock_write(mapping);
 
 	rcu_assign_pointer(mapping->i_peer_file, NULL);
 
@@ -4436,17 +4436,17 @@ void close_mapping_peer(struct address_space *mapping)
 		unmap_mapping_range_tree(&mapping->i_mmap, &details);
 	}
 
-	mutex_unlock(&mapping->i_mmap_mutex);
+	i_mmap_unlock_write(mapping);
 
 	peer = file->f_mapping;
 
-	mutex_lock(&peer->i_mmap_mutex);
+	i_mmap_lock_write(peer);
 	list_del_init(&mapping->i_peer_list);
 	if (list_empty(&peer->i_peer_list))
 		rcu_assign_pointer(peer->i_peer_file, NULL);
 	else
 		file = NULL;
-	mutex_unlock(&peer->i_mmap_mutex);
+	i_mmap_unlock_write(peer);
 
 	if (file) {
 		atomic_inc(&file->f_inode->i_writecount);
