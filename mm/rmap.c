@@ -1738,7 +1738,7 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 	if (!mapping)
 		return ret;
 	pgoff = page_to_pgoff(page);
-	down_write_nested(&mapping->i_mmap_rwsem, SINGLE_DEPTH_NESTING);
+	down_read_nested(&mapping->i_mmap_rwsem, SINGLE_DEPTH_NESTING);
 	vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff, pgoff) {
 		unsigned long address = vma_address(page, vma);
 
@@ -1763,7 +1763,7 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 		if (!mapping_mapped(peer))
 			continue;
 
-		i_mmap_lock_write(peer);
+		i_mmap_lock_read(peer);
 
 		vma_interval_tree_foreach(vma, &peer->i_mmap, pgoff, pgoff) {
 			unsigned long address = vma_address(page, vma);
@@ -1779,7 +1779,7 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 
 			cond_resched();
 		}
-		i_mmap_unlock_write(peer);
+		i_mmap_unlock_read(peer);
 
 		if (ret != SWAP_AGAIN)
 			goto done;
@@ -1787,7 +1787,7 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 			goto done;
 	}
 done:
-	i_mmap_unlock_write(mapping);
+	i_mmap_unlock_read(mapping);
 	return ret;
 }
 
