@@ -2653,14 +2653,8 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 {
 	struct reclaim_state *reclaim_state = current->reclaim_state;
 	unsigned long nr_reclaimed, nr_scanned;
-	gfp_t slab_gfp = sc->gfp_mask;
 	bool slab_only = sc->slab_only;
 	bool retry;
-
-	/* Disable fs-related IO for direct reclaim */
-	if (!sc->target_mem_cgroup &&
-	    (current->flags & (PF_MEMALLOC|PF_KSWAPD)) == PF_MEMALLOC)
-		slab_gfp &= ~__GFP_FS;
 
 	do {
 		struct mem_cgroup *root = sc->target_mem_cgroup;
@@ -2695,7 +2689,7 @@ static void shrink_zone(struct zone *zone, struct scan_control *sc,
 			}
 
 			if (is_classzone) {
-				shrink_slab(slab_gfp, zone_to_nid(zone),
+				shrink_slab(sc->gfp_mask, zone_to_nid(zone),
 					    memcg, sc->priority, false);
 				if (reclaim_state) {
 					sc->nr_reclaimed += reclaim_state->reclaimed_slab;
