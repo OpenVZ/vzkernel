@@ -1517,21 +1517,10 @@ static struct inode *cgroup_find_inode(unsigned long fh[2], char take_ref)
 	struct inode *ret = NULL;
 
 	spin_lock(&cgroup_inode_table_lock);
-	item = cgroup_find_item_no_lock(fh);
 
-	/*
-	 * If we need to increase refcount, we should be aware of possible
-	 * deadlock. Another thread may have started deleting this inode:
-	 * iput->iput_final->cgroup_delete_inode->cgroup_hash_del
-	 * If we just call igrab, it will try to take i_lock and this will
-	 * result in deadlock, because deleting thread has already taken it
-	 * and waits on cgroup_inode_table_lock to find inode in hashtable.
-	 *
-	 * If i_count is zero, someone is deleting it -> skip.
-	 */
-	if (take_ref && item)
-		if (!atomic_inc_not_zero(&item->inode->i_count))
-			item = NULL;
+	item = cgroup_find_item_no_lock(fh);
+	if (item && take_ref && !igrab(item->inode))
+		item = NULL;
 
 	spin_unlock(&cgroup_inode_table_lock);
 
@@ -1629,15 +1618,17 @@ static const struct export_operations cgroup_export_ops = {
 	.fh_to_dentry	= cgroup_fh_to_dentry,
 };
 
-static int cgroup_delete_inode(struct inode *inode)
+static void cgroup_evict_inode(struct inode *inode)
 {
+	truncate_inode_pages_final(&inode->i_data);
+	clear_inode(inode);
 	cgroup_hash_del(inode);
-	return generic_delete_inode(inode);
 }
 
 static const struct super_operations cgroup_ops = {
 	.statfs = simple_statfs,
-	.drop_inode = cgroup_delete_inode,
+	.drop_inode = generic_delete_inode,
+	.evict_inode = cgroup_evict_inode,
 	.show_options = cgroup_show_options,
 #ifdef CONFIG_VE
 	.show_path = cgroup_show_path,
