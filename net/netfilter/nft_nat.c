@@ -279,6 +279,12 @@ static struct nft_expr_type nft_nat_type __read_mostly = {
 
 static int __init nft_nat_module_init(void)
 {
+	/* nft NAT does not work if ip(6)table_nat module is loaded */
+	WARN_ONCE(init_net.ipv4.nat_table || init_net.ipv6.ip6table_nat,
+		  "WARNING: 'nft_nat' kernel module is being loaded "
+		  "while 'ip(6)table_nat' module already loaded. "
+		  "nft NAT will not work.\n");
+
 	return nft_register_expr(&nft_nat_type);
 }
 
