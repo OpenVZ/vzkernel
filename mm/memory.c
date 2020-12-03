@@ -4360,7 +4360,7 @@ restart:
 		spin_unlock(&inode->i_lock);
 	}
 
-	mutex_lock_nested(&peer->i_mmap_mutex, SINGLE_DEPTH_NESTING);
+	down_write_nested(&peer->i_mmap_rwsem, SINGLE_DEPTH_NESTING);
 	if (!peer->i_peer_file) {
 		i_mmap_unlock_write(peer);
 		goto restart;
