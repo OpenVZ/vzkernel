@@ -918,7 +918,7 @@ static void dax_mapping_entry_mkclean(struct address_space *mapping,
 	spinlock_t *ptl;
 	bool changed;
 
-	mutex_lock(&mapping->i_mmap_mutex);
+	i_mmap_lock_write(mapping);
 	vma_interval_tree_foreach(vma, &mapping->i_mmap, index, index) {
 		unsigned long address;
 
@@ -969,7 +969,7 @@ unlock_pte:
 		if (changed)
 			mmu_notifier_invalidate_page(vma->vm_mm, address);
 	}
-	mutex_unlock(&mapping->i_mmap_mutex);
+	i_mmap_unlock_write(mapping);
 }
 
 static int dax_writeback_one(struct dax_device *dax_dev,
