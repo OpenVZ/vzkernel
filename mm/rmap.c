@@ -1761,7 +1761,7 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 		if (!mapping_mapped(peer))
 			continue;
 
-		mutex_lock(&peer->i_mmap_mutex);
+		i_mmap_lock_write(peer);
 
 		vma_interval_tree_foreach(vma, &peer->i_mmap, pgoff, pgoff) {
 			unsigned long address = vma_address(page, vma);
@@ -1777,7 +1777,7 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 
 			cond_resched();
 		}
-		mutex_unlock(&peer->i_mmap_mutex);
+		i_mmap_unlock_write(peer);
 
 		if (ret != SWAP_AGAIN)
 			goto done;
@@ -1785,7 +1785,7 @@ static int rmap_walk_file(struct page *page, struct rmap_walk_control *rwc)
 			goto done;
 	}
 done:
-	mutex_unlock(&mapping->i_mmap_mutex);
+	i_mmap_unlock_write(mapping);
 	return ret;
 }
 
