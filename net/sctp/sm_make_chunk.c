@@ -1670,7 +1670,7 @@ static sctp_cookie_param_t *sctp_pack_cookie(const struct sctp_endpoint *ep,
 	/* Clear this memory since we are sending this data structure
 	 * out on the network.
 	 */
-	retval = kzalloc(*cookie_len, GFP_ATOMIC);
+	retval = kzalloc(*cookie_len, GFP_ATOMIC|__GFP_ORDER_NOWARN);
 	if (!retval)
 		goto nodata;
 
