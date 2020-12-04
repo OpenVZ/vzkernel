@@ -1722,7 +1722,7 @@ static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
 	spin_unlock_irq(&ploop->pb_lock);
 
 	if (!bio_list_empty(&bio_list)) {
-		defer_bio_list(ploop, &bio_list);
+		defer_bios(ploop, NULL, &bio_list);
 		if (has_more)
 			mod_timer(&pb->deadline_timer, pb->timeout_in_jiffies + 1);
 	}

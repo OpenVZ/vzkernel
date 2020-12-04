@@ -493,8 +493,7 @@ extern bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
 				 u8 level, unsigned int dst_cluster);
 
 extern int ploop_add_delta(struct ploop *ploop, const char *arg);
-extern void defer_bio(struct ploop *ploop, struct bio *bio);
-extern void defer_bio_list(struct ploop *ploop, struct bio_list *bio_list);
+extern void defer_bios(struct ploop *ploop, struct bio *bio, struct bio_list *bio_list);
 extern void do_ploop_work(struct work_struct *ws);
 extern void process_deferred_cmd(struct ploop *ploop,
 			struct ploop_index_wb *piwb);

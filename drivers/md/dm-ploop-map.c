@@ -118,23 +118,16 @@ static int ploop_bio_cluster(struct ploop *ploop, struct bio *bio,
 	return 0;
 }
 
-void defer_bio(struct ploop *ploop, struct bio *bio)
+void defer_bios(struct ploop *ploop, struct bio *bio, struct bio_list *bl)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	bio_list_add(&ploop->deferred_bios, bio);
-	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+	if (bio)
+		bio_list_add(&ploop->deferred_bios, bio);
+	if (bl)
+		bio_list_merge(&ploop->deferred_bios, bl);
 
-	queue_work(ploop->wq, &ploop->worker);
-}
-
-void defer_bio_list(struct ploop *ploop, struct bio_list *bio_list)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	bio_list_merge(&ploop->deferred_bios, bio_list);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 	queue_work(ploop->wq, &ploop->worker);
 }
@@ -193,7 +186,7 @@ static int ploop_map_discard(struct ploop *ploop, struct bio *bio)
 	}
 
 	if (supported) {
-		defer_bio(ploop, bio);
+		defer_bios(ploop, bio, NULL);
 	} else {
 		bio->bi_status = BLK_STS_NOTSUPP;
 		bio_endio(bio);
@@ -1077,7 +1070,7 @@ static void queue_or_fail(struct ploop *ploop, int err, void *data)
 		bio->bi_status = errno_to_blk_status(err);
 		bio_endio(bio);
 	} else {
-		defer_bio(ploop, bio);
+		defer_bios(ploop, bio, NULL);
 	}
 }
 
@@ -1257,7 +1250,7 @@ static bool locate_new_cluster_and_attach_bio(struct ploop *ploop,
 
 	if (piwb->page_nr != page_nr || piwb->type != PIWB_TYPE_ALLOC) {
 		/* Another BAT page wb is in process */
-		defer_bio(ploop, bio);
+		defer_bios(ploop, bio, NULL);
 		goto out;
 	}
 
@@ -1273,7 +1266,7 @@ static bool locate_new_cluster_and_attach_bio(struct ploop *ploop,
 		 * batch? Delay submitting. Good thing, that cluster allocation
 		 * has already made, and it goes in the batch.
 		 */
-		defer_bio(ploop, bio);
+		defer_bios(ploop, bio, NULL);
 	}
 out:
 	return attached;
@@ -1530,7 +1523,7 @@ void cleanup_backup(struct ploop *ploop)
 	spin_unlock_irq(&ploop->pb_lock);
 
 	if (!bio_list_empty(&bio_list))
-		defer_bio_list(ploop, &bio_list);
+		defer_bios(ploop, NULL, &bio_list);
 
 	del_timer_sync(&pb->deadline_timer);
 }
@@ -1649,7 +1642,7 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 
 		if (!in_top_delta) {
 			if (op_is_write(bio->bi_opf) || dst_cluster != BAT_ENTRY_NONE) {
-				defer_bio(ploop, bio);
+				defer_bios(ploop, bio, NULL);
 			} else {
 				zero_fill_bio(bio);
 				bio_endio(bio);
