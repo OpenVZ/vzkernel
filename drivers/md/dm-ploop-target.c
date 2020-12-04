@@ -145,7 +145,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	for (i = 0; i < 2; i++) {
 		release = i ? inflight_bios_ref_exit1 : inflight_bios_ref_exit0;
 		if (percpu_ref_init(&ploop->inflight_bios_ref[i], release,
-				    0, GFP_KERNEL)) {
+				    PERCPU_REF_ALLOW_REINIT, GFP_KERNEL)) {
 			ret = -ENOMEM;
 			ti->error = "could not alloc percpu_ref";
 			goto err;
