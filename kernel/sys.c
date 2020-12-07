@@ -2559,6 +2559,8 @@ SYSCALL_DEFINE3(getcpu, unsigned __user *, cpup, unsigned __user *, nodep,
 }
 
 extern void si_meminfo_ve(struct sysinfo *si, struct ve_struct *ve);
+extern int get_avenrun_tg(struct task_group *tg, unsigned long *loads,
+			  unsigned long offset, int shift);
 
 /**
  * do_sysinfo - fill in sysinfo struct
@@ -2590,8 +2592,11 @@ static int do_sysinfo(struct sysinfo *info)
 			       ve->real_start_time / NSEC_PER_SEC;
 
 		info->procs = nr_threads_ve(ve);
-	}
 
+		/* does not fail on non-VE0 task group */
+		(void)get_avenrun_tg(NULL, info->loads,
+				     0, SI_LOAD_SHIFT - FSHIFT);
+	}
 
 	/*
 	 * If the sum of all the available memory (i.e. ram + swap)
