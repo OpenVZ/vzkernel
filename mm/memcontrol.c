@@ -4141,12 +4141,28 @@ static const unsigned int memcg1_events[] = {
 	PSWPOUT,
 };
 
+static void accumulate_ooms(struct mem_cgroup *memcg, unsigned long *total_oom,
+			unsigned long *total_oom_kill)
+{
+	struct mem_cgroup *mi;
+
+	total_oom_kill = total_oom = 0;
+
+	for_each_mem_cgroup_tree(mi, memcg) {
+		total_oom += atomic_long_read(&mi->memory_events[MEMCG_OOM]);
+		total_oom_kill += atomic_long_read(&mi->memory_events[MEMCG_OOM_KILL]);
+
+		cond_resched();
+	}
+}
+
 static int memcg_stat_show(struct seq_file *m, void *v)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
 	unsigned long memory, memsw;
 	struct mem_cgroup *mi;
 	unsigned int i;
+	unsigned long total_oom = 0, total_oom_kill = 0;
 
 	BUILD_BUG_ON(ARRAY_SIZE(memcg1_stat_names) != ARRAY_SIZE(memcg1_stats));
 
@@ -4162,21 +4178,19 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 		seq_printf(m, "%s %lu\n", vm_event_name(memcg1_events[i]),
 			   memcg_events_local(memcg, memcg1_events[i]));
 
+
+	accumulate_ooms(memcg, &total_oom, &total_oom_kill);
+
 	/*
 	 * For root_mem_cgroup we want to account global ooms as well.
 	 * The diff between all MEMCG_OOM_KILL and MEMCG_OOM events
 	 * should give us the glogbal ooms count.
 	 */
-	if (memcg == root_mem_cgroup) {
-		unsigned long glob_ooms;
-
-		glob_ooms = memcg_events(memcg, memcg1_events[MEMCG_OOM_KILL]) -
-			    memcg_events(memcg, memcg1_events[MEMCG_OOM]);
-		seq_printf(m, "oom %lu\n", glob_ooms +
-			memcg_events_local(memcg, memcg1_events[MEMCG_OOM]));
-	} else
+	if (memcg == root_mem_cgroup)
+		seq_printf(m, "oom %lu\n", total_oom_kill - total_oom);
+	else
 		seq_printf(m, "oom %lu\n",
-			memcg_events_local(memcg, memcg1_events[MEMCG_OOM]));
+			atomic_long_read(&memcg->memory_events[MEMCG_OOM]));
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
 		seq_printf(m, "%s %lu\n", lru_list_name(i),
@@ -4209,11 +4223,9 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 			   (u64)memcg_events(memcg, memcg1_events[i]));
 
 	if (memcg == root_mem_cgroup)
-		seq_printf(m, "total_oom %lu\n",
-			memcg_events(memcg, memcg1_events[MEMCG_OOM_KILL]));
+		seq_printf(m, "total_oom %lu\n", total_oom_kill);
 	else
-		seq_printf(m, "total_oom %lu\n",
-			memcg_events(memcg, memcg1_events[MEMCG_OOM]));
+		seq_printf(m, "total_oom %lu\n", total_oom);
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
 		seq_printf(m, "total_%s %llu\n", lru_list_name(i),
