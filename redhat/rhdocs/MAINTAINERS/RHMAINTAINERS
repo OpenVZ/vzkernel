@@ -461,7 +461,6 @@ F:	include/linux/ceph/
 F:	include/linux/crush/
 
 CEPH DISTRIBUTED FILE SYSTEM CLIENT (CEPH)
-M:	"Yan, Zheng" <zyan@redhat.com>
 M:	Ilya Dryomov <idryomov@redhat.com>
 S:	Maintained
 F:	Documentation/filesystems/ceph.txt
@@ -550,19 +549,16 @@ F:	include/linux/crypto*
 F:	lib/crypto/
 
 CXGB3 ETHERNET DRIVER (cxgb3)
-M:	Vishal Kulkarni <viskulka@redhat.com>
 M:	John W. Linville <linville@redhat.com>
 S:	Maintained
 F:	drivers/net/ethernet/chelsio/cxgb3/
 
 CXGB4 ETHERNET DRIVER (cxgb4)
-M:	Vishal Kulkarni <viskulka@redhat.com>
 M:	John W. Linville <linville@redhat.com>
 S:	Maintained
 F:	drivers/net/ethernet/chelsio/cxgb4/
 
 CXGB4 IWARP DRIVER (IW_CXGB4)
-M:	Vishal Kulkarni <viskulka@redhat.com>
 M:	John W. Linville <linville@redhat.com>
 S:	Maintained
 F:	drivers/infiniband/hw/cxgb4/
