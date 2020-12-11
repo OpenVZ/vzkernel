@@ -1,0 +1,18 @@
+# CONFIG_NFS_V4_2_READ_PLUS:
+# 
+# This is intended for developers only. The READ_PLUS operation has
+# been shown to have issues under specific conditions and should not
+# be used in production.
+# 
+# Symbol: NFS_V4_2_READ_PLUS [=n]
+# Type  : bool
+# Defined at fs/nfs/Kconfig:209
+#   Prompt: NFS: Enable support for the NFSv4.2 READ_PLUS operation
+#   Depends on: NETWORK_FILESYSTEMS [=y] && NFS_V4_2 [=y]
+#   Location:
+#     -> File systems
+#       -> Network File Systems (NETWORK_FILESYSTEMS [=y])
+# 
+# 
+# 
+# CONFIG_NFS_V4_2_READ_PLUS is not set
