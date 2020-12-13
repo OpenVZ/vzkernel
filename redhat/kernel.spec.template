@@ -575,6 +575,7 @@ BuildRequires: pesign >= 0.10-4
 %if %{with_cross}
 BuildRequires: binutils-%{_build_arch}-linux-gnu, gcc-%{_build_arch}-linux-gnu
 %define cross_opts CROSS_COMPILE=%{_build_arch}-linux-gnu-
+%define __strip %{_build_arch}-linux-gnu-strip
 %endif
 
 # These below are required to build man pages
