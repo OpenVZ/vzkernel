@@ -7,6 +7,14 @@
 %global _lto_cflags %{nil}
 
 
+# Cross compile on arm for copr
+# See https://bugzilla.redhat.com/1879599
+%if 0%{?_with_cross_arm:1}
+%global _target_cpu armv7hl
+%global _arch arm
+%global _build_arch arm
+%global _with_cross    1
+%endif
 
 # The kernel's %%install section is special
 # Normally the %%install section starts by cleaning up the BUILD_ROOT
