@@ -221,7 +221,7 @@ setup-source: dist-git-version-check dist-clean-sources
 	@cp $(SOURCES)/$(SPECFILE) $(SOURCES)/../SPECS/
 
 generate-testpatch-tmp:
-	@(GIT) diff --no-renames HEAD ":(exclude,top).get_maintainer.conf" \
+	@$(GIT) diff --no-renames HEAD ":(exclude,top).get_maintainer.conf" \
 		":(exclude,top).gitattributes" \
 		":(exclude,top).gitignore" \
 		":(exclude,top)makefile" \
