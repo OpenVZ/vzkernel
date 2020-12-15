@@ -268,12 +268,42 @@ static void set_majmin(char *str, unsigned m)
 		sprintf(str, "%u", m);
 }
 
+struct dev_exception_item *dev_exeption_next(struct list_head *head)
+{
+	return list_entry_rcu(head->next, struct dev_exception_item, list);
+}
+
+static bool dev_exceptions_equal(struct list_head *first, struct list_head *second)
+{
+	struct dev_exception_item *exf, *exs;
+
+	for (exf = dev_exeption_next(first->next),
+	     exs = dev_exeption_next(second->next);
+	     &exf->list != first && &exs->list != second;
+	     exf = dev_exeption_next(exf->list.next),
+	     exs = dev_exeption_next(exs->list.next)) {
+		/* Check that exceptions are equal */
+		if (exf->type != exs->type ||
+		    exf->major != exs->major ||
+		    exf->minor != exs->minor ||
+		    exf->access != exs->access)
+			return false;
+	}
+
+	if (&exf->list != first || &exs->list != second)
+		return false;
+
+	return true;
+}
+
 static int devcgroup_seq_show(struct seq_file *m, void *v)
 {
 	struct dev_cgroup *devcgroup = css_to_devcgroup(seq_css(m));
 	struct dev_exception_item *ex;
 	char maj[MAJMINLEN], min[MAJMINLEN], acc[ACCLEN];
 	short type, mask;
+	struct cgroup_subsys_state *root_css;
+	struct dev_cgroup *root_cgrp;
 
 	type = (short)seq_cft(m)->private;
 	mask = (type == DEVCG_EXTRA_LIST) ?
@@ -293,6 +323,27 @@ static int devcgroup_seq_show(struct seq_file *m, void *v)
 		seq_printf(m, "%c %s:%s %s\n", type_to_char(DEVCG_DEV_ALL),
 			   maj, min, acc);
 	} else {
+		/*
+		 * Fooling docker in CT again: if exceptions in ve are the same
+		 * as in ve root cgroup - show as if we allow everyting
+		 */
+		if (!ve_is_super(get_exec_env())) {
+			root_css  = css_get_local_root(seq_css(m));
+			root_cgrp = css_to_devcgroup(root_css);
+
+			if (dev_exceptions_equal(&devcgroup->exceptions,
+						 &root_cgrp->exceptions)) {
+				set_access(acc, mask);
+				set_majmin(maj, ~0);
+				set_majmin(min, ~0);
+				seq_printf(m, "%c %s:%s %s\n",
+					   type_to_char(DEVCG_DEV_ALL),
+					   maj, min, acc);
+				rcu_read_unlock();
+				return 0;
+			}
+		}
+
 		list_for_each_entry_rcu(ex, &devcgroup->exceptions, list) {
 			set_access(acc, ex->access & mask);
 			set_majmin(maj, ex->major);
