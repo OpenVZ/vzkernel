@@ -3109,6 +3109,13 @@ static inline int pskb_trim_rcsum(struct sk_buff *skb, unsigned int len)
 		return 0;
 	if (skb->ip_summed == CHECKSUM_COMPLETE)
 		skb->ip_summed = CHECKSUM_NONE;
+	else if (skb->ip_summed == CHECKSUM_PARTIAL) {
+		int hdlen = (len > skb_headlen(skb)) ? skb_headlen(skb) : len;
+		int offset = skb_checksum_start_offset(skb) + skb->csum_offset;
+
+		if (offset + sizeof(__sum16) > hdlen)
+			return -EINVAL;
+	}
 	return __pskb_trim(skb, len);
 }
 
