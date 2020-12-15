@@ -200,6 +200,18 @@ $(KABIDW_TARBALL):
 	@(cd kabi-dwarf && tar cjf $(SOURCES)/$(KABIDW_TARFILE) base run_kabi-dw.sh)
 
 
+dist-tarball: $(TARBALL)
+	@echo "redhat/$(TARFILE)"
+
+dist-kernelrelease:
+	@echo $(PACKAGE_NAME)-$(KVERSION)-$(DISTRO_BUILD)
+
+dist-kernelversion:
+	@echo $(KVERSION)-$(DISTRO_BUILD)
+
+dist-specfile: setup-source
+	@echo $(SOURCES)/$(SPECFILE)
+
 dist-git-version-check:
 	@# genspec.sh uses pathspec magic that wasn't introduced until version 2.13
 	@IFS=" ."; \
