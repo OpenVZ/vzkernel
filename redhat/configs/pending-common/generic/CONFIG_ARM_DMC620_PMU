@@ -1,0 +1,17 @@
+# CONFIG_ARM_DMC620_PMU:
+# 
+# Support for PMU events monitoring on the ARM DMC-620 memory
+# controller.
+# 
+# Symbol: ARM_DMC620_PMU [=n]
+# Type  : tristate
+# Defined at drivers/perf/Kconfig:133
+#   Prompt: Enable PMU support for the ARM DMC-620 memory controller
+#   Depends on: PERF_EVENTS [=y] && (ARM64 [=y] && ACPI [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Performance monitor support
+# 
+# 
+# 
+# CONFIG_ARM_DMC620_PMU is not set

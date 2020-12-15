@@ -1,0 +1,19 @@
+# CONFIG_EDAC_IGEN6:
+# 
+# Support for error detection and correction on the Intel
+# client SoC Integrated Memory Controller using In-Band ECC IP.
+# This In-Band ECC is first used on the Elkhart Lake SoC but
+# may appear on others in the future.
+# 
+# Symbol: EDAC_IGEN6 [=n]
+# Type  : tristate
+# Defined at drivers/edac/Kconfig:272
+#   Prompt: Intel client SoC Integrated MC
+#   Depends on: EDAC [=y] && PCI [=y] && X86_64 [=y] && PCI_MMCONFIG [=y] && ARCH_HAVE_NMI_SAFE_CMPXCHG [=y]
+#   Location:
+#     -> Device Drivers
+#       -> EDAC (Error Detection And Correction) reporting (EDAC [=y])
+# 
+# 
+# 
+# CONFIG_EDAC_IGEN6 is not set

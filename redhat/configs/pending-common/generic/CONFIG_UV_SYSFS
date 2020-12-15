@@ -1,0 +1,20 @@
+# CONFIG_UV_SYSFS:
+# 
+# This driver supports a sysfs tree describing information about
+# UV systems at /sys/firmware/sgi_uv/.
+# 
+# To compile this driver as a module, choose M here: the module will
+# be called uv_sysfs.
+# 
+# Symbol: UV_SYSFS [=n]
+# Type  : tristate
+# Defined at drivers/platform/x86/Kconfig:81
+#   Prompt: Sysfs structure for UV systems
+#   Depends on: X86 [=y] && X86_PLATFORM_DEVICES [=y] && X86_UV [=y] && SYSFS [=y]
+#   Location:
+#     -> Device Drivers
+#       -> X86 Platform Specific Device Drivers (X86_PLATFORM_DEVICES [=y])
+# 
+# 
+# 
+# CONFIG_UV_SYSFS is not set

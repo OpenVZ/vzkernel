@@ -1,0 +1,19 @@
+# CONFIG_DRM_ANALOGIX_ANX7625:
+# 
+# ANX7625 is an ultra-low power 4K mobile HD transmitter
+# designed for portable devices. It converts MIPI/DPI to
+# DisplayPort1.3 4K.
+# 
+# Symbol: DRM_ANALOGIX_ANX7625 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/analogix/Kconfig:29
+#   Prompt: Analogix Anx7625 MIPI to DP interface support
+#   Depends on: HAS_IOMEM [=y] && DRM_BRIDGE [=y] && DRM [=m] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# 
+# 
+# 
+# CONFIG_DRM_ANALOGIX_ANX7625 is not set
