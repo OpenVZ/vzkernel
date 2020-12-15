@@ -598,7 +598,7 @@ static int copy_vdso(struct vdso_image **vdso_dst, const struct vdso_image *vdso
 	if (!vdso)
 		return -ENOMEM;
 
-	vdso_data = kmalloc(vdso_src->size, GFP_KERNEL);
+	vdso_data = alloc_pages_exact(vdso_src->size, GFP_KERNEL);
 	if (!vdso_data) {
 		kfree(vdso);
 		return -ENOMEM;
@@ -615,11 +615,11 @@ static int copy_vdso(struct vdso_image **vdso_dst, const struct vdso_image *vdso
 static void ve_free_vdso(struct ve_struct *ve)
 {
 	if (ve->vdso_64 && ve->vdso_64 != &vdso_image_64) {
-		kfree(ve->vdso_64->data);
+		free_pages_exact(ve->vdso_64->data, ve->vdso_64->size);
 		kfree(ve->vdso_64);
 	}
 	if (ve->vdso_32 && ve->vdso_32 != &vdso_image_32) {
-		kfree(ve->vdso_32->data);
+		free_pages_exact(ve->vdso_32->data, ve->vdso_32->size);
 		kfree(ve->vdso_32);
 	}
 }
