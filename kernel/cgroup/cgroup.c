@@ -329,6 +329,33 @@ struct cgroup *cgroup_get_local_root(struct cgroup *cgrp)
 	return cgrp;
 }
 
+struct cgroup_subsys_state *css_get_local_root(struct cgroup_subsys_state *css)
+{
+	/*
+	 * Find css for nearest "root" cgroup, which might be
+	 * - host cgroup root
+	 *   or
+	 * - ve cgroup root.
+	 *
+	 *    <host_root_cgroup> -> local_root
+	 *     \                    ^
+	 *      <cgroup>            |
+	 *       \                  |
+	 *        <cgroup>   --->   from here
+	 *        \
+	 *         <ve_root_cgroup> -> local_root
+	 *         \                   ^
+	 *          <cgroup>           |
+	 *          \                  |
+	 *           <cgroup>  --->    from here
+	 */
+
+	while (css->parent && !test_bit(CGRP_VE_ROOT, &css->cgroup->flags))
+		css = css->parent;
+
+	return css;
+}
+
 struct ve_struct *cgroup_get_ve_owner(struct cgroup *cgrp)
 {
 	struct ve_struct *ve;
