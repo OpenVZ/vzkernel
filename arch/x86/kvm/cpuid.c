@@ -642,13 +642,13 @@ static inline int __do_cpuid_ent(struct kvm_cpuid_entry2 *entry, u32 function,
 		 * arch/x86/kernel/cpu/bugs.c is kind enough to
 		 * record that in cpufeatures so use them.
 		 */
-		if (boot_cpu_has(X86_FEATURE_AMD_IBPB))
+		if (boot_cpu_has(X86_FEATURE_IBPB))
 			entry->ebx |= F(AMD_IBPB);
-		if (boot_cpu_has(X86_FEATURE_AMD_IBRS))
+		if (boot_cpu_has(X86_FEATURE_IBRS))
 			entry->ebx |= F(AMD_IBRS);
-		if (boot_cpu_has(X86_FEATURE_AMD_STIBP))
+		if (boot_cpu_has(X86_FEATURE_STIBP))
 			entry->ebx |= F(AMD_STIBP);
-		if (boot_cpu_has(X86_FEATURE_AMD_SSBD))
+		if (boot_cpu_has(X86_FEATURE_SSBD))
 			entry->ebx |= F(AMD_SSBD);
 		if (!boot_cpu_has_bug(X86_BUG_SPEC_STORE_BYPASS))
 			entry->ebx |= F(AMD_SSB_NO);
