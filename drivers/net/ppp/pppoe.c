@@ -442,6 +442,7 @@ static int pppoe_rcv(struct sk_buff *skb, struct net_device *dev,
 	if (pskb_trim_rcsum(skb, len))
 		goto drop;
 
+	ph = pppoe_hdr(skb);
 	pn = pppoe_pernet(dev_net(dev));
 	if (!pn) /* no VE_FEATURE_PPP */
 		goto drop;
