@@ -1,0 +1,18 @@
+# CONFIG_DEBUG_USER_ASCE:
+# 
+# Check on exit to user space that address space control
+# elements are setup correctly.
+# 
+# If unsure, say N.
+# 
+# Symbol: DEBUG_USER_ASCE [=n]
+# Type  : bool
+# Defined at arch/s390/Kconfig.debug:9
+#   Prompt: Debug User ASCE
+#   Location:
+#     -> Kernel hacking
+#       -> s390 Debugging
+# 
+# 
+# 
+# CONFIG_DEBUG_USER_ASCE is not set

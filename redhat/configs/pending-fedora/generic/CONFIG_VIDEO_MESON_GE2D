@@ -1,0 +1,23 @@
+# CONFIG_VIDEO_MESON_GE2D:
+# 
+# This is a v4l2 driver for Amlogic GE2D 2D graphics accelerator.
+# GE2D is a standalone 2D graphic acceleration unit, with color converter,
+# image scaling, BitBLT & alpha blending operations.
+# 
+# To compile this driver as a module choose m here.
+# 
+# Symbol: VIDEO_MESON_GE2D [=n]
+# Type  : tristate
+# Defined at drivers/media/platform/Kconfig:309
+#   Prompt: Amlogic 2D Graphic Acceleration Unit
+#   Depends on: MEDIA_SUPPORT [=m] && MEDIA_PLATFORM_SUPPORT [=y] && V4L_MEM2MEM_DRIVERS [=y] && VIDEO_DEV [=m] && VIDEO_V4L2 [=m] && (ARCH_MESON [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media drivers
+#           -> Memory-to-memory multimedia devices (V4L_MEM2MEM_DRIVERS [=y])
+# Selects: VIDEOBUF2_DMA_CONTIG [=m] && V4L2_MEM2MEM_DEV [=m]
+# 
+# 
+# 
+# CONFIG_VIDEO_MESON_GE2D is not set

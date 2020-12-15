@@ -1,0 +1,20 @@
+# CONFIG_DRM_PANEL_TDO_TL070WSH30:
+# 
+# Say Y here if you want to enable support for TDO TL070WSH30 TFT-LCD
+# panel module. The panel has a 1024×600 resolution and uses
+# 24 bit RGB per pixel. It provides a MIPI DSI interface to
+# the host, a built-in LED backlight and touch controller.
+# 
+# Symbol: DRM_PANEL_TDO_TL070WSH30 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/panel/Kconfig:484
+#   Prompt: TDO TL070WSH30 DSI panel
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_PANEL [=y] && OF [=y] && DRM_MIPI_DSI [=y] && BACKLIGHT_CLASS_DEVICE [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Panels
+# 
+# 
+# 
+# CONFIG_DRM_PANEL_TDO_TL070WSH30 is not set

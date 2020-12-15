@@ -1,0 +1,17 @@
+# CONFIG_CRYPTO_DEV_HISI_TRNG:
+# 
+# Support for HiSilicon TRNG Driver.
+# 
+# Symbol: CRYPTO_DEV_HISI_TRNG [=n]
+# Type  : tristate
+# Defined at drivers/crypto/hisilicon/Kconfig:75
+#   Prompt: Support for HISI TRNG Driver
+#   Depends on: CRYPTO [=y] && CRYPTO_HW [=y] && ARM64 [=y] && ACPI [=y]
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#       -> Hardware crypto devices (CRYPTO_HW [=y])
+# Selects: HW_RANDOM [=y] && CRYPTO_RNG [=y]
+# 
+# 
+# 
+# CONFIG_CRYPTO_DEV_HISI_TRNG is not set

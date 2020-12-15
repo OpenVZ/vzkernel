@@ -1,0 +1,20 @@
+# CONFIG_LCD2S:
+# 
+# This is a driver that lets you use the lcd2s 20x4 character display
+# from Modtronix engineering as a console output device. The display
+# is a simple single color character display. You have to connect it
+# to an I2C bus.
+# 
+# Symbol: LCD2S [=n]
+# Type  : tristate
+# Defined at drivers/auxdisplay/Kconfig:176
+#   Prompt: lcd2s 20x4 character display over I2C console
+#   Depends on: AUXDISPLAY [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Auxiliary Display support (AUXDISPLAY [=y])
+# Selects: CHARLCD [=m]
+# 
+# 
+# 
+# CONFIG_LCD2S is not set

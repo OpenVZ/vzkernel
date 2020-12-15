@@ -1,0 +1,21 @@
+# CONFIG_VIDEO_CCS:
+# 
+# This is a generic driver for MIPI CCS, SMIA++ and SMIA compliant
+# camera sensors.
+# 
+# Symbol: VIDEO_CCS [=n]
+# Type  : tristate
+# Defined at drivers/media/i2c/ccs/Kconfig:2
+#   Prompt: MIPI CCS/SMIA++/SMIA sensor support
+#   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && HAVE_CLK [=y]
+#   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && VIDEO_V4L2 [=m] && HAVE_CLK [=y] && MEDIA_CAMERA_SUPPORT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media ancillary drivers
+#           -> Camera sensor devices
+# Selects: MEDIA_CONTROLLER [=y] && VIDEO_V4L2_SUBDEV_API [=y] && VIDEO_CCS_PLL [=n] && V4L2_FWNODE [=m]
+# 
+# 
+# 
+# CONFIG_VIDEO_CCS is not set
