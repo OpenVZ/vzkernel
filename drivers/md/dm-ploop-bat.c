@@ -175,6 +175,11 @@ static int ploop_read_bat(struct ploop *ploop, struct bio *bio)
 			from = kmap(bio->bi_io_vec[page].bv_page);
 			memcpy(to, from, nr_copy * sizeof(map_index_t));
 			kunmap(bio->bi_io_vec[page].bv_page);
+			if (unlikely(nr_copy < BAT_ENTRIES_PER_PAGE)) {
+				memset(to + nr_copy, 0, sizeof(map_index_t) *
+				       (BAT_ENTRIES_PER_PAGE - nr_copy));
+			}
+
 			ret = parse_bat_entries(ploop, to, md->bat_levels,
 						nr_copy, id);
 			kunmap(md->page);
