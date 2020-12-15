@@ -13,6 +13,7 @@
 
 #define PLOOP_MAP_OFFSET 16
 typedef u32 map_index_t;
+#define BAT_ENTRIES_PER_PAGE (PAGE_SIZE / sizeof(map_index_t))
 
 #define SIGNATURE_DISK_IN_USE           0x746F6E59
 
