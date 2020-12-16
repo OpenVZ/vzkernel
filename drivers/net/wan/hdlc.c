@@ -99,7 +99,7 @@ static inline void hdlc_proto_stop(struct net_device *dev)
 static int hdlc_device_event(struct notifier_block *this, unsigned long event,
 			     void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	hdlc_device *hdlc;
 	unsigned long flags;
 	int on;
@@ -365,7 +365,7 @@ static int __init hdlc_module_init(void)
 	int result;
 
 	pr_info("%s\n", version);
-	if ((result = register_netdevice_notifier(&hdlc_notifier)) != 0)
+	if ((result = register_netdevice_notifier_rh(&hdlc_notifier)) != 0)
 		return result;
 	dev_add_pack(&hdlc_packet_type);
 	return 0;
@@ -376,7 +376,7 @@ static int __init hdlc_module_init(void)
 static void __exit hdlc_module_exit(void)
 {
 	dev_remove_pack(&hdlc_packet_type);
-	unregister_netdevice_notifier(&hdlc_notifier);
+	unregister_netdevice_notifier_rh(&hdlc_notifier);
 }
 
 

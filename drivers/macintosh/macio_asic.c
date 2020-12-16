@@ -29,7 +29,6 @@
 #include <asm/macio.h>
 #include <asm/pmac_feature.h>
 #include <asm/prom.h>
-#include <asm/pci-bridge.h>
 
 #undef DEBUG
 

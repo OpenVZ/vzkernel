@@ -33,22 +33,9 @@
 
 int hpux_execve(struct pt_regs *regs)
 {
-	int error;
-	struct filename *filename;
-
-	filename = getname((const char __user *) regs->gr[26]);
-	error = PTR_ERR(filename);
-	if (IS_ERR(filename))
-		goto out;
-
-	error = do_execve(filename->name,
+	return  do_execve(getname((const char __user *) regs->gr[26]),
 			  (const char __user *const __user *) regs->gr[25],
 			  (const char __user *const __user *) regs->gr[24]);
-
-	putname(filename);
-
-out:
-	return error;
 }
 
 struct hpux_dirent {
@@ -60,6 +47,7 @@ struct hpux_dirent {
 };
 
 struct getdents_callback {
+	struct dir_context ctx;
 	struct hpux_dirent __user *current_dir;
 	struct hpux_dirent __user *previous;
 	int count;
@@ -121,13 +109,14 @@ int hpux_getdents(unsigned int fd, struct hpux_dirent __user *dirent, unsigned i
 	buf.previous = NULL;
 	buf.count = count;
 	buf.error = 0;
+	buf.ctx.actor = filldir;
 
-	error = vfs_readdir(arg.file, filldir, &buf);
+	error = iterate_dir(arg.file, &buf.ctx);
 	if (error >= 0)
 		error = buf.error;
 	lastdirent = buf.previous;
 	if (lastdirent) {
-		if (put_user(arg.file->f_pos, &lastdirent->d_off))
+		if (put_user(buf.ctx.pos, &lastdirent->d_off))
 			error = -EFAULT;
 		else
 			error = count - buf.count;

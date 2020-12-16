@@ -14,6 +14,7 @@
  */
 
 #include <linux/netdevice.h>
+#include <linux/notifier.h>
 #include <linux/export.h>
 
 #include <net/fib_rules.h>
@@ -29,9 +30,40 @@ struct fib6_rule {
 	u8			tclass;
 };
 
+static bool fib6_rule_matchall(const struct fib_rule *rule)
+{
+	struct fib6_rule *r = container_of(rule, struct fib6_rule, common);
+
+	if (r->dst.plen || r->src.plen || r->tclass)
+		return false;
+	return fib_rule_matchall(rule);
+}
+
+bool fib6_rule_default(const struct fib_rule *rule)
+{
+	if (!fib6_rule_matchall(rule) || rule->action != FR_ACT_TO_TBL ||
+	    0) /* rule->l3mdev - VRF is missing in RHEL */
+		return false;
+	if (rule->table != RT6_TABLE_LOCAL && rule->table != RT6_TABLE_MAIN)
+		return false;
+	return true;
+}
+EXPORT_SYMBOL_GPL(fib6_rule_default);
+
+int fib6_rules_dump(struct net *net, struct notifier_block *nb)
+{
+	return fib_rules_dump(net, nb, AF_INET6);
+}
+
+unsigned int fib6_rules_seq_read(struct net *net)
+{
+	return fib_rules_seq_read(net, AF_INET6);
+}
+
 struct dst_entry *fib6_rule_lookup(struct net *net, struct flowi6 *fl6,
 				   int flags, pol_lookup_t lookup)
 {
+	struct rt6_info *rt;
 	struct fib_lookup_arg arg = {
 		.lookup_ptr = lookup,
 		.flags = FIB_LOOKUP_NOREF,
@@ -40,11 +72,21 @@ struct dst_entry *fib6_rule_lookup(struct net *net, struct flowi6 *fl6,
 	fib_rules_lookup(net->ipv6.fib6_rules_ops,
 			 flowi6_to_flowi(fl6), flags, &arg);
 
-	if (arg.result)
-		return arg.result;
+	rt = arg.result;
 
-	dst_hold(&net->ipv6.ip6_null_entry->dst);
-	return &net->ipv6.ip6_null_entry->dst;
+	if (!rt) {
+		dst_hold(&net->ipv6.ip6_null_entry->dst);
+		return &net->ipv6.ip6_null_entry->dst;
+	}
+
+	if (rt->rt6i_flags & RTF_REJECT &&
+	    rt->dst.error == -EAGAIN) {
+		ip6_rt_put(rt);
+		rt = net->ipv6.ip6_null_entry;
+		dst_hold(&rt->dst);
+	}
+
+	return &rt->dst;
 }
 
 static int fib6_rule_action(struct fib_rule *rule, struct flowi *flp,
@@ -55,26 +97,33 @@ static int fib6_rule_action(struct fib_rule *rule, struct flowi *flp,
 	struct fib6_table *table;
 	struct net *net = rule->fr_net;
 	pol_lookup_t lookup = arg->lookup_ptr;
+	int err = 0;
 
 	switch (rule->action) {
 	case FR_ACT_TO_TBL:
 		break;
 	case FR_ACT_UNREACHABLE:
+		err = -ENETUNREACH;
 		rt = net->ipv6.ip6_null_entry;
 		goto discard_pkt;
 	default:
 	case FR_ACT_BLACKHOLE:
+		err = -EINVAL;
 		rt = net->ipv6.ip6_blk_hole_entry;
 		goto discard_pkt;
 	case FR_ACT_PROHIBIT:
+		err = -EACCES;
 		rt = net->ipv6.ip6_prohibit_entry;
 		goto discard_pkt;
 	}
 
 	table = fib6_get_table(net, rule->table);
-	if (table)
-		rt = lookup(net, table, flp6, flags);
+	if (!table) {
+		err = -EAGAIN;
+		goto out;
+	}
 
+	rt = lookup(net, table, flp6, flags);
 	if (rt != net->ipv6.ip6_null_entry) {
 		struct fib6_rule *r = (struct fib6_rule *)rule;
 
@@ -101,6 +150,7 @@ static int fib6_rule_action(struct fib_rule *rule, struct flowi *flp,
 	}
 again:
 	ip6_rt_put(rt);
+	err = -EAGAIN;
 	rt = NULL;
 	goto out;
 
@@ -108,9 +158,21 @@ discard_pkt:
 	dst_hold(&rt->dst);
 out:
 	arg->result = rt;
-	return rt == NULL ? -EAGAIN : 0;
+	return err;
 }
 
+static bool fib6_rule_suppress(struct fib_rule *rule, struct fib_lookup_arg *arg)
+{
+	struct rt6_info *rt = (struct rt6_info *) arg->result;
+	/* do not accept result if the route does
+	 * not meet the required prefix length
+	 */
+	if (rt->rt6i_dst.plen <= rule->suppress_prefixlen) {
+		ip6_rt_put(rt);
+		return true;
+	}
+	return false;
+}
 
 static int fib6_rule_match(struct fib_rule *rule, struct flowi *fl, int flags)
 {
@@ -135,7 +197,7 @@ static int fib6_rule_match(struct fib_rule *rule, struct flowi *fl, int flags)
 			return 0;
 	}
 
-	if (r->tclass && r->tclass != ((ntohl(fl6->flowlabel) >> 20) & 0xff))
+	if (r->tclass && r->tclass != ip6_tclass(fl6->flowlabel))
 		return 0;
 
 	return 1;
@@ -164,12 +226,10 @@ static int fib6_rule_configure(struct fib_rule *rule, struct sk_buff *skb,
 	}
 
 	if (frh->src_len)
-		nla_memcpy(&rule6->src.addr, tb[FRA_SRC],
-			   sizeof(struct in6_addr));
+		rule6->src.addr = nla_get_in6_addr(tb[FRA_SRC]);
 
 	if (frh->dst_len)
-		nla_memcpy(&rule6->dst.addr, tb[FRA_DST],
-			   sizeof(struct in6_addr));
+		rule6->dst.addr = nla_get_in6_addr(tb[FRA_DST]);
 
 	rule6->src.plen = frh->src_len;
 	rule6->dst.plen = frh->dst_len;
@@ -215,21 +275,14 @@ static int fib6_rule_fill(struct fib_rule *rule, struct sk_buff *skb,
 	frh->tos = rule6->tclass;
 
 	if ((rule6->dst.plen &&
-	     nla_put(skb, FRA_DST, sizeof(struct in6_addr),
-		     &rule6->dst.addr)) ||
+	     nla_put_in6_addr(skb, FRA_DST, &rule6->dst.addr)) ||
 	    (rule6->src.plen &&
-	     nla_put(skb, FRA_SRC, sizeof(struct in6_addr),
-		     &rule6->src.addr)))
+	     nla_put_in6_addr(skb, FRA_SRC, &rule6->src.addr)))
 		goto nla_put_failure;
 	return 0;
 
 nla_put_failure:
 	return -ENOBUFS;
-}
-
-static u32 fib6_rule_default_pref(struct fib_rules_ops *ops)
-{
-	return 0x3FFF;
 }
 
 static size_t fib6_rule_nlmsg_payload(struct fib_rule *rule)
@@ -244,10 +297,10 @@ static const struct fib_rules_ops __net_initconst fib6_rules_ops_template = {
 	.addr_size		= sizeof(struct in6_addr),
 	.action			= fib6_rule_action,
 	.match			= fib6_rule_match,
+	.suppress		= fib6_rule_suppress,
 	.configure		= fib6_rule_configure,
 	.compare		= fib6_rule_compare,
 	.fill			= fib6_rule_fill,
-	.default_pref		= fib6_rule_default_pref,
 	.nlmsg_payload		= fib6_rule_nlmsg_payload,
 	.nlgroup		= RTNLGRP_IPV6_RULE,
 	.policy			= fib6_rule_policy,

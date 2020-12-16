@@ -8,6 +8,20 @@
 
 struct dma_map_ops;
 struct device_node;
+struct iommu_table;
+
+struct dev_arch_dmadata {
+	/*
+	 * These two used to be a union. However, with the hybrid ops we need
+	 * both so here we store both a DMA offset for direct mappings and
+	 * an iommu_table for remapped DMA.
+	 */
+	dma_addr_t		dma_offset;
+
+#ifdef CONFIG_PPC64
+	struct iommu_table	*iommu_table_base;
+#endif
+};
 
 /*
  * Arch extensions to struct device.
@@ -17,16 +31,10 @@ struct device_node;
  */
 struct dev_archdata {
 	/* DMA operations on that device */
-	struct dma_map_ops	*dma_ops;
+	RH_KABI_DEPRECATE(struct dma_map_ops *, dma_ops)
 
-	/*
-	 * When an iommu is in use, dma_data is used as a ptr to the base of the
-	 * iommu_table.  Otherwise, it is a simple numerical offset.
-	 */
-	union {
-		dma_addr_t	dma_offset;
-		void		*iommu_table_base;
-	} dma_data;
+	RH_KABI_REPLACE(union { dma_addr_t dma_offset; void *iommu_table_base; }dma_data,
+	                struct dev_arch_dmadata *hybrid_dma_data)
 
 #ifdef CONFIG_SWIOTLB
 	dma_addr_t		max_direct_dma_addr;
@@ -36,6 +44,9 @@ struct dev_archdata {
 #endif
 #ifdef CONFIG_FAIL_IOMMU
 	int fail_iommu;
+#endif
+#ifdef CONFIG_CXL_BASE
+	RH_KABI_EXTEND(struct cxl_context       *cxl_ctx)
 #endif
 };
 

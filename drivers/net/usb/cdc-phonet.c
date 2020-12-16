@@ -99,6 +99,7 @@ static void tx_complete(struct urb *req)
 	struct net_device *dev = skb->dev;
 	struct usbpn_dev *pnd = netdev_priv(dev);
 	int status = req->status;
+	unsigned long flags;
 
 	switch (status) {
 	case 0:
@@ -109,16 +110,17 @@ static void tx_complete(struct urb *req)
 	case -ECONNRESET:
 	case -ESHUTDOWN:
 		dev->stats.tx_aborted_errors++;
+		/* fall through */
 	default:
 		dev->stats.tx_errors++;
 		dev_dbg(&dev->dev, "TX error (%d)\n", status);
 	}
 	dev->stats.tx_packets++;
 
-	spin_lock(&pnd->tx_lock);
+	spin_lock_irqsave(&pnd->tx_lock, flags);
 	pnd->tx_queue--;
 	netif_wake_queue(dev);
-	spin_unlock(&pnd->tx_lock);
+	spin_unlock_irqrestore(&pnd->tx_lock, flags);
 
 	dev_kfree_skb_any(skb);
 	usb_free_urb(req);
@@ -130,7 +132,7 @@ static int rx_submit(struct usbpn_dev *pnd, struct urb *req, gfp_t gfp_flags)
 	struct page *page;
 	int err;
 
-	page = __skb_alloc_page(gfp_flags | __GFP_NOMEMALLOC, NULL);
+	page = __dev_alloc_page(gfp_flags | __GFP_NOMEMALLOC);
 	if (!page)
 		return -ENOMEM;
 
@@ -162,7 +164,7 @@ static void rx_complete(struct urb *req)
 			skb = pnd->rx_skb = netdev_alloc_skb(dev, 12);
 			if (likely(skb)) {
 				/* Can't use pskb_pull() on page in IRQ */
-				memcpy(skb_put(skb, 1), page_address(page), 1);
+				skb_put_data(skb, page_address(page), 1);
 				skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
 						page, 1, req->actual_length,
 						PAGE_SIZE);
@@ -212,7 +214,7 @@ resubmit:
 	if (page)
 		put_page(page);
 	if (req)
-		rx_submit(pnd, req, GFP_ATOMIC | __GFP_COLD);
+		rx_submit(pnd, req, GFP_ATOMIC);
 }
 
 static int usbpn_close(struct net_device *dev);
@@ -231,7 +233,7 @@ static int usbpn_open(struct net_device *dev)
 	for (i = 0; i < rxq_size; i++) {
 		struct urb *req = usb_alloc_urb(0, GFP_KERNEL);
 
-		if (!req || rx_submit(pnd, req, GFP_KERNEL | __GFP_COLD)) {
+		if (!req || rx_submit(pnd, req, GFP_KERNEL)) {
 			usb_free_urb(req);
 			usbpn_close(dev);
 			return -ENOMEM;
@@ -312,7 +314,7 @@ static void usbpn_setup(struct net_device *dev)
 /*
  * USB driver callbacks
  */
-static struct usb_device_id usbpn_ids[] = {
+static const struct usb_device_id usbpn_ids[] = {
 	{
 		.match_flags = USB_DEVICE_ID_MATCH_VENDOR
 			| USB_DEVICE_ID_MATCH_INT_CLASS
@@ -328,7 +330,7 @@ MODULE_DEVICE_TABLE(usb, usbpn_ids);
 
 static struct usb_driver usbpn_driver;
 
-int usbpn_probe(struct usb_interface *intf, const struct usb_device_id *id)
+static int usbpn_probe(struct usb_interface *intf, const struct usb_device_id *id)
 {
 	static const char ifname[] = "usbpn%d";
 	const struct usb_cdc_union_desc *union_header = NULL;
@@ -340,32 +342,13 @@ int usbpn_probe(struct usb_interface *intf, const struct usb_device_id *id)
 	u8 *data;
 	int phonet = 0;
 	int len, err;
+	struct usb_cdc_parsed_header hdr;
 
 	data = intf->altsetting->extra;
 	len = intf->altsetting->extralen;
-	while (len >= 3) {
-		u8 dlen = data[0];
-		if (dlen < 3)
-			return -EINVAL;
-
-		/* bDescriptorType */
-		if (data[1] == USB_DT_CS_INTERFACE) {
-			/* bDescriptorSubType */
-			switch (data[2]) {
-			case USB_CDC_UNION_TYPE:
-				if (union_header || dlen < 5)
-					break;
-				union_header =
-					(struct usb_cdc_union_desc *)data;
-				break;
-			case 0xAB:
-				phonet = 1;
-				break;
-			}
-		}
-		data += dlen;
-		len -= dlen;
-	}
+	cdc_parse_cdc_header(&hdr, intf, data, len);
+	union_header = hdr.usb_cdc_union_desc;
+	phonet = hdr.phonet_magic_present;
 
 	if (!union_header || !phonet)
 		return -EINVAL;

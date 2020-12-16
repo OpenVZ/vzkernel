@@ -125,7 +125,7 @@ static inline void arch_leave_lazy_mmu_mode(void)
 
 
 extern void flush_hash_page(unsigned long vpn, real_pte_t pte, int psize,
-			    int ssize, int local);
+			    int ssize, unsigned long flags);
 extern void flush_hash_range(unsigned long number, int local);
 
 
@@ -165,7 +165,8 @@ static inline void flush_tlb_kernel_range(unsigned long start,
 /* Private function for use by PCI IO mapping code */
 extern void __flush_hash_table_range(struct mm_struct *mm, unsigned long start,
 				     unsigned long end);
-
+extern void flush_tlb_pmd_range(struct mm_struct *mm, pmd_t *pmd,
+				unsigned long addr);
 #else
 #error Unsupported MMU type
 #endif
