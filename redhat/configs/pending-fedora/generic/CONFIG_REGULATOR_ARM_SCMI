@@ -1,0 +1,19 @@
+# CONFIG_REGULATOR_ARM_SCMI:
+# 
+# This adds the regulator driver support for ARM platforms using SCMI
+# protocol for device voltage management.
+# This driver uses SCMI Message Protocol driver to interact with the
+# firmware providing the device Voltage functionality.
+# 
+# Symbol: REGULATOR_ARM_SCMI [=n]
+# Type  : tristate
+# Defined at drivers/regulator/Kconfig:158
+#   Prompt: SCMI based regulator driver
+#   Depends on: REGULATOR [=y] && ARM_SCMI_PROTOCOL [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Voltage and Current Regulator Support (REGULATOR [=y])
+# 
+# 
+# 
+# CONFIG_REGULATOR_ARM_SCMI is not set

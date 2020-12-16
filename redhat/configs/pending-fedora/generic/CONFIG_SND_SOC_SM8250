@@ -1,0 +1,22 @@
+# CONFIG_SND_SOC_SM8250:
+# 
+# To add support for audio on Qualcomm Technologies Inc.
+# SM8250 SoC-based systems.
+# Say Y if you want to use audio device on this SoCs.
+# 
+# Symbol: SND_SOC_SM8250 [=n]
+# Type  : tristate
+# Defined at sound/soc/qcom/Kconfig:131
+#   Prompt: SoC Machine driver for SM8250 boards
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_SOC_QCOM [=m] && QCOM_APR [=m] && SOUNDWIRE [=y] && COMMON_CLK [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> ASoC support for QCOM platforms (SND_SOC_QCOM [=m])
+# Selects: SND_SOC_QDSP6 [=m] && SND_SOC_QCOM_COMMON [=m]
+# 
+# 
+# 
+# CONFIG_SND_SOC_SM8250 is not set

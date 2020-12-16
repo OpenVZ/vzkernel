@@ -1,0 +1,24 @@
+# CONFIG_SND_SOC_IMX_HDMI:
+# 
+# ALSA SoC Audio support with HDMI feature for Freescale SoCs that have
+# SAI/AUD2HTX and connect with internal HDMI IP or external module
+# SII902X.
+# Say Y if you want to add support for SoC audio on an i.MX board with
+# IMX HDMI.
+# 
+# Symbol: SND_SOC_IMX_HDMI [=n]
+# Type  : tristate
+# Defined at sound/soc/fsl/Kconfig:308
+#   Prompt: SoC Audio support for i.MX boards with HDMI port
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_IMX_SOC [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> SoC Audio for Freescale CPUs
+# Selects: SND_SOC_FSL_SAI [=m] && SND_SOC_FSL_AUD2HTX [=n] && SND_SOC_HDMI_CODEC [=m]
+# 
+# 
+# 
+# CONFIG_SND_SOC_IMX_HDMI is not set

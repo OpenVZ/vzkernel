@@ -1,0 +1,16 @@
+# CONFIG_INTERCONNECT_SAMSUNG:
+# 
+# Interconnect drivers for Samsung SoCs.
+# 
+# Symbol: INTERCONNECT_SAMSUNG [=n]
+# Type  : bool
+# Defined at drivers/interconnect/samsung/Kconfig:2
+#   Prompt: Samsung SoC interconnect drivers
+#   Depends on: INTERCONNECT [=y] && (ARCH_EXYNOS [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> On-Chip Interconnect management support (INTERCONNECT [=y])
+# 
+# 
+# 
+# CONFIG_INTERCONNECT_SAMSUNG is not set

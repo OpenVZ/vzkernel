@@ -1,0 +1,23 @@
+# CONFIG_NFC_S3FWRN82_UART:
+# 
+# This module adds support for a UART interface to the S3FWRN82 chip.
+# Select this if your platform is using the UART bus.
+# 
+# To compile this driver as a module, choose m here. The module will
+# be called s3fwrn82_uart.ko.
+# Say N if unsure.
+# 
+# Symbol: NFC_S3FWRN82_UART [=n]
+# Type  : tristate
+# Defined at drivers/nfc/s3fwrn5/Kconfig:24
+#   Prompt: Samsung S3FWRN82 UART support
+#   Depends on: NET [=y] && NFC [=m] && NFC_NCI [=m] && SERIAL_DEV_BUS [=y]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> NFC subsystem support (NFC [=m])
+#         -> Near Field Communication (NFC) devices
+# Selects: NFC_S3FWRN5 [=n]
+# 
+# 
+# 
+# CONFIG_NFC_S3FWRN82_UART is not set

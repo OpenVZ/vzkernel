@@ -1,0 +1,22 @@
+# CONFIG_INTEL_PMT_TELEMETRY:
+# 
+# The Intel Platform Monitory Technology (PMT) Telemetry driver provides
+# access to hardware telemetry metrics on devices that support the
+# feature.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called intel_pmt_telemetry.
+# 
+# Symbol: INTEL_PMT_TELEMETRY [=n]
+# Type  : tristate
+# Defined at drivers/platform/x86/Kconfig:1383
+#   Prompt: Intel Platform Monitoring Technology (PMT) Telemetry driver
+#   Depends on: X86 [=y] && X86_PLATFORM_DEVICES [=y]
+#   Location:
+#     -> Device Drivers
+#       -> X86 Platform Specific Device Drivers (X86_PLATFORM_DEVICES [=y])
+# Selects: INTEL_PMT_CLASS [=n]
+# 
+# 
+# 
+# CONFIG_INTEL_PMT_TELEMETRY is not set

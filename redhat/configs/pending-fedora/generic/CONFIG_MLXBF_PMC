@@ -1,0 +1,18 @@
+# CONFIG_MLXBF_PMC:
+# 
+# Say y here to enable PMC support. The PMC driver provides access
+# to performance monitoring counters within various blocks in the
+# Mellanox BlueField SoC via a sysfs interface.
+# 
+# Symbol: MLXBF_PMC [=n]
+# Type  : tristate
+# Defined at drivers/platform/mellanox/Kconfig:59
+#   Prompt: Mellanox BlueField Performance Monitoring Counters driver
+#   Depends on: MELLANOX_PLATFORM [=y] && ARM64 [=y] && HWMON [=y] && ACPI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Platform support for Mellanox hardware (MELLANOX_PLATFORM [=y])
+# 
+# 
+# 
+# CONFIG_MLXBF_PMC is not set

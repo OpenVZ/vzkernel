@@ -1,0 +1,24 @@
+# CONFIG_INPUT_DA7280_HAPTICS:
+# 
+# Say Y to enable support for the Dialog DA7280 haptics driver.
+# The haptics can be controlled by PWM or GPIO
+# with I2C communication.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called da7280.
+# 
+# Symbol: INPUT_DA7280_HAPTICS [=n]
+# Type  : tristate
+# Defined at drivers/input/misc/Kconfig:623
+#   Prompt: Dialog Semiconductor DA7280 haptics support
+#   Depends on: !UML && INPUT_MISC [=y] && INPUT [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Input device support
+#         -> Generic input layer (needed for keyboard, mouse, ...) (INPUT [=y])
+#           -> Miscellaneous devices (INPUT_MISC [=y])
+# Selects: REGMAP_I2C [=y]
+# 
+# 
+# 
+# CONFIG_INPUT_DA7280_HAPTICS is not set

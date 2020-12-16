@@ -1,0 +1,16 @@
+# CONFIG_SURFACE_PRO3_BUTTON:
+# 
+# This driver handles the power/home/volume buttons on the Microsoft Surface Pro 3/4 tablet.
+# 
+# Symbol: SURFACE_PRO3_BUTTON [=n]
+# Type  : tristate
+# Defined at drivers/platform/surface/Kconfig:53
+#   Prompt: Power/home/volume buttons driver for Microsoft Surface Pro 3/4 tablet
+#   Depends on: SURFACE_PLATFORMS [=y] && ACPI [=y] && INPUT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Microsoft Surface Platform-Specific Device Drivers (SURFACE_PLATFORMS [=y])
+# 
+# 
+# 
+# CONFIG_SURFACE_PRO3_BUTTON is not set

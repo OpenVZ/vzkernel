@@ -1,0 +1,19 @@
+# CONFIG_SURFACE_GPE:
+# 
+# This driver marks the GPEs related to the ACPI lid device found on
+# Microsoft Surface devices as wakeup sources and prepares them
+# accordingly. It is required on those devices to allow wake-ups from
+# suspend by opening the lid.
+# 
+# Symbol: SURFACE_GPE [=n]
+# Type  : tristate
+# Defined at drivers/platform/surface/Kconfig:43
+#   Prompt: Surface GPE/Lid Support Driver
+#   Depends on: SURFACE_PLATFORMS [=y] && ACPI [=y] && DMI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Microsoft Surface Platform-Specific Device Drivers (SURFACE_PLATFORMS [=y])
+# 
+# 
+# 
+# CONFIG_SURFACE_GPE is not set

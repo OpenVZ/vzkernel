@@ -1,0 +1,22 @@
+# CONFIG_INTEL_PMT_CRASHLOG:
+# 
+# The Intel Platform Monitoring Technology (PMT) crashlog driver provides
+# access to hardware crashlog capabilities on devices that support the
+# feature.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called intel_pmt_crashlog.
+# 
+# Symbol: INTEL_PMT_CRASHLOG [=n]
+# Type  : tristate
+# Defined at drivers/platform/x86/Kconfig:1394
+#   Prompt: Intel Platform Monitoring Technology (PMT) Crashlog driver
+#   Depends on: X86 [=y] && X86_PLATFORM_DEVICES [=y]
+#   Location:
+#     -> Device Drivers
+#       -> X86 Platform Specific Device Drivers (X86_PLATFORM_DEVICES [=y])
+# Selects: INTEL_PMT_CLASS [=n]
+# 
+# 
+# 
+# CONFIG_INTEL_PMT_CRASHLOG is not set

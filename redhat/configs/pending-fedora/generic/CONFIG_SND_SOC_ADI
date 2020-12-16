@@ -1,0 +1,18 @@
+# CONFIG_SND_SOC_ADI:
+# 
+# Audio support for various reference designs by Analog Devices.
+# 
+# Symbol: SND_SOC_ADI [=n]
+# Type  : tristate
+# Defined at sound/soc/adi/Kconfig:2
+#   Prompt: Audio support for Analog Devices reference designs
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+# 
+# 
+# 
+# CONFIG_SND_SOC_ADI is not set

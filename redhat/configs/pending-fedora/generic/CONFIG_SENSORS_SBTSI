@@ -1,0 +1,20 @@
+# CONFIG_SENSORS_SBTSI:
+# 
+# If you say yes here you get support for emulated temperature
+# sensors on AMD SoCs with SB-TSI interface connected to a BMC device.
+# 
+# This driver can also be built as a module. If so, the module will
+# be called sbtsi_temp.
+# 
+# Symbol: SENSORS_SBTSI [=n]
+# Type  : tristate
+# Defined at drivers/hwmon/Kconfig:1536
+#   Prompt: Emulated SB-TSI temperature sensor
+#   Depends on: HWMON [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+# 
+# 
+# 
+# CONFIG_SENSORS_SBTSI is not set

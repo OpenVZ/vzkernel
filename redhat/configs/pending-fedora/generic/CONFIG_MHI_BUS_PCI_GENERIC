@@ -1,0 +1,19 @@
+# CONFIG_MHI_BUS_PCI_GENERIC:
+# 
+# This driver provides MHI PCI controller driver for devices such as
+# Qualcomm SDX55 based PCIe modems.
+# 
+# 
+# Symbol: MHI_BUS_PCI_GENERIC [=n]
+# Type  : tristate
+# Defined at drivers/bus/mhi/Kconfig:24
+#   Prompt: MHI PCI controller driver
+#   Depends on: MHI_BUS [=m] && PCI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Bus devices
+#         -> Modem Host Interface (MHI) bus (MHI_BUS [=m])
+# 
+# 
+# 
+# CONFIG_MHI_BUS_PCI_GENERIC is not set
