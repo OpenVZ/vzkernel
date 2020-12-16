@@ -1,0 +1,22 @@
+# CONFIG_PTP_1588_CLOCK_OCP:
+# 
+# This driver adds support for an OpenCompute time card.
+# 
+# The OpenCompute time card is an atomic clock along with
+# a GPS receiver that provides a Grandmaster clock source
+# for a PTP enabled network.
+# 
+# More information is available at http://www.timingcard.com/
+# 
+# Symbol: PTP_1588_CLOCK_OCP [=n]
+# Type  : tristate
+# Defined at drivers/ptp/Kconfig:154
+#   Prompt: OpenCompute TimeCard as PTP clock
+#   Depends on: PTP_1588_CLOCK [=y] && HAS_IOMEM [=y] && PCI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> PTP clock support
+# 
+# 
+# 
+# CONFIG_PTP_1588_CLOCK_OCP is not set

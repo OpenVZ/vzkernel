@@ -1,0 +1,19 @@
+# CONFIG_SENSORS_MAX127:
+# 
+# Say y here to support Maxim's MAX127 DAS chips.
+# 
+# This driver can also be built as a module. If so, the module
+# will be called max127.
+# 
+# Symbol: SENSORS_MAX127 [=n]
+# Type  : tristate
+# Defined at drivers/hwmon/Kconfig:965
+#   Prompt: Maxim MAX127 12-bit 8-channel Data Acquisition System
+#   Depends on: HWMON [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+# 
+# 
+# 
+# CONFIG_SENSORS_MAX127 is not set

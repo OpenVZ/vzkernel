@@ -1,0 +1,22 @@
+# CONFIG_NFT_REJECT_NETDEV:
+# 
+# This option enables the REJECT support from the netdev table.
+# The return packet generation will be delegated to the IPv4
+# or IPv6 ICMP or TCP RST implementation depending on the
+# protocol of the packet.
+# 
+# Symbol: NFT_REJECT_NETDEV [=n]
+# Type  : tristate
+# Defined at net/netfilter/Kconfig:685
+#   Prompt: Netfilter nf_tables netdev REJECT support
+#   Depends on: NET [=y] && INET [=y] && NETFILTER [=y] && NF_TABLES [=m] && NF_TABLES_NETDEV [=y] && NFT_REJECT_IPV4 [=m] && NFT_REJECT_IPV6 [=m]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Network packet filtering framework (Netfilter) (NETFILTER [=y])
+#           -> Core Netfilter Configuration
+#             -> Netfilter nf_tables support (NF_TABLES [=m])
+# 
+# 
+# 
+# CONFIG_NFT_REJECT_NETDEV is not set

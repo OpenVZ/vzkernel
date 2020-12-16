@@ -1,0 +1,18 @@
+# CONFIG_SURFACE_PLATFORMS:
+# 
+# Say Y here to get to see options for platform-specific device drivers
+# for Microsoft Surface devices. This option alone does not add any
+# kernel code.
+# 
+# If you say N, all options in this submenu will be skipped and disabled.
+# 
+# Symbol: SURFACE_PLATFORMS [=y]
+# Type  : bool
+# Defined at drivers/platform/surface/Kconfig:6
+#   Prompt: Microsoft Surface Platform-Specific Device Drivers
+#   Location:
+#     -> Device Drivers
+# 
+# 
+# 
+CONFIG_SURFACE_PLATFORMS=y
