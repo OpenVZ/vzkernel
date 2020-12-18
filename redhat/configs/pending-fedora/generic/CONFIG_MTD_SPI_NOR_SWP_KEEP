@@ -1,0 +1,22 @@
+# CONFIG_MTD_SPI_NOR_SWP_KEEP:
+# 
+# If you select this option the software write protection of any
+# SPI flashes will not be changed. If your flash is software write
+# protected or will be automatically software write protected after
+# power-up you have to manually unlock it before you are able to
+# write to it.
+# 
+# Symbol: MTD_SPI_NOR_SWP_KEEP [=n]
+# Type  : bool
+# Defined at drivers/mtd/spi-nor/Kconfig:60
+#   Prompt: Keep software write protection as is
+#   Depends on: <choice>
+#   Location:
+#     -> Device Drivers
+#       -> Memory Technology Device (MTD) support (MTD [=m])
+#         -> SPI NOR device support (MTD_SPI_NOR [=m])
+#           -> Software write protection at boot (<choice> [=y])
+# 
+# 
+# 
+# CONFIG_MTD_SPI_NOR_SWP_KEEP is not set

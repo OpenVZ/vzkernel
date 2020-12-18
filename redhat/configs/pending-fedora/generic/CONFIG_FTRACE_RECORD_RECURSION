@@ -1,0 +1,24 @@
+# CONFIG_FTRACE_RECORD_RECURSION:
+# 
+# All callbacks that attach to the function tracing have some sort
+# of protection against recursion. Even though the protection exists,
+# it adds overhead. This option will create a file in the tracefs
+# file system called "recursed_functions" that will list the functions
+# that triggered a recursion.
+# 
+# This will add more overhead to cases that have recursion.
+# 
+# If unsure, say N
+# 
+# Symbol: FTRACE_RECORD_RECURSION [=n]
+# Type  : bool
+# Defined at kernel/trace/Kconfig:737
+#   Prompt: Record functions that recurse in function tracing
+#   Depends on: TRACING_SUPPORT [=y] && FTRACE [=y] && FUNCTION_TRACER [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Tracers (FTRACE [=y])
+# 
+# 
+# 
+# CONFIG_FTRACE_RECORD_RECURSION is not set

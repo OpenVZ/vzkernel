@@ -1,0 +1,30 @@
+# CONFIG_MTD_SPI_NOR_SWP_DISABLE_ON_VOLATILE:
+# 
+# Some SPI flashes have volatile block protection bits, ie. after a
+# power-up or a reset the flash is software write protected by
+# default.
+# 
+# This option disables the software write protection for these kind
+# of flashes while keeping it enabled for any other SPI flashes
+# which have non-volatile write protection bits.
+# 
+# If the software write protection will be disabled depending on
+# the flash either the block protection bits are cleared or a
+# "Global Unprotect" command is issued.
+# 
+# If you are unsure, select this option.
+# 
+# Symbol: MTD_SPI_NOR_SWP_DISABLE_ON_VOLATILE [=y]
+# Type  : bool
+# Defined at drivers/mtd/spi-nor/Kconfig:43
+#   Prompt: Disable SWP on flashes w/ volatile protection bits
+#   Depends on: <choice>
+#   Location:
+#     -> Device Drivers
+#       -> Memory Technology Device (MTD) support (MTD [=m])
+#         -> SPI NOR device support (MTD_SPI_NOR [=m])
+#           -> Software write protection at boot (<choice> [=y])
+# 
+# 
+# 
+CONFIG_MTD_SPI_NOR_SWP_DISABLE_ON_VOLATILE=y

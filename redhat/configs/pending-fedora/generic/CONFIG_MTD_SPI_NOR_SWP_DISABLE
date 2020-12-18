@@ -1,0 +1,25 @@
+# CONFIG_MTD_SPI_NOR_SWP_DISABLE:
+# 
+# This option disables the software write protection on any SPI
+# flashes at boot-up.
+# 
+# Depending on the flash chip this either clears the block protection
+# bits or does a "Global Unprotect" command.
+# 
+# Don't use this if you intent to use the software write protection
+# of your SPI flash. This is only to keep backwards compatibility.
+# 
+# Symbol: MTD_SPI_NOR_SWP_DISABLE [=n]
+# Type  : bool
+# Defined at drivers/mtd/spi-nor/Kconfig:31
+#   Prompt: Disable SWP on any flashes (legacy behavior)
+#   Depends on: <choice>
+#   Location:
+#     -> Device Drivers
+#       -> Memory Technology Device (MTD) support (MTD [=m])
+#         -> SPI NOR device support (MTD_SPI_NOR [=m])
+#           -> Software write protection at boot (<choice> [=y])
+# 
+# 
+# 
+# CONFIG_MTD_SPI_NOR_SWP_DISABLE is not set

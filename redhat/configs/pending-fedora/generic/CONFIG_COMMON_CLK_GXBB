@@ -1,0 +1,19 @@
+# CONFIG_COMMON_CLK_GXBB:
+# 
+# Support for the clock controller on AmLogic S905 devices, aka gxbb.
+# Say Y if you want peripherals and CPU frequency scaling to work.
+# 
+# Symbol: COMMON_CLK_GXBB [=y]
+# Type  : bool
+# Defined at drivers/clk/meson/Kconfig:60
+#   Prompt: GXBB and GXL SoC clock controllers support
+#   Depends on: COMMON_CLK [=y] && (ARCH_MESON [=y] || COMPILE_TEST [=n]) && ARM64 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Clock support for Amlogic platforms
+# Selects: COMMON_CLK_MESON_REGMAP [=y] && COMMON_CLK_MESON_DUALDIV [=y] && COMMON_CLK_MESON_VID_PLL_DIV [=y] && COMMON_CLK_MESON_MPLL [=y] && COMMON_CLK_MESON_PLL [=y] && COMMON_CLK_MESON_AO_CLKC [=y] && COMMON_CLK_MESON_EE_CLKC [=y] && MFD_SYSCON [=y]
+# 
+# 
+# 
+CONFIG_COMMON_CLK_GXBB=y

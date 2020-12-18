@@ -1,0 +1,20 @@
+# CONFIG_EXYNOS_CLKOUT:
+# 
+# Support for the clock output (XCLKOUT) present on some of Exynos SoC
+# variants. Usually the XCLKOUT is used to monitor the status of the
+# certains clocks from SoC, but it could also be tied to other devices
+# as an input clock.
+# 
+# Symbol: EXYNOS_CLKOUT [=y]
+# Type  : tristate
+# Defined at drivers/clk/samsung/Kconfig:22
+#   Prompt: Samsung Exynos clock output driver
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_SAMSUNG [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Samsung Exynos clock controller support (COMMON_CLK_SAMSUNG [=y])
+# 
+# 
+# 
+CONFIG_EXYNOS_CLKOUT=y

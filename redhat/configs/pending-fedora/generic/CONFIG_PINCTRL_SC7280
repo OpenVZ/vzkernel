@@ -1,0 +1,18 @@
+# CONFIG_PINCTRL_SC7280:
+# 
+# This is the pinctrl, pinmux, pinconf and gpiolib driver for the
+# Qualcomm Technologies Inc TLMM block found on the Qualcomm
+# Technologies Inc SC7280 platform.
+# 
+# Symbol: PINCTRL_SC7280 [=n]
+# Type  : tristate
+# Defined at drivers/pinctrl/qcom/Kconfig:214
+#   Prompt: Qualcomm Technologies Inc SC7280 pin controller driver
+#   Depends on: PINCTRL [=y] && (ARCH_QCOM [=y] || COMPILE_TEST [=n]) && GPIOLIB [=y] && OF [=y] && PINCTRL_MSM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Pin controllers (PINCTRL [=y])
+# 
+# 
+# 
+# CONFIG_PINCTRL_SC7280 is not set

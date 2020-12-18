@@ -1,0 +1,24 @@
+# CONFIG_MTD_NAND_ROCKCHIP:
+# 
+# Enables support for NAND controller on Rockchip SoCs.
+# There are four different versions of NAND FLASH Controllers,
+# including:
+#   NFC v600: RK2928, RK3066, RK3188
+#   NFC v622: RK3036, RK3128
+#   NFC v800: RK3308, RV1108
+#   NFC v900: PX30, RK3326
+# 
+# Symbol: MTD_NAND_ROCKCHIP [=n]
+# Type  : tristate
+# Defined at drivers/mtd/nand/raw/Kconfig:452
+#   Prompt: Rockchip NAND controller
+#   Depends on: MTD [=m] && MTD_RAW_NAND [=m] && ARCH_ROCKCHIP [=y] && HAS_IOMEM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Memory Technology Device (MTD) support (MTD [=m])
+#         -> NAND
+#           -> Raw/Parallel NAND Device Support (MTD_RAW_NAND [=m])
+# 
+# 
+# 
+# CONFIG_MTD_NAND_ROCKCHIP is not set

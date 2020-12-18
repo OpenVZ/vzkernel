@@ -1,0 +1,19 @@
+# CONFIG_MTD_NAND_INTEL_LGM:
+# 
+# Enables support for NAND Flash chips on Intel's LGM SoC.
+# NAND flash controller interfaced through the External Bus Unit.
+# 
+# Symbol: MTD_NAND_INTEL_LGM [=n]
+# Type  : tristate
+# Defined at drivers/mtd/nand/raw/Kconfig:444
+#   Prompt: Support for NAND controller on Intel LGM SoC
+#   Depends on: MTD [=m] && MTD_RAW_NAND [=m] && (OF [=y] || COMPILE_TEST [=n]) && HAS_IOMEM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Memory Technology Device (MTD) support (MTD [=m])
+#         -> NAND
+#           -> Raw/Parallel NAND Device Support (MTD_RAW_NAND [=m])
+# 
+# 
+# 
+# CONFIG_MTD_NAND_INTEL_LGM is not set

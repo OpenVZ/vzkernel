@@ -1,0 +1,18 @@
+# CONFIG_PINCTRL_SDX55:
+# 
+# This is the pinctrl, pinmux, pinconf and gpiolib driver for the
+# Qualcomm Technologies Inc TLMM block found on the Qualcomm
+# Technologies Inc SDX55 platform.
+# 
+# Symbol: PINCTRL_SDX55 [=n]
+# Type  : tristate
+# Defined at drivers/pinctrl/qcom/Kconfig:241
+#   Prompt: Qualcomm Technologies Inc SDX55 pin controller driver
+#   Depends on: PINCTRL [=y] && (ARCH_QCOM [=y] || COMPILE_TEST [=n]) && GPIOLIB [=y] && OF [=y] && PINCTRL_MSM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Pin controllers (PINCTRL [=y])
+# 
+# 
+# 
+# CONFIG_PINCTRL_SDX55 is not set

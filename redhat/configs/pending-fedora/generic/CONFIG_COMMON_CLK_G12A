@@ -1,0 +1,18 @@
+# CONFIG_COMMON_CLK_G12A:
+# 
+# Support for the clock controller on Amlogic S905D2, S905X2 and S905Y2
+# devices, aka g12a. Say Y if you want peripherals to work.
+# Symbol: COMMON_CLK_G12A [=y]
+# Type  : bool
+# Defined at drivers/clk/meson/Kconfig:102
+#   Prompt: G12 and SM1 SoC clock controllers support
+#   Depends on: COMMON_CLK [=y] && (ARCH_MESON [=y] || COMPILE_TEST [=n]) && ARM64 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Clock support for Amlogic platforms
+# Selects: COMMON_CLK_MESON_REGMAP [=y] && COMMON_CLK_MESON_DUALDIV [=y] && COMMON_CLK_MESON_MPLL [=y] && COMMON_CLK_MESON_PLL [=y] && COMMON_CLK_MESON_AO_CLKC [=y] && COMMON_CLK_MESON_EE_CLKC [=y] && COMMON_CLK_MESON_CPU_DYNDIV [=y] && MFD_SYSCON [=y]
+# 
+# 
+# 
+CONFIG_COMMON_CLK_G12A=y

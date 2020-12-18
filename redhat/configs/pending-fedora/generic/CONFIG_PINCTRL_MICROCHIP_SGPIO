@@ -1,0 +1,23 @@
+# CONFIG_PINCTRL_MICROCHIP_SGPIO:
+# 
+# Support for the serial GPIO interface used on Microsemi and
+# Microchip SoC's. By using a serial interface, the SIO
+# controller significantly extends the number of available
+# GPIOs with a minimum number of additional pins on the
+# device. The primary purpose of the SIO controller is to
+# connect control signals from SFP modules and to act as an
+# LED controller.
+# 
+# Symbol: PINCTRL_MICROCHIP_SGPIO [=n]
+# Type  : bool
+# Defined at drivers/pinctrl/Kconfig:378
+#   Prompt: Pinctrl driver for Microsemi/Microchip Serial GPIO
+#   Depends on: PINCTRL [=y] && OF [=y] && HAS_IOMEM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Pin controllers (PINCTRL [=y])
+# Selects: GPIOLIB [=y] && GPIOLIB_IRQCHIP [=y] && GENERIC_PINCONF [=y] && GENERIC_PINCTRL_GROUPS [=y] && GENERIC_PINMUX_FUNCTIONS [=y] && OF_GPIO [=y]
+# 
+# 
+# 
+# CONFIG_PINCTRL_MICROCHIP_SGPIO is not set

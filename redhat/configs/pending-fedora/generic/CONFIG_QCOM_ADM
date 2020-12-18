@@ -1,0 +1,20 @@
+# CONFIG_QCOM_ADM:
+# 
+# Enable support for the Qualcomm Application Data Mover (ADM) DMA
+# controller, as present on MSM8x60, APQ8064, and IPQ8064 devices.
+# This controller provides DMA capabilities for both general purpose
+# and on-chip peripheral devices.
+# 
+# Symbol: QCOM_ADM [=n]
+# Type  : tristate
+# Defined at drivers/dma/qcom/Kconfig:2
+#   Prompt: Qualcomm ADM support
+#   Depends on: DMADEVICES [=y] && (ARCH_QCOM [=y] || COMPILE_TEST [=n]) && !PHYS_ADDR_T_64BIT [=n]
+#   Location:
+#     -> Device Drivers
+#       -> DMA Engine support (DMADEVICES [=y])
+# Selects: DMA_ENGINE [=y] && DMA_VIRTUAL_CHANNELS [=y]
+# 
+# 
+# 
+# CONFIG_QCOM_ADM is not set
