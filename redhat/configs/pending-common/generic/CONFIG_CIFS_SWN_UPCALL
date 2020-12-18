@@ -1,0 +1,22 @@
+# CONFIG_CIFS_SWN_UPCALL:
+# 
+# The Service Witness Protocol (SWN) is used to get notifications
+# from a highly available server of resource state changes. This
+# feature enables an upcall mechanism for CIFS which contacts a
+# userspace daemon to establish the DCE/RPC connection to retrieve
+# the cluster available interfaces and resource change notifications.
+# If unsure, say Y.
+# 
+# Symbol: CIFS_SWN_UPCALL [=n]
+# Type  : bool
+# Defined at fs/cifs/Kconfig:193
+#   Prompt: SWN feature support
+#   Depends on: NETWORK_FILESYSTEMS [=y] && CIFS [=m]
+#   Location:
+#     -> File systems
+#       -> Network File Systems (NETWORK_FILESYSTEMS [=y])
+#         -> SMB3 and CIFS support (advanced network filesystem) (CIFS [=m])
+# 
+# 
+# 
+# CONFIG_CIFS_SWN_UPCALL is not set

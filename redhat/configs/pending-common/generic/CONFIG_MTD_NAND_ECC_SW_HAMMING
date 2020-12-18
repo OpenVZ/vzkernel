@@ -1,0 +1,27 @@
+# CONFIG_MTD_NAND_ECC_SW_HAMMING:
+# 
+# This enables support for software Hamming error
+# correction. This correction can correct up to 1 bit error
+# per chunk and detect up to 2 bit errors. While it used to be
+# widely used with old parts, newer NAND chips usually require
+# more strength correction and in this case BCH or RS will be
+# preferred.
+# 
+# Symbol: MTD_NAND_ECC_SW_HAMMING [=n]
+# Type  : bool
+# Defined at drivers/mtd/nand/Kconfig:18
+#   Prompt: Software Hamming ECC engine
+#   Depends on: MTD [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Memory Technology Device (MTD) support (MTD [=m])
+#         -> NAND
+#           -> ECC engine support
+# Selects: MTD_NAND_ECC [=n]
+# Selected by [n]:
+#   - SM_FTL [=n] && MTD [=m] && BLOCK [=y]
+#   - MTD_NAND_NDFC [=n] && MTD [=m] && MTD_RAW_NAND [=n] && 4xx
+# 
+# 
+# 
+# CONFIG_MTD_NAND_ECC_SW_HAMMING is not set

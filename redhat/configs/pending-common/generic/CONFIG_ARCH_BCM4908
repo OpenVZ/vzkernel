@@ -1,0 +1,17 @@
+# CONFIG_ARCH_BCM4908:
+# 
+# This enables support for the Broadcom BCM4906, BCM4908 and
+# BCM49408 SoCs. These SoCs use Brahma-B53 cores and can be
+# found in home routers.
+# 
+# Symbol: ARCH_BCM4908 [=n]
+# Type  : bool
+# Defined at arch/arm64/Kconfig.platforms:46
+#   Prompt: Broadcom BCM4908 family
+#   Location:
+#     -> Platform selection
+# Selects: GPIOLIB [=y]
+# 
+# 
+# 
+# CONFIG_ARCH_BCM4908 is not set
