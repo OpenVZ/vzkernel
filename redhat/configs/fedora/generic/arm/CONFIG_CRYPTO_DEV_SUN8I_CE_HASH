@@ -1,19 +1,1 @@
-# CONFIG_CRYPTO_DEV_SUN8I_CE_HASH:
-# 
-# Say y to enable support for hash algorithms.
-# 
-# Symbol: CRYPTO_DEV_SUN8I_CE_HASH [=n]
-# Type  : bool
-# Defined at drivers/crypto/allwinner/Kconfig:62
-#   Prompt: Enable support for hash on sun8i-ce
-#   Depends on: CRYPTO [=y] && CRYPTO_HW [=y] && CRYPTO_DEV_SUN8I_CE [=m]
-#   Location:
-#     -> Cryptographic API (CRYPTO [=y])
-#       -> Hardware crypto devices (CRYPTO_HW [=y])
-#         -> Support for Allwinner cryptographic offloader (CRYPTO_DEV_ALLWINNER [=y])
-#           -> Support for Allwinner Crypto Engine cryptographic offloader (CRYPTO_DEV_SUN8I_CE [=m])
-# Selects: MD5 && SHA1 && SHA256 && SHA512
-# 
-# 
-# 
 CONFIG_CRYPTO_DEV_SUN8I_CE_HASH=y
