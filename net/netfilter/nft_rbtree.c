@@ -117,15 +117,16 @@ static int __nft_rbtree_insert(const struct nft_set *set,
 		else if (d > 0)
 			p = &parent->rb_right;
 		else {
-			if (nft_set_elem_active(&rbe->ext, genmask)) {
-				if (nft_rbtree_interval_end(rbe) &&
-				    !nft_rbtree_interval_end(new))
-					p = &parent->rb_left;
-				else if (!nft_rbtree_interval_end(rbe) &&
-					 nft_rbtree_interval_end(new))
-					p = &parent->rb_right;
-				else
-					return -EEXIST;
+			if (nft_rbtree_interval_end(rbe) &&
+			    !nft_rbtree_interval_end(new))
+				p = &parent->rb_left;
+			else if (!nft_rbtree_interval_end(rbe) &&
+				 nft_rbtree_interval_end(new))
+				p = &parent->rb_right;
+			else if (nft_set_elem_active(&rbe->ext, genmask)) {
+				return -EEXIST;
+			} else {
+				p = &parent->rb_left;
 			}
 		}
 	}
