@@ -1,0 +1,19 @@
+# CONFIG_PWM_DWC:
+# 
+# PWM driver for Synopsys DWC PWM Controller attached to a PCI bus.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called pwm-dwc.
+# 
+# Symbol: PWM_DWC [=n]
+# Type  : tristate
+# Defined at drivers/pwm/Kconfig:167
+#   Prompt: DesignWare PWM Controller
+#   Depends on: PWM [=y] && PCI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Pulse-Width Modulation (PWM) Support (PWM [=y])
+# 
+# 
+# 
+# CONFIG_PWM_DWC is not set

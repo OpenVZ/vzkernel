@@ -1,0 +1,20 @@
+# CONFIG_PWM_INTEL_LGM:
+# 
+# Generic PWM fan controller driver for LGM SoC.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called pwm-intel-lgm.
+# 
+# Symbol: PWM_INTEL_LGM [=n]
+# Type  : tristate
+# Defined at drivers/pwm/Kconfig:252
+#   Prompt: Intel LGM PWM support
+#   Depends on: PWM [=y] && HAS_IOMEM [=y] && (OF [=y] && X86 [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Pulse-Width Modulation (PWM) Support (PWM [=y])
+# Selects: REGMAP_MMIO [=y]
+# 
+# 
+# 
+# CONFIG_PWM_INTEL_LGM is not set
