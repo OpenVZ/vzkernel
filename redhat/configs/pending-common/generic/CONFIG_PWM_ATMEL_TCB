@@ -1,0 +1,23 @@
+# CONFIG_PWM_ATMEL_TCB:
+# 
+# Generic PWM framework driver for Atmel Timer Counter Block.
+# 
+# A Timer Counter Block provides 6 PWM devices grouped by 2.
+# Devices in a given group must have the same period.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called pwm-atmel-tcb.
+# 
+# Symbol: PWM_ATMEL_TCB [=n]
+# Type  : tristate
+# Defined at drivers/pwm/Kconfig:76
+#   Prompt: Atmel TC Block PWM support
+#   Depends on: PWM [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Pulse-Width Modulation (PWM) Support (PWM [=y])
+# Selects: REGMAP_MMIO [=n]
+# 
+# 
+# 
+# CONFIG_PWM_ATMEL_TCB is not set
