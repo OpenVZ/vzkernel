@@ -74,8 +74,13 @@ static bool nft_rbtree_lookup(const struct nft_set *set, const u32 *key,
 				parent = parent->rb_left;
 				continue;
 			}
-			if (nft_rbtree_interval_end(rbe))
-				goto out;
+			if (nft_rbtree_interval_end(rbe)) {
+				if (set->flags & NFT_SET_ANONYMOUS)
+					goto out;
+				parent = parent->rb_left;
+				interval = NULL;
+				continue;
+			}
 			spin_unlock_bh(&nft_rbtree_lock);
 
 			*ext = &rbe->ext;
