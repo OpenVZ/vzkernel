@@ -1024,11 +1024,11 @@ static void oom_berserker(struct oom_control *oc)
 			continue;
 
 		/*
-		 * Consider tasks as equally bad if they have equal
-		 * normalized scores.
+		 * Consider tasks as equally bad if they occupy equal
+		 * percentage of available memory.
 		 */
-		if (tsk_points * 1000 / oc->totalpages <
-			oc->chosen_points * 1000 / oc->totalpages)
+		if (tsk_points * 100 / oc->totalpages <
+			oc->chosen_points * 100 / oc->totalpages)
 			continue;
 
 		if (__ratelimit(&berserker_rs)) {
@@ -1069,6 +1069,7 @@ static void oom_kill_process(struct oom_control *oc, const char *message)
 		wake_oom_reaper(victim);
 		task_unlock(victim);
 		put_task_struct(victim);
+		oom_berserker(oc);
 		return;
 	}
 	task_unlock(victim);
