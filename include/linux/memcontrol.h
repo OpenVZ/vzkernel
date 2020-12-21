@@ -259,6 +259,12 @@ struct mem_cgroup {
 	/* OOM-Killer disable */
 	int		oom_kill_disable;
 
+	int		oom_rage;
+	spinlock_t	oom_rage_lock;
+	unsigned long	prev_oom_time;
+	unsigned long	oom_time;
+
+
 	/* memory.events */
 	struct cgroup_file events_file;
 
