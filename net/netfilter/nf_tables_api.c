@@ -1907,10 +1907,16 @@ err:
 	return err;
 }
 
+struct nft_rule_dump_ctx {
+	char table[NFT_TABLE_MAXNAMELEN];
+	char chain[NFT_CHAIN_MAXNAMELEN];
+};
+
 static int nf_tables_dump_rules(struct sk_buff *skb,
 				struct netlink_callback *cb)
 {
 	const struct nfgenmsg *nfmsg = nlmsg_data(cb->nlh);
+	const struct nft_rule_dump_ctx *ctx = cb->data;
 	const struct nft_af_info *afi;
 	const struct nft_table *table;
 	const struct nft_chain *chain;
@@ -1927,7 +1933,15 @@ static int nf_tables_dump_rules(struct sk_buff *skb,
 			continue;
 
 		list_for_each_entry_rcu(table, &afi->tables, list) {
+			if (ctx && ctx->table[0] &&
+			    strcmp(ctx->table, table->name) != 0)
+				continue;
+
 			list_for_each_entry_rcu(chain, &table->chains, list) {
+				if (ctx && ctx->chain[0] &&
+				    strcmp(ctx->chain, chain->name) != 0)
+					continue;
+
 				list_for_each_entry_rcu(rule, &chain->rules, list) {
 					if (!nft_rule_is_active(net, rule))
 						goto cont;
@@ -1957,6 +1971,12 @@ done:
 	return skb->len;
 }
 
+static int nf_tables_dump_rules_done(struct netlink_callback *cb)
+{
+	kfree(cb->data);
+	return 0;
+}
+
 static int nf_tables_getrule(struct sock *nlsk, struct sk_buff *skb,
 			     const struct nlmsghdr *nlh,
 			     const struct nlattr * const nla[])
@@ -1974,7 +1994,25 @@ static int nf_tables_getrule(struct sock *nlsk, struct sk_buff *skb,
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		struct netlink_dump_control c = {
 			.dump = nf_tables_dump_rules,
+			.done = nf_tables_dump_rules_done,
 		};
+
+		if (nla[NFTA_RULE_TABLE] || nla[NFTA_RULE_CHAIN]) {
+			struct nft_rule_dump_ctx *ctx;
+
+			ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+			if (!ctx)
+				return -ENOMEM;
+
+			if (nla[NFTA_RULE_TABLE])
+				nla_strlcpy(ctx->table, nla[NFTA_RULE_TABLE],
+					    sizeof(ctx->table));
+			if (nla[NFTA_RULE_CHAIN])
+				nla_strlcpy(ctx->chain, nla[NFTA_RULE_CHAIN],
+					    sizeof(ctx->chain));
+			c.data = ctx;
+		}
+
 		return netlink_dump_start(nlsk, skb, nlh, &c);
 	}
 
