@@ -315,6 +315,12 @@ struct mem_cgroup {
 	/* OOM-Killer disable */
 	int		oom_kill_disable;
 
+	int		oom_rage;
+	spinlock_t	oom_rage_lock;
+	unsigned long	prev_oom_time;
+	unsigned long	oom_time;
+
+
 	/* memory.events */
 	struct cgroup_file events_file;
 
@@ -543,6 +549,7 @@ struct lruvec *mem_cgroup_page_lruvec(struct page *, struct pglist_data *);
 
 struct mem_cgroup *mem_cgroup_from_task(struct task_struct *p);
 
+bool task_in_mem_cgroup(struct task_struct *task, struct mem_cgroup *memcg);
 struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm);
 
 struct mem_cgroup *get_mem_cgroup_from_page(struct page *page);
@@ -1073,6 +1080,12 @@ static inline struct mem_cgroup *parent_mem_cgroup(struct mem_cgroup *memcg)
 
 static inline bool mm_match_cgroup(struct mm_struct *mm,
 		struct mem_cgroup *memcg)
+{
+	return true;
+}
+
+static inline bool task_in_mem_cgroup(struct task_struct *task,
+				      const struct mem_cgroup *memcg)
 {
 	return true;
 }
