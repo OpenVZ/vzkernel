@@ -53,6 +53,7 @@
 int sysctl_panic_on_oom;
 int sysctl_oom_kill_allocating_task;
 int sysctl_oom_dump_tasks;
+int sysctl_oom_relaxation = HZ;
 
 DEFINE_MUTEX(oom_lock);
 
@@ -955,6 +956,101 @@ static int oom_kill_memcg_member(struct task_struct *task, void *message)
 	return 0;
 }
 
+/*
+ * Kill more processes if oom happens too often in this context.
+ */
+static void oom_berserker(struct oom_control *oc)
+{
+	static DEFINE_RATELIMIT_STATE(berserker_rs,
+				DEFAULT_RATELIMIT_INTERVAL,
+				DEFAULT_RATELIMIT_BURST);
+	struct task_struct *p;
+	struct mem_cgroup *memcg;
+	unsigned long now = jiffies;
+	int rage;
+	int killed = 0;
+
+	memcg = oc->memcg ?: root_mem_cgroup;
+
+	spin_lock(&memcg->oom_rage_lock);
+	memcg->prev_oom_time = memcg->oom_time;
+	memcg->oom_time = now;
+	/*
+	 * Increase rage if oom happened recently in this context, reset
+	 * rage otherwise.
+	 *
+	 * previous oom                            this oom (unfinished)
+	 * +++++++++----------------------------++++++++
+	 *        ^                                    ^
+	 *  prev_oom_time  <<oom_relaxation>>      oom_time
+	 */
+	if (time_after(now, memcg->prev_oom_time + sysctl_oom_relaxation))
+		memcg->oom_rage = OOM_BASE_RAGE;
+	else if (memcg->oom_rage < OOM_MAX_RAGE)
+		memcg->oom_rage++;
+	rage = memcg->oom_rage;
+	spin_unlock(&memcg->oom_rage_lock);
+
+	if (rage < 0)
+		return;
+
+	/*
+	 * So, we are in rage. Kill (1 << rage) youngest tasks that are
+	 * as bad as the victim.
+	 */
+	read_lock(&tasklist_lock);
+	list_for_each_entry_reverse(p, &init_task.tasks, tasks) {
+		unsigned long tsk_points;
+		unsigned long tsk_overdraft;
+
+		if (!p->mm || test_tsk_thread_flag(p, TIF_MEMDIE) ||
+			fatal_signal_pending(p) || p->flags & PF_EXITING ||
+			oom_unkillable_task(p, oc->memcg, oc->nodemask))
+			continue;
+
+		tsk_points = oom_badness(p, oc->memcg, oc->nodemask,
+					oc->totalpages, &tsk_overdraft);
+		if (tsk_overdraft < oc->overdraft)
+			continue;
+
+		/*
+		 * oom_badness never returns a negative value, even if
+		 * oom_score_adj would make badness so, instead it
+		 * returns 1. So we do not kill task with badness 1 if
+		 * the victim has badness > 1 so as not to risk killing
+		 * protected tasks.
+		 */
+		if (tsk_points <= 1 && oc->chosen_points > 1)
+			continue;
+
+		/*
+		 * Consider tasks as equally bad if they have equal
+		 * normalized scores.
+		 */
+		if (tsk_points * 1000 / oc->totalpages <
+			oc->chosen_points * 1000 / oc->totalpages)
+			continue;
+
+		if (__ratelimit(&berserker_rs)) {
+			task_lock(p);
+			pr_err("Rage kill process %d (%s)\n",
+				task_pid_nr(p), p->comm);
+			task_unlock(p);
+		}
+
+		count_vm_event(OOM_KILL);
+		memcg_memory_event(memcg, MEMCG_OOM_KILL);
+
+		do_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_TGID);
+
+		if (++killed >= 1 << rage)
+			break;
+	}
+	read_unlock(&tasklist_lock);
+
+	pr_err("OOM killer in rage %d: %d tasks killed\n", rage, killed);
+}
+
 static void oom_kill_process(struct oom_control *oc, const char *message)
 {
 	struct task_struct *victim = oc->chosen;
@@ -998,6 +1094,7 @@ static void oom_kill_process(struct oom_control *oc, const char *message)
 				      (void*)message);
 		mem_cgroup_put(oom_group);
 	}
+	oom_berserker(oc);
 }
 
 /*
