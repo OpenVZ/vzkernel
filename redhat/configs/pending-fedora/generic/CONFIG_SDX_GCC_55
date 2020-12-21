@@ -1,0 +1,20 @@
+# CONFIG_SDX_GCC_55:
+# 
+# Support for the global clock controller on SDX55 devices.
+# Say Y if you want to use peripheral devices such as UART,
+# SPI, I2C, USB, SD/UFS, PCIe etc.
+# 
+# Symbol: SDX_GCC_55 [=n]
+# Type  : tristate
+# Defined at drivers/clk/qcom/Kconfig:425
+#   Prompt: SDX55 Global Clock Controller
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_QCOM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Support for Qualcomm's clock controllers (COMMON_CLK_QCOM [=y])
+# Selects: QCOM_GDSC [=y]
+# 
+# 
+# 
+# CONFIG_SDX_GCC_55 is not set

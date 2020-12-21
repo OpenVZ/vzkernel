@@ -1,0 +1,17 @@
+# CONFIG_COMMON_CLK_FSL_FLEXSPI:
+# 
+# On Layerscape SoCs there is a special clock for the FlexSPI
+# interface.
+# 
+# Symbol: COMMON_CLK_FSL_FLEXSPI [=n]
+# Type  : tristate
+# Defined at drivers/clk/Kconfig:191
+#   Prompt: Clock driver for FlexSPI on Layerscape SoCs
+#   Depends on: COMMON_CLK [=y] && (ARCH_LAYERSCAPE [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+# 
+# 
+# 
+# CONFIG_COMMON_CLK_FSL_FLEXSPI is not set
