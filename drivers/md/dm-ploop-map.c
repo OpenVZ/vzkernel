@@ -404,6 +404,31 @@ static void maybe_unlink_completed_bio(struct ploop *ploop, struct bio *bio)
 		queue_work(ploop->wq, &ploop->worker);
 }
 
+static bool bio_endio_if_all_zeros(struct bio *bio)
+{
+	struct bvec_iter bi = {
+		.bi_size = bio->bi_iter.bi_size,
+		.bi_bvec_done = bio->bi_iter.bi_bvec_done,
+		.bi_idx = bio->bi_iter.bi_idx,
+	};
+	struct bio_vec bv;
+	void *data, *ret;
+
+	for_each_bvec(bv, bio->bi_io_vec, bi, bi) {
+		if (!bv.bv_len)
+			continue;
+		data = kmap(bv.bv_page);
+		ret = memchr_inv(data + bv.bv_offset, 0, bv.bv_len);
+		kunmap(bv.bv_page);
+		if (ret)
+			return false;
+	}
+
+	bio->bi_status = BLK_STS_OK;
+	bio_endio(bio);
+	return true;
+}
+
 static void handle_discard_bio(struct ploop *ploop, struct bio *bio,
 		     unsigned int cluster, unsigned int dst_cluster)
 {
@@ -1332,6 +1357,9 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 		initiate_cluster_cow(ploop, level, cluster, dst_cluster, bio);
 		goto out;
 	}
+
+	if (unlikely(bio_endio_if_all_zeros(bio)))
+		goto out;
 
 	/* Cluster exists nowhere. Allocate it and setup bio as outrunning */
 	ret = locate_new_cluster_and_attach_bio(ploop, piwb, cluster,
