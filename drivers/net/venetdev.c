@@ -7,6 +7,7 @@
 
 #include <linux/proc_fs.h>
 #include <linux/inet.h>
+#include <linux/nsproxy.h>
 #include <net/ip.h>
 
 #include <linux/venet.h>
@@ -733,6 +734,7 @@ static int venet_newlink(struct net *src_net,
 			 struct netlink_ext_ack *extack)
 {
 	struct ve_struct *ve = src_net->owner_ve;
+	struct nsproxy *ve_ns;
 	struct net *net;
 	int err = 0;
 
@@ -741,7 +743,10 @@ static int venet_newlink(struct net *src_net,
 	 * also referenced on assignment => ve won't die =>
 	 * rcu_read_lock()/unlock not needed here.
 	 */
-	net = rcu_dereference_check(ve->ve_ns, 1)->net_ns;
+	ve_ns = rcu_dereference_check(ve->ve_ns, 1);
+	if (!ve_ns)
+		return -EBUSY;
+	net = ve_ns->net_ns;
 	if (!net)
 		return -EBUSY;
 
