@@ -1,0 +1,21 @@
+# CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG_SECONDARY_KEYRING:
+# 
+# Rely on the secondary trusted keyring to verify dm-verity signatures.
+# 
+# If unsure, say N.
+# 
+# Symbol: DM_VERITY_VERIFY_ROOTHASH_SIG_SECONDARY_KEYRING [=n]
+# Type  : bool
+# Defined at drivers/md/Kconfig:551
+#   Prompt: Verity data device root hash signature verification with secondary keyring
+#   Depends on: MD [=y] && DM_VERITY_VERIFY_ROOTHASH_SIG [=y] && SECONDARY_TRUSTED_KEYRING [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multiple devices driver support (RAID and LVM) (MD [=y])
+#         -> Device mapper support (BLK_DEV_DM [=y])
+#           -> Verity target support (DM_VERITY [=m])
+#             -> Verity data device root hash signature verification support (DM_VERITY_VERIFY_ROOTHASH_SIG [=y])
+# 
+# 
+# 
+# CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG_SECONDARY_KEYRING is not set

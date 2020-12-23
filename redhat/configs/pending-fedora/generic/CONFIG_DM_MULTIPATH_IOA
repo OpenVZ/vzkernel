@@ -1,0 +1,21 @@
+# CONFIG_DM_MULTIPATH_IOA:
+# 
+# This path selector selects the path based on the CPU the IO is
+# executed on and the CPU to path mapping setup at path addition time.
+# 
+# If unsure, say N.
+# 
+# Symbol: DM_MULTIPATH_IOA [=n]
+# Type  : tristate
+# Defined at drivers/md/Kconfig:466
+#   Prompt: I/O Path Selector based on CPU submission
+#   Depends on: MD [=y] && DM_MULTIPATH [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Multiple devices driver support (RAID and LVM) (MD [=y])
+#         -> Device mapper support (BLK_DEV_DM [=y])
+#           -> Multipath target (DM_MULTIPATH [=m])
+# 
+# 
+# 
+# CONFIG_DM_MULTIPATH_IOA is not set

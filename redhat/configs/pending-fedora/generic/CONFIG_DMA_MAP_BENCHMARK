@@ -1,0 +1,18 @@
+# CONFIG_DMA_MAP_BENCHMARK:
+# 
+# Provides /sys/kernel/debug/dma_map_benchmark that helps with testing
+# performance of dma_(un)map_page.
+# 
+# See tools/testing/selftests/dma/dma_map_benchmark.c
+# 
+# Symbol: DMA_MAP_BENCHMARK [=n]
+# Type  : bool
+# Defined at kernel/dma/Kconfig:228
+#   Prompt: Enable benchmarking of streaming DMA mapping
+#   Depends on: DEBUG_FS [=y]
+#   Location:
+#     -> Library routines
+# 
+# 
+# 
+# CONFIG_DMA_MAP_BENCHMARK is not set
