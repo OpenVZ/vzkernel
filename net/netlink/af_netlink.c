@@ -2239,7 +2239,8 @@ void netlink_ack(struct sk_buff *in_skb, struct nlmsghdr *nlh, int err)
 		payload += nlmsg_len(nlh);
 
 	skb = netlink_alloc_skb(in_skb->sk, nlmsg_total_size(payload),
-				NETLINK_CB(in_skb).portid, GFP_KERNEL);
+				NETLINK_CB(in_skb).portid,
+				GFP_KERNEL|__GFP_ORDER_NOWARN);
 	if (!skb) {
 		struct sock *sk;
 
