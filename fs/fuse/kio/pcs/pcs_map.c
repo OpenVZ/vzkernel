@@ -741,12 +741,6 @@ static inline void map_remote_error_nolock(struct pcs_map_entry *m , int error, 
 {
 	__map_error(m, 1 , error, offender);
 }
-static void map_remote_error(struct pcs_map_entry *m , int error, u64 offender)
-{
-	spin_lock(&m->lock);
-	map_remote_error_nolock(m, error, offender);
-	spin_unlock(&m->lock);
-}
 
 void pcs_map_notify_addr_change(struct pcs_cs * cs)
 {
@@ -1097,6 +1091,8 @@ void pcs_map_complete(struct pcs_map_entry *m, struct pcs_ioc_getmap *omap)
 		   m->state = PCS_MAP_ERROR;
 		   If m->state becomes atomic bit fields this will be impossible.
 		 */
+		TRACE("skip getmap resp: m:%p, state:%x resp{ st:%d, err:%d, v:" VER_FMT "}\n",
+		      m, m->state, omap->state, omap->error.value, VER_ARGS(omap->version));
 		spin_unlock(&m->lock);
 		goto out_ignore;
 	}
@@ -1902,6 +1898,23 @@ pcs_ireq_split(struct pcs_int_request *ireq, unsigned int iochunk, int noalign)
 	return sreq;
 }
 
+static inline bool ireq_remote_error(struct pcs_int_request *ireq,
+				     struct pcs_map_entry *m,
+				     int error, u64 offender)
+{
+	spin_lock(&m->lock);
+	if (m->state & PCS_MAP_RESOLVING) {
+		/* Defer request until the map is resolved */
+		list_add_tail(&ireq->list, &m->queue);
+		spin_unlock(&m->lock);
+		return false;
+	}
+	map_remote_error_nolock(m, error, offender);
+	spin_unlock(&m->lock);
+
+	return true;
+}
+
 static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_list * csl)
 {
 	struct pcs_cluster_core *cc = ireq->cc;
@@ -1947,7 +1960,8 @@ static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_li
 			 * and let MDS to figure what heppened with the rest.
 			 */
 			cs = csl->cs[0].cslink.cs;
-			map_remote_error(ireq->iochunk.map, cs->blacklist_reason, cs->id.val);
+			if (!ireq_remote_error(ireq, ireq->iochunk.map, cs->blacklist_reason, cs->id.val))
+				return 0;
 
 			FUSE_KTRACE(ireq->cc->fc, "Read from " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
 			      MAP_ARGS(ireq->iochunk.map), cs->blacklist_reason, NODE_ARGS(cs->id));
@@ -2112,7 +2126,8 @@ restart:
 	for (i = 0; i < csl->nsrv; i++) {
 		cs = csl->cs[i].cslink.cs;
 		if (cs_is_blacklisted(cs)) {
-			map_remote_error(ireq->iochunk.map, cs->blacklist_reason, cs->id.val);
+			if (!ireq_remote_error(ireq, ireq->iochunk.map, cs->blacklist_reason, cs->id.val))
+				return 0;
 			FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Write to " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
 			      MAP_ARGS(ireq->iochunk.map), cs->blacklist_reason, NODE_ARGS(cs->id));
 			spin_lock(&ireq->completion_data.child_lock);
@@ -2219,7 +2234,8 @@ static int pcs_cslist_submit_flush(struct pcs_int_request *ireq, struct pcs_cs_l
 		cs = csl->cs[i].cslink.cs;
 
 		if (cs_is_blacklisted(cs)) {
-			map_remote_error(ireq->flushreq.map, cs->blacklist_reason, cs->id.val);
+			if (!ireq_remote_error(ireq, ireq->flushreq.map, cs->blacklist_reason, cs->id.val))
+				return 0;
 			FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Flush to " MAP_FMT " blocked by blacklist error %d, CS" NODE_FMT,
 			      MAP_ARGS(ireq->flushreq.map), cs->blacklist_reason, NODE_ARGS(cs->id));
 			spin_lock(&ireq->completion_data.child_lock);
