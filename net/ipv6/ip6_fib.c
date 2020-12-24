@@ -558,7 +558,8 @@ out:
  *	node.
  */
 
-static struct fib6_node * fib6_add_1(struct fib6_node *root, void *addr,
+static struct fib6_node * fib6_add_1(struct net *net,
+				     struct fib6_node *root, void *addr,
 				     int addrlen, int plen,
 				     int offset, int allow_create,
 				     int replace_required)
@@ -602,6 +603,10 @@ static struct fib6_node * fib6_add_1(struct fib6_node *root, void *addr,
 			/* clean up an intermediate node */
 			if (!(fn->fn_flags & RTN_RTINFO)) {
 				rt6_release(fn->leaf);
+				fn->leaf = NULL;
+			/* remove null_entry in the root node */
+			} else if (fn->fn_flags & RTN_TL_ROOT &&
+				   fn->leaf == net->ipv6.ip6_null_entry) {
 				fn->leaf = NULL;
 			}
 
@@ -1072,7 +1077,8 @@ int fib6_add(struct fib6_node *root, struct rt6_info *rt,
 	if (!allow_create && !replace_required)
 		pr_warn("RTM_NEWROUTE with no NLM_F_CREATE or NLM_F_REPLACE\n");
 
-	fn = fib6_add_1(root, &rt->rt6i_dst.addr, sizeof(struct in6_addr),
+	fn = fib6_add_1(info->nl_net,
+			root, &rt->rt6i_dst.addr, sizeof(struct in6_addr),
 			rt->rt6i_dst.plen, offsetof(struct rt6_info, rt6i_dst),
 			allow_create, replace_required);
 	if (IS_ERR(fn)) {
@@ -1112,7 +1118,7 @@ int fib6_add(struct fib6_node *root, struct rt6_info *rt,
 
 			/* Now add the first leaf node to new subtree */
 
-			sn = fib6_add_1(sfn, &rt->rt6i_src.addr,
+			sn = fib6_add_1(info->nl_net, sfn, &rt->rt6i_src.addr,
 					sizeof(struct in6_addr), rt->rt6i_src.plen,
 					offsetof(struct rt6_info, rt6i_src),
 					allow_create, replace_required);
@@ -1131,7 +1137,8 @@ int fib6_add(struct fib6_node *root, struct rt6_info *rt,
 			sfn->parent = fn;
 			fn->subtree = sfn;
 		} else {
-			sn = fib6_add_1(fn->subtree, &rt->rt6i_src.addr,
+			sn = fib6_add_1(info->nl_net,
+					fn->subtree, &rt->rt6i_src.addr,
 					sizeof(struct in6_addr), rt->rt6i_src.plen,
 					offsetof(struct rt6_info, rt6i_src),
 					allow_create, replace_required);
@@ -1185,13 +1192,16 @@ out:
 	return err;
 
 failure:
-	/* fn->leaf could be NULL if fn is an intermediate node and we
-	 * failed to add the new route to it in both subtree creation
-	 * failure and fib6_add_rt2node() failure case.
-	 * In both cases, fib6_repair_tree() should be called to fix
-	 * fn->leaf.
+	/* fn->leaf could be NULL and fib6_repair_tree() needs to be called if:
+	 * 1. fn is an intermediate node and we failed to add the new
+	 * route to it in both subtree creation failure and fib6_add_rt2node()
+	 * failure case.
+	 * 2. fn is the root node in the table and we fail to add the first
+	 * default route to it.
 	 */
-	if (fn && !(fn->fn_flags & (RTN_RTINFO|RTN_ROOT)))
+	if (fn &&
+	    (!(fn->fn_flags & (RTN_RTINFO|RTN_ROOT)) ||
+	     (fn->fn_flags & RTN_TL_ROOT && fn->leaf == NULL)))
 		fib6_repair_tree(info->nl_net, fn);
 	if (!(rt->dst.flags & DST_NOCACHE))
 		dst_free(&rt->dst);
@@ -1394,6 +1404,12 @@ static struct fib6_node *fib6_repair_tree(struct net *net,
 	struct fib6_walker *w;
 	int iter = 0;
 
+	/* Set fn->leaf to null_entry for root node. */
+	if (fn->fn_flags & RTN_TL_ROOT) {
+		fn->leaf = net->ipv6.ip6_null_entry;
+		return fn;
+	}
+
 	for (;;) {
 		RT6_TRACE("fixing tree: plen=%d iter=%d\n", fn->fn_bit, iter);
 		iter++;
@@ -1530,10 +1546,15 @@ static void fib6_del_route(struct fib6_node *fn, struct rt6_info **rtp,
 
 	rt->dst.rt6_next = NULL;
 
-	/* If it was last route, expunge its radix tree node */
+	/* If it was last route, call fib6_repair_tree() to:
+	 * 1. For root node, put back null_entry as how the table was created.
+	 * 2. For other nodes, expunge its radix tree node.
+	 */
 	if (!fn->leaf) {
-		fn->fn_flags &= ~RTN_RTINFO;
-		net->ipv6.rt6_stats->fib_route_nodes--;
+		if (!(fn->fn_flags & RTN_TL_ROOT)) {
+			fn->fn_flags &= ~RTN_RTINFO;
+			net->ipv6.rt6_stats->fib_route_nodes--;
+		}
 		fn = fib6_repair_tree(net, fn);
 	}
 
