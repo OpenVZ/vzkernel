@@ -659,6 +659,31 @@ static struct cgroup *css_cgroup_from_root(struct css_set *css_set,
 }
 
 /*
+ * Iterate all cgroups in a given css_set and check if it is a top cgroup
+ * of it's hierarchy.
+ * rootnode should be ignored as it is always present in each css set as
+ * a placeholder for any unmounted subsystem and will give false positive.
+ */
+static inline bool css_has_host_cgroups(struct css_set *css_set)
+{
+	struct cg_cgroup_link *link;
+
+	read_lock(&css_set_lock);
+
+	list_for_each_entry(link, &css_set->cg_links, cg_link_list) {
+		if (link->cgrp->root == &rootnode)
+			continue;
+
+		if (!link->cgrp->parent) {
+			read_unlock(&css_set_lock);
+			return true;
+		}
+	}
+	read_unlock(&css_set_lock);
+	return false;
+}
+
+/*
  * Return the cgroup for "task" from the given hierarchy. Must be
  * called with cgroup_mutex held.
  */
@@ -4642,6 +4667,19 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 
 	mutex_lock(&cgroup_cft_mutex);
 	mutex_lock(&cgroup_mutex);
+
+	/*
+	 * Return early if we know that this procedure will fail due to
+	 * existing root cgroups which are not allowed to be root's in ve's
+	 * context. This is for the case when some task wants to start VE
+	 * without adding itself to all virtualized subgroups (+systemd) first.
+	 */
+	if (css_has_host_cgroups(ve->root_css_set)) {
+		mutex_unlock(&cgroup_mutex);
+		mutex_unlock(&cgroup_cft_mutex);
+		return -EINVAL;
+	}
+
 	for_each_active_root(root) {
 		cgrp = css_cgroup_from_root(ve->root_css_set, root);
 
