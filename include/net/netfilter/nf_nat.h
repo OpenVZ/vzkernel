@@ -79,23 +79,33 @@ static inline bool nf_nat_oif_changed(unsigned int hooknum,
 }
 
 /*
- * Check if nft chain's netns fits conntrack netns.
+ * Check if netns have enabled NAT.
  * Uses ops->is_nft_ops flag to detect nft ops.
- * If ops is not nft-related, the check is considered passed.
+ * If ops is not nft-related we need to be sure
+ * that according ipt nat table is not empty and can be in use.
  */
-#define is_valid_netns(ops, ct) ({					\
+#define netns_nat_check(ops, pf, __net) ({				\
 	const struct nft_chain *__chain;				\
 	const struct net *__chain_net;					\
-	const struct net *__net;					\
 	bool __ret;							\
 									\
 	if (ops->is_nft_ops) {						\
 		__chain = ops->priv;					\
 		__chain_net = read_pnet(&nft_base_chain(__chain)->pnet);\
-		__net = nf_ct_net(ct);					\
 		__ret = net_eq(__net, __chain_net);			\
-	} else								\
-		__ret = true;						\
+	} else {							\
+		struct xt_table_info *__priv = NULL;			\
+		if (pf == NFPROTO_IPV4 &&				\
+		    !IS_ERR_OR_NULL(__net->ipv4.nat_table))		\
+			__priv = __net->ipv4.nat_table->private;	\
+		else if (pf == NFPROTO_IPV6 &&				\
+			 !IS_ERR_OR_NULL(__net->ipv6.ip6table_nat))	\
+			__priv = __net->ipv6.ip6table_nat->private;	\
+		if (__priv && __priv->number > __priv->initial_entries)	\
+			__ret = true;					\
+		else							\
+			__ret = false;					\
+	}								\
 	__ret;								\
 })
 #endif
