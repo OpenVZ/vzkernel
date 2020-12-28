@@ -64,7 +64,8 @@ EXPORT_SYMBOL(nf_hooks_needed);
 #endif
 
 static DEFINE_MUTEX(nf_hook_mutex);
-
+#include <net/netfilter/nf_tables.h>
+#include <net/netfilter/nf_nat.h>
 int nf_register_hook(struct nf_hook_ops *reg)
 {
 	struct nf_hook_ops *elem;
@@ -73,6 +74,16 @@ int nf_register_hook(struct nf_hook_ops *reg)
 	list_for_each_entry(elem, &nf_hooks[reg->pf][reg->hooknum], list) {
 		if (reg->priority < elem->priority)
 			break;
+		else if ((reg->priority == elem->priority) && reg->is_nft_ops) {
+			const struct nft_chain *c = reg->priv;
+			struct net *net = read_pnet(&nft_base_chain(c)->pnet);
+
+			/* fail if netns already have enabled nft/ipt nat */
+			if (netns_nat_check(elem, reg->pf, net)) {
+				mutex_unlock(&nf_hook_mutex);
+				return -EBUSY;
+			}
+		}
 	}
 	list_add_rcu(&reg->list, elem->list.prev);
 	mutex_unlock(&nf_hook_mutex);
