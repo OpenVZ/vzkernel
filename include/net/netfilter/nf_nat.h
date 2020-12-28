@@ -97,7 +97,7 @@ static inline bool nf_nat_oif_changed(unsigned int hooknum,
 		struct xt_table_info *__priv = NULL;			\
 		if (pf == NFPROTO_IPV4 &&				\
 		    !IS_ERR_OR_NULL(__net->ipv4.nat_table))		\
-			__priv = __net->ipv4.nat_table->private		\
+			__priv = __net->ipv4.nat_table->private;	\
 		else if (pf == NFPROTO_IPV6 &&				\
 			 !IS_ERR_OR_NULL(__net->ipv6.ip6table_nat))	\
 			__priv = __net->ipv6.ip6table_nat->private;	\
