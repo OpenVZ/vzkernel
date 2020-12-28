@@ -305,8 +305,8 @@ nf_nat_ipv6_fn(const struct nf_hook_ops *ops, struct sk_buff *skb,
 		if (!nf_nat_initialized(ct, maniptype)) {
 			unsigned int ret;
 
-			/* Ignore nft chains with wrong netns. */
-			if (!is_valid_netns(ops, ct))
+			/* Ignore if nft/ipt NAT is not used in this netns */
+			if (!netns_nat_check(ops, ops->pf, nf_ct_net(ct)))
 				return NF_ACCEPT;
 
 			ret = do_chain(ops, skb, state, ct);
