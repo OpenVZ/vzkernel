@@ -833,20 +833,19 @@ static inline u64 get_node_id(struct inode *inode)
 	return get_fuse_inode(inode)->nodeid;
 }
 
+static inline u64 fuse_get_attr_version(struct fuse_conn *fc)
+{
+	return atomic64_read(&fc->attr_version);
+}
+
 static inline void fuse_make_bad(struct inode *inode)
 {
-	remove_inode_hash(inode);
 	set_bit(FUSE_I_BAD, &get_fuse_inode(inode)->state);
 }
 
 static inline bool fuse_is_bad(struct inode *inode)
 {
 	return unlikely(test_bit(FUSE_I_BAD, &get_fuse_inode(inode)->state));
-}
-
-static inline u64 fuse_get_attr_version(struct fuse_conn *fc)
-{
-	return atomic64_read(&fc->attr_version);
 }
 
 /** Device operations */
