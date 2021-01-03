@@ -344,6 +344,9 @@ static struct dentry *fuse_lookup(struct inode *dir, struct dentry *entry,
 	struct dentry *newent;
 	bool outarg_valid = true;
 
+	if (fuse_is_bad(dir))
+		return ERR_PTR(-EIO);
+
 	err = fuse_lookup_name(dir->i_sb, get_node_id(dir), &entry->d_name,
 			       &outarg, &inode);
 	if (err == -ENOENT) {
