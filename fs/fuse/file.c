@@ -3950,7 +3950,7 @@ int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	int err = 0;
 
-	if (is_bad_inode(inode))
+	if (fuse_is_bad(inode))
 		return -EIO;
 
 	if (fc->no_fiemap)
