@@ -387,6 +387,7 @@ Summary: The Linux kernel
 %define make_target vmlinux
 %define kernel_image vmlinux
 %define kernel_image_elf 1
+%define use_vdso 0
 %define all_arch_configs kernel-%{version}-ppc64le*.config
 %endif
 
