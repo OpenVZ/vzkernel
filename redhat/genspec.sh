@@ -37,13 +37,14 @@ echo > "$clogf"
 
 lasttag=$(git rev-list --first-parent --grep="^\[redhat\] kernel-${RPMVERSION}" --max-count=1 HEAD)
 # if we didn't find the proper tag, assume this is the first release
-if [ -z "$lasttag" ]; then
+if [[ -z $lasttag ]]; then
+    if [[ -z ${MARKER//[0-9a-f]/} ]]; then
+        # if we're doing an untagged release, just use the marker
+        echo "Using $MARKER"
+        lasttag=$MARKER
+    else
 	lasttag=$(git describe --match="$MARKER" --abbrev=0)
-fi
-# if we're doing an untagged release, just use the marker
-if [ -z "$lasttag" ]; then
-	echo "Using $MARKER"
-	lasttag=$MARKER
+    fi
 fi
 echo "Gathering new log entries since $lasttag"
 git format-patch --no-renames -k --stdout ^master "$lasttag".. -- ":!/redhat/rhdocs" | awk '
