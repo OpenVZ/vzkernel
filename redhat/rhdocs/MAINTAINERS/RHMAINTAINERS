@@ -1228,6 +1228,7 @@ I:	net
 M:	Jiri Benc <jbenc@redhat.com>
 M:	Marcelo Leitner <mleitner@redhat.com>
 R:	Antoine Tenart <atenart@redhat.com>
+R:	Balazs Nemeth <bnemeth@redhat.com>
 R:	Davide Caratti <dcaratti@redhat.com>
 R:	Eric Garver <egarver@redhat.com>
 R:	Flavio Leitner <fbl@redhat.com>
