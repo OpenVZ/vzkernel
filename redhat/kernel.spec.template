@@ -7,7 +7,7 @@
 %global _lto_cflags %{nil}
 
 
-# Cross compile on arm for copr
+# Cross compile on copr for arm
 # See https://bugzilla.redhat.com/1879599
 %if 0%{?_with_cross_arm:1}
 %global _target_cpu armv7hl
