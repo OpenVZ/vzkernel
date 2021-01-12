@@ -1,1 +1,1 @@
-# CONFIG_CAN_J1939 is not set
+CONFIG_CAN_J1939=m

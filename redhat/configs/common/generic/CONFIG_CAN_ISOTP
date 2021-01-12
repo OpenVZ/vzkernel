@@ -1,1 +1,1 @@
-# CONFIG_CAN_ISOTP is not set
+CONFIG_CAN_ISOTP=m
