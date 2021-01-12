@@ -1,1 +1,1 @@
-CONFIG_CAN_C_CAN=m
+# CONFIG_CAN_C_CAN is not set
