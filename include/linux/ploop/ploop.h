@@ -884,6 +884,8 @@ static inline void ploop_set_discard_limits(struct ploop_device *plo)
 	 */
 	q->limits.discard_granularity = cluster_size_in_bytes(plo);
 	q->limits.max_discard_sectors = (1 << plo->cluster_log);
+	q->limits.discard_alignment = 0;
+	q->limits.discard_misaligned = 0;
 }
 struct map_node;
 
