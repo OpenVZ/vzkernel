@@ -613,47 +613,48 @@ Source1: Makefile.rhelver
 %define signing_key_filename kernel-signing-s390.cer
 %endif
 
-Source10: x509.genkey.rhel
-Source11: x509.genkey.fedora
+Source8: x509.genkey.rhel
+Source9: x509.genkey.fedora
+
 %if %{?released_kernel}
 
-Source12: redhatsecurebootca5.cer
-Source13: redhatsecurebootca1.cer
-Source14: redhatsecureboot501.cer
-Source15: redhatsecureboot301.cer
-Source16: secureboot_s390.cer
-Source17: secureboot_ppc.cer
+Source10: redhatsecurebootca5.cer
+Source11: redhatsecurebootca1.cer
+Source12: redhatsecureboot501.cer
+Source13: redhatsecureboot301.cer
+Source14: secureboot_s390.cer
+Source15: secureboot_ppc.cer
 
-%define secureboot_ca_1 %{SOURCE12}
-%define secureboot_ca_0 %{SOURCE13}
+%define secureboot_ca_1 %{SOURCE10}
+%define secureboot_ca_0 %{SOURCE11}
 %ifarch x86_64 aarch64
-%define secureboot_key_1 %{SOURCE14}
+%define secureboot_key_1 %{SOURCE12}
 %define pesign_name_1 redhatsecureboot501
-%define secureboot_key_0 %{SOURCE15}
+%define secureboot_key_0 %{SOURCE13}
 %define pesign_name_0 redhatsecureboot301
 %endif
 %ifarch s390x
-%define secureboot_key_0 %{SOURCE16}
+%define secureboot_key_0 %{SOURCE14}
 %define pesign_name_0 redhatsecureboot302
 %endif
 %ifarch ppc64le
-%define secureboot_key_0 %{SOURCE17}
+%define secureboot_key_0 %{SOURCE15}
 %define pesign_name_0 redhatsecureboot303
 %endif
 
 # released_kernel
 %else
 
-Source12: redhatsecurebootca4.cer
-Source13: redhatsecurebootca2.cer
-Source14: redhatsecureboot401.cer
-Source15: redhatsecureboot003.cer
+Source10: redhatsecurebootca4.cer
+Source11: redhatsecurebootca2.cer
+Source12: redhatsecureboot401.cer
+Source13: redhatsecureboot003.cer
 
-%define secureboot_ca_1 %{SOURCE12}
-%define secureboot_ca_0 %{SOURCE13}
-%define secureboot_key_1 %{SOURCE14}
+%define secureboot_ca_1 %{SOURCE10}
+%define secureboot_ca_0 %{SOURCE11}
+%define secureboot_key_1 %{SOURCE12}
 %define pesign_name_1 redhatsecureboot401
-%define secureboot_key_0 %{SOURCE15}
+%define secureboot_key_0 %{SOURCE13}
 %define pesign_name_0 redhatsecureboot003
 
 # released_kernel
