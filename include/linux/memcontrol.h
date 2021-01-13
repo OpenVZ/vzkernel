@@ -229,6 +229,9 @@ static inline void mem_cgroup_dec_page_stat(struct page *page,
 	mem_cgroup_update_page_stat(page, idx, -1);
 }
 
+void memcg_neg_dentry_inc(struct dentry *dentry);
+void memcg_neg_dentry_dec(struct dentry *dentry);
+
 void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats);
 
 unsigned long memcg_ws_activates(struct mem_cgroup *memcg);
