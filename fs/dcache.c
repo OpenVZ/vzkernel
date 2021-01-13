@@ -393,8 +393,10 @@ static void dentry_unlink_inode(struct dentry * dentry)
 	struct inode *inode = dentry->d_inode;
 	__d_clear_type(dentry);
 	dentry->d_inode = NULL;
-	if (dentry->d_flags & DCACHE_LRU_LIST)
+	if (dentry->d_flags & DCACHE_LRU_LIST) {
 		this_cpu_inc(nr_dentry_negative);
+		memcg_neg_dentry_inc(dentry);
+	}
 	hlist_del_init(&dentry->d_alias);
 	dentry_rcuwalk_invalidate(dentry);
 	spin_unlock(&dentry->d_lock);
@@ -432,8 +434,10 @@ static void d_lru_add(struct dentry *dentry)
 	D_FLAG_VERIFY(dentry, 0);
 	dentry->d_flags |= DCACHE_LRU_LIST;
 	this_cpu_inc(nr_dentry_unused);
-	if (d_is_negative(dentry))
+	if (d_is_negative(dentry)) {
 		this_cpu_inc(nr_dentry_negative);
+		memcg_neg_dentry_inc(dentry);
+	}
 	WARN_ON_ONCE(!list_lru_add(&dentry->d_sb->s_dentry_lru, &dentry->d_lru));
 }
 
@@ -442,8 +446,10 @@ static void d_lru_del(struct dentry *dentry)
 	D_FLAG_VERIFY(dentry, DCACHE_LRU_LIST);
 	dentry->d_flags &= ~DCACHE_LRU_LIST;
 	this_cpu_dec(nr_dentry_unused);
-	if (d_is_negative(dentry))
+	if (d_is_negative(dentry)) {
 		this_cpu_dec(nr_dentry_negative);
+		memcg_neg_dentry_dec(dentry);
+	}
 	WARN_ON_ONCE(!list_lru_del(&dentry->d_sb->s_dentry_lru, &dentry->d_lru));
 }
 
@@ -474,8 +480,10 @@ static void d_lru_isolate(struct list_lru_one *lru, struct dentry *dentry)
 	D_FLAG_VERIFY(dentry, DCACHE_LRU_LIST);
 	dentry->d_flags &= ~DCACHE_LRU_LIST;
 	this_cpu_dec(nr_dentry_unused);
-	if (d_is_negative(dentry))
+	if (d_is_negative(dentry)) {
 		this_cpu_dec(nr_dentry_negative);
+		memcg_neg_dentry_dec(dentry);
+	}
 	list_lru_isolate(lru, &dentry->d_lru);
 }
 
@@ -484,8 +492,10 @@ static void d_lru_shrink_move(struct list_lru_one *lru, struct dentry *dentry,
 {
 	D_FLAG_VERIFY(dentry, DCACHE_LRU_LIST);
 	dentry->d_flags |= DCACHE_SHRINK_LIST;
-	if (d_is_negative(dentry))
+	if (d_is_negative(dentry)) {
 		this_cpu_dec(nr_dentry_negative);
+		memcg_neg_dentry_dec(dentry);
+	}
 	list_lru_isolate_move(lru, &dentry->d_lru, list);
 }
 
@@ -1871,8 +1881,10 @@ static void __d_instantiate(struct dentry *dentry, struct inode *inode)
 	/*
 	 * Decrement negative dentry count if it was in the LRU list.
 	 */
-	if (dentry->d_flags & DCACHE_LRU_LIST)
+	if (dentry->d_flags & DCACHE_LRU_LIST) {
 		this_cpu_dec(nr_dentry_negative);
+		memcg_neg_dentry_dec(dentry);
+	}
 	__d_set_type(dentry, add_flags);
 	if (inode)
 		hlist_add_head(&dentry->d_alias, &inode->i_dentry);
