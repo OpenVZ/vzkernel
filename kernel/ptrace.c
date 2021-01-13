@@ -294,7 +294,7 @@ ok:
 		rcu_read_unlock();
 		return -EPERM;
 	}
-	if (!vps_dumpable && !ve_is_super(get_exec_env())) {
+	if (task->mm && !vps_dumpable && !ve_is_super(get_exec_env())) {
 		rcu_read_unlock();
 		return -EPERM;
 	}
