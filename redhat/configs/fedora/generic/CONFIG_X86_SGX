@@ -20,4 +20,4 @@
 # 
 # 
 # 
-# CONFIG_X86_SGX is not set
+CONFIG_X86_SGX=y

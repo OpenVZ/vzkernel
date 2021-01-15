@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_SURFACE_GPE is not set
+CONFIG_SURFACE_GPE=m

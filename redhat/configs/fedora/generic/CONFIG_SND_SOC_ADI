@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_SND_SOC_ADI is not set
+CONFIG_SND_SOC_ADI=m
