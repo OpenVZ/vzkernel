@@ -1,0 +1,20 @@
+# CONFIG_SND_SOC_ADI_AXI_SPDIF:
+# 
+# ASoC driver for the Analog Devices AXI-SPDIF softcore peripheral.
+# 
+# Symbol: SND_SOC_ADI_AXI_SPDIF [=n]
+# Type  : tristate
+# Defined at sound/soc/adi/Kconfig:15
+#   Prompt: AXI-SPDIF support
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_SOC_ADI [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> Audio support for Analog Devices reference designs (SND_SOC_ADI [=m])
+# Selects: SND_SOC_GENERIC_DMAENGINE_PCM [=y] && REGMAP_MMIO [=y]
+# 
+# 
+# 
+# CONFIG_SND_SOC_ADI_AXI_SPDIF is not set
