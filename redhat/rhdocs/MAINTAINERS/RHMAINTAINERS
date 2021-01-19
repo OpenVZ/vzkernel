@@ -63,7 +63,7 @@ Red Hat Maintainers List (try to look for most precise areas first)
 		-----------------------------------
 
 ARK Kernel Maintainer
-M:	Justin Forbes <jforbes@redhat.com>
+M:	Justin Forbes <jforbes@fedoraproject.org>
 M:	Patrick Talbert <ptalbert@redhat.com>
 R:	Donald Zickus <dzickus@redhat.com>
 T:	git https://gitlab.com/cki-project/kernel-ark.git
