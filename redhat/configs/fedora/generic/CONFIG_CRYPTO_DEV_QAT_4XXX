@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_CRYPTO_DEV_QAT_4XXX is not set
+CONFIG_CRYPTO_DEV_QAT_4XXX=m

@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_BRIDGE_CFM is not set
+CONFIG_BRIDGE_CFM=y

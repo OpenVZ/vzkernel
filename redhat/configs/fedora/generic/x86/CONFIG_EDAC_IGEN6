@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_EDAC_IGEN6 is not set
+CONFIG_EDAC_IGEN6=m
