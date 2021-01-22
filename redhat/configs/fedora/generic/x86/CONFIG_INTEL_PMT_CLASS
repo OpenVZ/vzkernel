@@ -23,4 +23,4 @@
 # 
 # 
 # 
-# CONFIG_INTEL_PMT_CLASS is not set
+CONFIG_INTEL_PMT_CLASS=m

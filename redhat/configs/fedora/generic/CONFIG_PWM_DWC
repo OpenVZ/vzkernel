@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_PWM_DWC is not set
+CONFIG_PWM_DWC=m

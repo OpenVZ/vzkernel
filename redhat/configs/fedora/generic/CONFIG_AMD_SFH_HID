@@ -20,4 +20,4 @@
 # 
 # 
 # 
-# CONFIG_AMD_SFH_HID is not set
+CONFIG_AMD_SFH_HID=m

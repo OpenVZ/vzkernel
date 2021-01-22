@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_MFD_INTEL_PMT is not set
+CONFIG_MFD_INTEL_PMT=m

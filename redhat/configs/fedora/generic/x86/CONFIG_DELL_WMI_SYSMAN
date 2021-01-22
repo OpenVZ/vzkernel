@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_DELL_WMI_SYSMAN is not set
+CONFIG_DELL_WMI_SYSMAN=m

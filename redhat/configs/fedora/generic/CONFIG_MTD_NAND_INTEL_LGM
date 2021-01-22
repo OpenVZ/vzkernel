@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_MTD_NAND_INTEL_LGM is not set
+CONFIG_MTD_NAND_INTEL_LGM=m

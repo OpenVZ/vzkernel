@@ -1,12 +1,12 @@
-# CONFIG_PINCTRL_LAKEFIELD:
+# CONFIG_PINCTRL_ALDERLAKE:
 # 
 # This pinctrl driver provides an interface that allows configuring
-# of Intel Lakefield SoC pins and using them as GPIOs.
+# of Intel Alder Lake PCH pins and using them as GPIOs.
 # 
-# Symbol: PINCTRL_LAKEFIELD [=n]
+# Symbol: PINCTRL_ALDERLAKE [=n]
 # Type  : tristate
-# Defined at drivers/pinctrl/intel/Kconfig:138
-#   Prompt: Intel Lakefield SoC pinctrl and GPIO driver
+# Defined at drivers/pinctrl/intel/Kconfig:58
+#   Prompt: Intel Alder Lake pinctrl and GPIO driver
 #   Depends on: PINCTRL [=y] && (X86 [=y] || COMPILE_TEST [=n]) && ACPI [=y]
 #   Location:
 #     -> Device Drivers
@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_PINCTRL_LAKEFIELD is not set
+CONFIG_PINCTRL_ALDERLAKE=m

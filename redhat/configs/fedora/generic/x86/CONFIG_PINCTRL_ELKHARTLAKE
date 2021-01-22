@@ -1,12 +1,12 @@
-# CONFIG_PINCTRL_ALDERLAKE:
+# CONFIG_PINCTRL_ELKHARTLAKE:
 # 
 # This pinctrl driver provides an interface that allows configuring
-# of Intel Alder Lake PCH pins and using them as GPIOs.
+# of Intel Elkhart Lake SoC pins and using them as GPIOs.
 # 
-# Symbol: PINCTRL_ALDERLAKE [=n]
+# Symbol: PINCTRL_ELKHARTLAKE [=n]
 # Type  : tristate
-# Defined at drivers/pinctrl/intel/Kconfig:58
-#   Prompt: Intel Alder Lake pinctrl and GPIO driver
+# Defined at drivers/pinctrl/intel/Kconfig:98
+#   Prompt: Intel Elkhart Lake SoC pinctrl and GPIO driver
 #   Depends on: PINCTRL [=y] && (X86 [=y] || COMPILE_TEST [=n]) && ACPI [=y]
 #   Location:
 #     -> Device Drivers
@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_PINCTRL_ALDERLAKE is not set
+CONFIG_PINCTRL_ELKHARTLAKE=m

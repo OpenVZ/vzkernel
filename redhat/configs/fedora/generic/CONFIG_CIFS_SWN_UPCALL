@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_CIFS_SWN_UPCALL is not set
+CONFIG_CIFS_SWN_UPCALL=y

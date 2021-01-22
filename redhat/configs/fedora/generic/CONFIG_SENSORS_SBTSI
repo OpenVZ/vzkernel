@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_SENSORS_SBTSI is not set
+CONFIG_SENSORS_SBTSI=m

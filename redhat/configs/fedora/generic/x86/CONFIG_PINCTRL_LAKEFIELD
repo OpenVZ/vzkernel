@@ -1,12 +1,12 @@
-# CONFIG_PINCTRL_ELKHARTLAKE:
+# CONFIG_PINCTRL_LAKEFIELD:
 # 
 # This pinctrl driver provides an interface that allows configuring
-# of Intel Elkhart Lake SoC pins and using them as GPIOs.
+# of Intel Lakefield SoC pins and using them as GPIOs.
 # 
-# Symbol: PINCTRL_ELKHARTLAKE [=n]
+# Symbol: PINCTRL_LAKEFIELD [=n]
 # Type  : tristate
-# Defined at drivers/pinctrl/intel/Kconfig:98
-#   Prompt: Intel Elkhart Lake SoC pinctrl and GPIO driver
+# Defined at drivers/pinctrl/intel/Kconfig:138
+#   Prompt: Intel Lakefield SoC pinctrl and GPIO driver
 #   Depends on: PINCTRL [=y] && (X86 [=y] || COMPILE_TEST [=n]) && ACPI [=y]
 #   Location:
 #     -> Device Drivers
@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_PINCTRL_ELKHARTLAKE is not set
+CONFIG_PINCTRL_LAKEFIELD=m

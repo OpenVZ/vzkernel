@@ -21,4 +21,4 @@
 # 
 # 
 # 
-# CONFIG_AMD_PMC is not set
+CONFIG_AMD_PMC=m

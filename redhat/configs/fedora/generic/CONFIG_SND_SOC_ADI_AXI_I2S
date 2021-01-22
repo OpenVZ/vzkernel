@@ -1,11 +1,11 @@
-# CONFIG_SND_SOC_ADI_AXI_SPDIF:
+# CONFIG_SND_SOC_ADI_AXI_I2S:
 # 
-# ASoC driver for the Analog Devices AXI-SPDIF softcore peripheral.
+# ASoC driver for the Analog Devices AXI-I2S softcore peripheral.
 # 
-# Symbol: SND_SOC_ADI_AXI_SPDIF [=n]
+# Symbol: SND_SOC_ADI_AXI_I2S [=n]
 # Type  : tristate
-# Defined at sound/soc/adi/Kconfig:15
-#   Prompt: AXI-SPDIF support
+# Defined at sound/soc/adi/Kconfig:7
+#   Prompt: AXI-I2S support
 #   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_SOC_ADI [=m]
 #   Location:
 #     -> Device Drivers
@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_SND_SOC_ADI_AXI_SPDIF is not set
+CONFIG_SND_SOC_ADI_AXI_I2S=m

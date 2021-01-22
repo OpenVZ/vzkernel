@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_NFT_REJECT_NETDEV is not set
+CONFIG_NFT_REJECT_NETDEV=m
