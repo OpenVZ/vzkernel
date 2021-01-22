@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_MHI_BUS_PCI_GENERIC is not set
+CONFIG_MHI_BUS_PCI_GENERIC=m

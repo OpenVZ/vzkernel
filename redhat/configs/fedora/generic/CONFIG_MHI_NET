@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_MHI_NET is not set
+CONFIG_MHI_NET=m
