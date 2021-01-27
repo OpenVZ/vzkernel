@@ -401,11 +401,15 @@ static bool bio_endio_if_all_zeros(struct bio *bio)
 {
 	struct bvec_iter bi = {
 		.bi_size = bio->bi_iter.bi_size,
+		.bi_bvec_done = bio->bi_iter.bi_bvec_done,
+		.bi_idx = bio->bi_iter.bi_idx,
 	};
 	struct bio_vec bv;
 	void *data, *ret;
 
 	for_each_bvec(bv, bio->bi_io_vec, bi, bi) {
+		if (!bv.bv_len)
+			continue;
 		data = kmap(bv.bv_page);
 		ret = memchr_inv(data + bv.bv_offset, 0, bv.bv_len);
 		kunmap(bv.bv_page);
