@@ -70,8 +70,12 @@ static void ovl_entry_stack_free(struct ovl_entry *oe)
 {
 	unsigned int i;
 
-	for (i = 0; i < oe->numlower; i++)
+	for (i = 0; i < oe->numlower; i++) {
 		dput(oe->lowerstack[i].dentry);
+		if (oe->lowerpaths)
+			path_put(&oe->lowerpaths[i]);
+	}
+	kfree(oe->lowerpaths);
 }
 
 static bool ovl_metacopy_def = IS_ENABLED(CONFIG_OVERLAY_FS_METACOPY);
@@ -241,11 +245,6 @@ static void ovl_free_fs(struct ovl_fs *ofs)
 		ovl_inuse_unlock(ofs->upper_mnt->mnt_root);
 	mntput(ofs->upper_mnt);
 	path_put(&ofs->upperpath);
-	if (ofs->lowerpaths) {
-		for (i = 0; i < ofs->numlayer; i++)
-			path_put(&ofs->lowerpaths[i]);
-		kfree(ofs->lowerpaths);
-	}
 	for (i = 1; i < ofs->numlayer; i++) {
 		iput(ofs->layers[i].trap);
 		mntput(ofs->layers[i].mnt);
@@ -359,9 +358,10 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 {
 	struct super_block *sb = dentry->d_sb;
 	struct ovl_fs *ofs = sb->s_fs_info;
+	struct ovl_entry *oe = OVL_E(dentry);
 
 	if (ovl_dyn_path_opts) {
-		print_paths_option(m, "lowerdir", ofs->lowerpaths, ofs->numlayer);
+		print_paths_option(m, "lowerdir", oe->lowerpaths, oe->numlower);
 		if (ofs->config.upperdir) {
 			print_path_option(m, "upperdir", &ofs->upperpath);
 			print_path_option(m, "workdir", &ofs->workbasepath);
@@ -375,7 +375,7 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	}
 
 	if (ovl_mnt_id_path_opts) {
-		print_mnt_ids_option(m, "lowerdir_mnt_id", ofs->lowerpaths, ofs->numlayer);
+		print_mnt_ids_option(m, "lowerdir_mnt_id", oe->lowerpaths, oe->numlower);
 		/*
 		 * We don't need to show mnt_id for workdir because it
 		 * on the same mount as upperdir.
@@ -1626,6 +1626,7 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 	int err;
 	char *lowertmp, *lower;
 	unsigned int stacklen, numlower = 0, i;
+	struct path *stack = NULL;
 	struct ovl_entry *oe;
 
 	err = -ENOMEM;
@@ -1649,14 +1650,14 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 	}
 
 	err = -ENOMEM;
-	ofs->lowerpaths = kcalloc(stacklen, sizeof(struct path), GFP_KERNEL);
-	if (!ofs->lowerpaths)
+	stack = kcalloc(stacklen, sizeof(struct path), GFP_KERNEL);
+	if (!stack)
 		goto out_err;
 
 	err = -EINVAL;
 	lower = lowertmp;
 	for (numlower = 0; numlower < stacklen; numlower++) {
-		err = ovl_lower_dir(lower, &ofs->lowerpaths[numlower], ofs,
+		err = ovl_lower_dir(lower, &stack[numlower], ofs,
 				    &sb->s_stack_depth);
 		if (err)
 			goto out_err;
@@ -1671,7 +1672,7 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 		goto out_err;
 	}
 
-	err = ovl_get_layers(sb, ofs, ofs->lowerpaths, numlower);
+	err = ovl_get_layers(sb, ofs, stack, numlower);
 	if (err)
 		goto out_err;
 
@@ -1681,9 +1682,10 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 		goto out_err;
 
 	for (i = 0; i < numlower; i++) {
-		oe->lowerstack[i].dentry = dget(ofs->lowerpaths[i].dentry);
+		oe->lowerstack[i].dentry = dget(stack[i].dentry);
 		oe->lowerstack[i].layer = &ofs->layers[i+1];
 	}
+	oe->lowerpaths = stack;
 
 out:
 	kfree(lowertmp);
@@ -1691,10 +1693,11 @@ out:
 	return oe;
 
 out_err:
-	for (i = 0; i < numlower; i++)
-		path_put_init(&ofs->lowerpaths[i]);
-	kfree(ofs->lowerpaths);
-	ofs->lowerpaths = NULL;
+	if (stack) {
+		for (i = 0; i < numlower; i++)
+			path_put(&stack[i]);
+		kfree(stack);
+	}
 	oe = ERR_PTR(err);
 	goto out;
 }

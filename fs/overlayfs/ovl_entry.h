@@ -54,7 +54,6 @@ struct ovl_fs {
 	unsigned int numlayer;
 	/* Number of unique fs among layers including upper fs */
 	unsigned int numfs;
-	struct path *lowerpaths;
 	const struct ovl_layer *layers;
 	struct ovl_sb *fs;
 	/* workbasepath is the path at workdir= mount option */
@@ -98,6 +97,7 @@ struct ovl_entry {
 		struct rcu_head rcu;
 	};
 	unsigned numlower;
+	struct path *lowerpaths;
 	struct ovl_path lowerstack[];
 };
 
