@@ -8,6 +8,7 @@
 #include <linux/buffer_head.h>
 #include <linux/dm-io.h>
 #include <linux/dm-kcopyd.h>
+#include <linux/sched/mm.h>
 #include <linux/init.h>
 #include <linux/vmalloc.h>
 #include <linux/uio.h>
@@ -924,10 +925,10 @@ static void ploop_read_aio_complete(struct kiocb *iocb, long ret, long ret2)
 static void submit_delta_read(struct ploop *ploop, unsigned int level,
 			    unsigned int dst_cluster, struct bio *bio)
 {
+	unsigned int flags, offset;
 	struct ploop_iocb *piocb;
 	struct bio_vec *bvec;
 	struct iov_iter iter;
-	unsigned int offset;
 	struct file *file;
 	loff_t pos;
 	int ret;
@@ -958,7 +959,9 @@ static void submit_delta_read(struct ploop *ploop, unsigned int level,
 	piocb->iocb.ki_flags = IOCB_DIRECT;
 	piocb->iocb.ki_ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0);
 
+	flags = memalloc_noio_save();
 	ret = call_read_iter(file, &piocb->iocb, &iter);
+	memalloc_noio_restore(flags);
 
 	ploop_read_aio_do_completion(piocb);
 
