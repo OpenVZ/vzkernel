@@ -520,6 +520,9 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	 */
 	if (!ve_ns || ve_ns->pid_ns_for_children != pid_ns)
 		goto unlock;
+
+	cgroup_unmark_ve_roots(ve);
+
 	/*
 	 * At this point all userspace tasks in container are dead.
 	 */
