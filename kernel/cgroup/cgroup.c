@@ -3821,7 +3821,7 @@ static void cgroup_file_notify_timer(struct timer_list *timer)
 }
 
 static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
-			   struct cftype *cft)
+			   struct cftype *cft, bool activate)
 {
 	char name[CGROUP_FILE_NAME_MAX];
 	struct kernfs_node *kn;
@@ -3863,6 +3863,8 @@ static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
 		if (IS_ERR(kn_link))
 			return PTR_ERR(kn_link);
 	}
+	if (activate)
+		kernfs_activate(kn);
 
 	return 0;
 }
@@ -3900,7 +3902,7 @@ restart:
 		if ((cft->flags & CFTYPE_DEBUG) && !cgroup_debug)
 			continue;
 		if (is_add) {
-			ret = cgroup_add_file(css, cgrp, cft);
+			ret = cgroup_add_file(css, cgrp, cft, false);
 			if (ret) {
 				pr_warn("%s: failed to add %s, err=%d\n",
 					__func__, cft->name, ret);
