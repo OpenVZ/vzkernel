@@ -466,7 +466,7 @@ Summary: The Linux kernel
 %define cpupowerarchs i686 x86_64 ppc64le aarch64
 %endif
 
-%if %{use_vdso}
+%if 0%{?use_vdso}
 
 %if 0%{?skip_nonpae_vdso}
 %define _use_vdso 0
