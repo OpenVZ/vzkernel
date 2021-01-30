@@ -256,6 +256,27 @@ static void dio_iodone2_helper(struct dio *dio, loff_t offset,
 	}
 }
 
+/*
+ * Warn about a page cache invalidation failure during a direct io write.
+ */
+void dio_warn_stale_pagecache(struct file *filp)
+{
+	static DEFINE_RATELIMIT_STATE(_rs, 86400 * HZ, DEFAULT_RATELIMIT_BURST);
+	char pathname[128];
+	struct inode *inode = file_inode(filp);
+	char *path;
+
+	errseq_set(&inode->i_mapping->wb_err, -EIO);
+	if (__ratelimit(&_rs)) {
+		path = d_path(&filp->f_path, pathname, sizeof(pathname));
+		if (IS_ERR(path))
+			path = "(unknown)";
+		pr_crit("Page cache invalidation failure on direct I/O.  Possible data corruption due to collision with buffered I/O!\n");
+		pr_crit("File: %s PID: %d Comm: %.20s\n", path, current->pid,
+			current->comm);
+	}
+}
+
 /**
  * dio_complete() - called when all DIO BIO I/O has been completed
  * @offset: the byte offset in the file of the completed operation
@@ -312,7 +333,8 @@ static ssize_t dio_complete(struct dio *dio, loff_t offset, ssize_t ret,
 		err = invalidate_inode_pages2_range(dio->inode->i_mapping,
 					offset >> PAGE_SHIFT,
 					(offset + ret - 1) >> PAGE_SHIFT);
-		WARN_ON_ONCE(err);
+		if (err)
+			dio_warn_stale_pagecache(dio->iocb->ki_filp);
 	}
 
 	/*
