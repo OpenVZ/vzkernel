@@ -3751,6 +3751,45 @@ out:
 	return sb;
 }
 
+/*
+ * Returns true in case of there is mounted sb.
+ * This can't handle nested dm devices stacks.
+ */
+static bool ploop_has_active_sb(struct ploop_device *plo,
+				struct block_device *bd)
+{
+	struct gendisk *disk = plo->disk;
+	struct block_device *bdev = NULL;
+	struct super_block *sb = NULL;
+	int i;
+
+	bdev = ploop_get_dm_crypt_bdev(plo);
+	if (bdev) {
+		sb = get_super(bdev);
+		goto out;
+	}
+
+	for (i = 0; i <= bd->bd_part_count; i++) {
+		bdev = bdget_disk(disk, i);
+		if (!bdev)
+			break;
+
+		sb = get_super(bdev);
+		if (sb)
+			break;
+
+		bdput(bdev);
+		bdev = NULL;
+	}
+
+out:
+	if (sb)
+		drop_super(sb);
+	if (bdev)
+		bdput(bdev);
+	return sb != NULL;
+}
+
 static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 			  struct block_device * bdev)
 {
@@ -4354,9 +4393,15 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 	}
 
 	if (bdev->bd_contains->bd_holders) {
-		if (printk_ratelimit())
-			printk(KERN_INFO "stop ploop%d failed (holders=%d)\n",
-			       plo->index, bdev->bd_contains->bd_holders);
+		if (printk_ratelimit()) {
+			int holders, active;
+			holders = bdev->bd_contains->bd_holders;
+			mutex_unlock(&plo->ctl_mutex);
+			active = ploop_has_active_sb(plo, bdev);
+			pr_info("stop ploop%d failed (holders=%d, sb=%d)\n",
+				plo->index, holders, active);
+			mutex_lock(&plo->ctl_mutex);
+		}
 		return -EBUSY;
 	}
 
