@@ -414,6 +414,10 @@ cached_submit(struct ploop_io *io, iblock_t iblk, struct ploop_request * preq,
 			if (prealloc > PLOOP_MAX_PREALLOC(plo))
 				prealloc = PLOOP_MAX_PREALLOC(plo);
 try_again:
+			/*
+			 * Keep in mind, fallocate() allocates space iteratively,
+			 * so power down in middle may leave unaligned tail blocks.
+			 */
 			err = io->files.file->f_op->fallocate(io->files.file, 0,
 							       pos, prealloc);
 			if (err) {
