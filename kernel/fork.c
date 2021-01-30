@@ -1704,6 +1704,12 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 */
 	copy_seccomp(p);
 
+	/* Let kill terminate clone/fork in the middle */
+	if (fatal_signal_pending(current)) {
+		retval = -EINTR;
+		goto bad_fork_cancel_cgroup;
+	}
+
 	if (!(clone_flags & CLONE_THREAD)) {
 		/*
 		 * Process group and session signals need to be delivered to just the
