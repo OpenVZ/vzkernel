@@ -1,0 +1,20 @@
+# CONFIG_LEDS_RT8515:
+# 
+# This option enables support for the Richtek RT8515 flash
+# and torch LEDs found on some mobile phones.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called leds-rt8515.
+# 
+# Symbol: LEDS_RT8515 [=n]
+# Type  : tristate
+# Defined at drivers/leds/flash/Kconfig:5
+#   Prompt: LED support for Richtek RT8515 flash/torch LED
+#   Depends on: NEW_LEDS [=y] && LEDS_CLASS_FLASH [=m] && GPIOLIB [=y]
+#   Location:
+#     -> Device Drivers
+#       -> LED Support (NEW_LEDS [=y])
+# 
+# 
+# 
+# CONFIG_LEDS_RT8515 is not set
