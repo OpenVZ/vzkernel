@@ -527,6 +527,8 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 		struct shrinker *shrinker;
 		bool is_nfs;
 
+		cond_resched();
+
 		shrinker = idr_find(&shrinker_idr, i);
 		if (unlikely(!shrinker)) {
 			clear_bit(i, map->map);
