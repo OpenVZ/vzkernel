@@ -396,6 +396,7 @@ Summary: The Linux kernel
 %define hdrarch s390
 %define all_arch_configs kernel-%{version}-s390x.config
 %define kernel_image arch/s390/boot/bzImage
+%define vmlinux_decompressor arch/s390/boot/compressed/vmlinux
 %endif
 
 %ifarch %{arm}
@@ -1811,6 +1812,16 @@ BuildKernel() {
     #
     mkdir -p $RPM_BUILD_ROOT%{debuginfodir}/lib/modules/$KernelVer
     cp vmlinux $RPM_BUILD_ROOT%{debuginfodir}/lib/modules/$KernelVer
+    if [ -n "%{vmlinux_decompressor}" ]; then
+	    eu-readelf -n  %{vmlinux_decompressor} | grep "Build ID" | awk '{print $NF}' > vmlinux.decompressor.id
+	    # Without build-id the build will fail. But for s390 the build-id
+	    # wasn't added before 5.11. In case it is missing prefer not
+	    # packaging the debuginfo over a build failure.
+	    if [ -s vmlinux.decompressor.id ]; then
+		    cp vmlinux.decompressor.id $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/vmlinux.decompressor.id
+		    cp %{vmlinux_decompressor} $RPM_BUILD_ROOT%{debuginfodir}/lib/modules/$KernelVer/vmlinux.decompressor
+	    fi
+    fi
 %endif
 
     find $RPM_BUILD_ROOT/lib/modules/$KernelVer -name "*.ko" -type f >modnames
