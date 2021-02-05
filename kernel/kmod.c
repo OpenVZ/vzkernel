@@ -371,6 +371,11 @@ static struct {
 	{ "nf-logger-2-1",      VE_IP_IPTABLES			},
 	{ "nf-logger-7-1",      VE_IP_IPTABLES			},
 	{ "nf-logger-10-1",     VE_IP_IPTABLES6			},
+
+	{ "nft-expr-1-fib",	VE_IP_IPTABLES			},
+	{ "nft-expr-2-fib",	VE_IP_IPTABLES			},
+	{ "nft-expr-10-fib",	VE_IP_IPTABLES6			},
+	{ "nft_fib",		VE_IP_IPTABLES			},
 };
 
 /*
