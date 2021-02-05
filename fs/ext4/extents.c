@@ -4660,7 +4660,7 @@ out2:
 	return err ? err : allocated;
 }
 
-void ext4_ext_truncate(handle_t *handle, struct inode *inode)
+int ext4_ext_truncate(handle_t *handle, struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
 	ext4_lblk_t last_block;
@@ -4674,7 +4674,9 @@ void ext4_ext_truncate(handle_t *handle, struct inode *inode)
 
 	/* we have to know where to truncate from in crash case */
 	EXT4_I(inode)->i_disksize = inode->i_size;
-	ext4_mark_inode_dirty(handle, inode);
+	err = ext4_mark_inode_dirty(handle, inode);
+	if (err)
+		return err;
 
 	last_block = (inode->i_size + sb->s_blocksize - 1)
 			>> EXT4_BLOCK_SIZE_BITS(sb);
@@ -4686,12 +4688,9 @@ retry:
 		congestion_wait(BLK_RW_ASYNC, HZ/50);
 		goto retry;
 	}
-	if (err) {
-		ext4_std_error(inode->i_sb, err);
-		return;
-	}
-	err = ext4_ext_remove_space(inode, last_block, EXT_MAX_BLOCKS - 1);
-	ext4_std_error(inode->i_sb, err);
+	if (err)
+		return err;
+	return ext4_ext_remove_space(inode, last_block, EXT_MAX_BLOCKS - 1);
 }
 
 static int ext4_convert_unwritten(struct inode *inode, loff_t offset,
