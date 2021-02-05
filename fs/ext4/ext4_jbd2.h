@@ -226,7 +226,10 @@ ext4_mark_iloc_dirty(handle_t *handle,
 int ext4_reserve_inode_write(handle_t *handle, struct inode *inode,
 			struct ext4_iloc *iloc);
 
-int ext4_mark_inode_dirty(handle_t *handle, struct inode *inode);
+#define ext4_mark_inode_dirty(__h, __i)					\
+		__ext4_mark_inode_dirty((__h), (__i), __func__, __LINE__)
+int __ext4_mark_inode_dirty(handle_t *handle, struct inode *inode,
+				const char *func, unsigned int line);
 
 /*
  * Wrapper functions with which ext4 calls into JBD.
