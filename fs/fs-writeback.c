@@ -197,6 +197,7 @@ void inode_io_list_del(struct inode *inode)
 	list_del_init(&inode->i_io_list);
 	spin_unlock(&bdi->wb.list_lock);
 }
+EXPORT_SYMBOL(inode_io_list_del);
 
 /*
  * mark an inode as under writeback on the sb
