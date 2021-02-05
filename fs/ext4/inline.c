@@ -1253,7 +1253,7 @@ out:
 int ext4_try_add_inline_entry(handle_t *handle, struct dentry *dentry,
 			      struct inode *inode)
 {
-	int ret, inline_size;
+	int ret, ret2, inline_size;
 	void *inline_start;
 	struct ext4_iloc iloc;
 	struct inode *dir = dentry->d_parent->d_inode;
@@ -1306,7 +1306,9 @@ int ext4_try_add_inline_entry(handle_t *handle, struct dentry *dentry,
 	ret = ext4_convert_inline_data_nolock(handle, dir, &iloc);
 
 out:
-	ext4_mark_inode_dirty(handle, dir);
+	ret2 = ext4_mark_inode_dirty(handle, dir);
+	if (unlikely(ret2 && !ret))
+		ret = ret2;
 	up_write(&EXT4_I(dir)->xattr_sem);
 	brelse(iloc.bh);
 	return ret;
