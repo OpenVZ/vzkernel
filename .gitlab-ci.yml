@@ -37,7 +37,7 @@ trigger_pipeline:
     skip_test: 'true'
 
   trigger:
-    project: redhat/red-hat-ci-tools/kernel/cki-runs/trusted-pipelines
+    project: redhat/red-hat-ci-tools/kernel/cki-internal-pipelines/cki-trusted-contributors
     branch: kernel-ark
     strategy: depend
 
