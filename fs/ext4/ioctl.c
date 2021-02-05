@@ -323,8 +323,11 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				err = -EOPNOTSUPP;
 				goto flags_out;
 			}
-		} else if (oldflags & EXT4_EOFBLOCKS_FL)
-			ext4_truncate(inode);
+		} else if (oldflags & EXT4_EOFBLOCKS_FL) {
+			err = ext4_truncate(inode);
+			if (err)
+				goto flags_out;
+		}
 
 		handle = ext4_journal_start(inode, EXT4_HT_INODE, 1);
 		if (IS_ERR(handle)) {
