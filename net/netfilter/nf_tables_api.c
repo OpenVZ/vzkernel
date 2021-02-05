@@ -230,42 +230,12 @@ static int nft_delchain(struct nft_ctx *ctx)
 	return err;
 }
 
-static inline bool
-nft_rule_is_active(struct net *net, const struct nft_rule *rule)
-{
-	return (rule->genmask & nft_genmask_cur(net)) == 0;
-}
-
-static inline int
-nft_rule_is_active_next(struct net *net, const struct nft_rule *rule)
-{
-	return (rule->genmask & nft_genmask_next(net)) == 0;
-}
-
-static inline void
-nft_rule_activate_next(struct net *net, struct nft_rule *rule)
-{
-	/* Now inactive, will be active in the future */
-	rule->genmask = nft_genmask_cur(net);
-}
-
-static inline void
-nft_rule_deactivate_next(struct net *net, struct nft_rule *rule)
-{
-	rule->genmask = nft_genmask_next(net);
-}
-
-static inline void nft_rule_clear(struct net *net, struct nft_rule *rule)
-{
-	rule->genmask &= ~nft_genmask_next(net);
-}
-
 static int
 nf_tables_delrule_deactivate(struct nft_ctx *ctx, struct nft_rule *rule)
 {
 	/* You cannot delete the same rule twice */
-	if (nft_rule_is_active_next(ctx->net, rule)) {
-		nft_rule_deactivate_next(ctx->net, rule);
+	if (nft_is_active_next(ctx->net, rule)) {
+		nft_deactivate_next(ctx->net, rule);
 		ctx->chain->use--;
 		return 0;
 	}
@@ -311,7 +281,7 @@ static int nft_delrule_by_chain(struct nft_ctx *ctx)
 	int err;
 
 	list_for_each_entry(rule, &ctx->chain->rules, list) {
-		if (!nft_rule_is_active_next(ctx->net, rule))
+		if (!nft_is_active_next(ctx->net, rule))
 			continue;
 
 		err = nft_delrule(ctx, rule);
@@ -1943,7 +1913,7 @@ static int nf_tables_dump_rules(struct sk_buff *skb,
 					continue;
 
 				list_for_each_entry_rcu(rule, &chain->rules, list) {
-					if (!nft_rule_is_active(net, rule))
+					if (!nft_is_active(net, rule))
 						goto cont;
 					if (idx < s_idx)
 						goto cont;
@@ -2175,7 +2145,7 @@ static int nf_tables_newrule(struct net *net, struct sock *nlsk,
 	if (rule == NULL)
 		goto err1;
 
-	nft_rule_activate_next(net, rule);
+	nft_activate_next(net, rule);
 
 	rule->handle = handle;
 	rule->dlen   = size;
@@ -2197,14 +2167,14 @@ static int nf_tables_newrule(struct net *net, struct sock *nlsk,
 	}
 
 	if (nlh->nlmsg_flags & NLM_F_REPLACE) {
-		if (nft_rule_is_active_next(net, old_rule)) {
+		if (nft_is_active_next(net, old_rule)) {
 			trans = nft_trans_rule_add(&ctx, NFT_MSG_DELRULE,
 						   old_rule);
 			if (trans == NULL) {
 				err = -ENOMEM;
 				goto err2;
 			}
-			nft_rule_deactivate_next(net, old_rule);
+			nft_deactivate_next(net, old_rule);
 			chain->use--;
 			list_add_tail_rcu(&rule->list, &old_rule->list);
 		} else {
@@ -4068,7 +4038,7 @@ static int nf_tables_commit(struct sk_buff *skb)
 						   trans->ctx.afi->nops);
 			break;
 		case NFT_MSG_NEWRULE:
-			nft_rule_clear(trans->ctx.net, nft_trans_rule(trans));
+			nft_clear(trans->ctx.net, nft_trans_rule(trans));
 			nf_tables_rule_notify(&trans->ctx,
 					      nft_trans_rule(trans),
 					      NFT_MSG_NEWRULE);
@@ -4204,7 +4174,7 @@ static int __nf_tables_abort(struct net *net)
 			break;
 		case NFT_MSG_DELRULE:
 			trans->ctx.chain->use++;
-			nft_rule_clear(trans->ctx.net, nft_trans_rule(trans));
+			nft_clear(trans->ctx.net, nft_trans_rule(trans));
 			nft_trans_destroy(trans);
 			break;
 		case NFT_MSG_NEWSET:
