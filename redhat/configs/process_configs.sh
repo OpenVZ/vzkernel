@@ -79,7 +79,7 @@ checkoptions()
 	then
 		while read -r LINE
 		do
-			if find ./ -name "$(echo "$LINE" | awk -F "=" ' { print $1 } ' | awk ' { print $2 }')" | xargs -0 grep ^ | grep -q "process_configs_known_broken"; then
+			if find ./ -name "$(echo "$LINE" | awk -F "=" ' { print $1 } ' | awk ' { print $2 }')" -print0 | xargs -0 grep ^ | grep -q "process_configs_known_broken"; then
 				# This is a known broken config.
 				# See script help warning.
 				checkoptions_error=false
