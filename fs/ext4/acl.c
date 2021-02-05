@@ -336,7 +336,7 @@ retry:
 	if (!error && update_mode) {
 		inode->i_mode = mode;
 		inode->i_ctime = ext4_current_time(inode);
-		ext4_mark_inode_dirty(handle, inode);
+		error = ext4_mark_inode_dirty(handle, inode);
 	}
 out_stop:
 	ext4_journal_stop(handle);
@@ -448,7 +448,7 @@ retry:
 	if (!error && update_mode) {
 		inode->i_mode = mode;
 		inode->i_ctime = ext4_current_time(inode);
-		ext4_mark_inode_dirty(handle, inode);
+		error = ext4_mark_inode_dirty(handle, inode);
 	}
 out_stop:
 	ext4_journal_stop(handle);
