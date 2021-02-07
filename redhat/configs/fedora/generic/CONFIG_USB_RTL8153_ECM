@@ -1,19 +1,1 @@
-# CONFIG_USB_RTL8153_ECM:
-# 
-# This option supports ECM mode for RTL8153 ethernet adapter, when
-# CONFIG_USB_RTL8152 is not set, or the RTL8153 device is not
-# supported by r8152 driver.
-# 
-# Symbol: USB_RTL8153_ECM [=m]
-# Type  : tristate
-# Defined at drivers/net/usb/Kconfig:631
-#   Prompt: RTL8153 ECM support
-#   Depends on: NETDEVICES [=y] && USB_NET_DRIVERS [=y] && USB_NET_CDCETHER [=m] && (USB_RTL8152 [=m] || USB_RTL8152 [=m]=n)
-#   Location:
-#     -> Device Drivers
-#       -> Network device support (NETDEVICES [=y])
-#         -> USB Network Adapters (USB_NET_DRIVERS [=y])
-# 
-# 
-# 
 CONFIG_USB_RTL8153_ECM=m
