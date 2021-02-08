@@ -24,7 +24,7 @@ trigger_pipeline:
     mr_id: ${CI_MERGE_REQUEST_IID}
     mr_url: ${CI_MERGE_REQUEST_PROJECT_URL}/-/merge_requests/${CI_MERGE_REQUEST_IID}
     title: ${CI_COMMIT_TITLE}
-    name: kernel-ark-${CI_MERGE_REQUEST_ID}
+    name: kernel-ark
 
     # We only need srpm so skip the rest of the stages
     kernel_type: upstream
