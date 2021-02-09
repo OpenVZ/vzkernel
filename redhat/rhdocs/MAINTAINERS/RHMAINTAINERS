@@ -284,7 +284,7 @@ ARCHITECTURE DIRECTORY FILES
 M:	Prarit Bhargava <prarit@redhat.com>
 M:	David Arcari <darcari@redhat.com>
 M:	Mark Salter <msalter@redhat.com>
-M:	kernel-patches@redhat.com
+L:	kernel-patches@redhat.com
 F:	arch/Kconfig
 
 ARM64 PORT (AARCH64 ARCHITECTURE)
@@ -1490,7 +1490,7 @@ F:	include/linux/psci.h
 F:	include/uapi/linux/psci.h
 
 POWERPC (64-BIT)
-M:	kernel-patches@redhat.com
+L:	kernel-patches@redhat.com
 S:	Maintained
 F:	arch/powerpc/
 
@@ -1983,13 +1983,13 @@ F:	Documentation/filesystems/xfs.txt
 F:	fs/xfs/
 
 ZBUD COMPRESSED PAGE ALLOCATOR
-M:	kernel-patches@redhat.com
+L:	kernel-patches@redhat.com
 S:	Maintained
 F:	mm/zbud.c
 F:	include/linux/zbud.h
 
 ZSWAP COMPRESSED SWAP CACHING
-M:	kernel-patches@redhat.com
+L:	kernel-patches@redhat.com
 S:	Maintained
 F:	mm/zswap.c
 
