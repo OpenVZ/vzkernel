@@ -20,5 +20,8 @@
 #         -> Advanced Linux Sound Architecture (SND [=m])
 # 
 # 
-# 
-# CONFIG_SND_INTEL_BYT_PREFER_SOF is not set
+#
+
+# Note this should be set for F34+ and not set for older Fedora releases, see:
+# https://fedoraproject.org/w/index.php?title=Changes/SofDefaultForIntelLpe
+CONFIG_SND_INTEL_BYT_PREFER_SOF=y 
