@@ -1739,6 +1739,12 @@ S:	Maintained
 F:	drivers/infiniband/sw/siw/
 F:	include/uapi/rdma/siw-abi.h
 
+SOFT-ROCE DRIVER (rdma_rxe)
+M:	Kamal Heib <kheib@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/sw/rxe/
+F:	include/uapi/rdma/rdma_user_rxe.h
+
 SOFTWARE RAID (Multiple Disks, MD) SUPPORT
 M:	Nigel Croxon <ncroxon@redhat.com>
 S:	Maintained
