@@ -409,6 +409,12 @@ S:	Maintained
 F:	drivers/net/ethernet/broadcom/bnxt/
 F:	drivers/net/ethernet/broadcom/Kconfig
 
+BROADCOM BNXT_RE RDMA ROCE DRIVER
+M:     Selvin Xavier <sxavier@redhat.com>
+S:     Maintained
+F:     drivers/infiniband/hw/bnxt_re/
+F:     include/uapi/rdma/bnxt_re-abi.h
+
 Broadcom NetXtreme II BCM5706/5708/5709/57710/57711/57712/57800/57810/57840 iSCSI Driver
 M:	Maurizio Lombardi <mlombard@redhat.com>
 S:	Maintained
