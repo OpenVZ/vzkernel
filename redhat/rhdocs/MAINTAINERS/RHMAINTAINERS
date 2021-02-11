@@ -1733,6 +1733,12 @@ M:	Mark Langsdorf <mlangsdo@redhat.com>
 S:	Odd Fixes
 F:	drivers/net/ethernet/marvell/sky2.*
 
+SOFT-IWARP DRIVER (siw)
+M:	Kamal Heib <kheib@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/sw/siw/
+F:	include/uapi/rdma/siw-abi.h
+
 SOFTWARE RAID (Multiple Disks, MD) SUPPORT
 M:	Nigel Croxon <ncroxon@redhat.com>
 S:	Maintained
