@@ -260,6 +260,12 @@ S:	Supported
 F:	Documentation/networking/ena.txt
 F:	drivers/net/ethernet/amazon/
 
+AMAZON RDMA EFA DRIVER (efa)
+M:	Kamal Heib <kheib@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/hw/efa/
+F:	include/uapi/rdma/efa-abi.h
+
 AMD IOMMU (AMD-VI)
 M:	Jerry Snitselaar <jsnitsel@redhat.com>
 M:	Myron Stowe <myron.stowe@redhat.com>
