@@ -1962,6 +1962,12 @@ M:	Cathy Avery <cavery@redhat.com>
 S:	Maintained
 F:	drivers/net/vmxnet3/*
 
+VMWARE PVRDMA DRIVER (vmw_pvrdma)
+M:	Kamal Heib <kheib@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/hw/vmw_pvrdma/
+F:	include/uapi/rdma/vmw_pvrdma-abi.h
+
 WIRELESS DRIVERS AND STACK
 M:	Jarod Wilson <jarod@redhat.com>
 M:	John Linville <linville@redhat.com>
