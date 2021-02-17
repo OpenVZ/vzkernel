@@ -5773,7 +5773,7 @@ static int memcg_stat_show(struct cgroup *cont, struct cftype *cft,
 		seq_printf(m, "%s %lu\n", mem_cgroup_events_names[i],
 			   mem_cgroup_read_events(memcg, i));
 	seq_printf(m, "oom %lu\n", atomic_long_read(&memcg->oom));
-	seq_printf(m, "negative dentries %lu\n", mem_cgroup_read_nd(memcg));
+	seq_printf(m, "negative_dentries %lu\n", mem_cgroup_read_nd(memcg));
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
 		seq_printf(m, "%s %lu\n", mem_cgroup_lru_names[i],
