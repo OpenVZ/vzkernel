@@ -722,7 +722,7 @@ again:
 	}
 	if (parent != dentry) {
 		spin_lock_nested(&dentry->d_lock, DENTRY_D_LOCK_NESTED);
-		if (unlikely(dentry->d_lockref.count < 0)) {
+		if (unlikely((int)dentry->d_lockref.count < 0)) {
 			spin_unlock(&parent->d_lock);
 			parent = NULL;
 		}
