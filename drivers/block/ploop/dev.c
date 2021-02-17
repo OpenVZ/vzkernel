@@ -172,6 +172,13 @@ static void ploop_uncongest(struct ploop_device *plo)
 	}
 }
 
+static struct bio *aux_bio_alloc(gfp_t gfp_mask, unsigned int nr_iovecs)
+{
+	if (likely(nr_iovecs <= BIO_MAX_PAGES))
+		return bio_alloc(gfp_mask, nr_iovecs);
+	return bio_kmalloc(gfp_mask, nr_iovecs);
+}
+
 static int fast_path_reqs_count(struct ploop_device *plo)
 {
 	int ret;
@@ -858,7 +865,7 @@ preallocate_bio(struct bio * orig_bio, struct ploop_device * plo)
 	}
 
 	if (nbio == NULL)
-		nbio = bio_alloc(GFP_NOIO, max(orig_bio->bi_max_vecs, block_vecs(plo)));
+		nbio = aux_bio_alloc(GFP_NOIO, max(orig_bio->bi_max_vecs, block_vecs(plo)));
 	return nbio;
 }
 
@@ -1848,7 +1855,7 @@ ploop_reloc_sched_read(struct ploop_request *preq, iblock_t iblk)
 	spin_unlock_irq(&plo->lock);
 
 	if (!preq->aux_bio) {
-		preq->aux_bio = bio_alloc(GFP_NOFS, block_vecs(plo));
+		preq->aux_bio = aux_bio_alloc(GFP_NOFS, block_vecs(plo));
 
 		if (!preq->aux_bio ||
 		    fill_bio(plo, preq->aux_bio, preq->req_cluster)) {
@@ -2141,7 +2148,7 @@ ploop_entry_nullify_req(struct ploop_request *preq)
 	struct bio_list sbl;
 
 	if (!preq->aux_bio) {
-		preq->aux_bio = bio_alloc(GFP_NOFS, block_vecs(plo));
+		preq->aux_bio = aux_bio_alloc(GFP_NOFS, block_vecs(plo));
 		if (!preq->aux_bio)
 			return -ENOMEM;
 		fill_zero_bio(plo, preq->aux_bio);
@@ -2522,7 +2529,7 @@ restart:
 		plo->st.bio_cows++;
 
 		if (!preq->aux_bio)
-			preq->aux_bio = bio_alloc(GFP_NOFS, block_vecs(plo));
+			preq->aux_bio = aux_bio_alloc(GFP_NOFS, block_vecs(plo));
 
 		if (!preq->aux_bio ||
 		    fill_bio(plo, preq->aux_bio, preq->req_cluster)) {
@@ -2634,7 +2641,8 @@ delta_io:
 				plo->st.bio_cows++;
 
 				if (!preq->aux_bio)
-					preq->aux_bio = bio_alloc(GFP_NOFS, block_vecs(plo));
+					preq->aux_bio = aux_bio_alloc(GFP_NOFS,
+								block_vecs(plo));
 
 				if (!preq->aux_bio ||
 				    fill_bio(plo, preq->aux_bio, preq->req_cluster)) {
@@ -2883,7 +2891,7 @@ restart:
 			int i;
 
 			if (!preq->aux_bio)
-				preq->aux_bio = bio_alloc(GFP_NOFS, block_vecs(plo));
+				preq->aux_bio = aux_bio_alloc(GFP_NOFS, block_vecs(plo));
 
 			if (!preq->aux_bio ||
 			    fill_bio(plo, preq->aux_bio, preq->req_cluster)) {
