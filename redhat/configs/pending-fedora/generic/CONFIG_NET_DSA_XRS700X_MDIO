@@ -1,0 +1,19 @@
+# CONFIG_NET_DSA_XRS700X_MDIO:
+# 
+# Enable MDIO support for Arrow SpeedChips XRS7003/7004 gigabit Ethernet
+# switches.
+# 
+# Symbol: NET_DSA_XRS700X_MDIO [=n]
+# Type  : tristate
+# Defined at drivers/net/dsa/xrs700x/Kconfig:20
+#   Prompt: Arrow XRS7000X series switch in MDIO mode
+#   Depends on: NETDEVICES [=y] && HAVE_NET_DSA [=y] && NET_DSA [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Distributed Switch Architecture drivers
+# Selects: NET_DSA_XRS700X [=n]
+# 
+# 
+# 
+# CONFIG_NET_DSA_XRS700X_MDIO is not set

@@ -1,0 +1,20 @@
+# CONFIG_CRYPTO_DEV_SUN4I_SS_DEBUG:
+# 
+# Say y to enable sun4i-ss debug stats.
+# This will create /sys/kernel/debug/sun4i-ss/stats for displaying
+# the number of requests per algorithm.
+# 
+# Symbol: CRYPTO_DEV_SUN4I_SS_DEBUG [=n]
+# Type  : bool
+# Defined at drivers/crypto/allwinner/Kconfig:35
+#   Prompt: Enable sun4i-ss stats
+#   Depends on: CRYPTO [=y] && CRYPTO_HW [=y] && CRYPTO_DEV_SUN4I_SS [=m] && DEBUG_FS [=y]
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#       -> Hardware crypto devices (CRYPTO_HW [=y])
+#         -> Support for Allwinner cryptographic offloader (CRYPTO_DEV_ALLWINNER [=y])
+#           -> Support for Allwinner Security System cryptographic accelerator (CRYPTO_DEV_SUN4I_SS [=m])
+# 
+# 
+# 
+# CONFIG_CRYPTO_DEV_SUN4I_SS_DEBUG is not set

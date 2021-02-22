@@ -1,0 +1,20 @@
+# CONFIG_NET_DSA_TAG_XRS700X:
+# 
+# Say Y or M if you want to enable support for tagging frames for
+# Arrow SpeedChips XRS700x switches that use a single byte tag trailer.
+# 
+# Symbol: NET_DSA_TAG_XRS700X [=n]
+# Type  : tristate
+# Defined at net/dsa/Kconfig:157
+#   Prompt: Tag driver for XRS700x switches
+#   Depends on: NET [=y] && NET_DSA [=m]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Distributed Switch Architecture (NET_DSA [=m])
+# Selected by [n]:
+#   - NET_DSA_XRS700X [=n] && NETDEVICES [=y] && HAVE_NET_DSA [=y] && NET_DSA [=m]
+# 
+# 
+# 
+# CONFIG_NET_DSA_TAG_XRS700X is not set

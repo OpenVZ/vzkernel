@@ -1,0 +1,19 @@
+# CONFIG_CRYPTO_BLAKE2B_NEON:
+# 
+# BLAKE2b digest algorithm optimized with ARM NEON instructions.
+# On ARM processors that have NEON support but not the ARMv8
+# Crypto Extensions, typically this BLAKE2b implementation is
+# much faster than SHA-2 and slightly faster than SHA-1.
+# 
+# Symbol: CRYPTO_BLAKE2B_NEON [=n]
+# Type  : tristate
+# Defined at arch/arm/crypto/Kconfig:74
+#   Prompt: BLAKE2b digest algorithm (ARM NEON)
+#   Depends on: CRYPTO [=y] && ARM_CRYPTO [=y] && KERNEL_MODE_NEON [=y]
+#   Location:
+#     -> ARM Accelerated Cryptographic Algorithms (ARM_CRYPTO [=y])
+# Selects: CRYPTO_BLAKE2B [=y]
+# 
+# 
+# 
+# CONFIG_CRYPTO_BLAKE2B_NEON is not set

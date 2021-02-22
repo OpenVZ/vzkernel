@@ -1,0 +1,24 @@
+# CONFIG_HID_SENSOR_CUSTOM_INTEL_HINGE:
+# 
+# This sensor present three angles, hinge angel, screen angles
+# and keyboard angle respect to horizon (ground).
+# Say yes here to build support for the HID custom
+# intel hinge sensor.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called hid-sensor-custom-hinge.
+# 
+# Symbol: HID_SENSOR_CUSTOM_INTEL_HINGE [=n]
+# Type  : tristate
+# Defined at drivers/iio/position/Kconfig:19
+#   Prompt: HID Hinge
+#   Depends on: IIO [=m] && HID_SENSOR_HUB [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Linear and angular position sensors
+# Selects: IIO_BUFFER [=y] && IIO_TRIGGERED_BUFFER [=m] && HID_SENSOR_IIO_COMMON [=m] && HID_SENSOR_IIO_TRIGGER [=m]
+# 
+# 
+# 
+# CONFIG_HID_SENSOR_CUSTOM_INTEL_HINGE is not set

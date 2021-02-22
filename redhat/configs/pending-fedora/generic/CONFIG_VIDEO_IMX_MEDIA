@@ -1,0 +1,19 @@
+# CONFIG_VIDEO_IMX_MEDIA:
+# 
+# Say yes here to enable support for video4linux media controller
+# driver for the i.MX5/6 SOC.
+# 
+# Symbol: VIDEO_IMX_MEDIA [=n]
+# Type  : tristate
+# Defined at drivers/staging/media/imx/Kconfig:2
+#   Prompt: i.MX5/6 V4L2 media core driver
+#   Depends on: STAGING [=y] && STAGING_MEDIA [=y] && MEDIA_SUPPORT [=m] && (ARCH_MXC [=y] || COMPILE_TEST [=n]) && VIDEO_V4L2 [=m] && HAS_DMA [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Staging drivers (STAGING [=y])
+#         -> Media staging drivers (STAGING_MEDIA [=y])
+# Selects: MEDIA_CONTROLLER [=y] && VIDEO_V4L2_SUBDEV_API [=y] && VIDEOBUF2_DMA_CONTIG [=m] && V4L2_FWNODE [=m] && V4L2_MEM2MEM_DEV [=m]
+# 
+# 
+# 
+# CONFIG_VIDEO_IMX_MEDIA is not set

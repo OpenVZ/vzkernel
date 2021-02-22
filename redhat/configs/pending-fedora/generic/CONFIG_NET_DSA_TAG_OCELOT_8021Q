@@ -1,0 +1,26 @@
+# CONFIG_NET_DSA_TAG_OCELOT_8021Q:
+# 
+# Say Y or M if you want to enable support for tagging frames with a
+# custom VLAN-based header. Frames that require timestamping, such as
+# PTP, are not delivered over Ethernet but over register-based MMIO.
+# Flow control over the CPU port is functional in this mode. When using
+# this mode, less TCAM resources (VCAP IS1, IS2, ES0) are available for
+# use with tc-flower.
+# 
+# Symbol: NET_DSA_TAG_OCELOT_8021Q [=n]
+# Type  : tristate
+# Defined at net/dsa/Kconfig:118
+#   Prompt: Tag driver for Ocelot family of switches, using VLAN
+#   Depends on: NET [=y] && NET_DSA [=m]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Distributed Switch Architecture (NET_DSA [=m])
+# Selects: NET_DSA_TAG_8021Q [=m]
+# Selected by [n]:
+#   - NET_DSA_MSCC_FELIX [=n] && NETDEVICES [=y] && HAVE_NET_DSA [=y] && NET_DSA [=m] && PCI [=y] && NET_VENDOR_MICROSEMI [=n] && NET_VENDOR_FREESCALE [=n] && HAS_IOMEM [=y]
+#   - NET_DSA_MSCC_SEVILLE [=n] && NETDEVICES [=y] && HAVE_NET_DSA [=y] && NET_DSA [=m] && NET_VENDOR_MICROSEMI [=n] && HAS_IOMEM [=y]
+# 
+# 
+# 
+# CONFIG_NET_DSA_TAG_OCELOT_8021Q is not set

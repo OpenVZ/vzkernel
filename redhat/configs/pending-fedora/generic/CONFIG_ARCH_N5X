@@ -1,0 +1,14 @@
+# CONFIG_ARCH_N5X:
+# 
+# This enables support for Intel's eASIC N5X SoCFPGA Family.
+# 
+# Symbol: ARCH_N5X [=n]
+# Type  : bool
+# Defined at arch/arm64/Kconfig.platforms:16
+#   Prompt: Intel's eASIC N5X SoCFPGA Family
+#   Location:
+#     -> Platform selection
+# 
+# 
+# 
+# CONFIG_ARCH_N5X is not set

@@ -1,0 +1,21 @@
+# CONFIG_SND_JACK_INJECTION_DEBUG:
+# 
+# This option can be used to enable or disable sound jack
+# software injection.
+# Say Y if you are debugging via jack injection interface.
+# If unsure select "N".
+# 
+# Symbol: SND_JACK_INJECTION_DEBUG [=n]
+# Type  : bool
+# Defined at sound/core/Kconfig:190
+#   Prompt: Sound jack injection interface via debugfs
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_JACK [=y] && SND_DEBUG [=y] && DEBUG_FS [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> Debug (SND_DEBUG [=y])
+# 
+# 
+# 
+# CONFIG_SND_JACK_INJECTION_DEBUG is not set

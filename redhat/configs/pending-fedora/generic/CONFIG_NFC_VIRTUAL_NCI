@@ -1,0 +1,22 @@
+# CONFIG_NFC_VIRTUAL_NCI:
+# 
+# NCI virtual device simulates a NCI device to the user.
+# It can be used to validate the NCI module and applications.
+# This driver supports communication between the virtual NCI device and
+# module.
+# 
+# If unsure, say N.
+# 
+# Symbol: NFC_VIRTUAL_NCI [=n]
+# Type  : tristate
+# Defined at drivers/nfc/Kconfig:52
+#   Prompt: NCI device simulator driver
+#   Depends on: NET [=y] && NFC [=m] && NFC_NCI [=m]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> NFC subsystem support (NFC [=m])
+#         -> Near Field Communication (NFC) devices
+# 
+# 
+# 
+# CONFIG_NFC_VIRTUAL_NCI is not set

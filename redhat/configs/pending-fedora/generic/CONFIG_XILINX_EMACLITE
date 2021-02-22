@@ -1,0 +1,19 @@
+# CONFIG_XILINX_EMACLITE:
+# 
+# This driver supports the 10/100 Ethernet Lite from Xilinx.
+# 
+# Symbol: XILINX_EMACLITE [=n]
+# Type  : tristate
+# Defined at drivers/net/ethernet/xilinx/Kconfig:19
+#   Prompt: Xilinx 10/100 Ethernet Lite support
+#   Depends on: NETDEVICES [=y] && ETHERNET [=y] && NET_VENDOR_XILINX [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Ethernet driver support (ETHERNET [=y])
+#           -> Xilinx devices (NET_VENDOR_XILINX [=y])
+# Selects: PHYLIB [=y]
+# 
+# 
+# 
+# CONFIG_XILINX_EMACLITE is not set

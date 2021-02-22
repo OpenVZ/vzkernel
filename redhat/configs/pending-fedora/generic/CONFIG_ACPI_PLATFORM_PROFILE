@@ -1,0 +1,27 @@
+# CONFIG_ACPI_PLATFORM_PROFILE:
+# 
+# This driver adds support for platform-profiles on platforms that
+# support it.
+# 
+# Platform-profiles can be used to control the platform behaviour. For
+# example whether to operate in a lower power mode, in a higher
+# power performance mode or between the two.
+# 
+# This driver provides the sysfs interface and is used as the registration
+# point for platform specific drivers.
+# 
+# Which profiles are supported is determined on a per-platform basis and
+# should be obtained from the platform specific driver.
+# 
+# Symbol: ACPI_PLATFORM_PROFILE [=m]
+# Type  : tristate
+# Defined at drivers/acpi/Kconfig:329
+#   Prompt: ACPI Platform Profile Driver
+#   Depends on: ACPI [=y]
+#   Location:
+#     -> Power management and ACPI options
+#       -> ACPI (Advanced Configuration and Power Interface) Support (ACPI [=y])
+# 
+# 
+# 
+CONFIG_ACPI_PLATFORM_PROFILE=m
