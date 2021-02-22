@@ -1,0 +1,18 @@
+# CONFIG_NET_DSA_MV88E6XXX_PTP:
+# 
+# Say Y to enable PTP hardware timestamping on Marvell 88E6xxx switch
+# chips that support it.
+# 
+# Symbol: NET_DSA_MV88E6XXX_PTP [=n]
+# Type  : bool
+# Defined at drivers/net/dsa/mv88e6xxx/Kconfig:12
+#   Prompt: PTP support for Marvell 88E6xxx
+#   Depends on: NETDEVICES [=y] && HAVE_NET_DSA [=y] && PTP_1588_CLOCK [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Distributed Switch Architecture drivers
+# 
+# 
+# 
+# CONFIG_NET_DSA_MV88E6XXX_PTP is not set

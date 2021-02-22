@@ -1,0 +1,24 @@
+# CONFIG_YAMAHA_YAS530:
+# 
+# Say Y here to add support for the Yamaha YAS530 series of
+# 3-Axis Magnetometers. Right now YAS530, YAS532 and YAS533 are
+# fully supported.
+# 
+# This driver can also be compiled as a module.
+# To compile this driver as a module, choose M here: the module
+# will be called yamaha-yas.
+# 
+# Symbol: YAMAHA_YAS530 [=n]
+# Type  : tristate
+# Defined at drivers/iio/magnetometer/Kconfig:208
+#   Prompt: Yamaha YAS530 family of 3-Axis Magnetometers (I2C)
+#   Depends on: IIO [=m] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Magnetometer sensors
+# Selects: REGMAP_I2C [=m] && IIO_BUFFER [=y] && IIO_TRIGGERED_BUFFER [=m]
+# 
+# 
+# 
+# CONFIG_YAMAHA_YAS530 is not set

@@ -1,0 +1,24 @@
+# CONFIG_IP_VS_TWOS:
+# 
+# The weighted random twos choice least-connection scheduling
+# algorithm picks two random real servers and directs network
+# connections to the server with the least active connections
+# normalized by the server weight.
+# 
+# If you want to compile it in kernel, say Y. To compile it as a
+# module, choose M here. If unsure, say N.
+# 
+# Symbol: IP_VS_TWOS [=n]
+# Type  : tristate
+# Defined at net/netfilter/ipvs/Kconfig:274
+#   Prompt: weighted random twos choice least-connection scheduling
+#   Depends on: NET [=y] && NETFILTER [=y] && IP_VS [=m]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Network packet filtering framework (Netfilter) (NETFILTER [=y])
+#           -> IP virtual server support (IP_VS [=m])
+# 
+# 
+# 
+# CONFIG_IP_VS_TWOS is not set

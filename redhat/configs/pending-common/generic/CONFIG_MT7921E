@@ -1,0 +1,21 @@
+# CONFIG_MT7921E:
+# 
+# This adds support for MT7921E 802.11ax 2x2:2SS wireless devices.
+# 
+# To compile this driver as a module, choose M here.
+# 
+# Symbol: MT7921E [=n]
+# Type  : tristate
+# Defined at drivers/net/wireless/mediatek/mt76/mt7921/Kconfig:2
+#   Prompt: MediaTek MT7921E (PCIe) support
+#   Depends on: NETDEVICES [=y] && WLAN [=y] && WLAN_VENDOR_MEDIATEK [=y] && MAC80211 [=m] && PCI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Wireless LAN (WLAN [=y])
+#           -> MediaTek devices (WLAN_VENDOR_MEDIATEK [=y])
+# Selects: MT76_CONNAC_LIB [=n] && WANT_DEV_COREDUMP [=y]
+# 
+# 
+# 
+# CONFIG_MT7921E is not set
