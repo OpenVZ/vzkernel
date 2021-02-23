@@ -7875,10 +7875,11 @@ static void uncharge_batch(struct mem_cgroup *memcg, unsigned long pgpgout,
 			   unsigned long nr_shmem, struct page *dummy_page)
 {
 	unsigned long flags;
+	u64 kmem = 1;
 
 	if (!mem_cgroup_is_root(memcg)) {
 		if (nr_kmem)
-			page_counter_uncharge(&memcg->kmem, nr_kmem);
+			kmem = page_counter_uncharge(&memcg->kmem, nr_kmem);
 		if (nr_mem + nr_kmem)
 			page_counter_uncharge(&memcg->memory, nr_mem + nr_kmem);
 		if (nr_memsw + nr_kmem)
@@ -7898,6 +7899,8 @@ static void uncharge_batch(struct mem_cgroup *memcg, unsigned long pgpgout,
 	__this_cpu_add(memcg->stat->nr_page_events, nr_anon + nr_file);
 	memcg_check_events(memcg, dummy_page);
 	local_irq_restore(flags);
+	if (kmem == 0)
+		memcg_kmem_release_css(memcg);
 }
 
 static void uncharge_list(struct list_head *page_list)
