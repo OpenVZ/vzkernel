@@ -1,0 +1,20 @@
+# CONFIG_X86_PLATFORM_DRIVERS_DELL:
+# 
+# Say Y here to get to see options for device drivers for various
+# Dell x86 platforms, including vendor-specific laptop extension drivers.
+# This option alone does not add any kernel code.
+# 
+# If you say N, all options in this submenu will be skipped and disabled.
+# 
+# Symbol: X86_PLATFORM_DRIVERS_DELL [=n]
+# Type  : bool
+# Defined at drivers/platform/x86/dell/Kconfig:6
+#   Prompt: Dell X86 Platform Specific Device Drivers
+#   Depends on: X86 [=y] && X86_PLATFORM_DEVICES [=y]
+#   Location:
+#     -> Device Drivers
+#       -> X86 Platform Specific Device Drivers (X86_PLATFORM_DEVICES [=y])
+# 
+# 
+# 
+# CONFIG_X86_PLATFORM_DRIVERS_DELL is not set
