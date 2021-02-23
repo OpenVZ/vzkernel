@@ -1,0 +1,19 @@
+# CONFIG_MFD_ACER_A500_EC:
+# 
+# Support for Embedded Controller found on Acer Iconia Tab A500.
+# The controller itself is ENE KB930, it is running firmware
+# customized for the specific needs of the Acer A500 hardware.
+# 
+# Symbol: MFD_ACER_A500_EC [=n]
+# Type  : tristate
+# Defined at drivers/mfd/Kconfig:2088
+#   Prompt: Support for Acer Iconia Tab A500 Embedded Controller
+#   Depends on: HAS_IOMEM [=y] && I2C [=y] && (ARCH_TEGRA_2x_SOC [=y] && OF [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Multifunction device drivers
+# Selects: MFD_CORE [=y] && REGMAP [=y]
+# 
+# 
+# 
+# CONFIG_MFD_ACER_A500_EC is not set

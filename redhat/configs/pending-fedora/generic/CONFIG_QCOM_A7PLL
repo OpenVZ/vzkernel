@@ -1,0 +1,20 @@
+# CONFIG_QCOM_A7PLL:
+# 
+# Support for the A7 PLL on SDX55 devices. It provides the CPU with
+# frequencies above 1GHz.
+# Say Y if you want to support higher CPU frequencies on SDX55
+# devices.
+# 
+# Symbol: QCOM_A7PLL [=n]
+# Type  : tristate
+# Defined at drivers/clk/qcom/Kconfig:31
+#   Prompt: SDX55 A7 PLL
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_QCOM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Support for Qualcomm's clock controllers (COMMON_CLK_QCOM [=y])
+# 
+# 
+# 
+# CONFIG_QCOM_A7PLL is not set

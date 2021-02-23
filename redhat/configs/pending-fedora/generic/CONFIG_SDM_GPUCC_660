@@ -1,0 +1,20 @@
+# CONFIG_SDM_GPUCC_660:
+# 
+# Support for the graphics clock controller on SDM630/636/660 devices.
+# Say Y if you want to support graphics controller devices and
+# functionality such as 3D graphics
+# 
+# Symbol: SDM_GPUCC_660 [=n]
+# Type  : tristate
+# Defined at drivers/clk/qcom/Kconfig:413
+#   Prompt: SDM660 Graphics Clock Controller
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_QCOM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Support for Qualcomm's clock controllers (COMMON_CLK_QCOM [=y])
+# Selects: SDM_GCC_660 [=m] && QCOM_GDSC [=y]
+# 
+# 
+# 
+# CONFIG_SDM_GPUCC_660 is not set

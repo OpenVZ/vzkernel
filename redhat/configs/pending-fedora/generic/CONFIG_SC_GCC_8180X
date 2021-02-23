@@ -1,0 +1,20 @@
+# CONFIG_SC_GCC_8180X:
+# 
+# Support for the global clock controller on SC8180X devices.
+# Say Y if you want to use peripheral devices such as UART, SPI,
+# I2C, USB, UFS, SDCC, etc.
+# 
+# Symbol: SC_GCC_8180X [=n]
+# Type  : tristate
+# Defined at drivers/clk/qcom/Kconfig:346
+#   Prompt: SC8180X Global Clock Controller
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_QCOM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Support for Qualcomm's clock controllers (COMMON_CLK_QCOM [=y])
+# Selects: QCOM_GDSC [=y]
+# 
+# 
+# 
+# CONFIG_SC_GCC_8180X is not set

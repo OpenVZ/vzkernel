@@ -1,0 +1,21 @@
+# CONFIG_QCOM_SPMI_ADC_TM5:
+# 
+# This enables the thermal driver for the ADC thermal monitoring
+# device. It shows up as a thermal zone with multiple trip points.
+# Thermal client sets threshold temperature for both warm and cool and
+# gets updated when a threshold is reached.
+# 
+# Symbol: QCOM_SPMI_ADC_TM5 [=n]
+# Type  : tristate
+# Defined at drivers/thermal/qcom/Kconfig:13
+#   Prompt: Qualcomm SPMI PMIC Thermal Monitor ADC5
+#   Depends on: THERMAL [=y] && (ARCH_QCOM [=y] && OF [=y] || COMPILE_TEST [=n]) && OF [=y] && SPMI [=m] && IIO [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Thermal drivers (THERMAL [=y])
+#         -> Qualcomm thermal drivers
+# Selects: REGMAP_SPMI [=m] && QCOM_VADC_COMMON [=m]
+# 
+# 
+# 
+# CONFIG_QCOM_SPMI_ADC_TM5 is not set

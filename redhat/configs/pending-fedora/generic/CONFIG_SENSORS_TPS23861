@@ -1,0 +1,21 @@
+# CONFIG_SENSORS_TPS23861:
+# 
+# If you say yes here you get support for Texas Instruments
+# TPS23861 802.3at PoE PSE chips.
+# 
+# This driver can also be built as a module. If so, the module
+# will be called tps23861.
+# 
+# Symbol: SENSORS_TPS23861 [=n]
+# Type  : tristate
+# Defined at drivers/hwmon/Kconfig:1136
+#   Prompt: Texas Instruments TPS23861 PoE PSE
+#   Depends on: HWMON [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+# Selects: REGMAP_I2C [=y]
+# 
+# 
+# 
+# CONFIG_SENSORS_TPS23861 is not set

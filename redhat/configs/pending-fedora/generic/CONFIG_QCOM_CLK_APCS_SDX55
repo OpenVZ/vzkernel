@@ -1,0 +1,20 @@
+# CONFIG_QCOM_CLK_APCS_SDX55:
+# 
+# Support for the APCS Clock Controller on SDX55 platform. The
+# APCS is managing the mux and divider which feeds the CPUs.
+# Say Y if you want to support CPU frequency scaling on devices
+# such as SDX55.
+# 
+# Symbol: QCOM_CLK_APCS_SDX55 [=n]
+# Type  : tristate
+# Defined at drivers/clk/qcom/Kconfig:57
+#   Prompt: SDX55 APCS Clock Controller
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_QCOM [=y] && (QCOM_APCS_IPC [=m] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Support for Qualcomm's clock controllers (COMMON_CLK_QCOM [=y])
+# 
+# 
+# 
+# CONFIG_QCOM_CLK_APCS_SDX55 is not set
