@@ -1176,7 +1176,7 @@ S:	Maintained
 F:	drivers/mfd/
 
 MICRON PCIe SSD DRIVER (mtip32xx)
-M:	David Milburn <dmilburn@redhat.com>
+M:	Gopal Tiwari <gtiwari@redhat.com>
 S:	Maintained
 F:	drivers/block/mtip32xx/mtip32xx.c
 F:	drivers/block/mtip32xx/mtip32xx.h
@@ -1418,7 +1418,6 @@ F:	include/linux/nd.h
 F:	include/uapi/linux/ndctl.h
 
 NVM EXPRESS DRIVER (nvme)
-M:	David Milburn <dmilburn@redhat.com>
 M:	Gopal Tiwari <gtiwari@redhat.com>
 S:	Maintained
 F:	drivers/nvme/
@@ -1697,7 +1696,7 @@ F:	scripts/selinux/
 F:	Documentation/admin-guide/LSM/SELinux.rst
 
 SERIAL ATA (SATA) SUBSYSTEM
-M:	David Milburn <dmilburn@redhat.com>
+M:	Gopal Tiwari <gtiwari@redhat.com>
 S:	Maintained
 F:	drivers/ata/
 F:	include/linux/ata.h
