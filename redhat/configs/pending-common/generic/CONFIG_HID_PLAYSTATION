@@ -1,0 +1,21 @@
+# CONFIG_HID_PLAYSTATION:
+# 
+# Provides support for Sony PS5 controllers including support for
+# its special functionalities e.g. touchpad, lights and motion
+# sensors.
+# 
+# Symbol: HID_PLAYSTATION [=n]
+# Type  : tristate
+# Defined at drivers/hid/Kconfig:856
+#   Prompt: PlayStation HID Driver
+#   Depends on: INPUT [=y] && HID [=y]
+#   Location:
+#     -> Device Drivers
+#       -> HID support
+#         -> HID bus support (HID [=y])
+#           -> Special HID drivers
+# Selects: CRC32 [=y] && POWER_SUPPLY [=y]
+# 
+# 
+# 
+# CONFIG_HID_PLAYSTATION is not set
