@@ -1,0 +1,16 @@
+# CONFIG_LTO_NONE:
+# 
+# Build the kernel normally, without Link Time Optimization (LTO).
+# 
+# Symbol: LTO_NONE [=y]
+# Type  : bool
+# Defined at arch/Kconfig:657
+#   Prompt: None
+#   Depends on: <choice>
+#   Location:
+#     -> General architecture-dependent options
+#       -> Link Time Optimization (LTO) (<choice> [=y])
+# 
+# 
+# 
+CONFIG_LTO_NONE=y
