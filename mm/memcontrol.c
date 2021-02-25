@@ -439,7 +439,7 @@ enum {
 	KMEM_ACCOUNTED_DEAD, /* dead memcg with pending kmem charges */
 };
 
-static void memcg_kmem_release_css(struct mem_cgroup *memcg);
+static inline void memcg_kmem_release_css(struct mem_cgroup *memcg);
 
 static struct mem_cgroup_per_node *
 mem_cgroup_nodeinfo(struct mem_cgroup *memcg, int nid)
@@ -2948,7 +2948,6 @@ static void drain_stock(struct memcg_stock_pcp *stock)
 		stock->kmem_nr_pages = 0;
 		stock->cache_nr_pages = 0;
 	}
-	css_put(&old->css);
 	if (kmem == 0)
 		memcg_kmem_release_css(old);
 	stock->cached = NULL;
@@ -2987,7 +2986,6 @@ static void refill_stock(struct mem_cgroup *memcg, unsigned int nr_pages,
 
 	if (stock->cached != memcg) { /* reset if necessary */
 		drain_stock(stock);
-		css_get(&memcg->css);
 		stock->cached = memcg;
 	}
 
@@ -3622,7 +3620,7 @@ void memcg_uncharge_kmem(struct mem_cgroup *memcg,
 		memcg_kmem_release_css(memcg);
 }
 
-static void memcg_kmem_release_css(struct mem_cgroup *memcg)
+static inline void memcg_kmem_release_css(struct mem_cgroup *memcg)
 {
 	/*
 	 * Releases a reference taken in memcg_deactivate_kmem in case
