@@ -66,10 +66,10 @@ ARK Kernel Maintainer
 M:	Justin Forbes <jforbes@fedoraproject.org>
 M:	Patrick Talbert <ptalbert@redhat.com>
 R:	Donald Zickus <dzickus@redhat.com>
-T:	git https://gitlab.com/cki-project/kernel-ark.git
 S:	Maintained
 F:	redhat/
 I:	INTERNAL
+T:	git https://gitlab.com/cki-project/kernel-ark.git
 
 RHEL 8.4 Kernel Maintainer
 M:	Jan Stancek <jstancek@redhat.com>
@@ -117,7 +117,7 @@ S:	Maintained
 F:	redhat/
 
 RHEL 7.9 Kernel Maintainer
-M:	Jan Stancek <jstancek@redhat.com>
+M:	Augusto Caringi <acaringi@redhat.com>
 S:	Maintained
 F:	redhat/
 
@@ -278,7 +278,7 @@ F:	include/linux/amd-iommu.h
 AQUANTIA ATLANTIC ETHERNET DRIVER
 M:	Igor Russkikh <irusskik@redhat.com>
 M:	John W. Linville <linville@redhat.com>
-S: 	Maintained
+S:	Maintained
 F:	drivers/net/ethernet/aquantia/
 
 ARECA (ARC11xx/12xx/16xx/1880) SATA/SAS RAID Host Bus Adapter (arcmsr)
@@ -290,7 +290,7 @@ ARCHITECTURE DIRECTORY FILES
 M:	Prarit Bhargava <prarit@redhat.com>
 M:	David Arcari <darcari@redhat.com>
 M:	Mark Salter <msalter@redhat.com>
-L:	kernel-patches@redhat.com
+S:	Maintained
 F:	arch/Kconfig
 
 ARM64 PORT (AARCH64 ARCHITECTURE)
@@ -338,11 +338,16 @@ F:	drivers/iommu/arm-smmu.c
 F:	drivers/iommu/arm-smmu-v3.c
 F:	drivers/iommu/io-pgtable-arm.c
 
-ATHEROS WIRELESS LAN DRIVERS
+ATHEROS WIRELESS 5K LAN DRIVERS
 M:	Jarod Wilson <jarod@redhat.com>
 M:	John Linville <linville@redhat.com>
 S:	Maintained
 F:	drivers/net/wireless/ath5k
+
+ATHEROS WIRELESS 9K LAN DRIVERS
+M:	Jarod Wilson <jarod@redhat.com>
+M:	John Linville <linville@redhat.com>
+S:	Maintained
 F:	drivers/net/wireless/ath9k
 
 ATHEROS ETHERNET DRIVERS
@@ -366,6 +371,7 @@ BIOS ISSUES
 M:	Al Stone <ahs3@redhat.com>
 M:	Lenny Szubowicz <lszubowi@redhat.com>
 M:	Prarit Bhargava <prarit@redhat.com>
+S:	Maintained
 
 BLOCK LAYER
 M:	Ming Lei <minlei@redhat.com>
@@ -384,13 +390,13 @@ F:	net/bluetooth
 BPF (Safe dynamic programs and tools)
 M:	Jiri Olsa <jolsa@redhat.com>
 M:	Yauheni Kaliuta <ykaliuta@redhat.com>
+S:	Maintained
 F:	arch/*/net/*
 F:	Documentation/networking/filter.txt
 F:	include/linux/filter.h
 F:	include/trace/events/xdp.h
 F:	include/uapi/linux/filter.h
 F:	net/core/filter.c
-N:	b[pt]f
 
 BROADCOM B44 10/100 ETHERNET DRIVER
 M:	Jarod Wilson <jarod@redhat.com>
@@ -410,16 +416,15 @@ F:	drivers/net/ethernet/broadcom/bnx2x.*
 F:	drivers/net/ethernet/broadcom/bnx2x_*
 
 BROADCOM BNXT_EN 50 GIGABIT ETHERNET DRIVER
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	drivers/net/ethernet/broadcom/bnxt/
 F:	drivers/net/ethernet/broadcom/Kconfig
 
 BROADCOM BNXT_RE RDMA ROCE DRIVER
-M:     Selvin Xavier <sxavier@redhat.com>
-S:     Maintained
-F:     drivers/infiniband/hw/bnxt_re/
-F:     include/uapi/rdma/bnxt_re-abi.h
+M:	Selvin Xavier <sxavier@redhat.com>
+S:	Maintained
+F:	drivers/infiniband/hw/bnxt_re/
+F:	include/uapi/rdma/bnxt_re-abi.h
 
 Broadcom NetXtreme II BCM5706/5708/5709/57710/57711/57712/57800/57810/57840 iSCSI Driver
 M:	Maurizio Lombardi <mlombard@redhat.com>
@@ -437,7 +442,6 @@ S:	Maintained
 F:	drivers/net/ethernet/broadcom/cnic*
 
 BROADCOM TG3 GIGABIT ETHERNET DRIVER
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	drivers/net/ethernet/broadcom/tg3.*
 F:	drivers/net/ethernet/broadcom/Kconfig
@@ -467,19 +471,6 @@ S:	Maintained
 F:	Documentation/filesystems/ceph.txt
 F:	fs/ceph/
 
-CEPH COMMON CODE (LIBCEPH)
-M:	Ilya Dryomov <idryomov@redhat.com>
-S:	Maintained
-F:	net/ceph/
-F:	include/linux/ceph/
-F:	include/linux/crush/
-
-CEPH DISTRIBUTED FILE SYSTEM CLIENT (CEPH)
-M:	Ilya Dryomov <idryomov@redhat.com>
-S:	Maintained
-F:	Documentation/filesystems/ceph.txt
-F:	fs/ceph/
-
 CHAR and MISC DRIVERS
 M:	John Linville <linville@redhat.com>
 S:	Maintained
@@ -488,19 +479,18 @@ F:	drivers/misc/
 F:	include/linux/miscdevice.h
 
 CIFS FILESYSTEM
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	fs/cifs/
-
-CISCO VIC ETHERNET NIC DRIVER
-M:	Stefan Assmann <sassmann@redhat.com>
-S:	Maintained
-F:	drivers/net/ethernet/cisco/enic/
 
 CISCO FCOE HBA (fnic)
 M:	Chris Leech <cleech@redhat.com>
 S:	Maintained
 F:	drivers/scsi/fnic/
+
+CISCO VIC ETHERNET NIC DRIVER
+M:	Stefan Assmann <sassmann@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/cisco/enic/
 
 COMMON CLK FRAMEWORK
 M:	Mark Salter <msalter@redhat.com>
@@ -513,6 +503,7 @@ F:	include/linux/of_clk.h
 
 CONFIGFS
 M:	Bob Peterson <rpeterso@redhat.com>
+S:	Maintained
 F:	fs/configfs/
 F:	include/linux/configfs.h
 
@@ -587,6 +578,8 @@ DEVICE MAPPER SUPPORT
 M:	Mike Snitzer <snitzer@redhat.com>
 S:	Maintained
 F:	Documentation/device-mapper/
+F:	drivers/md/Kconfig
+F:	drivers/md/Makefile
 F:	drivers/md/dm*
 F:	drivers/md/persistent-data/
 F:	include/linux/device-mapper.h
@@ -684,12 +677,12 @@ M:	Chris Leech <cleech@redhat.com>
 S:	Maintained
 F:	drivers/scsi/libfc/
 F:	drivers/scsi/fcoe/
-X:	drivers/scsi/fcoe/fcoe.c
 F:	include/scsi/libfc.h
 F:	include/scsi/libfcoe.h
 F:	include/scsi/fcoe_*.h
 F:	include/scsi/fc_*.h
 F:	include/scsi/fc/
+X:	drivers/scsi/fcoe/fcoe.c
 
 FORCEDETH ETHERNET DRIVER (forcedeth)
 M:	Ivan Vecera <ivecera@redhat.com>
@@ -699,6 +692,7 @@ F:	drivers/net/ethernet/nvidia/forcedeth.c
 FILESYSTEM DIRECT ACCESS
 M:	Jeff Moyer <jmoyer@redhat.com>
 M:	Eric Sandeen <esandeen@redhat.com>
+S:	Maintained
 F:	fs/dax.c
 F:	include/linux/dax.h
 F:	include/trace/events/fs_dax.h
@@ -794,48 +788,6 @@ F:	drivers/hid/
 F:	include/linux/hid*
 F:	include/uapi/linux/hid*
 
-HWMON SUBSYSTEM
-M:	Dean Nelson <dnelson@redhat.com>
-S:	Maintained
-F:	drivers/hwmon/
-
-HWPOISON MEMORY FAILURE HANDLING
-M:	Dean Nelson <dnelson@redhat.com>
-S:	Maintained
-F:	mm/memory-failure.c
-F:	mm/hwpoison-inject.c
-
-Hyper-V CORE AND DRIVERS
-M:	Cathy Avery <cavery@redhat.com>
-M:	Mohammed Gamal <mgamal@redhat.com>
-M:	Vitaly Kuznetsov <vkuznets@redhat.com>
-S:	Maintained
-F:	Documentation/networking/device_drivers/microsoft/netvsc.txt
-F:	arch/x86/include/asm/mshyperv.h
-F:	arch/x86/include/asm/trace/hyperv.h
-F:	arch/x86/include/asm/hyperv-tlfs.h
-F:	arch/x86/kernel/cpu/mshyperv.c
-F:	arch/x86/hyperv
-F:	drivers/clocksource/hyperv_timer.c
-F:	drivers/hid/hid-hyperv.c
-F:	drivers/hv/
-F:	drivers/input/serio/hyperv-keyboard.c
-F:	drivers/pci/controller/pci-hyperv.c
-F:	drivers/pci/controller/pci-hyperv-intf.c
-F:	drivers/net/hyperv/
-F:	drivers/scsi/storvsc_drv.c
-F:	drivers/uio/uio_hv_generic.c
-F:	drivers/video/fbdev/hyperv_fb.c
-F:	drivers/iommu/hyperv-iommu.c
-F:	net/vmw_vsock/hyperv_transport.c
-F:	include/clocksource/hyperv_timer.h
-F:	include/linux/hyperv.h
-F:	include/uapi/linux/hyperv.h
-F:	include/asm-generic/mshyperv.h
-F:	tools/hv/
-F:	Documentation/ABI/stable/sysfs-bus-vmbus
-F:	Documentation/ABI/testing/debugfs-hyperv
-
 I2C SUBSYSTEM
 M:	Gopal Tiwari <gtiwari@redhat.com>
 M:	David Arcari <darcari@redhat.com>
@@ -851,7 +803,6 @@ F:	include/uapi/linux/i2c-*.h
 
 INFINIBAND SUBSYSTEM
 M:	Kamal Heib <kheib@redhat.com>
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	drivers/infiniband/
 F:	include/rdma/
@@ -903,17 +854,14 @@ F:	drivers/infiniband/hw/i40iw/
 F:	include/uapi/rdma/i40iw-abi.h
 
 INTEL IGB ETHERNET DRIVERS (igb)
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	drivers/net/ethernet/intel/igb/
 
 INTEL IGBVF ETHERNET DRIVERS (igbvf)
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	drivers/net/ethernet/intel/igbvf/
 
 INTEL IGC ETHERNET DRIVERS (igc)
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	drivers/net/ethernet/intel/igc/
 
@@ -937,17 +885,14 @@ S:	Maintained
 F:	drivers/net/ethernet/intel/ixgbevf/
 
 INTEL ETHERNET CONNECTION E800 SERIES (ice)
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	drivers/net/ethernet/intel/ice/
 
 INTEL POWERCLAMP DRIVER
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	drivers/thermal/intel_powerclamp.c
 
 INTEL RAPL DRIVER
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	drivers/powercap/intel_rapl.c
 
@@ -974,13 +919,6 @@ F:	drivers/iommu/
 IPMI SUBSYSTEM
 M:	Tony Camuso <tcamuso@redhat.com>
 S:	Maintained
-F:	drivers/char/ipmi/
-F:	include/linux/ipmi-fru.h
-F:	include/linux/ipmi.h
-F:	include/linux/ipmi_smi.h
-F:	include/uapi/linux/ipmi.h
-F:	include/uapi/linux/ipmi_bmc.h
-F:	include/uapi/linux/ipmi_msgdefs.h
 
 ISCSI (iscsi_tcp, libiscsi, libiscsi_tcp, scsi_transport_iscsi)
 M:	Chris Leech <cleech@redhat.com>
@@ -1077,6 +1015,48 @@ F:	arch/x86/include/asm/vmx*.h
 F:	arch/x86/kernel/kvm.c
 F:	arch/x86/kernel/kvmclock.c
 
+HWMON SUBSYSTEM
+M:	Dean Nelson <dnelson@redhat.com>
+S:	Maintained
+F:	drivers/hwmon/
+
+HWPOISON MEMORY FAILURE HANDLING
+M:	Dean Nelson <dnelson@redhat.com>
+S:	Maintained
+F:	mm/memory-failure.c
+F:	mm/hwpoison-inject.c
+
+Hyper-V CORE AND DRIVERS
+M:	Cathy Avery <cavery@redhat.com>
+M:	Mohammed Gamal <mgamal@redhat.com>
+M:	Vitaly Kuznetsov <vkuznets@redhat.com>
+S:	Maintained
+F:	Documentation/networking/device_drivers/microsoft/netvsc.txt
+F:	arch/x86/include/asm/mshyperv.h
+F:	arch/x86/include/asm/trace/hyperv.h
+F:	arch/x86/include/asm/hyperv-tlfs.h
+F:	arch/x86/kernel/cpu/mshyperv.c
+F:	arch/x86/hyperv
+F:	drivers/clocksource/hyperv_timer.c
+F:	drivers/hid/hid-hyperv.c
+F:	drivers/hv/
+F:	drivers/input/serio/hyperv-keyboard.c
+F:	drivers/pci/controller/pci-hyperv.c
+F:	drivers/pci/controller/pci-hyperv-intf.c
+F:	drivers/net/hyperv/
+F:	drivers/scsi/storvsc_drv.c
+F:	drivers/uio/uio_hv_generic.c
+F:	drivers/video/fbdev/hyperv_fb.c
+F:	drivers/iommu/hyperv-iommu.c
+F:	net/vmw_vsock/hyperv_transport.c
+F:	include/clocksource/hyperv_timer.h
+F:	include/linux/hyperv.h
+F:	include/uapi/linux/hyperv.h
+F:	include/asm-generic/mshyperv.h
+F:	tools/hv/
+F:	Documentation/ABI/stable/sysfs-bus-vmbus
+F:	Documentation/ABI/testing/debugfs-hyperv
+
 LEDS DRIVERS
 M:	Tony Camuso <tcamuso@redhat.com>
 S:	Maintained
@@ -1167,6 +1147,13 @@ F:	mm/
 MEMORY HOTPLUG
 M:	Prarit Bhargava <prarit@redhat.com>
 S:	Maintained
+F:	drivers/char/ipmi/
+F:	include/linux/ipmi-fru.h
+F:	include/linux/ipmi.h
+F:	include/linux/ipmi_smi.h
+F:	include/uapi/linux/ipmi.h
+F:	include/uapi/linux/ipmi_bmc.h
+F:	include/uapi/linux/ipmi_msgdefs.h
 
 MFD DRIVERS (Multi Function Devices)
 M:	Torez Smith <torez@redhat.com>
@@ -1247,7 +1234,6 @@ F:	include/net/netns/nftables.h
 F:	include/net/netns/x_tables.h
 
 NETWORKING [GENERAL]
-I:	net
 M:	Jiri Benc <jbenc@redhat.com>
 M:	Marcelo Leitner <mleitner@redhat.com>
 R:	Antoine Tenart <atenart@redhat.com>
@@ -1342,6 +1328,7 @@ X:	net/rfkill/
 X:	net/sunrpc/
 X:	net/wimax/
 X:	net/wireless/
+I:	net
 
 NETWORKING [LABELED] (NetLabel, Labeled IPsec, SECMARK)
 M:	Ondrej Mosnacek <omosnace@redhat.com>
@@ -1359,18 +1346,18 @@ F:	net/netfilter/xt_CONNSECMARK.c
 F:	net/netfilter/xt_SECMARK.c
 
 NETWORKING [NETDEVSIM]
-I:	net
 M:	Hangbin Liu <haliu@redhat.com>
 S:	Maintained
 F:	drivers/net/netdevsim/
+I:	net
 
 NETWORKING [TEAM]
-I:	net
 M:	Hangbin Liu <haliu@redhat.com>
 S:	Maintained
 F:	drivers/net/team/
 F:	include/linux/if_team.h
 F:	include/uapi/linux/if_team.h
+I:	net
 
 NETXEN (1/10) GbE SUPPORT
 M:	Manish Chopra <mchopra@redhat.com>
@@ -1379,17 +1366,14 @@ S:	Maintained
 F:	drivers/net/ethernet/qlogic/netxen/
 
 NETWORK LOCK MANAGER (lockd)
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	fs/lockd/
 
 NFS FILE SYSTEM (nfs)
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	fs/nfs/
 
 NFS SERVER (nfsd)
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	fs/nfsd/
 
@@ -1513,7 +1497,6 @@ F:	include/linux/psci.h
 F:	include/uapi/linux/psci.h
 
 POWERPC (64-BIT)
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	arch/powerpc/
 
@@ -1593,13 +1576,6 @@ M:	Manish Chopra <mchopra@redhat.com>
 M:	John W. Linville <linville@redhat.com>
 S:	Maintained
 F:	drivers/net/ethernet/qlogic/qlge/
-
-RADOS BLOCK DEVICE (RBD)
-M:	Ilya Dryomov <idryomov@redhat.com>
-S:	Maintained
-F:	Documentation/ABI/testing/sysfs-bus-rbd
-F:	drivers/block/rbd.c
-F:	drivers/block/rbd_types.h
 
 RADOS BLOCK DEVICE (RBD)
 M:	Ilya Dryomov <idryomov@redhat.com>
@@ -1747,7 +1723,12 @@ F:	include/uapi/rdma/rdma_user_rxe.h
 SOFTWARE RAID (Multiple Disks, MD) SUPPORT
 M:	Nigel Croxon <ncroxon@redhat.com>
 S:	Maintained
-F:	drivers/md/
+F:	drivers/md/Kconfig
+F:	drivers/md/Makefile
+F:	drivers/md/md*
+F:	drivers/md/raid*
+F:	include/linux/raid/
+F:	include/uapi/linux/raid/
 
 SQUASHFS FILE SYSTEM
 M:	Abhijith Das <adas@redhat.com>
@@ -1761,7 +1742,6 @@ S:	Maintained
 F:	drivers/spi/
 
 SUN REMOTE PROCEDURE CALL (sunrpc)
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	net/sunrpc/
 
@@ -2009,12 +1989,12 @@ XDP (eXpress Data Path)
 M:	Jesper Dangaard Brouer <brouer@redhat.com>
 M:	Jiri Benc <jbenc@redhat.com>
 M:	Toke Høiland-Jørgensen <toke@redhat.com>
+S:	Maintained
 F:	kernel/bpf/devmap.c
 F:	kernel/bpf/cpumap.c
 F:	include/net/page_pool.h
 F:	net/core/page_pool.c
 F:	net/core/sock_map.c
-N:	xdp
 
 XFS FILESYSTEM
 M:	Brian Foster <bfoster@redhat.com>
@@ -2024,13 +2004,11 @@ F:	Documentation/filesystems/xfs.txt
 F:	fs/xfs/
 
 ZBUD COMPRESSED PAGE ALLOCATOR
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	mm/zbud.c
 F:	include/linux/zbud.h
 
 ZSWAP COMPRESSED SWAP CACHING
-L:	kernel-patches@redhat.com
 S:	Maintained
 F:	mm/zswap.c
 
