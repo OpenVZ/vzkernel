@@ -6070,8 +6070,6 @@ static struct cftype memsw_cgroup_files[] = {
 
 static DEFINE_IDR(mem_cgroup_idr);
 
-static DEFINE_MUTEX(mem_cgroup_idr_lock);
-
 static unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
 {
 	return memcg->id;
@@ -6079,9 +6077,7 @@ static unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
 
 static void mem_cgroup_id_put(struct mem_cgroup *memcg)
 {
-	mutex_lock(&mem_cgroup_idr_lock);
 	idr_remove(&mem_cgroup_idr, memcg->id);
-	mutex_unlock(&mem_cgroup_idr_lock);
 	memcg->id = 0;
 	synchronize_rcu();
 }
@@ -6148,11 +6144,9 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	if (!memcg)
 		return NULL;
 
-	mutex_lock(&mem_cgroup_idr_lock);
 	id = idr_alloc(&mem_cgroup_idr, NULL,
 		       1, MEM_CGROUP_ID_MAX,
 		       GFP_KERNEL);
-	mutex_unlock(&mem_cgroup_idr_lock);
 	if (id < 0)
 		goto fail;
 
@@ -6162,17 +6156,13 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	if (!memcg->stat)
 		goto out_free;
 	spin_lock_init(&memcg->pcp_counter_lock);
-	mutex_lock(&mem_cgroup_idr_lock);
 	idr_replace(&mem_cgroup_idr, memcg, memcg->id);
-	mutex_unlock(&mem_cgroup_idr_lock);
 	synchronize_rcu();
 	return memcg;
 
 out_free:
 	if (memcg->id > 0) {
-		mutex_lock(&mem_cgroup_idr_lock);
 		idr_remove(&mem_cgroup_idr, memcg->id);
-		mutex_unlock(&mem_cgroup_idr_lock);
 		synchronize_rcu();
 	}
 fail:
