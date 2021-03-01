@@ -1,0 +1,29 @@
+# CONFIG_KFENCE:
+# 
+# KFENCE is a low-overhead sampling-based detector of heap out-of-bounds
+# access, use-after-free, and invalid-free errors. KFENCE is designed
+# to have negligible cost to permit enabling it in production
+# environments.
+# 
+# See <file:Documentation/dev-tools/kfence.rst> for more details.
+# 
+# Note that, KFENCE is not a substitute for explicit testing with tools
+# such as KASAN. KFENCE can detect a subset of bugs that KASAN can
+# detect, albeit at very different performance profiles. If you can
+# afford to use KASAN, continue using KASAN, for example in test
+# environments. If your kernel targets production use, and cannot
+# enable KASAN due to its cost, consider using KFENCE.
+# 
+# Symbol: KFENCE [=n]
+# Type  : bool
+# Defined at lib/Kconfig.kfence:6
+#   Prompt: KFENCE: low-overhead sampling-based memory safety error detector
+#   Depends on: HAVE_ARCH_KFENCE [=y] && (SLAB [=n] || SLUB [=y])
+#   Location:
+#     -> Kernel hacking
+#       -> Memory Debugging
+# Selects: STACKTRACE [=y]
+# 
+# 
+# 
+# CONFIG_KFENCE is not set

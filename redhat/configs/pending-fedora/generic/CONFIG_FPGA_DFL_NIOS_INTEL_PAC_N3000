@@ -1,0 +1,22 @@
+# CONFIG_FPGA_DFL_NIOS_INTEL_PAC_N3000:
+# 
+# This is the driver for the N3000 Nios private feature on Intel
+# PAC (Programmable Acceleration Card) N3000. It communicates
+# with the embedded Nios processor to configure the retimers on
+# the card. It also instantiates the SPI master (spi-altera) for
+# the card's BMC (Board Management Controller).
+# 
+# Symbol: FPGA_DFL_NIOS_INTEL_PAC_N3000 [=n]
+# Type  : tristate
+# Defined at drivers/fpga/Kconfig:195
+#   Prompt: FPGA DFL NIOS Driver for Intel PAC N3000
+#   Depends on: FPGA [=m] && FPGA_DFL [=m]
+#   Location:
+#     -> Device Drivers
+#       -> FPGA Configuration Framework (FPGA [=m])
+#         -> FPGA Device Feature List (DFL) support (FPGA_DFL [=m])
+# Selects: REGMAP [=y]
+# 
+# 
+# 
+# CONFIG_FPGA_DFL_NIOS_INTEL_PAC_N3000 is not set

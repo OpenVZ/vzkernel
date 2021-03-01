@@ -1,0 +1,18 @@
+# CONFIG_INTERCONNECT_QCOM_SDX55:
+# 
+# This is a driver for the Qualcomm Network-on-Chip on sdx55-based
+# platforms.
+# 
+# Symbol: INTERCONNECT_QCOM_SDX55 [=n]
+# Type  : tristate
+# Defined at drivers/interconnect/qcom/Kconfig:86
+#   Prompt: Qualcomm SDX55 interconnect driver
+#   Depends on: INTERCONNECT [=y] && INTERCONNECT_QCOM_RPMH_POSSIBLE [=y]
+#   Location:
+#     -> Device Drivers
+#       -> On-Chip Interconnect management support (INTERCONNECT [=y])
+# Selects: INTERCONNECT_QCOM_RPMH [=m] && INTERCONNECT_QCOM_BCM_VOTER [=m]
+# 
+# 
+# 
+# CONFIG_INTERCONNECT_QCOM_SDX55 is not set

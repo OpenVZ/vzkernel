@@ -1,0 +1,25 @@
+# CONFIG_ACRN_HSM:
+# 
+# ACRN Hypervisor Service Module (HSM) is a kernel module which
+# communicates with ACRN userspace through ioctls and talks to
+# the ACRN Hypervisor through hypercalls. HSM will only run in
+# a privileged management VM, called Service VM, to manage User
+# VMs and do I/O emulation. Not required for simply running
+# under ACRN as a User VM.
+# 
+# To compile as a module, choose M, the module will be called
+# acrn. If unsure, say N.
+# 
+# Symbol: ACRN_HSM [=n]
+# Type  : tristate
+# Defined at drivers/virt/acrn/Kconfig:2
+#   Prompt: ACRN Hypervisor Service Module
+#   Depends on: VIRT_DRIVERS [=y] && ACRN_GUEST [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Virtualization drivers (VIRT_DRIVERS [=y])
+# Selects: EVENTFD [=y]
+# 
+# 
+# 
+# CONFIG_ACRN_HSM is not set
