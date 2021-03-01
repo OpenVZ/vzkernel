@@ -1,0 +1,17 @@
+# CONFIG_STACK_HASH_ORDER:
+# 
+# Select the hash size as a power of 2 for the stackdepot hash table.
+# Choose a lower value to reduce the memory impact.
+# 
+# Symbol: STACK_HASH_ORDER [=20]
+# Type  : integer
+# Range : [12 20]
+# Defined at lib/Kconfig:654
+#   Prompt: stack depot hash size (12 => 4KB, 20 => 1024KB)
+#   Depends on: STACKDEPOT [=y]
+#   Location:
+#     -> Library routines
+# 
+# 
+# 
+CONFIG_STACK_HASH_ORDER=20

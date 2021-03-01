@@ -1,0 +1,19 @@
+# CONFIG_KASAN_MODULE_TEST:
+# 
+# This is a part of the KASAN test suite that is incompatible with
+# KUnit. Currently includes tests that do bad copy_from/to_user
+# accesses.
+# 
+# Symbol: KASAN_MODULE_TEST [=n]
+# Type  : tristate
+# Defined at lib/Kconfig.kasan:195
+#   Prompt: KUnit-incompatible tests of KASAN bug detection capabilities
+#   Depends on: m && MODULES [=y] && KASAN [=y] && !KASAN_HW_TAGS [=n]
+#   Location:
+#     -> Kernel hacking
+#       -> Memory Debugging
+#         -> KASAN: runtime memory debugger (KASAN [=y])
+# 
+# 
+# 
+# CONFIG_KASAN_MODULE_TEST is not set

@@ -1,0 +1,17 @@
+# CONFIG_NTB_EPF:
+# 
+# This driver supports EPF NTB on configurable endpoint.
+# If unsure, say N.
+# 
+# Symbol: NTB_EPF [=n]
+# Type  : tristate
+# Defined at drivers/ntb/hw/epf/Kconfig:1
+#   Prompt: Generic EPF Non-Transparent Bridge support
+#   Depends on: NTB [=m] && m && MODULES [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Non-Transparent Bridge support (NTB [=m])
+# 
+# 
+# 
+# CONFIG_NTB_EPF is not set
