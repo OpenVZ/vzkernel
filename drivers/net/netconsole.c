@@ -653,12 +653,11 @@ static struct configfs_subsystem netconsole_subsys = {
 
 /* Handle network interface device notifications */
 static int netconsole_netdev_event(struct notifier_block *this,
-				   unsigned long event,
-				   void *ptr)
+				   unsigned long event, void *ptr)
 {
 	unsigned long flags;
 	struct netconsole_target *nt;
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	bool stopped = false;
 
 	if (!(event == NETDEV_CHANGENAME || event == NETDEV_UNREGISTER ||
@@ -785,7 +784,7 @@ static int __init init_netconsole(void)
 		}
 	}
 
-	err = register_netdevice_notifier(&netconsole_netdev_notifier);
+	err = register_netdevice_notifier_rh(&netconsole_netdev_notifier);
 	if (err)
 		goto fail;
 
@@ -799,7 +798,7 @@ static int __init init_netconsole(void)
 	return err;
 
 undonotifier:
-	unregister_netdevice_notifier(&netconsole_netdev_notifier);
+	unregister_netdevice_notifier_rh(&netconsole_netdev_notifier);
 
 fail:
 	printk(KERN_ERR "netconsole: cleaning up\n");
@@ -823,7 +822,7 @@ static void __exit cleanup_netconsole(void)
 
 	unregister_console(&netconsole);
 	dynamic_netconsole_exit();
-	unregister_netdevice_notifier(&netconsole_netdev_notifier);
+	unregister_netdevice_notifier_rh(&netconsole_netdev_notifier);
 
 	/*
 	 * Targets created via configfs pin references on our module

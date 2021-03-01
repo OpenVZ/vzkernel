@@ -408,7 +408,7 @@ ext3_xattr_set_acl(struct dentry *dentry, const char *name, const void *value,
 		if (IS_ERR(acl))
 			return PTR_ERR(acl);
 		else if (acl) {
-			error = posix_acl_valid(acl);
+			error = posix_acl_valid(inode->i_sb->s_user_ns, acl);
 			if (error)
 				goto release_and_out;
 		}

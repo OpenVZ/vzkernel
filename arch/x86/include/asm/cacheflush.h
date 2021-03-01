@@ -4,15 +4,16 @@
 /* Caches aren't brain-dead on the intel. */
 #include <asm-generic/cacheflush.h>
 #include <asm/special_insns.h>
+#include <asm/uaccess.h>
 
 #ifdef CONFIG_X86_PAT
 /*
  * X86 PAT uses page flags WC and Uncached together to keep track of
  * memory type of pages that have backing page struct. X86 PAT supports 3
- * different memory types, _PAGE_CACHE_WB, _PAGE_CACHE_WC and
- * _PAGE_CACHE_UC_MINUS and fourth state where page's memory type has not
+ * different memory types, _PAGE_CACHE_MODE_WB, _PAGE_CACHE_MODE_WC and
+ * _PAGE_CACHE_MODE_UC_MINUS and fourth state where page's memory type has not
  * been changed from its default (value of -1 used to denote this).
- * Note we do not support _PAGE_CACHE_UC here.
+ * Note we do not support _PAGE_CACHE_MODE_UC here.
  */
 
 #define _PGMT_DEFAULT		0
@@ -22,35 +23,39 @@
 #define _PGMT_MASK		(1UL << PG_uncached | 1UL << PG_arch_1)
 #define _PGMT_CLEAR_MASK	(~_PGMT_MASK)
 
-static inline unsigned long get_page_memtype(struct page *pg)
+static inline enum page_cache_mode get_page_memtype(struct page *pg)
 {
 	unsigned long pg_flags = pg->flags & _PGMT_MASK;
 
 	if (pg_flags == _PGMT_DEFAULT)
 		return -1;
 	else if (pg_flags == _PGMT_WC)
-		return _PAGE_CACHE_WC;
+		return _PAGE_CACHE_MODE_WC;
 	else if (pg_flags == _PGMT_UC_MINUS)
-		return _PAGE_CACHE_UC_MINUS;
+		return _PAGE_CACHE_MODE_UC_MINUS;
 	else
-		return _PAGE_CACHE_WB;
+		return _PAGE_CACHE_MODE_WB;
 }
 
-static inline void set_page_memtype(struct page *pg, unsigned long memtype)
+static inline void set_page_memtype(struct page *pg,
+				    enum page_cache_mode memtype)
 {
-	unsigned long memtype_flags = _PGMT_DEFAULT;
+	unsigned long memtype_flags;
 	unsigned long old_flags;
 	unsigned long new_flags;
 
 	switch (memtype) {
-	case _PAGE_CACHE_WC:
+	case _PAGE_CACHE_MODE_WC:
 		memtype_flags = _PGMT_WC;
 		break;
-	case _PAGE_CACHE_UC_MINUS:
+	case _PAGE_CACHE_MODE_UC_MINUS:
 		memtype_flags = _PGMT_UC_MINUS;
 		break;
-	case _PAGE_CACHE_WB:
+	case _PAGE_CACHE_MODE_WB:
 		memtype_flags = _PGMT_WB;
+		break;
+	default:
+		memtype_flags = _PGMT_DEFAULT;
 		break;
 	}
 
@@ -60,8 +65,14 @@ static inline void set_page_memtype(struct page *pg, unsigned long memtype)
 	} while (cmpxchg(&pg->flags, old_flags, new_flags) != old_flags);
 }
 #else
-static inline unsigned long get_page_memtype(struct page *pg) { return -1; }
-static inline void set_page_memtype(struct page *pg, unsigned long memtype) { }
+static inline enum page_cache_mode get_page_memtype(struct page *pg)
+{
+	return -1;
+}
+static inline void set_page_memtype(struct page *pg,
+				    enum page_cache_mode memtype)
+{
+}
 #endif
 
 /*
@@ -71,6 +82,7 @@ static inline void set_page_memtype(struct page *pg, unsigned long memtype) { }
  * Executability : eXeutable, NoteXecutable
  * Read/Write    : ReadOnly, ReadWrite
  * Presence      : NotPresent
+ * Encryption    : Encrypted, Decrypted
  *
  * Within a category, the attributes are mutually exclusive.
  *
@@ -104,6 +116,8 @@ int set_memory_ro(unsigned long addr, int numpages);
 int set_memory_rw(unsigned long addr, int numpages);
 int set_memory_np(unsigned long addr, int numpages);
 int set_memory_4k(unsigned long addr, int numpages);
+int set_memory_encrypted(unsigned long addr, int numpages);
+int set_memory_decrypted(unsigned long addr, int numpages);
 
 int set_memory_array_uc(unsigned long *addr, int addrinarray);
 int set_memory_array_wc(unsigned long *addr, int addrinarray);
@@ -143,6 +157,8 @@ int set_pages_rw(struct page *page, int numpages);
 
 void clflush_cache_range(void *addr, unsigned int size);
 
+#define mmio_flush_range(addr, size) clflush_cache_range(addr, size)
+
 #ifdef CONFIG_DEBUG_RODATA
 void mark_rodata_ro(void);
 extern const int rodata_test_data;
@@ -153,6 +169,50 @@ void set_kernel_text_ro(void);
 static inline void set_kernel_text_rw(void) { }
 static inline void set_kernel_text_ro(void) { }
 #endif
+
+#ifdef CONFIG_X86_64
+static inline int set_mce_nospec(unsigned long pfn)
+{
+	unsigned long decoy_addr;
+	int rc;
+
+	/*
+	 * Mark the linear address as UC to make sure we don't log more
+	 * errors because of speculative access to the page.
+	 * We would like to just call:
+	 *      set_memory_uc((unsigned long)pfn_to_kaddr(pfn), 1);
+	 * but doing that would radically increase the odds of a
+	 * speculative access to the poison page because we'd have
+	 * the virtual address of the kernel 1:1 mapping sitting
+	 * around in registers.
+	 * Instead we get tricky.  We create a non-canonical address
+	 * that looks just like the one we want, but has bit 63 flipped.
+	 * This relies on set_memory_uc() properly sanitizing any __pa()
+	 * results with __PHYSICAL_MASK or PTE_PFN_MASK.
+	 */
+	decoy_addr = (pfn << PAGE_SHIFT) + (PAGE_OFFSET ^ BIT(63));
+
+	rc = set_memory_uc(decoy_addr, 1);
+	if (rc)
+		printk(KERN_WARNING
+		       "Could not invalidate pfn=0x%lx from 1:1 map\n", pfn);
+	return rc;
+}
+#define set_mce_nospec set_mce_nospec
+
+/* Restore full speculative operation to the pfn. */
+static inline int clear_mce_nospec(unsigned long pfn)
+{
+	return set_memory_wb((unsigned long) pfn_to_kaddr(pfn), 1);
+}
+#define clear_mce_nospec clear_mce_nospec
+#else
+/*
+ * Few people would run a 32-bit kernel on a machine that supports
+ * recoverable errors because they have too much memory to boot 32-bit.
+ */
+#endif
+
 
 #ifdef CONFIG_DEBUG_RODATA_TEST
 int rodata_test(void);

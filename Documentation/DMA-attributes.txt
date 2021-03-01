@@ -100,3 +100,8 @@ allocated by dma_alloc_attrs() function from individual pages if it can
 be mapped as contiguous chunk into device dma address space. By
 specifing this attribute the allocated buffer is forced to be contiguous
 also in physical memory.
+
+DMA_ATTR_NO_WARN
+----------------
+
+Unsupported for RHEL-7.

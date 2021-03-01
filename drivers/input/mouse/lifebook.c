@@ -188,14 +188,10 @@ static psmouse_ret_t lifebook_process_byte(struct psmouse *psmouse)
 	}
 
 	if (dev2) {
-		if (relative_packet) {
-			input_report_rel(dev2, REL_X,
-				((packet[0] & 0x10) ? packet[1] - 256 : packet[1]));
-			input_report_rel(dev2, REL_Y,
-				 -(int)((packet[0] & 0x20) ? packet[2] - 256 : packet[2]));
-		}
-		input_report_key(dev2, BTN_LEFT, packet[0] & 0x01);
-		input_report_key(dev2, BTN_RIGHT, packet[0] & 0x02);
+		if (relative_packet)
+			psmouse_report_standard_motion(dev2, packet);
+
+		psmouse_report_standard_buttons(dev2, packet[0]);
 		input_sync(dev2);
 	}
 
@@ -287,7 +283,7 @@ static int lifebook_create_relative_device(struct psmouse *psmouse)
 		 "%s/input1", psmouse->ps2dev.serio->phys);
 
 	dev2->phys = priv->phys;
-	dev2->name = "PS/2 Touchpad";
+	dev2->name = "LBPS/2 Fujitsu Lifebook Touchpad";
 	dev2->id.bustype = BUS_I8042;
 	dev2->id.vendor  = 0x0002;
 	dev2->id.product = PSMOUSE_LIFEBOOK;

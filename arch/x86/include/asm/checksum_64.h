@@ -84,8 +84,8 @@ static inline __sum16 ip_fast_csum(const void *iph, unsigned int ihl)
  * 32bit unfolded.
  */
 static inline __wsum
-csum_tcpudp_nofold(__be32 saddr, __be32 daddr, unsigned short len,
-		   unsigned short proto, __wsum sum)
+csum_tcpudp_nofold(__be32 saddr, __be32 daddr, __u32 len,
+		   __u8 proto, __wsum sum)
 {
 	asm("  addl %1, %0\n"
 	    "  adcl %2, %0\n"
@@ -110,8 +110,8 @@ csum_tcpudp_nofold(__be32 saddr, __be32 daddr, unsigned short len,
  * complemented and ready to be filled in.
  */
 static inline __sum16 csum_tcpudp_magic(__be32 saddr, __be32 daddr,
-					unsigned short len,
-					unsigned short proto, __wsum sum)
+					__u32 len, __u8 proto,
+					__wsum sum)
 {
 	return csum_fold(csum_tcpudp_nofold(saddr, daddr, len, proto, sum));
 }
@@ -184,8 +184,15 @@ static inline unsigned add32_with_carry(unsigned a, unsigned b)
 	asm("addl %2,%0\n\t"
 	    "adcl $0,%0"
 	    : "=r" (a)
-	    : "0" (a), "r" (b));
+	    : "0" (a), "rm" (b));
 	return a;
+}
+
+#define HAVE_ARCH_CSUM_ADD
+static inline __wsum csum_add(__wsum csum, __wsum addend)
+{
+	return (__force __wsum)add32_with_carry((__force unsigned)csum,
+						(__force unsigned)addend);
 }
 
 #endif /* _ASM_X86_CHECKSUM_64_H */

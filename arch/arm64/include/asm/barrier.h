@@ -31,6 +31,9 @@
 #define rmb()		asm volatile("dsb ld" : : : "memory")
 #define wmb()		asm volatile("dsb st" : : : "memory")
 
+#define dma_rmb()	dmb(oshld)
+#define dma_wmb()	dmb(oshst)
+
 #ifndef CONFIG_SMP
 #define smp_mb()	barrier()
 #define smp_rmb()	barrier()
@@ -41,10 +44,12 @@
 #define smp_wmb()	asm volatile("dmb ishst" : : : "memory")
 #endif
 
+#define gmb()		do { } while (0)
+
 #define read_barrier_depends()		do { } while(0)
 #define smp_read_barrier_depends()	do { } while(0)
 
-#define set_mb(var, value)	do { var = value; smp_mb(); } while (0)
+#define smp_store_mb(var, value)	do { WRITE_ONCE(var, value); smp_mb(); } while (0)
 #define nop()		asm volatile("nop");
 
 #endif	/* __ASSEMBLY__ */

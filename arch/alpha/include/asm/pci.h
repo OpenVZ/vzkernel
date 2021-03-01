@@ -7,7 +7,6 @@
 #include <linux/dma-mapping.h>
 #include <asm/scatterlist.h>
 #include <asm/machvec.h>
-#include <asm-generic/pci-bridge.h>
 
 /*
  * The following structure is used to manage multiple PCI busses.
@@ -59,11 +58,6 @@ struct pci_controller {
 
 extern void pcibios_set_master(struct pci_dev *dev);
 
-extern inline void pcibios_penalize_isa_irq(int irq, int active)
-{
-	/* We don't do dynamic PCI IRQ allocation */
-}
-
 /* IOMMU controls.  */
 
 /* The PCI address space does not equal the physical memory address space.
@@ -72,9 +66,6 @@ extern inline void pcibios_penalize_isa_irq(int irq, int active)
 #define PCI_DMA_BUS_IS_PHYS  0
 
 #ifdef CONFIG_PCI
-
-/* implement the pci_ DMA API in terms of the generic device dma_ one */
-#include <asm-generic/pci-dma-compat.h>
 
 static inline void pci_dma_burst_advice(struct pci_dev *pdev,
 					enum pci_dma_burst_strategy *strat,

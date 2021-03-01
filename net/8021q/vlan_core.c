@@ -9,7 +9,7 @@ bool vlan_do_receive(struct sk_buff **skbp)
 {
 	struct sk_buff *skb = *skbp;
 	__be16 vlan_proto = skb->vlan_proto;
-	u16 vlan_id = skb->vlan_tci & VLAN_VID_MASK;
+	u16 vlan_id = skb_vlan_tag_get_id(skb);
 	struct net_device *vlan_dev;
 	struct vlan_pcpu_stats *rx_stats;
 
@@ -30,7 +30,9 @@ bool vlan_do_receive(struct sk_buff **skbp)
 			skb->pkt_type = PACKET_HOST;
 	}
 
-	if (!(vlan_dev_priv(vlan_dev)->flags & VLAN_FLAG_REORDER_HDR)) {
+	if (!(vlan_dev_priv(vlan_dev)->flags & VLAN_FLAG_REORDER_HDR) &&
+	    !netif_is_macvlan_port(vlan_dev) &&
+	    !netif_is_bridge_port(vlan_dev)) {
 		unsigned int offset = skb->data - skb_mac_header(skb);
 
 		/*
@@ -63,7 +65,7 @@ bool vlan_do_receive(struct sk_buff **skbp)
 }
 
 /* Must be invoked with rcu_read_lock. */
-struct net_device *__vlan_find_dev_deep(struct net_device *dev,
+struct net_device *__vlan_find_dev_deep_rcu(struct net_device *dev,
 					__be16 vlan_proto, u16 vlan_id)
 {
 	struct vlan_info *vlan_info = rcu_dereference(dev->vlan_info);
@@ -81,17 +83,22 @@ struct net_device *__vlan_find_dev_deep(struct net_device *dev,
 
 		upper_dev = netdev_master_upper_dev_get_rcu(dev);
 		if (upper_dev)
-			return __vlan_find_dev_deep(upper_dev,
+			return __vlan_find_dev_deep_rcu(upper_dev,
 						    vlan_proto, vlan_id);
 	}
 
 	return NULL;
 }
-EXPORT_SYMBOL(__vlan_find_dev_deep);
+EXPORT_SYMBOL(__vlan_find_dev_deep_rcu);
 
 struct net_device *vlan_dev_real_dev(const struct net_device *dev)
 {
-	return vlan_dev_priv(dev)->real_dev;
+	struct net_device *ret = vlan_dev_priv(dev)->real_dev;
+
+	while (is_vlan_dev(ret))
+		ret = vlan_dev_priv(ret)->real_dev;
+
+	return ret;
 }
 EXPORT_SYMBOL(vlan_dev_real_dev);
 
@@ -101,55 +108,11 @@ u16 vlan_dev_vlan_id(const struct net_device *dev)
 }
 EXPORT_SYMBOL(vlan_dev_vlan_id);
 
-static struct sk_buff *vlan_reorder_header(struct sk_buff *skb)
+__be16 vlan_dev_vlan_proto(const struct net_device *dev)
 {
-	if (skb_cow(skb, skb_headroom(skb)) < 0)
-		return NULL;
-	memmove(skb->data - ETH_HLEN, skb->data - VLAN_ETH_HLEN, 2 * ETH_ALEN);
-	skb->mac_header += VLAN_HLEN;
-	return skb;
+	return vlan_dev_priv(dev)->vlan_proto;
 }
-
-struct sk_buff *vlan_untag(struct sk_buff *skb)
-{
-	struct vlan_hdr *vhdr;
-	u16 vlan_tci;
-
-	if (unlikely(vlan_tx_tag_present(skb))) {
-		/* vlan_tci is already set-up so leave this for another time */
-		return skb;
-	}
-
-	skb = skb_share_check(skb, GFP_ATOMIC);
-	if (unlikely(!skb))
-		goto err_free;
-
-	if (unlikely(!pskb_may_pull(skb, VLAN_HLEN)))
-		goto err_free;
-
-	vhdr = (struct vlan_hdr *) skb->data;
-	vlan_tci = ntohs(vhdr->h_vlan_TCI);
-	__vlan_hwaccel_put_tag(skb, skb->protocol, vlan_tci);
-
-	skb_pull_rcsum(skb, VLAN_HLEN);
-	vlan_set_encap_proto(skb, vhdr);
-
-	skb = vlan_reorder_header(skb);
-	if (unlikely(!skb))
-		goto err_free;
-
-	skb_reset_network_header(skb);
-	skb_reset_transport_header(skb);
-	skb_reset_mac_len(skb);
-
-	return skb;
-
-err_free:
-	kfree_skb(skb);
-	return NULL;
-}
-EXPORT_SYMBOL(vlan_untag);
-
+EXPORT_SYMBOL(vlan_dev_vlan_proto);
 
 /*
  * vlan info and vid list
@@ -245,7 +208,10 @@ static int __vlan_vid_add(struct vlan_info *vlan_info, __be16 proto, u16 vid,
 		return -ENOMEM;
 
 	if (vlan_hw_filter_capable(dev, vid_info)) {
-		err =  ops->ndo_vlan_rx_add_vid(dev, proto, vid);
+		if (netif_device_present(dev))
+			err = ops->ndo_vlan_rx_add_vid(dev, proto, vid);
+		else
+			err = -ENODEV;
 		if (err) {
 			kfree(vid_info);
 			return err;
@@ -303,7 +269,10 @@ static void __vlan_vid_del(struct vlan_info *vlan_info,
 	int err;
 
 	if (vlan_hw_filter_capable(dev, vid_info)) {
-		err = ops->ndo_vlan_rx_kill_vid(dev, proto, vid);
+		if (netif_device_present(dev))
+			err = ops->ndo_vlan_rx_kill_vid(dev, proto, vid);
+		else
+			err = -ENODEV;
 		if (err) {
 			pr_warn("failed to kill vid %04x/%d for device %s\n",
 				proto, vid, dev->name);
@@ -399,3 +368,101 @@ bool vlan_uses_dev(const struct net_device *dev)
 	return vlan_info->grp.nr_vlan_devs ? true : false;
 }
 EXPORT_SYMBOL(vlan_uses_dev);
+
+static struct sk_buff **vlan_gro_receive(struct sk_buff **head,
+					 struct sk_buff *skb)
+{
+	struct sk_buff *p, **pp = NULL;
+	struct vlan_hdr *vhdr;
+	unsigned int hlen, off_vlan;
+	const struct packet_offload *ptype;
+	__be16 type;
+	int flush = 1;
+
+	off_vlan = skb_gro_offset(skb);
+	hlen = off_vlan + sizeof(*vhdr);
+	vhdr = skb_gro_header_fast(skb, off_vlan);
+	if (skb_gro_header_hard(skb, hlen)) {
+		vhdr = skb_gro_header_slow(skb, hlen, off_vlan);
+		if (unlikely(!vhdr))
+			goto out;
+	}
+
+	type = vhdr->h_vlan_encapsulated_proto;
+
+	rcu_read_lock();
+	ptype = gro_find_receive_by_type(type);
+	if (!ptype)
+		goto out_unlock;
+
+	flush = 0;
+
+	for (p = *head; p; p = p->next) {
+		struct vlan_hdr *vhdr2;
+
+		if (!NAPI_GRO_CB(p)->same_flow)
+			continue;
+
+		vhdr2 = (struct vlan_hdr *)(p->data + off_vlan);
+		if (compare_vlan_header(vhdr, vhdr2))
+			NAPI_GRO_CB(p)->same_flow = 0;
+	}
+
+	skb_gro_pull(skb, sizeof(*vhdr));
+	skb_gro_postpull_rcsum(skb, vhdr, sizeof(*vhdr));
+	pp = call_gro_receive(ptype->callbacks.gro_receive, head, skb);
+
+out_unlock:
+	rcu_read_unlock();
+out:
+	NAPI_GRO_CB(skb)->flush |= flush;
+
+	return pp;
+}
+
+static int vlan_gro_complete(struct sk_buff *skb, int nhoff)
+{
+	struct vlan_hdr *vhdr = (struct vlan_hdr *)(skb->data + nhoff);
+	__be16 type = vhdr->h_vlan_encapsulated_proto;
+	struct packet_offload *ptype;
+	int err = -ENOENT;
+
+	rcu_read_lock();
+	ptype = gro_find_complete_by_type(type);
+	if (ptype)
+		err = ptype->callbacks.gro_complete(skb, nhoff + sizeof(*vhdr));
+
+	rcu_read_unlock();
+	return err;
+}
+
+static struct packet_offload vlan_packet_offloads[] __read_mostly = {
+	{
+		.type = cpu_to_be16(ETH_P_8021Q),
+		.priority = 10,
+		.callbacks = {
+			.gro_receive = vlan_gro_receive,
+			.gro_complete = vlan_gro_complete,
+		},
+	},
+	{
+		.type = cpu_to_be16(ETH_P_8021AD),
+		.priority = 10,
+		.callbacks = {
+			.gro_receive = vlan_gro_receive,
+			.gro_complete = vlan_gro_complete,
+		},
+	},
+};
+
+static int __init vlan_offload_init(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(vlan_packet_offloads); i++)
+		dev_add_offload(&vlan_packet_offloads[i]);
+
+	return 0;
+}
+
+fs_initcall(vlan_offload_init);

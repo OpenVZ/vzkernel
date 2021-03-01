@@ -12,12 +12,15 @@
 #include <linux/cpumask.h>
 #include <linux/init.h>
 #include <linux/irqflags.h>
+#include <linux/llist.h>
+
+#include <linux/rh_kabi.h>
 
 extern void cpu_idle(void);
 
 typedef void (*smp_call_func_t)(void *info);
 struct call_single_data {
-	struct list_head list;
+	RH_KABI_REPLACE(struct list_head list, struct llist_node llist)
 	smp_call_func_t func;
 	void *info;
 	u16 flags;
@@ -28,6 +31,8 @@ extern unsigned int total_cpus;
 
 int smp_call_function_single(int cpuid, smp_call_func_t func, void *info,
 			     int wait);
+
+int smp_call_function_single_async(int cpu, struct call_single_data *csd);
 
 #ifdef CONFIG_SMP
 
@@ -74,9 +79,6 @@ extern void smp_cpus_done(unsigned int max_cpus);
 int smp_call_function(smp_call_func_t func, void *info, int wait);
 void smp_call_function_many(const struct cpumask *mask,
 			    smp_call_func_t func, void *info, bool wait);
-
-void __smp_call_function_single(int cpuid, struct call_single_data *data,
-				int wait);
 
 int smp_call_function_any(const struct cpumask *mask,
 			  smp_call_func_t func, void *info, int wait);

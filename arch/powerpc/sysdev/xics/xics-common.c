@@ -49,7 +49,7 @@ void xics_update_irq_servers(void)
 	int i, j;
 	struct device_node *np;
 	u32 ilen;
-	const u32 *ireg;
+	const __be32 *ireg;
 	u32 hcpuid;
 
 	/* Find the server numbers for the boot cpu. */
@@ -75,8 +75,8 @@ void xics_update_irq_servers(void)
 	 * default distribution server
 	 */
 	for (j = 0; j < i; j += 2) {
-		if (ireg[j] == hcpuid) {
-			xics_default_distrib_server = ireg[j+1];
+		if (be32_to_cpu(ireg[j]) == hcpuid) {
+			xics_default_distrib_server = be32_to_cpu(ireg[j+1]);
 			break;
 		}
 	}
@@ -329,8 +329,12 @@ static int xics_host_map(struct irq_domain *h, unsigned int virq,
 
 	pr_devel("xics: map virq %d, hwirq 0x%lx\n", virq, hw);
 
-	/* They aren't all level sensitive but we just don't really know */
-	irq_set_status_flags(virq, IRQ_LEVEL);
+	/*
+	 * Mark interrupts as edge sensitive by default so that resend
+	 * actually works. The device-tree parsing will turn the LSIs
+	 * back to level.
+	 */
+	irq_clear_status_flags(virq, IRQ_LEVEL);
 
 	/* Don't call into ICS for IPIs */
 	if (hw == XICS_IPI) {
@@ -352,13 +356,54 @@ static int xics_host_xlate(struct irq_domain *h, struct device_node *ct,
 			   irq_hw_number_t *out_hwirq, unsigned int *out_flags)
 
 {
-	/* Current xics implementation translates everything
-	 * to level. It is not technically right for MSIs but this
-	 * is irrelevant at this point. We might get smarter in the future
-	 */
 	*out_hwirq = intspec[0];
-	*out_flags = IRQ_TYPE_LEVEL_LOW;
 
+	/*
+	 * If intsize is at least 2, we look for the type in the second cell,
+	 * we assume the LSB indicates a level interrupt.
+	 */
+	if (intsize > 1) {
+		if (intspec[1] & 1)
+			*out_flags = IRQ_TYPE_LEVEL_LOW;
+		else
+			*out_flags = IRQ_TYPE_EDGE_RISING;
+	} else
+		*out_flags = IRQ_TYPE_LEVEL_LOW;
+
+	return 0;
+}
+
+int xics_set_irq_type(struct irq_data *d, unsigned int flow_type)
+{
+	/*
+	 * We only support these. This has really no effect other than setting
+	 * the corresponding descriptor bits mind you but those will in turn
+	 * affect the resend function when re-enabling an edge interrupt.
+	 *
+	 * Set set the default to edge as explained in map().
+	 */
+	if (flow_type == IRQ_TYPE_DEFAULT || flow_type == IRQ_TYPE_NONE)
+		flow_type = IRQ_TYPE_EDGE_RISING;
+
+	if (flow_type != IRQ_TYPE_EDGE_RISING &&
+	    flow_type != IRQ_TYPE_LEVEL_LOW)
+		return -EINVAL;
+
+	irqd_set_trigger_type(d, flow_type);
+
+	return IRQ_SET_MASK_OK_NOCOPY;
+}
+
+int xics_retrigger(struct irq_data *data)
+{
+	/*
+	 * We need to push a dummy CPPR when retriggering, since the subsequent
+	 * EOI will try to pop it. Passing 0 works, as the function hard codes
+	 * the priority value anyway.
+	 */
+	xics_push_cppr(0);
+
+	/* Tell the core to do a soft retrigger */
 	return 0;
 }
 
@@ -383,7 +428,7 @@ void __init xics_register_ics(struct ics *ics)
 static void __init xics_get_server_size(void)
 {
 	struct device_node *np;
-	const u32 *isize;
+	const __be32 *isize;
 
 	/* We fetch the interrupt server size from the first ICS node
 	 * we find if any
@@ -394,7 +439,7 @@ static void __init xics_get_server_size(void)
 	isize = of_get_property(np, "ibm,interrupt-server#-size", NULL);
 	if (!isize)
 		return;
-	xics_interrupt_server_size = *isize;
+	xics_interrupt_server_size = be32_to_cpu(*isize);
 	of_node_put(np);
 }
 

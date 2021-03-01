@@ -41,13 +41,13 @@ static __be32 nfsacld_proc_getacl(struct svc_rqst * rqstp,
 	if (nfserr)
 		RETURN_STATUS(nfserr);
 
-	if (argp->mask & ~(NFS_ACL|NFS_ACLCNT|NFS_DFACL|NFS_DFACLCNT))
+	if (argp->mask & ~NFS_ACL_MASK)
 		RETURN_STATUS(nfserr_inval);
 	resp->mask = argp->mask;
 
 	nfserr = fh_getattr(fh, &resp->stat);
 	if (nfserr)
-		goto fail;
+		RETURN_STATUS(nfserr);
 
 	if (resp->mask & (NFS_ACL|NFS_ACLCNT)) {
 		acl = nfsd_get_posix_acl(fh, ACL_TYPE_ACCESS);
@@ -174,7 +174,8 @@ static __be32 nfsacld_proc_access(struct svc_rqst *rqstp, struct nfsd3_accessarg
 static int nfsaclsvc_decode_getaclargs(struct svc_rqst *rqstp, __be32 *p,
 		struct nfsd3_getaclargs *argp)
 {
-	if (!(p = nfs2svc_decode_fh(p, &argp->fh)))
+	p = nfs2svc_decode_fh(p, &argp->fh);
+	if (!p)
 		return 0;
 	argp->mask = ntohl(*p); p++;
 
@@ -189,10 +190,11 @@ static int nfsaclsvc_decode_setaclargs(struct svc_rqst *rqstp, __be32 *p,
 	unsigned int base;
 	int n;
 
-	if (!(p = nfs2svc_decode_fh(p, &argp->fh)))
+	p = nfs2svc_decode_fh(p, &argp->fh);
+	if (!p)
 		return 0;
 	argp->mask = ntohl(*p++);
-	if (argp->mask & ~(NFS_ACL|NFS_ACLCNT|NFS_DFACL|NFS_DFACLCNT) ||
+	if (argp->mask & ~NFS_ACL_MASK ||
 	    !xdr_argsize_check(rqstp, p))
 		return 0;
 
@@ -210,7 +212,8 @@ static int nfsaclsvc_decode_setaclargs(struct svc_rqst *rqstp, __be32 *p,
 static int nfsaclsvc_decode_fhandleargs(struct svc_rqst *rqstp, __be32 *p,
 		struct nfsd_fhandle *argp)
 {
-	if (!(p = nfs2svc_decode_fh(p, &argp->fh)))
+	p = nfs2svc_decode_fh(p, &argp->fh);
+	if (!p)
 		return 0;
 	return xdr_argsize_check(rqstp, p);
 }
@@ -218,7 +221,8 @@ static int nfsaclsvc_decode_fhandleargs(struct svc_rqst *rqstp, __be32 *p,
 static int nfsaclsvc_decode_accessargs(struct svc_rqst *rqstp, __be32 *p,
 		struct nfsd3_accessargs *argp)
 {
-	if (!(p = nfs2svc_decode_fh(p, &argp->fh)))
+	p = nfs2svc_decode_fh(p, &argp->fh);
+	if (!p)
 		return 0;
 	argp->access = ntohl(*p++);
 
@@ -281,9 +285,7 @@ static int nfsaclsvc_encode_getaclres(struct svc_rqst *rqstp, __be32 *p,
 				  resp->acl_default,
 				  resp->mask & NFS_DFACL,
 				  NFS_ACL_DEFAULT);
-	if (n <= 0)
-		return 0;
-	return 1;
+	return (n > 0);
 }
 
 static int nfsaclsvc_encode_attrstatres(struct svc_rqst *rqstp, __be32 *p,
@@ -366,5 +368,4 @@ struct svc_version	nfsd_acl_version2 = {
 		.vs_proc	= nfsd_acl_procedures2,
 		.vs_dispatch	= nfsd_dispatch,
 		.vs_xdrsize	= NFS3_SVC_XDRSIZE,
-		.vs_hidden	= 0,
 };
