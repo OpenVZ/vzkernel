@@ -2409,7 +2409,7 @@ static bool intel_pstate_no_acpi_pss(void)
 		kfree(pss);
 	}
 
-	pr_debug("ACPI _PSS not found\n");
+	pr_notice("ACPI _PSS not found\n");
 	return true;
 }
 
@@ -2426,7 +2426,7 @@ static bool __init intel_pstate_no_acpi_pcch(void)
 		return false;
 
 not_found:
-	pr_debug("ACPI PCCH not found\n");
+	pr_notice("ACPI PCCH not found\n");
 	return true;
 }
 
@@ -2442,7 +2442,7 @@ static bool intel_pstate_has_acpi_ppc(void)
 		if (acpi_has_method(pr->handle, "_PPC"))
 			return true;
 	}
-	pr_debug("ACPI _PPC not found\n");
+	pr_notice("ACPI _PPC not found\n");
 	return false;
 }
 
@@ -2489,7 +2489,7 @@ static bool intel_pstate_platform_pwr_mgmt_exists(void)
 	if (id) {
 		rdmsrl(MSR_MISC_PWR_MGMT, misc_pwr);
 		if (misc_pwr & (1 << 8)) {
-			pr_debug("Bit 8 in the MISC_PWR_MGMT MSR set\n");
+			pr_notice("Bit 8 in the MISC_PWR_MGMT MSR set\n");
 			return true;
 		}
 	}
@@ -2560,7 +2560,7 @@ static int __init intel_pstate_init(void)
 
 		id = x86_match_cpu(intel_pstate_cpu_ids);
 		if (!id) {
-			pr_info("CPU ID not supported\n");
+			pr_notice("CPU ID not supported\n");
 			return -ENODEV;
 		}
 
@@ -2568,7 +2568,7 @@ static int __init intel_pstate_init(void)
 	}
 
 	if (intel_pstate_msrs_not_valid()) {
-		pr_info("Invalid MSRs\n");
+		pr_notice("Invalid MSRs\n");
 		return -ENODEV;
 	}
 
@@ -2578,7 +2578,7 @@ hwp_cpu_matched:
 	 * firmware has its own power management modes.
 	 */
 	if (intel_pstate_platform_pwr_mgmt_exists()) {
-		pr_info("P-states controlled by the platform\n");
+		pr_notice("P-states controlled by the platform\n");
 		return -ENODEV;
 	}
 
