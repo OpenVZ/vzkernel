@@ -756,7 +756,7 @@ static void wait_shrink(struct pcs_fuse_req *r, struct pcs_dentry_info *di)
 	assert_spin_locked(&di->lock);
 	BUG_ON(r->exec.size_required);
 	/* Writes already blocked via fuse_set_nowrite */
-	BUG_ON(r->req.in.h.opcode != FUSE_READ);
+	BUG_ON(r->req.in.h.opcode != FUSE_READ && r->req.in.h.opcode != FUSE_FSYNC && r->req.in.h.opcode != FUSE_FLUSH);
 
 	TRACE("insert ino:%ld r:%p\n", r->req.io_inode->i_ino, r);
 	list_add_tail(&r->exec.ireq.list, &di->size.queue);
@@ -912,13 +912,17 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 		}
 		break;
 	}
+	case FUSE_FSYNC:
+	case FUSE_FLUSH:
+		pcs_fuse_prep_io(r, PCS_REQ_T_SYNC, 0, 0, 0);
+		break;
 	default:
 		BUG();
 	}
 
 	if (!kqueue_insert(di, ff, req))
 		ret = -EIO;
-	else if (req->in.h.opcode == FUSE_READ)
+	else if (req->in.h.opcode == FUSE_READ || req->in.h.opcode == FUSE_FSYNC || req->in.h.opcode == FUSE_FLUSH)
 		fuse_read_dio_begin(fi);
 	else
 		fuse_write_dio_begin(fi);
@@ -949,6 +953,8 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 	switch (req->in.h.opcode) {
 	case FUSE_WRITE:
 	case FUSE_READ:
+	case FUSE_FSYNC:
+	case FUSE_FLUSH:
 		ret = pcs_fuse_prep_rw(r, ff);
 		if (likely(!ret))
 			goto submit;
@@ -999,10 +1005,6 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 		}
 		break;
 	}
-	case FUSE_FSYNC:
-	case FUSE_FLUSH:
-		pcs_fuse_prep_io(r, PCS_REQ_T_SYNC, 0, 0, 0);
-		goto submit;
 	case FUSE_IOCTL:
 		if (pfc->fc->no_fiemap) {
 			req->out.h.error = -EOPNOTSUPP;
@@ -1086,7 +1088,7 @@ static void _pcs_shrink_end(struct fuse_conn *fc, struct fuse_req *req)
 		struct pcs_fuse_req *r = container_of(ireq, struct pcs_fuse_req, exec.ireq);
 
 		BUG_ON(r->exec.size_required);
-		BUG_ON(r->req.in.h.opcode != FUSE_READ);
+		BUG_ON(r->req.in.h.opcode != FUSE_READ && r->req.in.h.opcode != FUSE_FSYNC && r->req.in.h.opcode != FUSE_FLUSH);
 
 		TRACE("resubmit %p\n", &r->req);
 		list_del_init(&ireq->list);
