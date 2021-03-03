@@ -69,6 +69,8 @@
 /* let's not notify more than 100 times per second */
 #define CGROUP_FILE_NOTIFY_MIN_INTV	DIV_ROUND_UP(HZ, 100)
 
+#define CGROUP_FILENAME_RELEASE_AGENT "release_agent"
+
 /*
  * cgroup_mutex is the master lock.  Any modification to cgroup or its
  * hierarchy must be performed while holding it.
@@ -1920,55 +1922,138 @@ static int cgroup_remount(struct kernfs_root *kf_root, int *flags, char *data)
 	return 0;
 }
 
+static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
+			   struct cftype *cft, bool activate);
+
 #ifdef CONFIG_VE
-void cgroup_mark_ve_root(struct ve_struct *ve)
+int cgroup_mark_ve_roots(struct ve_struct *ve)
 {
+	int err;
 	struct cgrp_cset_link *link;
 	struct css_set *cset;
-	struct cgroup *cgrp;
+	struct cgroup *cgrp, *tmp;
+	struct cftype *cft;
+	struct cgroup_subsys_state *cpu_css;
+	LIST_HEAD(pending);
+
+	cft = get_cftype_by_name(CGROUP_FILENAME_RELEASE_AGENT);
+	BUG_ON(!cft);
+
+	/*
+	 * locking scheme:
+	 * collect the right cgroups in a list under the locks below and
+	 * take actions later without these locks:
+	 * css_set_lock - to iterate cset->cgrp_links
+	 *
+	 * cgroup_add_file can not be called under css_set_lock spinlock,
+	 * because eventually it calls __kernfs_new_node, which does some
+	 * allocations.
+	 */
 
 	spin_lock_irq(&css_set_lock);
-
 	rcu_read_lock();
+
 	cset = rcu_dereference(ve->ve_ns)->cgroup_ns->root_cset;
-	if (WARN_ON(!cset))
-		goto unlock;
+	if (WARN_ON(!cset)) {
+		rcu_read_unlock();
+		spin_unlock_irq(&css_set_lock);
+		return -ENODEV;
+	}
 
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
 		cgrp = link->cgrp;
+
+		/*
+		 * At container start, vzctl creates special cgroups to serve
+		 * as virtualized cgroup roots. They are bind-mounted on top
+		 * of original cgroup mount point in container namespace. But
+		 * not all cgroup mounts undergo this procedure. We should
+		 * skip cgroup mounts that are not virtualized.
+		 */
+		if (!is_virtualized_cgroup(cgrp))
+			continue;
+
+		list_add_tail(&cgrp->cft_q_node, &pending);
+	}
+	cpu_css = cset->subsys[cpu_cgrp_id];
+	rcu_read_unlock();
+	spin_unlock_irq(&css_set_lock);
+
+	/*
+	 * reads to cgrp->ve_owner is protected by rcu.
+	 * writes to cgrp->ve_owner is protected by ve->op_sem taken
+	 * by the caller. Possible race that would require cgroup_mutex
+	 * is when two separate ve's will have same cgroups in their css
+	 * sets, but this should be protected elsewhere.
+	 */
+	list_for_each_entry_safe(cgrp, tmp, &pending, cft_q_node) {
 		rcu_assign_pointer(cgrp->ve_owner, ve);
 		set_bit(CGRP_VE_ROOT, &cgrp->flags);
-	}
-	link_ve_root_cpu_cgroup(cset->subsys[cpu_cgrp_id]);
-unlock:
-	rcu_read_unlock();
 
-	spin_unlock_irq(&css_set_lock);
+		if (!cgroup_is_dead(cgrp)) {
+			err = cgroup_add_file(NULL, cgrp, cft, true);
+			if (err) {
+				pr_warn("failed to add file to VE_ROOT cgroup,"
+					" err:%d\n", err);
+				break;
+			}
+		}
+		list_del_init(&cgrp->cft_q_node);
+	}
+	link_ve_root_cpu_cgroup(cpu_css);
 	synchronize_rcu();
+
+	if (err) {
+		pr_warn("failed to mark cgroups as VE_ROOT,"
+			" err:%d, falling back\n", err);
+		cgroup_unmark_ve_roots(ve);
+	}
+	return err;
 }
 
 void cgroup_unmark_ve_roots(struct ve_struct *ve)
 {
 	struct cgrp_cset_link *link;
 	struct css_set *cset;
-	struct cgroup *cgrp;
+	struct cgroup *cgrp, *tmp;
+	struct cftype *cft;
+	LIST_HEAD(pending);
+
+	cft = get_cftype_by_name(CGROUP_FILENAME_RELEASE_AGENT);
 
 	spin_lock_irq(&css_set_lock);
 
 	rcu_read_lock();
 	cset = rcu_dereference(ve->ve_ns)->cgroup_ns->root_cset;
-	if (WARN_ON(!cset))
-		goto unlock;
+	if (WARN_ON(!cset)) {
+		rcu_read_unlock();
+		spin_unlock_irq(&css_set_lock);
+		return;
+	}
 
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
 		cgrp = link->cgrp;
+
+		/*
+		 * For this line see comments in
+		 * cgroup_mark_ve_roots
+		 */
+		if (!is_virtualized_cgroup(cgrp))
+			continue;
+
+		BUG_ON(cgrp->ve_owner != ve);
+
+		list_add_tail(&cgrp->cft_q_node, &pending);
+	}
+	rcu_read_unlock();
+	spin_unlock_irq(&css_set_lock);
+
+	list_for_each_entry_safe(cgrp, tmp, &pending, cft_q_node) {
+		kernfs_remove_by_name(cgrp->kn, CGROUP_FILENAME_RELEASE_AGENT);
 		rcu_assign_pointer(cgrp->ve_owner, NULL);
 		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
+		list_del_init(&cgrp->cft_q_node);
 	}
-unlock:
-	rcu_read_unlock();
-
-	spin_unlock_irq(&css_set_lock);
 	/* ve_owner == NULL will be visible */
 	synchronize_rcu();
 
@@ -2019,6 +2104,8 @@ static void init_cgroup_housekeeping(struct cgroup *cgrp)
 	INIT_LIST_HEAD(&cgrp->self.children);
 	INIT_LIST_HEAD(&cgrp->cset_links);
 	INIT_LIST_HEAD(&cgrp->pidlists);
+	INIT_LIST_HEAD(&cgrp->cft_q_node);
+	INIT_LIST_HEAD(&cgrp->release_list);
 	mutex_init(&cgrp->pidlist_mutex);
 	cgrp->self.cgroup = cgrp;
 	cgrp->self.flags |= CSS_ONLINE;
@@ -2045,10 +2132,8 @@ void init_cgroup_root(struct cgroup_root *root, struct cgroup_sb_opts *opts)
 	idr_init(&root->cgroup_idr);
 
 	root->flags = opts->flags;
-	if (opts.release_agent) {
-		ret = ve_set_release_agent_path(root_cgrp,
-			opts.release_agent);
-	}
+	if (opts->release_agent)
+		ve_set_release_agent_path(cgrp, opts->release_agent);
 
 	if (opts->name)
 		strscpy(root->name, opts->name, MAX_CGROUP_ROOT_NAMELEN);
@@ -2256,6 +2341,7 @@ static void cgroup_kill_sb(struct super_block *sb)
 		percpu_ref_kill(&root->cgrp.self.refcnt);
 	cgroup_put(&root->cgrp);
 	kernfs_kill_sb(sb);
+	ve_cleanup_per_cgroot_data(NULL, &root->cgrp);
 }
 
 struct file_system_type cgroup_fs_type = {

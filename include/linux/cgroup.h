@@ -872,7 +872,7 @@ int cgroup_path_ns(struct cgroup *cgrp, char *buf, size_t buflen,
 void cgroup1_release_agent(struct work_struct *work);
 
 #ifdef CONFIG_VE
-extern void cgroup_mark_ve_root(struct ve_struct *ve);
+int cgroup_mark_ve_roots(struct ve_struct *ve);
 void cgroup_unmark_ve_roots(struct ve_struct *ve);
 struct ve_struct *cgroup_get_ve_owner(struct cgroup *cgrp);
 #endif
