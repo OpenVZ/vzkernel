@@ -1583,7 +1583,7 @@ mem_cgroup_iter_load(struct mem_cgroup_reclaim_iter *iter,
 		     struct mem_cgroup *root,
 		     int *sequence)
 {
-	struct mem_cgroup *position;
+	struct mem_cgroup *position = NULL;
 	unsigned seq;
 
 	/*
@@ -1596,7 +1596,6 @@ mem_cgroup_iter_load(struct mem_cgroup_reclaim_iter *iter,
 	 */
 	*sequence = atomic_read(&root->dead_count);
 retry:
-	position = NULL;
 	seq = read_seqbegin(&iter->last_visited_lock);
 	if (iter->last_dead_count == *sequence) {
 		position = READ_ONCE(iter->last_visited);
