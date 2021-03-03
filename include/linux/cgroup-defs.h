@@ -536,6 +536,9 @@ struct cgroup {
 
 	u64 subgroups_limit;
 
+	/* ve_owner, responsible for running release agent. */
+	struct ve_struct __rcu *ve_owner;
+
 	/* ids of the ancestors at each level including self */
 	RH_KABI_BROKEN_REPLACE(int ancestor_ids[],
 			       u64 ancestor_ids[])
