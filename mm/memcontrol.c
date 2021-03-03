@@ -1655,18 +1655,17 @@ mem_cgroup_iter_load(struct mem_cgroup_reclaim_iter *iter,
 	 * offlining.  The RCU lock ensures the object won't be
 	 * released, tryget will fail if we lost the race.
 	 */
-		position = rcu_dereference(iter->last_visited);
+	position = rcu_dereference(iter->last_visited);
 
-		/*
-		 * We cannot take a reference to root because we might race
-		 * with root removal and returning NULL would end up in
-		 * an endless loop on the iterator user level when root
-		 * would be returned all the time.
-		*/
-		if (position && position != root &&
-				!css_tryget(&position->css))
+	/*
+	 * We cannot take a reference to root because we might race
+	 * with root removal and returning NULL would end up in
+	 * an endless loop on the iterator user level when root
+	 * would be returned all the time.
+	 */
+	if (position && position != root && !css_tryget(&position->css))
+		position = NULL;
 
-			position = NULL;
 	return position;
 }
 
