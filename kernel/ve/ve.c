@@ -37,7 +37,7 @@ struct per_cgroot_data {
 	/*
 	 * data is related to this cgroup
 	 */
-	struct cgroup *cgroot;
+	struct cgroup_root *cgroot;
 
 	/*
 	 * path to release agent binaray, that should
@@ -269,7 +269,7 @@ int nr_threads_ve(struct ve_struct *ve)
 EXPORT_SYMBOL(nr_threads_ve);
 
 static struct per_cgroot_data *per_cgroot_data_find_locked(
-	struct list_head *per_cgroot_list, struct cgroup *cgroot)
+	struct list_head *per_cgroot_list, struct cgroup_root *cgroot)
 {
 	struct per_cgroot_data *data;
 
@@ -281,7 +281,7 @@ static struct per_cgroot_data *per_cgroot_data_find_locked(
 }
 
 static inline struct per_cgroot_data *per_cgroot_get_or_create(
-	struct ve_struct *ve, struct cgroup *cgroot)
+	struct ve_struct *ve, struct cgroup_root *cgroot)
 {
 	struct per_cgroot_data *data, *other_data;
 	unsigned long flags;
@@ -315,10 +315,9 @@ static inline struct per_cgroot_data *per_cgroot_get_or_create(
 	return data;
 }
 
-int ve_set_release_agent_path(struct cgroup *cgroot,
+int ve_set_release_agent_path(struct ve_struct *ve, struct cgroup_root *cgroot,
 	const char *release_agent)
 {
-	struct ve_struct *ve;
 	unsigned long flags;
 	struct per_cgroot_data *data;
 	struct cgroup_rcu_string *new_path, *old_path;
@@ -328,7 +327,6 @@ int ve_set_release_agent_path(struct cgroup *cgroot,
 	 * caller should grab cgroup_mutex to safely use
 	 * ve_owner field
 	 */
-	ve = cgroot->ve_owner;
 	BUG_ON(!ve);
 
 	nbytes = strlen(release_agent);
@@ -356,16 +354,15 @@ int ve_set_release_agent_path(struct cgroup *cgroot,
 	return 0;
 }
 
-const char *ve_get_release_agent_path(struct cgroup *cgroot)
+const char *ve_get_release_agent_path(struct ve_struct *ve,
+	struct cgroup_root *cgroot)
 {
 	/* caller must grab rcu_read_lock */
 	const char *result = NULL;
 	struct per_cgroot_data *data;
 	struct cgroup_rcu_string *str;
-	struct ve_struct *ve;
 	unsigned long flags;
 
-	ve = rcu_dereference(cgroot->ve_owner);
 	if (!ve)
 		return NULL;
 
@@ -729,15 +726,13 @@ static inline void per_cgroot_data_free(struct per_cgroot_data *data)
 	kfree(data);
 }
 
-void ve_cleanup_per_cgroot_data(struct ve_struct *ve, struct cgroup *cgrp)
+void ve_cleanup_per_cgroot_data(struct ve_struct *ve, struct cgroup_root *cgrp)
 {
 	struct per_cgroot_data *data, *saved;
 	unsigned long flags;
 
 	BUG_ON(!ve && !cgrp);
 	rcu_read_lock();
-	if (!ve)
-		ve = cgroup_get_ve_owner(cgrp);
 
 	spin_lock_irqsave(&ve->per_cgroot_list_lock, flags);
 	list_for_each_entry_safe(data, saved, &ve->per_cgroot_list, list) {

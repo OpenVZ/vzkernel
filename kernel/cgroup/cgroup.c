@@ -2150,7 +2150,8 @@ void init_cgroup_root(struct cgroup_root *root, struct cgroup_sb_opts *opts)
 
 	root->flags = opts->flags;
 	if (opts->release_agent)
-		ve_set_release_agent_path(cgrp, opts->release_agent);
+		ve_set_release_agent_path(cgrp->ve_owner, root,
+			opts->release_agent);
 
 	if (opts->name)
 		strscpy(root->name, opts->name, MAX_CGROUP_ROOT_NAMELEN);
@@ -2358,7 +2359,7 @@ static void cgroup_kill_sb(struct super_block *sb)
 		percpu_ref_kill(&root->cgrp.self.refcnt);
 	cgroup_put(&root->cgrp);
 	kernfs_kill_sb(sb);
-	ve_cleanup_per_cgroot_data(NULL, &root->cgrp);
+	ve_cleanup_per_cgroot_data(&ve0, root);
 }
 
 struct file_system_type cgroup_fs_type = {
