@@ -231,6 +231,21 @@ static void cgroup_pidlist_destroy_work_fn(struct work_struct *work)
 	kfree(tofree);
 }
 
+struct cgroup_rcu_string *cgroup_rcu_strdup(const char *str, int len)
+{
+	struct cgroup_rcu_string *result;
+	size_t buflen = len + 1;
+
+	result = kmalloc(sizeof(*result) + buflen, GFP_KERNEL);
+	if (!result)
+		return ERR_PTR(-ENOMEM);
+	if (strlcpy(result->val, str, buflen) >= buflen) {
+		kfree(result);
+		return ERR_PTR(-ENAMETOOLONG);
+	}
+	return result;
+}
+
 /*
  * pidlist_uniq - given a kmalloc()ed list, strip out all duplicate entries
  * Returns the number of unique elements.

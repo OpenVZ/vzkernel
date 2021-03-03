@@ -360,6 +360,11 @@ struct cgroup_freezer_state {
 	int nr_frozen_tasks;
 };
 
+struct cgroup_rcu_string {
+	struct rcu_head rcu_head;
+	char val[];
+};
+
 struct cgroup {
 	/* self css with NULL ->ss, points back to this cgroup */
 	struct cgroup_subsys_state self;
