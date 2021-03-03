@@ -1577,7 +1577,8 @@ skip_node:
 	return NULL;
 }
 
-static void mem_cgroup_iter_invalidate(struct mem_cgroup *root)
+static void mem_cgroup_iter_invalidate(struct mem_cgroup *root,
+				       struct mem_cgroup *dead_memcg)
 {
 	/*
 	 * When a group in the hierarchy below root is destroyed, the
@@ -6860,14 +6861,14 @@ static void mem_cgroup_invalidate_reclaim_iterators(struct mem_cgroup *memcg)
 	struct mem_cgroup *parent = memcg;
 
 	while ((parent = parent_mem_cgroup(parent)))
-		mem_cgroup_iter_invalidate(parent);
+		mem_cgroup_iter_invalidate(parent, memcg);
 
 	/*
 	 * if the root memcg is not hierarchical we have to check it
 	 * explicitely.
 	 */
 	if (!root_mem_cgroup->use_hierarchy)
-		mem_cgroup_iter_invalidate(root_mem_cgroup);
+		mem_cgroup_iter_invalidate(root_mem_cgroup, memcg);
 }
 
 static void mem_cgroup_free_all(struct mem_cgroup *memcg)
