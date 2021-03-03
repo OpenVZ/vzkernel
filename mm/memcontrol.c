@@ -192,18 +192,11 @@ struct mem_cgroup_stat2_cpu {
 
 struct mem_cgroup_reclaim_iter {
 	/*
-	 * last scanned hierarchy member. Valid only if last_dead_count
-	 * matches memcg->dead_count of the hierarchy root group.
+	 * Last scanned hierarchy member.
+	 * If stored memcg is destroyed, the field is wiped.
 	 *
-	 * Memory pointed by 'last_visited' is freed not earlier than
-	 * one rcu period after we accessed it:
-	 *   cgroup_offline_fn()
-	 *    offline_css()
-	 *    list_del_rcu()
-	 *    dput()
-	 *    ...
-	 *     cgroup_diput()
-	 *      call_rcu(&cgrp->rcu_head, cgroup_free_rcu)
+	 * Check comment in mem_cgroup_iter() for 'last_visited'
+	 * protection scheme.
 	 */
 	struct mem_cgroup __rcu *last_visited;
 	unsigned long last_dead_count;
@@ -1580,6 +1573,66 @@ skip_node:
 static void mem_cgroup_iter_invalidate(struct mem_cgroup *root,
 				       struct mem_cgroup *dead_memcg)
 {
+	struct mem_cgroup_reclaim_iter *iter;
+	struct mem_cgroup_per_zone *mz;
+	struct mem_cgroup *pos;
+	int zone, node, i;
+
+	/*
+	 * When a group in the hierarchy below root is destroyed,
+	 * the hierarchy iterator can no longer be trusted iif
+	 * iter->last_visited contains the cgroup being destroyed.
+	 * Check if we get this unlikely case and invalidate the iterator
+	 * if so.
+	 *
+	 * Note, only "break-ed" iterators can store iter->last_visited
+	 * == dead_memcg because normally 'last_visited' is assigned
+	 * in mem_cgroup_iter_update() and 'new_position' is just after
+	 * css_tryget() there (ref inc-ed in __mem_cgroup_iter_next())
+	 * and thus cgroup is not offlined yet.
+	 *
+	 * mem_cgroup_iter_break() in its turn puts memcg's css but does
+	 * not wipe it from iter->last_visited.
+	 *
+	 * Q: Why dying memcg (dead_memcg) cannot get into
+	 *    iter->last_visited a bit later after we wipe it here?
+	 * A: Because up to the moment of the current function execution
+	 *    css_tryget() is guaranteed to fail on 'dead_memcg'.
+	 *
+	 * Q: Why don't we need rcu_read_lock()/unlock() wrap for this
+	 *    cycle?
+	 * A: We must invalidate iter only in case it contains
+	 *    'dead_memcg' in '->last_visited'. While we are running
+	 *    here css_tryget() is guaranteed to fail on 'dead_memcg',
+	 *    so any mem_cgroup_iter() started after this function is
+	 *    executed will not get 'dead_memcg' as a result of
+	 *    mem_cgroup_iter_load().
+	 *    And thus any mem_cgroup_iter_update() we might race with -
+	 *    will never write 'dead_memcg' in '->last_visited'.
+	 *    It might write some alive cgroup pointer - true, but not
+	 *    'dead_memcg'.
+	 */
+	for_each_node(node) {
+		for (zone = 0; zone < MAX_NR_ZONES; zone++) {
+			mz = mem_cgroup_zoneinfo(root, node, zone);
+
+			for (i = 0; i < ARRAY_SIZE(mz->reclaim_iter); i++) {
+				iter = &mz->reclaim_iter[i];
+
+				pos = rcu_access_pointer(iter->last_visited);
+				/*
+				 * It's OK to race with mem_cgroup_iter_update()
+				 * here because it cannot write new
+				 * position == dead_memcg as
+				 * css_tryget() for it should fail already.
+				 */
+				if (pos == dead_memcg)
+					rcu_assign_pointer(iter->last_visited,
+							   NULL);
+			}
+		}
+	}
+
 	/*
 	 * When a group in the hierarchy below root is destroyed, the
 	 * hierarchy iterator can no longer be trusted since it might
@@ -1628,10 +1681,9 @@ static void mem_cgroup_iter_update(struct mem_cgroup_reclaim_iter *iter,
 				   int sequence)
 {
 	/*
-	 * We store the sequence count from the time @last_visited was
-	 * loaded successfully instead of rereading it here so that we
-	 * don't lose destruction events in between.  We could have
-	 * raced with the destruction of @new_position after all.
+	 * The position saved in 'last_visited' is always valid.
+	 * If the stored corresponding cgroup is destroyed,
+	 * 'last_visited' is NULLed.
 	 */
 	rcu_assign_pointer(iter->last_visited, new_position);
 	smp_wmb();
@@ -1681,7 +1733,67 @@ struct mem_cgroup *mem_cgroup_iter(struct mem_cgroup *root,
 		return root;
 	}
 
+	/*
+	 * 'iter->last_visited' protection description
+	 *
+	 * Why do we need both locks here:
+	 * 1. rcu_read_lock() makes us sure if we read the cgroup
+	 * pointer from 'iter->last_visited', we can call css_tryget()
+	 * on css of this cgroup.
+	 *
+	 * Cgroup destruction stack:
+	 *   cgroup_offline_fn()
+	 *    offline_css()
+	 *    list_del_rcu()
+	 *    dput()
+	 *    ...
+	 *     cgroup_diput()
+	 *      call_rcu(&cgrp->rcu_head, cgroup_free_rcu)
+	 *
+	 * 2. rcu_read_lock_sched() makes us sure
+	 * mem_cgroup_iter_invalidate() called for a dying cgroup XXX
+	 * cannot race with mem_cgroup_iter_update() which stores XXX in
+	 * 'iter->last_visited'. Why?
+	 *
+	 * cgroup_destroy_locked
+	 *  percpu_ref_kill_and_confirm(css_ref_killed_fn)
+	 *  // @confirm_kill will be called after @ref is seen as dead
+	 *     from all CPUs at which point all further invocations of
+	 *     percpu_ref_tryget_live() will fail.
+	 *   __percpu_ref_switch_mode
+	 *    __percpu_ref_switch_to_atomic
+	 *     call_rcu_sched(css_ref_killed_fn)
+	 *     // thus we must use rcu_read_lock_sched() for
+	 *        syncronization with it
+	 *
+	 * css_ref_killed_fn
+	 *  cgroup_css_killed
+	 *   queue_work(cgroup_offline_fn)
+	 *
+	 * cgroup_offline_fn
+	 *  offline_css
+	 *   mem_cgroup_css_offline
+	 *    mem_cgroup_invalidate_reclaim_iterators
+	 *
+	 * This means when we search for iters to be invalidated for
+	 * cgroup XXX, no previously started mem_cgroup_iter() are
+	 * running which might have cgroup XXX returned by
+	 * mem_cgroup_iter_load() (and thus css_tryget()-ed!).
+	 *
+	 * And according to comment for call_rcu() in rcupdate.h
+	 * about "full memory barrier since the end of its last RCU
+	 * read-side critical section ..." mem_cgroup_iter_invalidate()
+	 * must "see" all latest values in 'iter->last_visited' so no
+	 * single record of cgroup XXX could slip through the cracks.
+	 *
+	 * And if some mem_cgroup_iter() have started after
+	 * mem_cgroup_invalidate_reclaim_iterators() execution has been
+	 * started, it's fully OK, because mem_cgroup_iter_load() cannot
+	 * return dying cgroup XXX anymore - css_tryget() must fail for
+	 * it.
+	 */
 	rcu_read_lock();
+	rcu_read_lock_sched();
 	while (!memcg) {
 		struct mem_cgroup_reclaim_iter *uninitialized_var(iter);
 		int uninitialized_var(seq);
@@ -1717,6 +1829,7 @@ struct mem_cgroup *mem_cgroup_iter(struct mem_cgroup *root,
 			goto out_unlock;
 	}
 out_unlock:
+	rcu_read_unlock_sched();
 	rcu_read_unlock();
 out_css_put:
 	if (prev && prev != root)
