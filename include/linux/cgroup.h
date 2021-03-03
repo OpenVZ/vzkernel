@@ -688,6 +688,10 @@ static inline void cgroup_kthread_ready(void)
 }
 
 void cgroup_path_from_kernfs_id(u64 id, char *buf, size_t buflen);
+
+struct cgroup_rcu_string;
+
+struct cgroup_rcu_string *cgroup_rcu_strdup(const char *str, int len);
 #else /* !CONFIG_CGROUPS */
 
 struct cgroup_subsys_state;
