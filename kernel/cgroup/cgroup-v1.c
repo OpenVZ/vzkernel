@@ -788,6 +788,16 @@ void cgroup1_check_for_release(struct cgroup *cgrp)
 }
 
 /*
+ * Used to get a fake-absolute path to a cgroup on kernfs filesystem, but it
+ * actually be relative to cgroup root, provided in the argument.
+ */
+static inline int cgroup_path_ve_relative(struct cgroup *ve_root_cgrp,
+	struct cgroup *cgrp, char *buf, size_t buflen)
+{
+	return kernfs_path_from_node(cgrp->kn, ve_root_cgrp->kn, buf, buflen);
+}
+
+/*
  * Notify userspace when a cgroup is released, by running the
  * configured release agent with the name of the cgroup (path
  * relative to the root of cgroup file system) as the argument.
