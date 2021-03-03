@@ -1655,9 +1655,6 @@ mem_cgroup_iter_load(struct mem_cgroup_reclaim_iter *iter,
 	 * offlining.  The RCU lock ensures the object won't be
 	 * released, tryget will fail if we lost the race.
 	 */
-	*sequence = atomic_read(&root->dead_count);
-	if (iter->last_dead_count == *sequence) {
-		smp_rmb();
 		position = rcu_dereference(iter->last_visited);
 
 		/*
@@ -1670,7 +1667,6 @@ mem_cgroup_iter_load(struct mem_cgroup_reclaim_iter *iter,
 				!css_tryget(&position->css))
 
 			position = NULL;
-	}
 	return position;
 }
 
@@ -1686,8 +1682,6 @@ static void mem_cgroup_iter_update(struct mem_cgroup_reclaim_iter *iter,
 	 * 'last_visited' is NULLed.
 	 */
 	rcu_assign_pointer(iter->last_visited, new_position);
-	smp_wmb();
-	iter->last_dead_count = sequence;
 
 	/* root reference counting symmetric to mem_cgroup_iter_load */
 	if (last_visited && last_visited != root)
