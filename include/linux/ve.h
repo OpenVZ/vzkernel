@@ -112,6 +112,13 @@ struct ve_struct {
 
 	struct workqueue_struct	*wq;
 	struct work_struct	release_agent_work;
+
+	/*
+	 * List of data, private for each root cgroup in
+	 * ve's css_set.
+	 */
+	struct list_head	per_cgroot_list;
+	spinlock_t		per_cgroot_list_lock;
 };
 
 struct ve_devmnt {
