@@ -194,8 +194,18 @@ struct mem_cgroup_reclaim_iter {
 	/*
 	 * last scanned hierarchy member. Valid only if last_dead_count
 	 * matches memcg->dead_count of the hierarchy root group.
+	 *
+	 * Memory pointed by 'last_visited' is freed not earlier than
+	 * one rcu period after we accessed it:
+	 *   cgroup_offline_fn()
+	 *    offline_css()
+	 *    list_del_rcu()
+	 *    dput()
+	 *    ...
+	 *     cgroup_diput()
+	 *      call_rcu(&cgrp->rcu_head, cgroup_free_rcu)
 	 */
-	struct mem_cgroup *last_visited;
+	struct mem_cgroup __rcu *last_visited;
 	unsigned long last_dead_count;
 
 	/* scan generation, increased every round-trip */
@@ -1594,7 +1604,7 @@ mem_cgroup_iter_load(struct mem_cgroup_reclaim_iter *iter,
 	*sequence = atomic_read(&root->dead_count);
 	if (iter->last_dead_count == *sequence) {
 		smp_rmb();
-		position = iter->last_visited;
+		position = rcu_dereference(iter->last_visited);
 
 		/*
 		 * We cannot take a reference to root because we might race
@@ -1622,7 +1632,7 @@ static void mem_cgroup_iter_update(struct mem_cgroup_reclaim_iter *iter,
 	 * don't lose destruction events in between.  We could have
 	 * raced with the destruction of @new_position after all.
 	 */
-	iter->last_visited = new_position;
+	rcu_assign_pointer(iter->last_visited, new_position);
 	smp_wmb();
 	iter->last_dead_count = sequence;
 
@@ -1683,7 +1693,7 @@ struct mem_cgroup *mem_cgroup_iter(struct mem_cgroup *root,
 			mz = mem_cgroup_zoneinfo(root, nid, zid);
 			iter = &mz->reclaim_iter[reclaim->priority];
 			if (prev && reclaim->generation != iter->generation) {
-				iter->last_visited = NULL;
+				rcu_assign_pointer(iter->last_visited, NULL);
 				goto out_unlock;
 			}
 
