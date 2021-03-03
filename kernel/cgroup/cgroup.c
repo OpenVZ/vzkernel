@@ -2073,15 +2073,6 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	}
 	/* ve_owner == NULL will be visible */
 	synchronize_rcu();
-
-	/*
-	 * Anyone already waiting in this wq to execute
-	 * cgroup_release_agent doesn't know that ve_owner is NULL,
-	 * but we can wait for all of them at flush_workqueue.
-	 * After it is complete no other cgroup can seep through
-	 * to this ve's workqueue, so it's safe to shutdown ve.
-	 */
-	flush_workqueue(ve->wq);
 }
 
 struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)

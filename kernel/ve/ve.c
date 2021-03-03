@@ -585,8 +585,17 @@ static int ve_workqueue_start(struct ve_struct *ve)
 static void ve_workqueue_stop(struct ve_struct *ve)
 {
 	destroy_workqueue(ve->wq);
+	ve->wq = NULL;
 }
 
+/*
+ * ve_add_to_release_list - called from cgroup1_check_for_release to put a
+ * cgroup into a release workqueue. There are two codepaths that lead to this
+ * function. One starts from cgroup_exit() which holds css_set_lock, another
+ * one from cgroup_destroy_locked which does not hold css_set_lock. So we
+ * should not use any reschedulable
+ *
+ */
 void ve_add_to_release_list(struct cgroup *cgrp)
 {
 	struct ve_struct *ve;
@@ -595,6 +604,10 @@ void ve_add_to_release_list(struct cgroup *cgrp)
 
 	rcu_read_lock();
 	ve = cgroup_get_ve_owner(cgrp);
+	if (!ve->is_running) {
+		rcu_read_unlock();
+		return;
+	}
 
 	spin_lock_irqsave(&ve->release_list_lock, flags);
 	if (!cgroup_is_dead(cgrp) &&
@@ -764,6 +777,14 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	 * ve_mutex works as barrier for ve_can_attach().
 	 */
 	ve->is_running = 0;
+	synchronize_rcu();
+
+	/*
+	 * release_agent works on top of umh_worker, so we must make sure, that
+	 * ve workqueue is stopped first.
+	 */
+	ve_workqueue_stop(ve);
+
 	/*
 	 * Neither it can be in pseudosuper state
 	 * anymore, setup it again if needed.
@@ -798,8 +819,6 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 		goto unlock;
 
 	cgroup_unmark_ve_roots(ve);
-
-	ve_workqueue_stop(ve);
 
 	ve_cleanup_per_cgroot_data(ve, NULL);
 
