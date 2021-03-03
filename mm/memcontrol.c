@@ -199,7 +199,6 @@ struct mem_cgroup_reclaim_iter {
 	 * protection scheme.
 	 */
 	struct mem_cgroup __rcu *last_visited;
-	unsigned long last_dead_count;
 
 	/* scan generation, increased every round-trip */
 	unsigned int generation;
@@ -405,7 +404,6 @@ struct mem_cgroup {
 	spinlock_t pcp_counter_lock;
 	atomic_long_t	oom;
 
-	atomic_t	dead_count;
 #if defined(CONFIG_MEMCG_KMEM) && defined(CONFIG_INET)
 	struct tcp_memcontrol tcp_mem;
 	struct udp_memcontrol udp_mem;
@@ -1632,19 +1630,11 @@ static void mem_cgroup_iter_invalidate(struct mem_cgroup *root,
 			}
 		}
 	}
-
-	/*
-	 * When a group in the hierarchy below root is destroyed, the
-	 * hierarchy iterator can no longer be trusted since it might
-	 * have pointed to the destroyed group.  Invalidate it.
-	 */
-	atomic_inc(&root->dead_count);
 }
 
 static struct mem_cgroup *
 mem_cgroup_iter_load(struct mem_cgroup_reclaim_iter *iter,
-		     struct mem_cgroup *root,
-		     int *sequence)
+		     struct mem_cgroup *root)
 {
 	struct mem_cgroup *position = NULL;
 	/*
@@ -1672,8 +1662,7 @@ mem_cgroup_iter_load(struct mem_cgroup_reclaim_iter *iter,
 static void mem_cgroup_iter_update(struct mem_cgroup_reclaim_iter *iter,
 				   struct mem_cgroup *last_visited,
 				   struct mem_cgroup *new_position,
-				   struct mem_cgroup *root,
-				   int sequence)
+				   struct mem_cgroup *root)
 {
 	/*
 	 * The position saved in 'last_visited' is always valid.
@@ -1789,7 +1778,6 @@ struct mem_cgroup *mem_cgroup_iter(struct mem_cgroup *root,
 	rcu_read_lock_sched();
 	while (!memcg) {
 		struct mem_cgroup_reclaim_iter *uninitialized_var(iter);
-		int uninitialized_var(seq);
 
 		if (reclaim) {
 			int nid = zone_to_nid(reclaim->zone);
@@ -1803,14 +1791,13 @@ struct mem_cgroup *mem_cgroup_iter(struct mem_cgroup *root,
 				goto out_unlock;
 			}
 
-			last_visited = mem_cgroup_iter_load(iter, root, &seq);
+			last_visited = mem_cgroup_iter_load(iter, root);
 		}
 
 		memcg = __mem_cgroup_iter_next(root, last_visited);
 
 		if (reclaim) {
-			mem_cgroup_iter_update(iter, last_visited, memcg, root,
-					seq);
+			mem_cgroup_iter_update(iter, last_visited, memcg, root);
 
 			if (!memcg)
 				iter->generation++;
