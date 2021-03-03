@@ -2071,7 +2071,7 @@ void init_cgroup_root(struct cgroup_fs_context *ctx)
 
 	RCU_INIT_POINTER(cgrp->ve_owner, &ve0);
 	if (ctx->release_agent)
-		strscpy(root->release_agent_path, ctx->release_agent, PATH_MAX);
+		ve_set_release_agent_path(cgrp, ctx->release_agent);
 	if (ctx->name)
 		strscpy(root->name, ctx->name, MAX_CGROUP_ROOT_NAMELEN);
 	if (ctx->cpuset_clone_children)
