@@ -4069,6 +4069,13 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		set_opt(sb, DELALLOC);
 
 	/*
+	 * enable "lazytime" mount option for all ext4 mounts by default
+	 * Use -o nolazytime to turn it off
+	 */
+	if (!IS_EXT3_SB(sb) && !IS_EXT2_SB(sb))
+		sb->s_flags |= MS_LAZYTIME;
+
+	/*
 	 * set default s_li_wait_mult for lazyinit, for the case there is
 	 * no mount option specified.
 	 */
