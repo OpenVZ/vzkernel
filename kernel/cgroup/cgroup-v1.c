@@ -577,7 +577,8 @@ static ssize_t cgroup_release_agent_write(struct kernfs_open_file *of,
 	}
 
 	if (root_cgrp->ve_owner)
-		ret = ve_set_release_agent_path(root_cgrp, strstrip(buf));
+		ret = ve_set_release_agent_path(root_cgrp->ve_owner,
+			root_cgrp->root, strstrip(buf));
 	else
 		ret = -ENODEV;
 
@@ -598,7 +599,9 @@ static int cgroup_release_agent_show(struct seq_file *seq, void *v)
 	root_cgrp = cgroup_get_local_root(cgrp);
 	if (root_cgrp->ve_owner) {
 		rcu_read_lock();
-		release_agent = ve_get_release_agent_path(root_cgrp);
+		release_agent = ve_get_release_agent_path(
+			rcu_dereference(root_cgrp->ve_owner),
+			root_cgrp->root);
 
 		if (release_agent)
 			seq_puts(seq, release_agent);
@@ -910,7 +913,7 @@ void cgroup1_release_agent(struct work_struct *work)
 			goto continue_free;
 		}
 
-		release_agent = ve_get_release_agent_path(root_cgrp);
+		release_agent = ve_get_release_agent_path(ve, root_cgrp->root);
 
 		*agentbuf = 0;
 		if (release_agent)
@@ -931,7 +934,9 @@ void cgroup1_release_agent(struct work_struct *work)
 		envp[i++] = "PATH=/sbin:/bin:/usr/sbin:/usr/bin";
 		envp[i] = NULL;
 
+
 		mutex_unlock(&cgroup_mutex);
+
 		err = call_usermodehelper_ve(ve, argv[0], argv,
 			envp, UMH_WAIT_EXEC);
 
@@ -939,6 +944,7 @@ void cgroup1_release_agent(struct work_struct *work)
 			pr_warn_ratelimited("cgroup1_release_agent "
 					    "%s %s failed: %d\n",
 					    agentbuf, pathbuf, err);
+		up_write(&ve->op_sem);
 		mutex_lock(&cgroup_mutex);
 continue_free:
 		kfree(pathbuf);
@@ -989,7 +995,6 @@ static int cgroup1_show_options(struct seq_file *seq, struct kernfs_root *kf_roo
 	const char *release_agent;
 	struct cgroup_root *root = cgroup_root_from_kf(kf_root);
 	struct cgroup_subsys *ss;
-	struct cgroup *root_cgrp = &root->cgrp;
 	int ssid;
 
 	for_each_subsys(ss, ssid)
@@ -1003,32 +1008,7 @@ static int cgroup1_show_options(struct seq_file *seq, struct kernfs_root *kf_roo
 		seq_puts(seq, ",cpuset_v2_mode");
 
 	rcu_read_lock();
-#ifdef CONFIG_VE
-	{
-		struct ve_struct *ve = get_exec_env();
-		struct css_set *cset;
-		struct nsproxy *ve_ns;
-
-		if (!ve_is_super(ve)) {
-			/*
-			 * ve->init_task is NULL in case when cgroup is accessed
-			 * before ve_start_container has been called.
-			 *
-			 * ve->init_task is synchronized via ve->ve_ns rcu, see
-			 * ve_grab_context/drop_context.
-			 */
-			ve_ns = rcu_dereference(ve->ve_ns);
-			if (ve_ns) {
-				spin_lock_irq(&css_set_lock);
-				cset = ve_ns->cgroup_ns->root_cset;
-				BUG_ON(!cset);
-				root_cgrp = cset_cgroup_from_root(cset, root);
-				spin_unlock_irq(&css_set_lock);
-			}
-		}
-	}
-#endif
-	release_agent = ve_get_release_agent_path(root_cgrp);
+	release_agent = ve_get_release_agent_path(get_exec_env(), root);
 	if (release_agent && release_agent[0])
 		seq_show_option(seq, "release_agent", release_agent);
 	rcu_read_unlock();
@@ -1226,8 +1206,8 @@ static int cgroup1_remount(struct kernfs_root *kf_root, int *flags, char *data)
 
 		root_cgrp = cgroup_get_local_root(&root->cgrp);
 		if (root_cgrp->ve_owner)
-			ret = ve_set_release_agent_path(root_cgrp,
-				opts.release_agent);
+			ret = ve_set_release_agent_path(root_cgrp->ve_owner,
+				root_cgrp->root, opts.release_agent);
 	}
 
 	trace_cgroup_remount(root);
