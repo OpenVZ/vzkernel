@@ -2045,8 +2045,11 @@ void init_cgroup_root(struct cgroup_root *root, struct cgroup_sb_opts *opts)
 	idr_init(&root->cgroup_idr);
 
 	root->flags = opts->flags;
-	if (opts->release_agent)
-		strscpy(root->release_agent_path, opts->release_agent, PATH_MAX);
+	if (opts.release_agent) {
+		ret = ve_set_release_agent_path(root_cgrp,
+			opts.release_agent);
+	}
+
 	if (opts->name)
 		strscpy(root->name, opts->name, MAX_CGROUP_ROOT_NAMELEN);
 	if (opts->cpuset_clone_children)

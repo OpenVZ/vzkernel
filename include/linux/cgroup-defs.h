@@ -569,9 +569,6 @@ struct cgroup_root {
 	/* IDs for cgroups in this hierarchy */
 	struct idr cgroup_idr;
 
-	/* The path to use for release notifications. */
-	char release_agent_path[PATH_MAX];
-
 	/* The name for this hierarchy - may be empty */
 	char name[MAX_CGROUP_ROOT_NAMELEN];
 };
