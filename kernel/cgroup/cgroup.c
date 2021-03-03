@@ -1926,6 +1926,23 @@ static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
 			   struct cftype *cft, bool activate);
 
 #ifdef CONFIG_VE
+static inline bool is_virtualized_cgroup(struct cgroup *cgrp)
+{
+	/*
+	 * no parent means this is the host cgroup
+	 */
+	if (!cgrp->kn->parent)
+		return false;
+
+	if (cgrp->root->subsys_mask)
+		return true;
+
+	if (!strcmp(cgrp->root->name, "systemd"))
+		return true;
+
+	return false;
+}
+
 int cgroup_mark_ve_roots(struct ve_struct *ve)
 {
 	int err;
