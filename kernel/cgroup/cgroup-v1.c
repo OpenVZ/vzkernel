@@ -935,7 +935,6 @@ void cgroup1_release_agent(struct work_struct *work)
 		envp[i++] = "PATH=/sbin:/bin:/usr/sbin:/usr/bin";
 		envp[i] = NULL;
 
-
 		mutex_unlock(&cgroup_mutex);
 
 		err = call_usermodehelper_ve(ve, argv[0], argv,
@@ -945,7 +944,6 @@ void cgroup1_release_agent(struct work_struct *work)
 			pr_warn_ratelimited("cgroup1_release_agent "
 					    "%s %s failed: %d\n",
 					    agentbuf, pathbuf, err);
-		up_write(&ve->op_sem);
 		mutex_lock(&cgroup_mutex);
 continue_free:
 		kfree(pathbuf);
