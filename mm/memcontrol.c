@@ -197,7 +197,6 @@ struct mem_cgroup_reclaim_iter {
 	 */
 	struct mem_cgroup *last_visited;
 	unsigned long last_dead_count;
-	seqlock_t last_visited_lock;
 
 	/* scan generation, increased every round-trip */
 	unsigned int generation;
@@ -1584,8 +1583,6 @@ mem_cgroup_iter_load(struct mem_cgroup_reclaim_iter *iter,
 		     int *sequence)
 {
 	struct mem_cgroup *position = NULL;
-	unsigned seq;
-
 	/*
 	 * A cgroup destruction happens in two stages: offlining and
 	 * release.  They are separated by a RCU grace period.
@@ -1595,13 +1592,9 @@ mem_cgroup_iter_load(struct mem_cgroup_reclaim_iter *iter,
 	 * released, tryget will fail if we lost the race.
 	 */
 	*sequence = atomic_read(&root->dead_count);
-retry:
-	seq = read_seqbegin(&iter->last_visited_lock);
 	if (iter->last_dead_count == *sequence) {
-		position = READ_ONCE(iter->last_visited);
-
-		if (read_seqretry(&iter->last_visited_lock, seq))
-			goto retry;
+		smp_rmb();
+		position = iter->last_visited;
 
 		/*
 		 * We cannot take a reference to root because we might race
@@ -1632,10 +1625,9 @@ static void mem_cgroup_iter_update(struct mem_cgroup_reclaim_iter *iter,
 	 * don't lose destruction events in between.  We could have
 	 * raced with the destruction of @new_position after all.
 	 */
-	write_seqlock(&iter->last_visited_lock);
 	iter->last_visited = new_position;
+	smp_wmb();
 	iter->last_dead_count = sequence;
-	write_sequnlock(&iter->last_visited_lock);
 }
 
 /**
@@ -6595,15 +6587,11 @@ static int alloc_mem_cgroup_per_zone_info(struct mem_cgroup *memcg, int node)
 		return 1;
 
 	for (zone = 0; zone < MAX_NR_ZONES; zone++) {
-		int i;
-
 		mz = &pn->zoneinfo[zone];
 		lruvec_init(&mz->lruvec);
 		mz->usage_in_excess = 0;
 		mz->on_tree = false;
 		mz->memcg = memcg;
-		for (i = 0; i < ARRAY_SIZE(mz->reclaim_iter); i++)
-			seqlock_init(&mz->reclaim_iter[i].last_visited_lock);
 	}
 	memcg->info.nodeinfo[node] = pn;
 	return 0;
