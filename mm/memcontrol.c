@@ -1616,9 +1616,6 @@ static void mem_cgroup_iter_update(struct mem_cgroup_reclaim_iter *iter,
 				   struct mem_cgroup *root,
 				   int sequence)
 {
-	/* root reference counting symmetric to mem_cgroup_iter_load */
-	if (last_visited && last_visited != root)
-		css_put(&last_visited->css);
 	/*
 	 * We store the sequence count from the time @last_visited was
 	 * loaded successfully instead of rereading it here so that we
@@ -1628,6 +1625,10 @@ static void mem_cgroup_iter_update(struct mem_cgroup_reclaim_iter *iter,
 	iter->last_visited = new_position;
 	smp_wmb();
 	iter->last_dead_count = sequence;
+
+	/* root reference counting symmetric to mem_cgroup_iter_load */
+	if (last_visited && last_visited != root)
+		css_put(&last_visited->css);
 }
 
 /**
