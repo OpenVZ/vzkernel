@@ -303,6 +303,43 @@ bool cgroup_on_dfl(const struct cgroup *cgrp)
 	return cgrp->root == &cgrp_dfl_root;
 }
 
+struct cgroup *cgroup_get_local_root(struct cgroup *cgrp)
+{
+	/*
+	 * Find nearest root cgroup, which might be host cgroup root
+	 * or ve cgroup root.
+	 *
+	 *    <host_root_cgroup> -> local_root
+	 *     \                    ^
+	 *      <cgroup>            |
+	 *       \                  |
+	 *        <cgroup>   --->   from here
+	 *        \
+	 *         <ve_root_cgroup> -> local_root
+	 *         \                   ^
+	 *          <cgroup>           |
+	 *          \                  |
+	 *           <cgroup>  --->    from here
+	 */
+
+	while (cgrp->kn->parent && !test_bit(CGRP_VE_ROOT, &cgrp->flags))
+		cgrp = cgrp->kn->parent->priv;
+
+	return cgrp;
+}
+
+struct ve_struct *cgroup_get_ve_owner(struct cgroup *cgrp)
+{
+	struct ve_struct *ve;
+	/* Caller should hold RCU */
+
+	cgrp = cgroup_get_local_root(cgrp);
+	ve = rcu_dereference(cgrp->ve_owner);
+	if (!ve)
+		ve = get_ve0();
+	return ve;
+}
+
 /* IDR wrappers which synchronize using cgroup_idr_lock */
 static int cgroup_idr_alloc(struct idr *idr, void *ptr, int start, int end,
 			    gfp_t gfp_mask)
@@ -1922,6 +1959,7 @@ void cgroup_mark_ve_root(struct ve_struct *ve)
 
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
 		cgrp = link->cgrp;
+		rcu_assign_pointer(cgrp->ve_owner, ve);
 		set_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 	link_ve_root_cpu_cgroup(cset->subsys[cpu_cgrp_id]);
@@ -1929,6 +1967,7 @@ unlock:
 	rcu_read_unlock();
 
 	spin_unlock_irq(&css_set_lock);
+	synchronize_rcu();
 }
 
 void cgroup_unmark_ve_roots(struct ve_struct *ve)
@@ -1946,12 +1985,15 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
 		cgrp = link->cgrp;
+		rcu_assign_pointer(cgrp->ve_owner, NULL);
 		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 unlock:
 	rcu_read_unlock();
 
 	spin_unlock_irq(&css_set_lock);
+	/* ve_owner == NULL will be visible */
+	synchronize_rcu();
 }
 
 struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
@@ -2018,6 +2060,8 @@ void init_cgroup_root(struct cgroup_fs_context *ctx)
 	init_cgroup_housekeeping(cgrp);
 
 	root->flags = ctx->flags;
+
+	RCU_INIT_POINTER(cgrp->ve_owner, &ve0);
 	if (ctx->release_agent)
 		strscpy(root->release_agent_path, ctx->release_agent, PATH_MAX);
 	if (ctx->name)
