@@ -103,6 +103,7 @@ struct ve_struct {
 	unsigned long		aio_nr;
 	unsigned long		aio_max_nr;
 #endif
+	struct workqueue_struct	*wq;
 };
 
 struct ve_devmnt {
