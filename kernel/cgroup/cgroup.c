@@ -2175,7 +2175,8 @@ void init_cgroup_root(struct cgroup_fs_context *ctx)
 
 	RCU_INIT_POINTER(cgrp->ve_owner, &ve0);
 	if (ctx->release_agent)
-		ve_set_release_agent_path(cgrp, ctx->release_agent);
+		ve_set_release_agent_path(cgrp->ve_owner, root,
+					  ctx->release_agent);
 	if (ctx->name)
 		strscpy(root->name, ctx->name, MAX_CGROUP_ROOT_NAMELEN);
 	if (ctx->cpuset_clone_children)
@@ -2408,7 +2409,7 @@ static void cgroup_kill_sb(struct super_block *sb)
 		percpu_ref_kill(&root->cgrp.self.refcnt);
 	cgroup_put(&root->cgrp);
 	kernfs_kill_sb(sb);
-	ve_cleanup_per_cgroot_data(NULL, &root->cgrp);
+	ve_cleanup_per_cgroot_data(&ve0, root);
 }
 
 struct file_system_type cgroup_fs_type = {
