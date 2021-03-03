@@ -451,6 +451,9 @@ struct cgroup {
 	 */
 	struct list_head cset_links;
 
+	/* Used for cgroup_mark/umark ve */
+	struct list_head cft_q_node;
+
 	/*
 	 * Linked list running through all cgroups that can
 	 * potentially be reaped by the release agent. Protected by

@@ -557,13 +557,34 @@ static ssize_t cgroup_release_agent_write(struct kernfs_open_file *of,
 	struct cgroup *root_cgrp;
 
 	cgrp = cgroup_kn_lock_live(of->kn, false);
+	if (!cgrp)
+		return -ENODEV;
+
+	/*
+	 * Call to cgroup_get_local_root is a way to make sure
+	 * that cgrp in the argument is valid "virtual root"
+	 * cgroup. If it's not - this means that cgroup_unmark_ve_roots
+	 * has already cleared CGRP_VE_ROOT flag from this cgroup while
+	 * the file was still opened by other process and
+	 * that we shouldn't allow further writings via that file.
+	 */
 	root_cgrp = cgroup_get_local_root(cgrp);
 	BUG_ON(!root_cgrp);
+
+	if (root_cgrp != cgrp) {
+		ret = -EPERM;
+		goto out;
+	}
+
 	if (root_cgrp->ve_owner)
-		ret = ve_set_release_agent_path(root_cgrp, buffer);
+		ret = ve_set_release_agent_path(root_cgrp, strstrip(buf));
 	else
 		ret = -ENODEV;
 
+	if (!ret)
+		ret = nbytes;
+
+out:
 	cgroup_kn_unlock(of->kn);
 	return ret;
 }
@@ -680,7 +701,7 @@ struct cftype cgroup1_base_files[] = {
 	},
 	{
 		.name = "release_agent",
-		.flags = CFTYPE_ONLY_ON_ROOT,
+		.flags = CFTYPE_ONLY_ON_ROOT | CFTYPE_VE_WRITABLE,
 		.seq_show = cgroup_release_agent_show,
 		.write = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX - 1,
@@ -692,6 +713,18 @@ struct cftype cgroup1_base_files[] = {
 	},
 	{ }	/* terminate */
 };
+
+struct cftype *get_cftype_by_name(const char *name)
+{
+	struct cftype *cft;
+
+	for (cft = cgroup1_base_files; cft->name[0] != '\0'; cft++) {
+		if (!strcmp(cft->name, name))
+			return cft;
+	}
+	return NULL;
+}
+
 
 #define _cg_virtualized(x) ((ve_is_super(get_exec_env())) ? (x) : 1)
 
