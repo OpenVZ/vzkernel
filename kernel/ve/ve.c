@@ -61,6 +61,11 @@ struct ve_struct ve0 = {
 	.meminfo_val		= VE_MEMINFO_SYSTEM,
 	.vdso_64		= (struct vdso_image*)&vdso_image_64,
 	.vdso_32		= (struct vdso_image*)&vdso_image_32,
+	.release_list_lock	= __SPIN_LOCK_UNLOCKED(
+					ve0.release_list_lock),
+	.release_list		= LIST_HEAD_INIT(ve0.release_list),
+	.release_agent_work	= __WORK_INITIALIZER(ve0.release_agent_work,
+					cgroup1_release_agent),
 };
 EXPORT_SYMBOL(ve0);
 
@@ -455,6 +460,44 @@ static void ve_workqueue_stop(struct ve_struct *ve)
 	destroy_workqueue(ve->wq);
 }
 
+void ve_add_to_release_list(struct cgroup *cgrp)
+{
+	struct ve_struct *ve;
+	unsigned long flags;
+	int need_schedule_work = 0;
+
+	rcu_read_lock();
+	ve = cgroup_get_ve_owner(cgrp);
+
+	spin_lock_irqsave(&ve->release_list_lock, flags);
+	if (!cgroup_is_dead(cgrp) &&
+	    list_empty(&cgrp->release_list)) {
+		list_add(&cgrp->release_list, &ve->release_list);
+		need_schedule_work = 1;
+	}
+	spin_unlock_irqrestore(&ve->release_list_lock, flags);
+
+	if (need_schedule_work)
+		queue_work(ve->wq, &ve->release_agent_work);
+
+	rcu_read_unlock();
+}
+
+void ve_rm_from_release_list(struct cgroup *cgrp)
+{
+	struct ve_struct *ve;
+	unsigned long flags;
+
+	rcu_read_lock();
+	ve = cgroup_get_ve_owner(cgrp);
+
+	spin_lock_irqsave(&ve->release_list_lock, flags);
+	if (!list_empty(&cgrp->release_list))
+		list_del_init(&cgrp->release_list);
+	spin_unlock_irqrestore(&ve->release_list_lock, flags);
+	rcu_read_unlock();
+}
+
 /* under ve->op_sem write-lock */
 static int ve_start_container(struct ve_struct *ve)
 {
@@ -680,6 +723,10 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 		goto err_vdso;
 
 	ve->features = VE_FEATURES_DEF;
+
+	INIT_WORK(&ve->release_agent_work, cgroup1_release_agent);
+	spin_lock_init(&ve->release_list_lock);
+
 	ve->_randomize_va_space = ve0._randomize_va_space;
 
 	ve->odirect_enable = 2;
@@ -696,6 +743,7 @@ do_init:
 	strcpy(ve->core_pattern, "core");
 #endif
 	INIT_LIST_HEAD(&ve->devmnt_list);
+	INIT_LIST_HEAD(&ve->release_list);
 	mutex_init(&ve->devmnt_mutex);
 
 #ifdef CONFIG_AIO

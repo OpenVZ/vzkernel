@@ -452,6 +452,13 @@ struct cgroup {
 	struct list_head cset_links;
 
 	/*
+	 * Linked list running through all cgroups that can
+	 * potentially be reaped by the release agent. Protected by
+	 * release_list_lock
+	 */
+	struct list_head release_list;
+
+	/*
 	 * On the default hierarchy, a css_set for a cgroup with some
 	 * susbsys disabled will point to css's which are associated with
 	 * the closest ancestor which has the subsys enabled.  The
@@ -487,9 +494,6 @@ struct cgroup {
 
 	/* used to wait for offlining of csses */
 	wait_queue_head_t offline_waitq;
-
-	/* used to schedule release agent */
-	struct work_struct release_agent_work;
 
 	/* used to store eBPF programs */
 	struct cgroup_bpf bpf;

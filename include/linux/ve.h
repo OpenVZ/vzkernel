@@ -103,7 +103,15 @@ struct ve_struct {
 	unsigned long		aio_nr;
 	unsigned long		aio_max_nr;
 #endif
+	/*
+	 * cgroups, that want to notify about becoming
+	 * empty, are linked to this release_list.
+	 */
+	struct list_head	release_list;
+	spinlock_t		release_list_lock;
+
 	struct workqueue_struct	*wq;
+	struct work_struct	release_agent_work;
 };
 
 struct ve_devmnt {
@@ -125,6 +133,8 @@ extern int nr_ve;
 	(ve_is_super(get_exec_env()) && capable(CAP_SYS_ADMIN))
 
 #ifdef CONFIG_VE
+void ve_add_to_release_list(struct cgroup *cgrp);
+void ve_rm_from_release_list(struct cgroup *cgrp);
 extern struct ve_struct *get_ve(struct ve_struct *ve);
 extern void put_ve(struct ve_struct *ve);
 

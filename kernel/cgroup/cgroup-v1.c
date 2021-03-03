@@ -784,7 +784,7 @@ void cgroup1_check_for_release(struct cgroup *cgrp)
 {
 	if (notify_on_release(cgrp) && !cgroup_is_populated(cgrp) &&
 	    !css_has_online_children(&cgrp->self) && !cgroup_is_dead(cgrp))
-		schedule_work(&cgrp->release_agent_work);
+		ve_add_to_release_list(cgrp);
 }
 
 /*
@@ -822,42 +822,95 @@ static inline int cgroup_path_ve_relative(struct cgroup *ve_root_cgrp,
  */
 void cgroup1_release_agent(struct work_struct *work)
 {
-	struct cgroup *cgrp =
-		container_of(work, struct cgroup, release_agent_work);
-	char *pathbuf = NULL, *agentbuf = NULL;
-	char *argv[3], *envp[3];
-	int ret;
+	struct ve_struct *ve;
+	unsigned long flags;
+	char *agentbuf;
 
+	agentbuf = kzalloc(PATH_MAX, GFP_KERNEL);
+	if (!agentbuf) {
+		pr_warn("failed to allocate agentbuf\n");
+		return;
+	}
+
+	ve = container_of(work, struct ve_struct, release_agent_work);
 	mutex_lock(&cgroup_mutex);
+	spin_lock_irqsave(&ve->release_list_lock, flags);
+	while (!list_empty(&ve->release_list)) {
+		char *argv[3], *envp[3];
+		int i, err;
+		char *pathbuf = NULL;
+		struct cgroup *cgrp, *root_cgrp;
+		const char *release_agent;
 
-	pathbuf = kmalloc(PATH_MAX, GFP_KERNEL);
-	agentbuf = kstrdup(cgrp->root->release_agent_path, GFP_KERNEL);
-	if (!pathbuf || !agentbuf || !strlen(agentbuf))
-		goto out;
+		cgrp = list_entry(ve->release_list.next,
+				  struct cgroup,
+				  release_list);
+		list_del_init(&cgrp->release_list);
+		spin_unlock_irqrestore(&ve->release_list_lock, flags);
 
-	spin_lock_irq(&css_set_lock);
-	ret = cgroup_path_ns_locked(cgrp, pathbuf, PATH_MAX, &init_cgroup_ns);
-	spin_unlock_irq(&css_set_lock);
-	if (ret < 0 || ret >= PATH_MAX)
-		goto out;
+		pathbuf = kmalloc(PATH_MAX, GFP_KERNEL);
+		if (!pathbuf)
+			goto continue_free;
+		/*
+		 * At VE destruction root cgroup looses VE_ROOT flag.
+		 * Because of that 'cgroup_get_local_root' will not see
+		 * VE root and return host's root cgroup instead.
+		 * We can detect this because we have a pointer to
+		 * original ve coming from work argument.
+		 * We do not want to execute VE's notifications on host,
+		 * so in this case we skip.
+		 */
+		rcu_read_lock();
+		root_cgrp = cgroup_get_local_root(cgrp);
 
-	argv[0] = agentbuf;
-	argv[1] = pathbuf;
-	argv[2] = NULL;
+		if (rcu_access_pointer(root_cgrp->ve_owner) != ve) {
+			rcu_read_unlock();
+			goto continue_free;
+		}
 
-	/* minimal command environment */
-	envp[0] = "HOME=/";
-	envp[1] = "PATH=/sbin:/bin:/usr/sbin:/usr/bin";
-	envp[2] = NULL;
+		if (cgroup_path_ve_relative(root_cgrp, cgrp, pathbuf,
+			PAGE_SIZE) < 0) {
+			rcu_read_unlock();
+			goto continue_free;
+		}
 
+		release_agent = ve_get_release_agent_path(root_cgrp);
+
+		*agentbuf = 0;
+		if (release_agent)
+			strncpy(agentbuf, release_agent, PATH_MAX);
+		rcu_read_unlock();
+
+		if (!*agentbuf)
+			goto continue_free;
+
+		i = 0;
+		argv[i++] = agentbuf;
+		argv[i++] = pathbuf;
+		argv[i] = NULL;
+
+		i = 0;
+		/* minimal command environment */
+		envp[i++] = "HOME=/";
+		envp[i++] = "PATH=/sbin:/bin:/usr/sbin:/usr/bin";
+		envp[i] = NULL;
+
+		mutex_unlock(&cgroup_mutex);
+		err = call_usermodehelper_ve(ve, argv[0], argv,
+			envp, UMH_WAIT_EXEC);
+
+		if (err < 0 && ve == &ve0)
+			pr_warn_ratelimited("cgroup1_release_agent "
+					    "%s %s failed: %d\n",
+					    agentbuf, pathbuf, err);
+		mutex_lock(&cgroup_mutex);
+continue_free:
+		kfree(pathbuf);
+		spin_lock_irqsave(&ve->release_list_lock, flags);
+	}
+	spin_unlock_irqrestore(&ve->release_list_lock, flags);
 	mutex_unlock(&cgroup_mutex);
-	call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
-	goto out_free;
-out:
-	mutex_unlock(&cgroup_mutex);
-out_free:
 	kfree(agentbuf);
-	kfree(pathbuf);
 }
 
 /*
