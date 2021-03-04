@@ -658,6 +658,19 @@ static struct cgroup *css_cgroup_from_root(struct css_set *css_set,
 	return res;
 }
 
+#ifdef CONFIG_VE
+static inline bool is_virtualized_cgroup(struct cgroup *cgrp)
+{
+	lockdep_assert_held(&cgroup_mutex);
+	if (cgrp->root->subsys_mask)
+		return true;
+
+	if (!strcmp(cgrp->root->name, "systemd"))
+		return true;
+
+	return false;
+}
+
 /*
  * Iterate all cgroups in a given css_set and check if it is a top cgroup
  * of it's hierarchy.
@@ -674,6 +687,9 @@ static inline bool css_has_host_cgroups(struct css_set *css_set)
 		if (link->cgrp->root == &rootnode)
 			continue;
 
+		if (!is_virtualized_cgroup(link->cgrp))
+			continue;
+
 		if (!link->cgrp->parent) {
 			read_unlock(&css_set_lock);
 			return true;
@@ -682,6 +698,8 @@ static inline bool css_has_host_cgroups(struct css_set *css_set)
 	read_unlock(&css_set_lock);
 	return false;
 }
+#endif
+
 
 /*
  * Return the cgroup for "task" from the given hierarchy. Must be
@@ -4642,18 +4660,6 @@ static struct cftype *get_cftype_by_name(const char *name)
 }
 
 #ifdef CONFIG_VE
-static inline bool is_virtualized_cgroup(struct cgroup *cgrp)
-{
-	lockdep_assert_held(&cgroup_mutex);
-	if (cgrp->root->subsys_mask)
-		return true;
-
-	if (!strcmp(cgrp->root->name, "systemd"))
-		return true;
-
-	return false;
-}
-
 int cgroup_mark_ve_roots(struct ve_struct *ve)
 {
 	struct cgroup *cgrp, *tmp;
