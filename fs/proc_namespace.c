@@ -277,8 +277,7 @@ static int mounts_open_common(struct inode *inode, struct file *file,
 	p->root = root;
 	p->m.poll_event = ns->event;
 	p->show = show;
-	INIT_LIST_HEAD(&p->cursor.mnt_list);
-	p->cursor.mnt.mnt_flags = MNT_CURSOR;
+	p->cached_event = ~0ULL;
 
 	return 0;
 
@@ -296,7 +295,6 @@ static int mounts_release(struct inode *inode, struct file *file)
 {
 	struct proc_mounts *p = proc_mounts(file->private_data);
 	path_put(&p->root);
-	mnt_cursor_del(p->ns, &p->cursor);
 	put_mnt_ns(p->ns);
 	return seq_release(inode, file);
 }
