@@ -15,6 +15,7 @@
 struct fuse_ktrace
 {
 	atomic_t				refcnt;
+	struct fuse_conn			*fc;
 	struct rchan				*rchan;
 	struct dentry				*dir;
 	unsigned long __percpu			*ovfl;
