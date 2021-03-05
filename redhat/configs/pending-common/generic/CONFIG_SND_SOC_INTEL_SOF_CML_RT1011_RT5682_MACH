@@ -1,0 +1,23 @@
+# CONFIG_SND_SOC_INTEL_SOF_CML_RT1011_RT5682_MACH:
+# 
+# This adds support for ASoC machine driver for SOF platform with
+# RT1011 + RT5682 I2S codec.
+# Say Y if you have such a device.
+# If unsure select "N".
+# 
+# Symbol: SND_SOC_INTEL_SOF_CML_RT1011_RT5682_MACH [=n]
+# Type  : tristate
+# Defined at sound/soc/intel/boards/Kconfig:497
+#   Prompt: CML with RT1011 and RT5682 in I2S Mode
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_SOC_INTEL_MACH [=y] && SND_SOC_SOF_COMETLAKE [=m] && SND_SOC_SOF_HDA_LINK [=y] && I2C [=y] && ACPI [=y] && GPIOLIB [=y] && (MFD_INTEL_LPSS [=y] || COMPILE_TEST [=n]) && SND_HDA_CODEC_HDMI [=m] && SND_SOC_SOF_HDA_AUDIO_CODEC [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> Intel Machine drivers (SND_SOC_INTEL_MACH [=y])
+# Selects: SND_SOC_RT1011 [=m] && SND_SOC_RT5682_I2C [=m] && SND_SOC_DMIC [=m] && SND_SOC_HDAC_HDMI [=m]
+# 
+# 
+# 
+# CONFIG_SND_SOC_INTEL_SOF_CML_RT1011_RT5682_MACH is not set

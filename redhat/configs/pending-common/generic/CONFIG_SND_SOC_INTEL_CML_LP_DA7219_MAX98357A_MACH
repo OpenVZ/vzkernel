@@ -1,0 +1,23 @@
+# CONFIG_SND_SOC_INTEL_CML_LP_DA7219_MAX98357A_MACH:
+# 
+# This adds support for ASoC machine driver for Cometlake platforms
+# with DA7219 + MAX98357A I2S audio codec.
+# Say Y or m if you have such a device. This is a recommended option.
+# If unsure select "N".
+# 
+# Symbol: SND_SOC_INTEL_CML_LP_DA7219_MAX98357A_MACH [=n]
+# Type  : tristate
+# Defined at sound/soc/intel/boards/Kconfig:486
+#   Prompt: CML_LP with DA7219 and MAX98357A in I2S Mode
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_SOC_INTEL_MACH [=y] && SND_SOC_SOF_COMETLAKE [=m] && SND_SOC_SOF_HDA_LINK [=y] && I2C [=y] && ACPI [=y] && GPIOLIB [=y] && (MFD_INTEL_LPSS [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> Intel Machine drivers (SND_SOC_INTEL_MACH [=y])
+# Selects: SND_SOC_INTEL_BXT_DA7219_MAX98357A_COMMON [=m]
+# 
+# 
+# 
+# CONFIG_SND_SOC_INTEL_CML_LP_DA7219_MAX98357A_MACH is not set
