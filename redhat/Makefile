@@ -135,11 +135,13 @@ dist-configs: dist-configs-prep
 	@cd $(REDHAT)/configs; VERSION=$(KVERSION) ./generate_all_configs.sh "$(FLAVOR)" 1; \
 	./process_configs.sh $(PROCESS_CONFIGS_OPTS) $(PACKAGE_NAME) $(KVERSION)
 
-fedora-configs: FLAVOR = fedora
-fedora-configs: dist-configs
+dist-fedora-configs: FLAVOR = fedora
+dist-fedora-configs: dist-configs
+fedora-configs: dist-fedora-configs
 
-rh-configs: FLAVOR = rhel
-rh-configs: dist-configs
+dist-rhel-configs: FLAVOR = rhel
+dist-rhel-configs: dist-configs
+rh-configs: dist-rhel-configs
 
 dist-configs-check: dist-configs-prep
 	cd $(REDHAT)/configs; ./process_configs.sh $(PROCESS_CONFIGS_CHECK_OPTS) $(PACKAGE_NAME)
@@ -522,8 +524,8 @@ dist-full-help:
 	@echo  '  dist-cross-<arch>-rpms  - [x86_64 only] execute rpm builds for specified'
 	@echo  '                            <arch> using RHEL cross compiler.'
 	@echo  '                            See dist-cross-<arch>-build for the supported archs.'
-	@echo  '  rh-configs       - build ELN configs'
-	@echo  '  fedora-configs   - build Fedora configs'
+	@echo  '  dist-rhel-configs       - build ELN configs'
+	@echo  '  dist-fedora-configs     - build Fedora configs'
 
 	@echo  ''
 	@echo  'kABI targets:'
