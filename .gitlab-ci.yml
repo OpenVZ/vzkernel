@@ -100,6 +100,7 @@ rawhide_release:
   script:
     - git checkout --track origin/master && git describe
     - git checkout --track origin/ark-latest && git describe
+    - git checkout --track origin/ark-infra && git describe
     - git checkout --track origin/os-build && git describe
     - export PROJECT_ID="$CI_PROJECT_ID"
     - redhat/scripts/ci/ark-create-release.sh "master" "$CI_PROJECT_ID" || exit_code=$?
@@ -117,6 +118,7 @@ rawhide_release:
     - git push gitlab "$(git describe)"
     - git push gitlab ark/*
     - git push -f gitlab ark-latest
+    - git push -f gitlab ark-infra
   retry: 2
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule" && $RAWHIDE_RELEASE == "true"'

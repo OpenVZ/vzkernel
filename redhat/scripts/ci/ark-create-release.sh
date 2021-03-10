@@ -57,6 +57,24 @@ RELEASE=$(git describe)
 git checkout ark-latest
 git reset --hard "$RELEASE"
 
+# Update ark-infra branch
+git checkout ark-infra
+
+# Using ark-latest because it has latest fixes
+rm -rf makefile Makefile.rhelver redhat/
+git archive --format=tar ark-latest makefile Makefile.rhelver redhat/ | tar -x
+
+# Manually add hook instead of cherry-pick
+# Add to middle to avoid git merge conflicts
+# NOTE: commented out but left for future info to rebuild from scratch
+# sed -i '/# We are using a recursive / i include Makefile.rhelver\n' Makefile
+
+git add makefile Makefile.rhelver Makefile redhat
+# Future rebuid note, .gitkeep files are gitignored and need force adding
+# git add -f redhat/kabi/kabi-module/kabi*
+
+git commit -m "bulk merge ark-infra as of $(date)"
+
 printf "All done!
 
 To push all the release artifacts, run:
