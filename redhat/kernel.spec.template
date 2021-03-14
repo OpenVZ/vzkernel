@@ -1038,6 +1038,12 @@ AutoReqProv: no\
 Requires(pre): findutils\
 Requires: findutils\
 Requires: perl-interpreter\
+Requires: openssl-devel\
+Requires: elfutils-libelf-devel\
+Requires: bison\
+Requires: flex\
+Requires: make\
+Requires: gcc\
 %description %{?1:%{1}-}devel\
 This package provides kernel headers and makefiles sufficient to build modules\
 against the %{?2:%{2} }kernel package.\
@@ -1723,6 +1729,7 @@ BuildKernel() {
     cp --parents tools/lib/*.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
     cp --parents tools/objtool/*.[ch] $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
     cp --parents tools/objtool/Build $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp --parents tools/objtool/include/objtool/*.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
     cp -a --parents tools/lib/bpf $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
     cp --parents tools/lib/bpf/Build $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
 
