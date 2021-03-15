@@ -68,143 +68,178 @@ M:	Patrick Talbert <ptalbert@redhat.com>
 R:	Donald Zickus <dzickus@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 I:	INTERNAL
 T:	git https://gitlab.com/cki-project/kernel-ark.git
+
+CentOS Stream 9 Kernel Maintainer
+M:	Herton R. Krzesinski <herton@redhat.com>
+S:	Maintained
+F:	redhat/
+X:	redhat/configs/
+T:	git https://gitlab.com/redhat/centos-stream/src/kernel/centos-stream-9.git
+
+RHEL 9.0 Kernel Maintainer
+M:	Herton R. Krzesinski <herton@redhat.com>
+S:	Maintained
+F:	redhat/
+X:	redhat/configs/
+
+RHEL 8.5 Kernel Maintainer
+M:	Bruno Meneguele <bmeneg@redhat.com>
+S:	Maintained
+F:	redhat/
+X:	redhat/configs/
 
 RHEL 8.4 Kernel Maintainer
 M:	Jan Stancek <jstancek@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 8.3 Kernel Maintainer
 M:	Frantisek Hrbata <fhrbata@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 8.2 Kernel Maintainer
-M:	Bruno Meneguele <bmeneg@redhat.com>
+M:	Patrick Talbert <ptalbert@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 8.2 Real Time Kernel Maintainer
 M:	Juri Lelli <jlelli@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 8.1 Kernel Maintainer
-M:	Herton R. Krzesinski <herton@redhat.com>
+M:	Brian Masney <bmasney@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 8.1 Real Time Kernel Maintainer
 M:	Juri Lelli <jlelli@redhat.com>
 S:	Maintained
 F:	redhat/
-
-RHEL 8.0 Kernel Maintainer
-M:	Brian Masney <bmasney@redhat.com>
-S:	Maintained
-F:	redhat/
-
-RHEL 8.0 Real Time Kernel Maintainer
-M:	Clark Williams <williams@redhat.com>
-S:	Maintained
-F:	redhat/
+X:	redhat/configs/
 
 RHEL 7 ALT Kernel Maintainer
 M:	Augusto Caringi <acaringi@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.9 Kernel Maintainer
 M:	Augusto Caringi <acaringi@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.9 Real Time Kernel Maintainer
 M:	Tom Rix <trix@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.8 Kernel Maintainer
 M:	Augusto Caringi <acaringi@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.8 Real Time Kernel Maintainer
 M:	Luis Claudio Goncalves <lgoncalv@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.7 Kernel Maintainer
 M:	Rado Vrbovsky <rvrbovsk@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.7 Real Time Kernel Maintainer
 M:	Luis Claudio Goncalves <lgoncalv@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.6 Kernel Maintainer
 M:	Denys Vlasenko <dvlasenk@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.6 Real Time Kernel Maintainer
 M:	Luis Claudio Goncalves <lgoncalv@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.5 Kernel Maintainer
 M:	Rado Vrbovsky <rvrbovsk@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.4 Kernel Maintainer
 M:	Brian Masney <bmasney@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.4 (MRG) Real Time Kernel Maintainer
 M:	Clark Williams <williams@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.3 Kernel Maintainer
 M:	Patrick Talbert <ptalbert@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 7.2 Kernel Maintainer
 M:	Rado Vrbovsky <rvrbovsk@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 6.10 Kernel Maintainer
 M:	Denys Vlasenko <dvlasenk@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 6.6 Kernel Maintainer
 M:	Herton R. Krzesinski <herton@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 6.5 Kernel Maintainer
 M:	Patrick Talbert <ptalbert@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 5.11 Kernel Maintainer
 M:	Rado Vrbovsky <rvrbovsk@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 RHEL 5.9 Kernel Maintainer
 M:	Rado Vrbovsky <rvrbovsk@redhat.com>
 S:	Maintained
 F:	redhat/
+X:	redhat/configs/
 
 3ware 9000 Storage Controller Linux Driver (3w-9xxx)
 M:	Tomas Henzl <thenzl@redhat.com>
@@ -274,6 +309,14 @@ M:	Don Dutile <ddutile@redhat.com>
 S:	Maintained
 F:	drivers/iommu/amd_iommu*.[ch]
 F:	include/linux/amd-iommu.h
+
+AMD SEV/SEV-ES/SEV-SNP Guest Side
+M:	Vitaly Kuznetsov <vkuznets@redhat.com>
+M:	Wei Huang <wehuang@redhat.com>
+S:	Maintained
+F:	arch/x86/boot/compressed/sev*.c
+F:	arch/x86/include/asm/sev*.h
+F:	arch/x86/kernel/sev*.[cS]
 
 AQUANTIA ATLANTIC ETHERNET DRIVER
 M:	Igor Russkikh <irusskik@redhat.com>
@@ -416,6 +459,7 @@ F:	drivers/net/ethernet/broadcom/bnx2x.*
 F:	drivers/net/ethernet/broadcom/bnx2x_*
 
 BROADCOM BNXT_EN 50 GIGABIT ETHERNET DRIVER
+M:	Jonathan Toppins <jtoppins@redhat.com>
 S:	Maintained
 F:	drivers/net/ethernet/broadcom/bnxt/
 F:	drivers/net/ethernet/broadcom/Kconfig
@@ -442,9 +486,15 @@ S:	Maintained
 F:	drivers/net/ethernet/broadcom/cnic*
 
 BROADCOM TG3 GIGABIT ETHERNET DRIVER
+M:	Jonathan Toppins <jtoppins@redhat.com>
 S:	Maintained
 F:	drivers/net/ethernet/broadcom/tg3.*
 F:	drivers/net/ethernet/broadcom/Kconfig
+
+Pensando Ethernet IONIC Driver
+M:	Jonathan Toppins <jtoppins@redhat.com>
+S:	Maintained
+F:	drivers/net/ethernet/pensando/
 
 BONDING DRIVER
 M:	Jarod Wilson <jarod@redhat.com>
@@ -630,11 +680,6 @@ S:	Maintained
 F:	kernel/dma/
 F:	include/linux/dma*
 
-DM-RAID SUPPORT
-M:	Jonathan Brassow <jbrassow@redhat.com>
-S:	Maintained
-F:	drivers/md/dm-raid*
-
 EDAC/HERM
 M:	Aristeu Rozanski <aris@redhat.com>
 S:	Maintained
@@ -817,6 +862,7 @@ F:	init/
 
 INPUT (KEYBOARD, MOUSE, JOYSTICK, TOUCHSCREEN) DRIVERS
 M:	Tony Camuso <tcamuso@redhat.com>
+M:	Benjamin Tissoires <benjamin.tissoires@redhat.com>
 S:	Maintained
 F:	Documentation/devicetree/bindings/input/
 F:	Documentation/devicetree/bindings/serio/
@@ -885,6 +931,7 @@ S:	Maintained
 F:	drivers/net/ethernet/intel/ixgbevf/
 
 INTEL ETHERNET CONNECTION E800 SERIES (ice)
+M:	Jonathan Toppins <jtoppins@redhat.com>
 S:	Maintained
 F:	drivers/net/ethernet/intel/ice/
 
@@ -980,6 +1027,7 @@ F:	include/kvm/arm_*
 KERNEL VIRTUAL MACHINE FOR POWERPC (KVM/powerpc)
 M:	David Gibson <dgibson@redhat.com>
 M:	Laurent Vivier <lvivier@redhat.com>
+M:	Greg Kurz <gkurz@redhat.com>
 L:	rhvirt-patches@redhat.com
 S:	Supported
 F:	arch/powerpc/include/uapi/asm/kvm*
@@ -1861,6 +1909,11 @@ VIDEO DRIVERS
 M:	David Airlie <airlied@redhat.com>
 M:	Adam Jackson <ajax@redhat.com>
 M:	Lyude Paul <lyude@redhat.com>
+R:	Jeremy Cline <jcline@redhat.com>
+R:	Michel Dänzer <mdaenzer@redhat.com>
+R:	Jérôme Glisse <jglisse@redhat.com>
+R:	Karol Herbst <kherbst@redhat.com>
+R:	Ben Skeggs <bskeggs@redhat.com>
 S:	Maintained
 F:	drivers/gpu/
 F:	drivers/video/
@@ -2017,3 +2070,10 @@ M:	Jerome Marchand <jmarchan@redhat.com>
 S:	Maintained
 F:	drivers/block/zram/
 F:	Documentation/ABI/testing/sysfs-block-zram
+
+Continuous Integration (CKI)
+M:	Veronika Kabatova <vkabatov@redhat.com>
+M:	Michael Hofmann <mhofmann@redhat.com>
+S:	Maintained
+F:	.gitlab-ci.yml
+I:	INTERNAL
