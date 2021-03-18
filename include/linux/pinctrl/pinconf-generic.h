@@ -12,12 +12,6 @@
 #ifndef __LINUX_PINCTRL_PINCONF_GENERIC_H
 #define __LINUX_PINCTRL_PINCONF_GENERIC_H
 
-/*
- * You shouldn't even be able to compile with these enums etc unless you're
- * using generic pin config. That is why this is defined out.
- */
-#ifdef CONFIG_GENERIC_PINCONF
-
 /**
  * enum pin_config_param - possible pin configuration parameters
  * @PIN_CONFIG_BIAS_DISABLE: disable any pin bias on the pin, a
@@ -122,6 +116,7 @@ static inline unsigned long pinconf_to_config_packed(enum pin_config_param param
 	return PIN_CONF_PACKED(param, argument);
 }
 
+#ifdef CONFIG_GENERIC_PINCONF
 #endif /* CONFIG_GENERIC_PINCONF */
 
 #endif /* __LINUX_PINCTRL_PINCONF_GENERIC_H */

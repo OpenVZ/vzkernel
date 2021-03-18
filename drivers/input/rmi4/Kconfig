@@ -1,0 +1,73 @@
+#
+# RMI4 configuration
+#
+config RMI4_CORE
+	tristate "Synaptics RMI4 bus support"
+	help
+	  Say Y here if you want to support the Synaptics RMI4 bus.  This is
+	  required for all RMI4 device support.
+
+	  If unsure, say Y.
+
+if RMI4_CORE
+
+config RMI4_SMB
+	tristate "RMI4 SMB Support"
+	depends on I2C
+	help
+	  Say Y here if you want to support RMI4 devices connected to an SMB
+	  bus.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called rmi_smbus.
+
+config RMI4_F03
+        bool "RMI4 Function 03 (PS2 Guest)"
+	depends on RMI4_CORE
+        help
+          Say Y here if you want to add support for RMI4 function 03.
+
+	  Function 03 provides PS2 guest support for RMI4 devices. This
+	  includes support for TrackPoints on TouchPads.
+
+config RMI4_F03_SERIO
+	tristate
+	depends on RMI4_CORE
+	depends on RMI4_F03
+	default RMI4_CORE
+	select SERIO
+
+config RMI4_2D_SENSOR
+	bool
+
+config RMI4_F11
+	bool "RMI4 Function 11 (2D pointing)"
+	select RMI4_2D_SENSOR
+	help
+	  Say Y here if you want to add support for RMI4 function 11.
+
+	  Function 11 provides 2D multifinger pointing for touchscreens and
+	  touchpads. For sensors that support relative pointing, F11 also
+	  provides mouse input.
+
+config RMI4_F12
+	bool "RMI4 Function 12 (2D pointing)"
+	select RMI4_2D_SENSOR
+	help
+	  Say Y here if you want to add support for RMI4 function 12.
+
+	  Function 12 provides 2D multifinger pointing for touchscreens and
+	  touchpads. For sensors that support relative pointing, F12 also
+	  provides mouse input.
+
+config RMI4_F30
+	bool "RMI4 Function 30 (GPIO LED)"
+	help
+	  Say Y here if you want to add support for RMI4 function 30.
+
+	  Function 30 provides GPIO and LED support for RMI4 devices. This
+	  includes support for buttons on TouchPads and ClickPads.
+
+endif # RMI_CORE

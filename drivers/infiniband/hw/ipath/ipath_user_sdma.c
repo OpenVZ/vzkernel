@@ -33,7 +33,6 @@
 #include <linux/types.h>
 #include <linux/device.h>
 #include <linux/dmapool.h>
-#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/highmem.h>
@@ -239,7 +238,7 @@ static int ipath_user_sdma_num_pages(const struct iovec *iov)
 /* truncate length to page boundary */
 static int ipath_user_sdma_page_length(unsigned long addr, unsigned long len)
 {
-	const unsigned long offset = addr & ~PAGE_MASK;
+	const unsigned long offset = offset_in_page(addr);
 
 	return ((offset + len) > PAGE_SIZE) ? (PAGE_SIZE - offset) : len;
 }
@@ -280,9 +279,7 @@ static int ipath_user_sdma_pin_pages(const struct ipath_devdata *dd,
 	int j;
 	int ret;
 
-	ret = get_user_pages(current, current->mm, addr,
-			     npages, 0, 1, pages, NULL);
-
+	ret = get_user_pages_fast(addr, npages, 0, pages);
 	if (ret != npages) {
 		int i;
 
@@ -300,7 +297,7 @@ static int ipath_user_sdma_pin_pages(const struct ipath_devdata *dd,
 		dma_addr_t dma_addr =
 			dma_map_page(&dd->pcidev->dev,
 				     pages[j], 0, flen, DMA_TO_DEVICE);
-		unsigned long fofs = addr & ~PAGE_MASK;
+		unsigned long fofs = offset_in_page(addr);
 
 		if (dma_mapping_error(&dd->pcidev->dev, dma_addr)) {
 			ret = -ENOMEM;
@@ -811,10 +808,7 @@ int ipath_user_sdma_writev(struct ipath_devdata *dd,
 	while (dim) {
 		const int mxp = 8;
 
-		down_write(&current->mm->mmap_sem);
 		ret = ipath_user_sdma_queue_pkts(dd, pq, &list, iov, dim, mxp);
-		up_write(&current->mm->mmap_sem);
-
 		if (ret <= 0)
 			goto done_unlock;
 		else {

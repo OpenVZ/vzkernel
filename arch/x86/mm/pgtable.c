@@ -4,6 +4,7 @@
 #include <asm/pgtable.h>
 #include <asm/tlb.h>
 #include <asm/fixmap.h>
+#include <asm/mtrr.h>
 
 #define PGALLOC_GFP GFP_KERNEL | __GFP_NOTRACK | __GFP_REPEAT | __GFP_ZERO
 
@@ -25,8 +26,12 @@ pgtable_t pte_alloc_one(struct mm_struct *mm, unsigned long address)
 	struct page *pte;
 
 	pte = alloc_pages(__userpte_alloc_gfp, 0);
-	if (pte)
-		pgtable_page_ctor(pte);
+	if (!pte)
+		return NULL;
+	if (!pgtable_page_ctor(pte)) {
+		__free_page(pte);
+		return NULL;
+	}
 	return pte;
 }
 
@@ -51,12 +56,13 @@ void ___pte_free_tlb(struct mmu_gather *tlb, struct page *pte)
 {
 	pgtable_page_dtor(pte);
 	paravirt_release_pte(page_to_pfn(pte));
-	tlb_remove_page(tlb, pte);
+	tlb_remove_table(tlb, pte);
 }
 
 #if PAGETABLE_LEVELS > 2
 void ___pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmd)
 {
+	struct page *page = virt_to_page(pmd);
 	paravirt_release_pmd(__pa(pmd) >> PAGE_SHIFT);
 	/*
 	 * NOTE! For PAE, any changes to the top page-directory-pointer-table
@@ -65,14 +71,15 @@ void ___pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmd)
 #ifdef CONFIG_X86_PAE
 	tlb->need_flush_all = 1;
 #endif
-	tlb_remove_page(tlb, virt_to_page(pmd));
+	pgtable_pmd_page_dtor(page);
+	tlb_remove_table(tlb, page);
 }
 
 #if PAGETABLE_LEVELS > 3
 void ___pud_free_tlb(struct mmu_gather *tlb, pud_t *pud)
 {
 	paravirt_release_pud(__pa(pud) >> PAGE_SHIFT);
-	tlb_remove_page(tlb, virt_to_page(pud));
+	tlb_remove_table(tlb, virt_to_page(pud));
 }
 #endif	/* PAGETABLE_LEVELS > 3 */
 #endif	/* PAGETABLE_LEVELS > 2 */
@@ -189,8 +196,10 @@ static void free_pmds(pmd_t *pmds[])
 	int i;
 
 	for(i = 0; i < PREALLOCATED_PMDS; i++)
-		if (pmds[i])
+		if (pmds[i]) {
+			pgtable_pmd_page_dtor(virt_to_page(pmds[i]));
 			free_page((unsigned long)pmds[i]);
+		}
 }
 
 static int preallocate_pmds(pmd_t *pmds[])
@@ -200,8 +209,13 @@ static int preallocate_pmds(pmd_t *pmds[])
 
 	for(i = 0; i < PREALLOCATED_PMDS; i++) {
 		pmd_t *pmd = (pmd_t *)__get_free_page(PGALLOC_GFP);
-		if (pmd == NULL)
+		if (!pmd)
 			failed = true;
+		if (pmd && !pgtable_pmd_page_ctor(virt_to_page(pmd))) {
+			free_page((unsigned long)pmd);
+			pmd = NULL;
+			failed = true;
+		}
 		pmds[i] = pmd;
 	}
 
@@ -265,7 +279,7 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 	pgd_t *pgd;
 	pmd_t *pmds[PREALLOCATED_PMDS];
 
-	pgd = (pgd_t *)__get_free_page(PGALLOC_GFP);
+	pgd = (pgd_t *)__get_free_pages(PGALLOC_GFP, PGD_ALLOCATION_ORDER);
 
 	if (pgd == NULL)
 		goto out;
@@ -295,7 +309,7 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 out_free_pmds:
 	free_pmds(pmds);
 out_free_pgd:
-	free_page((unsigned long)pgd);
+	free_pages((unsigned long)pgd, PGD_ALLOCATION_ORDER);
 out:
 	return NULL;
 }
@@ -305,7 +319,7 @@ void pgd_free(struct mm_struct *mm, pgd_t *pgd)
 	pgd_mop_up_pmds(mm, pgd);
 	pgd_dtor(pgd);
 	paravirt_pgd_free(mm, pgd);
-	free_page((unsigned long)pgd);
+	free_pages((unsigned long)pgd, PGD_ALLOCATION_ORDER);
 }
 
 /*
@@ -323,7 +337,7 @@ int ptep_set_access_flags(struct vm_area_struct *vma,
 
 	if (changed && dirty) {
 		*ptep = entry;
-		pte_update_defer(vma->vm_mm, address, ptep);
+		pte_update(vma->vm_mm, address, ptep);
 	}
 
 	return changed;
@@ -340,9 +354,28 @@ int pmdp_set_access_flags(struct vm_area_struct *vma,
 
 	if (changed && dirty) {
 		*pmdp = entry;
-		pmd_update_defer(vma->vm_mm, address, pmdp);
 		/*
 		 * We had a write-protection fault here and changed the pmd
+		 * to to more permissive. No need to flush the TLB for that,
+		 * #PF is architecturally guaranteed to do that and in the
+		 * worst-case we'll generate a spurious fault.
+		 */
+	}
+
+	return changed;
+}
+
+int pudp_set_access_flags(struct vm_area_struct *vma, unsigned long address,
+			  pud_t *pudp, pud_t entry, int dirty)
+{
+	int changed = !pud_same(*pudp, entry);
+
+	VM_BUG_ON(address & ~HPAGE_PUD_MASK);
+
+	if (changed && dirty) {
+		*pudp = entry;
+		/*
+		 * We had a write-protection fault here and changed the pud
 		 * to to more permissive. No need to flush the TLB for that,
 		 * #PF is architecturally guaranteed to do that and in the
 		 * worst-case we'll generate a spurious fault.
@@ -378,8 +411,17 @@ int pmdp_test_and_clear_young(struct vm_area_struct *vma,
 		ret = test_and_clear_bit(_PAGE_BIT_ACCESSED,
 					 (unsigned long *)pmdp);
 
-	if (ret)
-		pmd_update(vma->vm_mm, addr, pmdp);
+	return ret;
+}
+
+int pudp_test_and_clear_young(struct vm_area_struct *vma,
+			      unsigned long addr, pud_t *pudp)
+{
+	int ret = 0;
+
+	if (pud_young(*pudp))
+		ret = test_and_clear_bit(_PAGE_BIT_ACCESSED,
+					 (unsigned long *)pudp);
 
 	return ret;
 }
@@ -388,13 +430,20 @@ int pmdp_test_and_clear_young(struct vm_area_struct *vma,
 int ptep_clear_flush_young(struct vm_area_struct *vma,
 			   unsigned long address, pte_t *ptep)
 {
-	int young;
-
-	young = ptep_test_and_clear_young(vma, address, ptep);
-	if (young)
-		flush_tlb_page(vma, address);
-
-	return young;
+	/*
+	 * On x86 CPUs, clearing the accessed bit without a TLB flush
+	 * doesn't cause data corruption. [ It could cause incorrect
+	 * page aging and the (mistaken) reclaim of hot pages, but the
+	 * chance of that should be relatively low. ]
+	 *
+	 * So as a performance optimization don't flush the TLB when
+	 * clearing the accessed bit, it will eventually be flushed by
+	 * a context switch or a VM operation anyway. [ In the rare
+	 * event of it not getting flushed for a long time the delay
+	 * shouldn't really matter because there's no real memory
+	 * pressure for swapout to react to. ]
+	 */
+	return ptep_test_and_clear_young(vma, address, ptep);
 }
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
@@ -412,6 +461,17 @@ int pmdp_clear_flush_young(struct vm_area_struct *vma,
 	return young;
 }
 
+static void do_nothing(void *unused)
+{
+
+}
+
+static void serialize_against_pte_lookup(struct mm_struct *mm)
+{
+	smp_mb();
+	smp_call_function_many(mm_cpumask(mm), do_nothing, NULL, 1);
+}
+
 void pmdp_splitting_flush(struct vm_area_struct *vma,
 			  unsigned long address, pmd_t *pmdp)
 {
@@ -420,9 +480,10 @@ void pmdp_splitting_flush(struct vm_area_struct *vma,
 	set = !test_and_set_bit(_PAGE_BIT_SPLITTING,
 				(unsigned long *)pmdp);
 	if (set) {
-		pmd_update(vma->vm_mm, address, pmdp);
 		/* need tlb flush only to serialize against gup-fast */
 		flush_tlb_range(vma, address, address + HPAGE_PMD_SIZE);
+		if (pv_mmu_ops.flush_tlb_others != native_flush_tlb_others)
+			serialize_against_pte_lookup(vma->vm_mm);
 	}
 }
 #endif
@@ -463,3 +524,99 @@ void native_set_fixmap(enum fixed_addresses idx, phys_addr_t phys,
 {
 	__native_set_fixmap(idx, pfn_pte(phys >> PAGE_SHIFT, flags));
 }
+
+#ifdef CONFIG_HAVE_ARCH_HUGE_VMAP
+/**
+ * pud_set_huge - setup kernel PUD mapping
+ *
+ * MTRRs can override PAT memory types with 4KiB granularity. Therefore, this
+ * function sets up a huge page only if any of the following conditions are met:
+ *
+ * - MTRRs are disabled, or
+ *
+ * - MTRRs are enabled and the range is completely covered by a single MTRR, or
+ *
+ * - MTRRs are enabled and the corresponding MTRR memory type is WB, which
+ *   has no effect on the requested PAT memory type.
+ *
+ * Callers should try to decrease page size (1GB -> 2MB -> 4K) if the bigger
+ * page mapping attempt fails.
+ *
+ * Returns 1 on success and 0 on failure.
+ */
+int pud_set_huge(pud_t *pud, phys_addr_t addr, pgprot_t prot)
+{
+	u8 mtrr, uniform;
+
+	mtrr = mtrr_type_lookup(addr, addr + PUD_SIZE, &uniform);
+	if ((mtrr != MTRR_TYPE_INVALID) && (!uniform) &&
+	    (mtrr != MTRR_TYPE_WRBACK))
+		return 0;
+
+	prot = pgprot_4k_2_large(prot);
+
+	set_pte((pte_t *)pud, pfn_pte(
+		(u64)addr >> PAGE_SHIFT,
+		__pgprot(pgprot_val(prot) | _PAGE_PSE)));
+
+	return 1;
+}
+
+/**
+ * pmd_set_huge - setup kernel PMD mapping
+ *
+ * See text over pud_set_huge() above.
+ *
+ * Returns 1 on success and 0 on failure.
+ */
+int pmd_set_huge(pmd_t *pmd, phys_addr_t addr, pgprot_t prot)
+{
+	u8 mtrr, uniform;
+
+	mtrr = mtrr_type_lookup(addr, addr + PMD_SIZE, &uniform);
+	if ((mtrr != MTRR_TYPE_INVALID) && (!uniform) &&
+	    (mtrr != MTRR_TYPE_WRBACK)) {
+		pr_warn_once("%s: Cannot satisfy [mem %#010llx-%#010llx] with a huge-page mapping due to MTRR override.\n",
+			     __func__, addr, addr + PMD_SIZE);
+		return 0;
+	}
+
+	prot = pgprot_4k_2_large(prot);
+
+	set_pte((pte_t *)pmd, pfn_pte(
+		(u64)addr >> PAGE_SHIFT,
+		__pgprot(pgprot_val(prot) | _PAGE_PSE)));
+
+	return 1;
+}
+
+/**
+ * pud_clear_huge - clear kernel PUD mapping when it is set
+ *
+ * Returns 1 on success and 0 on failure (no PUD map is found).
+ */
+int pud_clear_huge(pud_t *pud)
+{
+	if (pud_large(*pud)) {
+		pud_clear(pud);
+		return 1;
+	}
+
+	return 0;
+}
+
+/**
+ * pmd_clear_huge - clear kernel PMD mapping when it is set
+ *
+ * Returns 1 on success and 0 on failure (no PMD map is found).
+ */
+int pmd_clear_huge(pmd_t *pmd)
+{
+	if (pmd_large(*pmd)) {
+		pmd_clear(pmd);
+		return 1;
+	}
+
+	return 0;
+}
+#endif	/* CONFIG_HAVE_ARCH_HUGE_VMAP */

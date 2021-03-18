@@ -30,7 +30,7 @@
 
 #define RTC_NAME		"sgi_rtc"
 
-static cycle_t uv_read_rtc(struct clocksource *cs);
+static u64 uv_read_rtc(struct clocksource *cs);
 static int uv_rtc_next_event(unsigned long, struct clock_event_device *);
 static void uv_rtc_timer_setup(enum clock_event_mode,
 				struct clock_event_device *);
@@ -39,7 +39,7 @@ static struct clocksource clocksource_uv = {
 	.name		= RTC_NAME,
 	.rating		= 299,
 	.read		= uv_read_rtc,
-	.mask		= (cycle_t)UVH_RTC_REAL_TIME_CLOCK_MASK,
+	.mask		= (u64)UVH_RTC_REAL_TIME_CLOCK_MASK,
 	.flags		= CLOCK_SOURCE_IS_CONTINUOUS,
 };
 
@@ -166,7 +166,7 @@ static __init int uv_rtc_allocate_timers(void)
 	for_each_present_cpu(cpu) {
 		int nid = cpu_to_node(cpu);
 		int bid = uv_cpu_to_blade_id(cpu);
-		int bcpu = uv_cpu_hub_info(cpu)->blade_processor_id;
+		int bcpu = uv_cpu_blade_processor_id(cpu);
 		struct uv_rtc_timer_head *head = blade_info[bid];
 
 		if (!head) {
@@ -227,7 +227,7 @@ static int uv_rtc_set_timer(int cpu, u64 expires)
 	int pnode = uv_cpu_to_pnode(cpu);
 	int bid = uv_cpu_to_blade_id(cpu);
 	struct uv_rtc_timer_head *head = blade_info[bid];
-	int bcpu = uv_cpu_hub_info(cpu)->blade_processor_id;
+	int bcpu = uv_cpu_blade_processor_id(cpu);
 	u64 *t = &head->cpu[bcpu].expires;
 	unsigned long flags;
 	int next_cpu;
@@ -263,7 +263,7 @@ static int uv_rtc_unset_timer(int cpu, int force)
 	int pnode = uv_cpu_to_pnode(cpu);
 	int bid = uv_cpu_to_blade_id(cpu);
 	struct uv_rtc_timer_head *head = blade_info[bid];
-	int bcpu = uv_cpu_hub_info(cpu)->blade_processor_id;
+	int bcpu = uv_cpu_blade_processor_id(cpu);
 	u64 *t = &head->cpu[bcpu].expires;
 	unsigned long flags;
 	int rc = 0;
@@ -297,7 +297,7 @@ static int uv_rtc_unset_timer(int cpu, int force)
  * cachelines of it's own page.  This allows faster simultaneous reads
  * from a given socket.
  */
-static cycle_t uv_read_rtc(struct clocksource *cs)
+static u64 uv_read_rtc(struct clocksource *cs)
 {
 	unsigned long offset;
 
@@ -306,7 +306,7 @@ static cycle_t uv_read_rtc(struct clocksource *cs)
 	else
 		offset = (uv_blade_processor_id() * L1_CACHE_BYTES) % PAGE_SIZE;
 
-	return (cycle_t)uv_read_local_mmr(UVH_RTC | offset);
+	return (u64)uv_read_local_mmr(UVH_RTC | offset);
 }
 
 /*

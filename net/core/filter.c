@@ -31,12 +31,12 @@
 #include <net/netlink.h>
 #include <linux/skbuff.h>
 #include <net/sock.h>
+#include <net/flow_dissector.h>
 #include <linux/errno.h>
 #include <linux/timer.h>
 #include <asm/uaccess.h>
 #include <asm/unaligned.h>
 #include <linux/filter.h>
-#include <linux/reciprocal_div.h>
 #include <linux/ratelimit.h>
 #include <linux/seccomp.h>
 #include <linux/if_vlan.h>
@@ -68,9 +68,10 @@ static inline void *load_pointer(const struct sk_buff *skb, int k,
 }
 
 /**
- *	sk_filter - run a packet through a socket filter
+ *	sk_filter_trim_cap - run a packet through a socket filter
  *	@sk: sock associated with &sk_buff
  *	@skb: buffer to filter
+ *	@cap: limit on how short the eBPF program may trim the packet
  *
  * Run the filter code and then cut skb->data to correct size returned by
  * sk_run_filter. If pkt_len is 0 we toss packet. If skb->len is smaller
@@ -79,7 +80,7 @@ static inline void *load_pointer(const struct sk_buff *skb, int k,
  * be accepted or -EPERM if the packet should be tossed.
  *
  */
-int sk_filter(struct sock *sk, struct sk_buff *skb)
+int sk_filter_trim_cap(struct sock *sk, struct sk_buff *skb, unsigned int cap)
 {
 	int err;
 	struct sk_filter *filter;
@@ -89,8 +90,10 @@ int sk_filter(struct sock *sk, struct sk_buff *skb)
 	 * allow SOCK_MEMALLOC sockets to use it as this socket is
 	 * helping free memory
 	 */
-	if (skb_pfmemalloc(skb) && !sock_flag(sk, SOCK_MEMALLOC))
+	if (skb_pfmemalloc(skb) && !sock_flag(sk, SOCK_MEMALLOC)) {
+		NET_INC_STATS(sock_net(sk), LINUX_MIB_PFMEMALLOCDROP);
 		return -ENOMEM;
+	}
 
 	err = security_sock_rcv_skb(sk, skb);
 	if (err)
@@ -101,13 +104,13 @@ int sk_filter(struct sock *sk, struct sk_buff *skb)
 	if (filter) {
 		unsigned int pkt_len = SK_RUN_FILTER(filter, skb);
 
-		err = pkt_len ? pskb_trim(skb, pkt_len) : -EPERM;
+		err = pkt_len ? pskb_trim(skb, max(cap, pkt_len)) : -EPERM;
 	}
 	rcu_read_unlock();
 
 	return err;
 }
-EXPORT_SYMBOL(sk_filter);
+EXPORT_SYMBOL(sk_filter_trim_cap);
 
 /**
  *	sk_run_filter - run a filter on a socket
@@ -166,7 +169,7 @@ unsigned int sk_run_filter(const struct sk_buff *skb,
 			A /= X;
 			continue;
 		case BPF_S_ALU_DIV_K:
-			A = reciprocal_divide(A, K);
+			A /= K;
 			continue;
 		case BPF_S_ALU_MOD_X:
 			if (X == 0)
@@ -337,25 +340,29 @@ load_b:
 			A = skb->dev->type;
 			continue;
 		case BPF_S_ANC_RXHASH:
-			A = skb->rxhash;
+			A = skb->hash;
 			continue;
 		case BPF_S_ANC_CPU:
 			A = raw_smp_processor_id();
 			continue;
 		case BPF_S_ANC_VLAN_TAG:
-			A = vlan_tx_tag_get(skb);
+			A = skb_vlan_tag_get(skb);
 			continue;
 		case BPF_S_ANC_VLAN_TAG_PRESENT:
-			A = !!vlan_tx_tag_present(skb);
+			A = !!skb_vlan_tag_present(skb);
 			continue;
 		case BPF_S_ANC_PAY_OFFSET:
-			A = __skb_get_poff(skb);
+			A = skb_get_poff(skb);
 			continue;
 		case BPF_S_ANC_NLATTR: {
 			struct nlattr *nla;
 
 			if (skb_is_nonlinear(skb))
 				return 0;
+
+			if (skb->len < sizeof(struct nlattr))
+				return 0;
+
 			if (A > skb->len - sizeof(struct nlattr))
 				return 0;
 
@@ -372,11 +379,15 @@ load_b:
 
 			if (skb_is_nonlinear(skb))
 				return 0;
+
+			if (skb->len < sizeof(struct nlattr))
+				return 0;
+
 			if (A > skb->len - sizeof(struct nlattr))
 				return 0;
 
 			nla = (struct nlattr *)&skb->data[A];
-			if (nla->nla_len > A - skb->len)
+			if (nla->nla_len > skb->len - A)
 				return 0;
 
 			nla = nla_find_nested(nla, X);
@@ -553,11 +564,6 @@ int sk_chk_filter(struct sock_filter *filter, unsigned int flen)
 		/* Some instructions need special checks */
 		switch (code) {
 		case BPF_S_ALU_DIV_K:
-			/* check for division by zero */
-			if (ftest->k == 0)
-				return -EINVAL;
-			ftest->k = reciprocal_value(ftest->k);
-			break;
 		case BPF_S_ALU_MOD_K:
 			/* check for division by zero */
 			if (ftest->k == 0)
@@ -750,7 +756,7 @@ int sk_attach_filter(struct sock_fprog *fprog, struct sock *sk)
 	}
 
 	old_fp = rcu_dereference_protected(sk->sk_filter,
-					   sock_owned_by_user(sk));
+					   lockdep_sock_is_held(sk));
 	rcu_assign_pointer(sk->sk_filter, fp);
 
 	if (old_fp)
@@ -768,7 +774,7 @@ int sk_detach_filter(struct sock *sk)
 		return -EPERM;
 
 	filter = rcu_dereference_protected(sk->sk_filter,
-					   sock_owned_by_user(sk));
+					   lockdep_sock_is_held(sk));
 	if (filter) {
 		RCU_INIT_POINTER(sk->sk_filter, NULL);
 		sk_filter_uncharge(sk, filter);
@@ -853,27 +859,7 @@ void sk_decode_filter(struct sock_filter *filt, struct sock_filter *to)
 	to->code = decodes[code];
 	to->jt = filt->jt;
 	to->jf = filt->jf;
-
-	if (code == BPF_S_ALU_DIV_K) {
-		/*
-		 * When loaded this rule user gave us X, which was
-		 * translated into R = r(X). Now we calculate the
-		 * RR = r(R) and report it back. If next time this
-		 * value is loaded and RRR = r(RR) is calculated
-		 * then the R == RRR will be true.
-		 *
-		 * One exception. X == 1 translates into R == 0 and
-		 * we can't calculate RR out of it with r().
-		 */
-
-		if (filt->k == 0)
-			to->k = 1;
-		else
-			to->k = reciprocal_value(filt->k);
-
-		BUG_ON(reciprocal_value(to->k) != filt->k);
-	} else
-		to->k = filt->k;
+	to->k = filt->k;
 }
 
 int sk_get_filter(struct sock *sk, struct sock_filter __user *ubuf, unsigned int len)
@@ -883,7 +869,7 @@ int sk_get_filter(struct sock *sk, struct sock_filter __user *ubuf, unsigned int
 
 	lock_sock(sk);
 	filter = rcu_dereference_protected(sk->sk_filter,
-			sock_owned_by_user(sk));
+					   lockdep_sock_is_held(sk));
 	ret = 0;
 	if (!filter)
 		goto out;
@@ -908,3 +894,16 @@ out:
 	release_sock(sk);
 	return ret;
 }
+
+int xdp_do_redirect(struct net_device *dev, struct xdp_buff *xdp,
+		   struct bpf_prog *prog)
+{
+	return -EOPNOTSUPP;
+}
+EXPORT_SYMBOL_GPL(xdp_do_redirect);
+
+void xdp_do_flush_map(void)
+{
+	return;
+}
+EXPORT_SYMBOL_GPL(xdp_do_flush_map);

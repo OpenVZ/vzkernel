@@ -94,8 +94,8 @@ u8 ACPI_INIT_GLOBAL(acpi_gbl_all_methods_serialized, FALSE);
 
 /*
  * Create the predefined _OSI method in the namespace? Default is TRUE
- * because ACPI CA is fully compatible with other ACPI implementations.
- * Changing this will revert ACPI CA (and machine ASL) to pre-OSI behavior.
+ * because ACPICA is fully compatible with other ACPI implementations.
+ * Changing this will revert ACPICA (and machine ASL) to pre-OSI behavior.
  */
 u8 ACPI_INIT_GLOBAL(acpi_gbl_create_osi_method, TRUE);
 
@@ -106,9 +106,18 @@ u8 ACPI_INIT_GLOBAL(acpi_gbl_create_osi_method, TRUE);
 u8 ACPI_INIT_GLOBAL(acpi_gbl_use_default_register_widths, TRUE);
 
 /*
+ * Whether or not to verify the table checksum before installation. Set
+ * this to TRUE to verify the table checksum before install it to the table
+ * manager. Note that enabling this option causes errors to happen in some
+ * OSPMs during early initialization stages. Default behavior is to do such
+ * verification.
+ */
+u8 ACPI_INIT_GLOBAL(acpi_gbl_verify_table_checksum, TRUE);
+
+/*
  * Optionally enable output from the AML Debug Object.
  */
-bool ACPI_INIT_GLOBAL(acpi_gbl_enable_aml_debug_object, FALSE);
+u8 ACPI_INIT_GLOBAL(acpi_gbl_enable_aml_debug_object, FALSE);
 
 /*
  * Optionally copy the entire DSDT to local memory (instead of simply
@@ -117,6 +126,14 @@ bool ACPI_INIT_GLOBAL(acpi_gbl_enable_aml_debug_object, FALSE);
  * the DSDT.
  */
 u8 ACPI_INIT_GLOBAL(acpi_gbl_copy_dsdt_locally, FALSE);
+
+/*
+ * Optionally ignore an XSDT if present and use the RSDT instead.
+ * Although the ACPI specification requires that an XSDT be used instead
+ * of the RSDT, the XSDT has been found to be corrupt or ill-formed on
+ * some machines. Default behavior is to use the XSDT if present.
+ */
+u8 ACPI_INIT_GLOBAL(acpi_gbl_do_not_use_xsdt, FALSE);
 
 /*
  * Optionally truncate I/O addresses to 16 bits. Provides compatibility
@@ -131,6 +148,18 @@ u8 ACPI_INIT_GLOBAL(acpi_gbl_truncate_io_addresses, FALSE);
  * Use only if the repair is causing a problem on a particular machine.
  */
 u8 ACPI_INIT_GLOBAL(acpi_gbl_disable_auto_repair, FALSE);
+
+/*
+ * Optionally do not install any SSDTs from the RSDT/XSDT during initialization.
+ * This can be useful for debugging ACPI problems on some machines.
+ */
+u8 ACPI_INIT_GLOBAL(acpi_gbl_disable_ssdt_table_install, FALSE);
+
+/*
+ * We keep track of the latest version of Windows that has been requested by
+ * the BIOS.
+ */
+u8 ACPI_INIT_GLOBAL(acpi_gbl_osi_data, 0);
 
 /* acpi_gbl_FADT is a local copy of the FADT, converted to a common format. */
 
@@ -279,7 +308,6 @@ ACPI_EXTERN u8 acpi_gbl_debugger_configuration;
 ACPI_EXTERN u8 acpi_gbl_step_to_next_call;
 ACPI_EXTERN u8 acpi_gbl_acpi_hardware_present;
 ACPI_EXTERN u8 acpi_gbl_events_initialized;
-ACPI_EXTERN u8 acpi_gbl_osi_data;
 ACPI_EXTERN struct acpi_interface_info *acpi_gbl_supported_interfaces;
 ACPI_EXTERN struct acpi_address_range
     *acpi_gbl_address_range_list[ACPI_ADDRESS_RANGE_MAX];
@@ -394,7 +422,9 @@ extern u32 acpi_gbl_nesting_level;
 
 /* Event counters */
 
+ACPI_EXTERN u32 acpi_method_count;
 ACPI_EXTERN u32 acpi_gpe_count;
+ACPI_EXTERN u32 acpi_sci_count;
 ACPI_EXTERN u32 acpi_fixed_event_count[ACPI_NUM_FIXED_EVENTS];
 
 /* Support for dynamic control method tracing mechanism */
@@ -410,7 +440,7 @@ ACPI_EXTERN u32 acpi_gbl_trace_dbg_layer;
  *
  ****************************************************************************/
 
-ACPI_EXTERN u8 acpi_gbl_db_output_flags;
+ACPI_EXTERN u8 ACPI_INIT_GLOBAL(acpi_gbl_db_output_flags, ACPI_DB_CONSOLE_OUTPUT);
 
 #ifdef ACPI_DISASSEMBLER
 
@@ -467,10 +497,38 @@ ACPI_EXTERN u32 acpi_gbl_size_of_acpi_objects;
 
 /*****************************************************************************
  *
+ * Application globals
+ *
+ ****************************************************************************/
+
+#ifdef ACPI_APPLICATION
+
+ACPI_FILE ACPI_INIT_GLOBAL(acpi_gbl_debug_file, NULL);
+
+#endif				/* ACPI_APPLICATION */
+
+/*****************************************************************************
+ *
  * Info/help support
  *
  ****************************************************************************/
 
 extern const struct ah_predefined_name asl_predefined_info[];
+extern const struct ah_device_id asl_device_ids[];
+
+#ifdef ACPI_APPLICATION
+
+ACPI_FILE ACPI_INIT_GLOBAL(acpi_gbl_output_file, NULL);
+u8 ACPI_INIT_GLOBAL(acpi_gbl_debug_timeout, FALSE);
+
+/* Print buffer */
+
+extern acpi_spinlock acpi_gbl_print_lock;	/* For print buffer */
+acpi_spinlock acpi_gbl_print_lock;
+
+extern char acpi_gbl_print_buffer[1024];
+char acpi_gbl_print_buffer[1024];
+
+#endif				/* ACPI_APPLICATION */
 
 #endif				/* __ACGLOBAL_H__ */

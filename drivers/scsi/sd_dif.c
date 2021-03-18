@@ -416,6 +416,7 @@ void sd_dif_complete(struct scsi_cmnd *scmd, unsigned int good_bytes)
 	struct sd_dif_tuple *sdt;
 	unsigned int i, j, sectors, sector_sz;
 	u32 phys, virt;
+	unsigned int shift;
 
 	sdkp = scsi_disk(scmd->request->rq_disk);
 
@@ -425,9 +426,8 @@ void sd_dif_complete(struct scsi_cmnd *scmd, unsigned int good_bytes)
 	sector_sz = scmd->device->sector_size;
 	sectors = good_bytes / sector_sz;
 
-	phys = blk_rq_pos(scmd->request) & 0xffffffff;
-	if (sector_sz == 4096)
-		phys >>= 3;
+	shift = (sector_sz == 4096) ? 3 : 0;
+	phys = (blk_rq_pos(scmd->request) >> shift) & 0xffffffff;
 
 	__rq_for_each_bio(bio, scmd->request) {
 		struct bio_vec *iv;

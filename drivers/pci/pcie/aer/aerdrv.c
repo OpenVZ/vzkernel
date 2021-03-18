@@ -262,7 +262,6 @@ static struct aer_rpc *aer_alloc_rpc(struct pcie_device *dev)
 	rpc->rpd = dev;
 	INIT_WORK(&rpc->dpc_handler, aer_isr);
 	mutex_init(&rpc->rpc_mutex);
-	init_waitqueue_head(&rpc->wait_release);
 
 	/* Use PCIe bus function to store rpc into PCIe device */
 	set_service_data(dev, rpc);
@@ -285,8 +284,7 @@ static void aer_remove(struct pcie_device *dev)
 		if (rpc->isr)
 			free_irq(dev->irq, dev);
 
-		wait_event(rpc->wait_release, rpc->prod_idx == rpc->cons_idx);
-
+		flush_work(&rpc->dpc_handler);
 		aer_disable_rootport(rpc);
 		kfree(rpc);
 		set_service_data(dev, NULL);
@@ -352,7 +350,7 @@ static pci_ers_result_t aer_root_reset(struct pci_dev *dev)
 	reg32 &= ~ROOT_PORT_INTR_ON_MESG_MASK;
 	pci_write_config_dword(dev, pos + PCI_ERR_ROOT_COMMAND, reg32);
 
-	aer_do_secondary_bus_reset(dev);
+	pci_reset_bridge_secondary_bus(dev);
 	dev_printk(KERN_DEBUG, &dev->dev, "Root Port link has been reset\n");
 
 	/* Clear Root Error Status */
