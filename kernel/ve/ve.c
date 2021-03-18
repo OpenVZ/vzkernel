@@ -74,6 +74,7 @@ bool ve_allow_ioctl_fitrim = 0;
 module_param_named(allow_ioctl_fitrim, ve_allow_ioctl_fitrim, bool, 0644);
 MODULE_PARM_DESC(ve_allow_ioctl_fitrim,
 		 "Allow ioctl(FITRIM) from inside VE. Only ext4 is supported now");
+EXPORT_SYMBOL(ve_allow_ioctl_fitrim);
 
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
 
