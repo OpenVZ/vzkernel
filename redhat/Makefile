@@ -404,6 +404,12 @@ dist-git: dist-srpm $(KABI_TARBALL) $(KABIDW_TARBALL)
 ifeq ("$(RHDISTGIT_BRANCH)", "")
  $(error RHDISTGIT_BRANCH unset)
 endif
+	if [ "$(DISTRO)" == "centos" ]; then \
+	if [ -z "$(GL_DISTGIT_USER)" ]; then \
+		echo "Error: please Please provide your gitlab username with GL_DISTGIT_USER"; \
+		exit 1; \
+	fi; \
+	fi
 	$(REDHAT)/scripts/rh-dist-git.sh "$(RHDISTGIT_BRANCH)" "$(RHDISTGIT_CACHE)" "$(RHDISTGIT_TMP)" "$(RHDISTGIT)" "$(TARBALL)" "$(KABI_TARBALL)" "$(KABIDW_TARBALL)" "$(__ZSTREAM)" "$(PACKAGE_NAME)" "$(RHEL_MAJOR)" "$(RHPKG_BIN)" "$(SRPMS)/$(PACKAGE_NAME)-$(KVERSION)-$(PKGRELEASE)$(DIST).src.rpm"
 
 dist-rtg: dist-release

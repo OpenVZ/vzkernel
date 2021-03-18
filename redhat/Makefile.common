@@ -29,14 +29,19 @@ else
   PREBUILD:=
 endif
 
-DIST ?=.fc33
-IS_FEDORA:=$(shell ! echo $(DIST) | grep -q fc; echo $$?)
+DIST ?= .fc33
+ifeq ("$(shell ! echo $(DIST) | grep -q fc; echo $$?)", "1")
+  DISTRO := fedora
+else
+  DISTRO ?= rhel
+endif
+
 # If VERSION_ON_UPSTREAM is set, the versioning of the rpm package is based
 # on a branch tracking upstream. This allows for generating rpms
 # based on untagged releases.
 ifeq ("$(DIST)", ".elrdy")
   VERSION_ON_UPSTREAM:=1
-else ifeq ("$(IS_FEDORA)", "1")
+else ifeq ("$(DISTRO)", "fedora")
   VERSION_ON_UPSTREAM:=1
 else
   VERSION_ON_UPSTREAM:=0
@@ -90,7 +95,7 @@ ARCH_LIST=aarch64 ppc64le s390x x86_64
 # a diff in the spec file
 ifeq ("$(DIST)", ".elrdy")
   SINGLE_TARBALL:=0
-else ifeq ("$(IS_FEDORA)", "1")
+else ifeq ("$(DISTRO)", "fedora")
   SINGLE_TARBALL:=0
 else
   SINGLE_TARBALL:=1
@@ -139,16 +144,20 @@ CHANGELOG_PREV:=$(PACKAGE_NAME).changelog-$(RHEL_MAJOR).$(shell expr $(RHEL_MINO
 
 ifeq ("$(DIST)", ".elrdy")
   RHPRODUCT:=rhel-ready
-else ifeq ("$(IS_FEDORA)", "1")
+else ifeq ("$(DISTRO)", "fedora")
   RHPRODUCT:=rawhide
+else ifeq ("$(DISTRO)", "centos")
+  RHPRODUCT:=c$(RHEL_MAJOR)s
 else
   RHPRODUCT:=rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0
 endif
 
 ifeq ("$(DIST)", ".elrdy")
   BUILD_SCRATCH_TARGET ?= temp-ark-rhel-8-test
-else ifeq ("$(IS_FEDORA)", "1")
+else ifeq ("$(DISTRO)", "fedora")
   BUILD_SCRATCH_TARGET ?= temp-ark-rhel-8-test
+else ifeq ("$(DISTRO)", "centos")
+  BUILD_SCRATCH_TARGET ?= c$(RHEL_MAJOR)s-candidate
 else
   BUILD_SCRATCH_TARGET ?= rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0-test-pesign
 endif
