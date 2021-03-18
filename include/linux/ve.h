@@ -173,6 +173,7 @@ extern struct proc_dir_entry *proc_vz_dir;
 extern struct cgroup_subsys ve_subsys;
 
 extern unsigned int sysctl_ve_mount_nr;
+extern bool ve_allow_ioctl_fitrim;
 
 #ifdef CONFIG_VE
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
