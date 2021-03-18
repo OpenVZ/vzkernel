@@ -18,6 +18,7 @@
 #include <asm/uaccess.h>
 #include "ext4_jbd2.h"
 #include "ext4.h"
+#include <linux/ve.h>
 
 #define MAX_32_NUM ((((unsigned long long) 1) << 32) - 1)
 
@@ -723,7 +724,8 @@ resize_out:
 		struct fstrim_range range;
 		int ret = 0;
 
-		if (!capable(CAP_SYS_ADMIN))
+		if (!capable(CAP_SYS_ADMIN) &&
+		    (!ve_allow_ioctl_fitrim || !ve_capable(CAP_SYS_ADMIN)))
 			return -EPERM;
 
 		if (!blk_queue_discard(q))
