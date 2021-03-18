@@ -53,6 +53,7 @@ struct cred;
 struct swap_info_struct;
 struct seq_file;
 struct workqueue_struct;
+struct mnt_namespace;
 
 extern void __init inode_init(void);
 extern void __init inode_init_early(void);
@@ -3491,6 +3492,8 @@ extern int file_update_time(struct file *file);
 extern int generic_show_options(struct seq_file *m, struct dentry *root);
 extern void save_mount_options(struct super_block *sb, char *options);
 extern void replace_mount_options(struct super_block *sb, char *options);
+extern struct mount *mnt_list_next(struct mnt_namespace *ns,
+				   struct list_head *p);
 
 static inline bool io_is_direct(struct file *filp)
 {
