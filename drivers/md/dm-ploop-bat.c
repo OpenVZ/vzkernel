@@ -368,7 +368,7 @@ int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 		bvec.bv_len = PAGE_SIZE;
 		bvec.bv_offset = 0;
 
-		iov_iter_bvec(&iter, READ|ITER_BVEC, &bvec, 1, bvec.bv_len);
+		iov_iter_bvec(&iter, READ, &bvec, 1, bvec.bv_len);
 		pos = i << PAGE_SHIFT;
 
 		len = vfs_iter_read(file, &iter, &pos, 0);

@@ -947,7 +947,7 @@ static void submit_delta_read(struct ploop *ploop, unsigned int level,
 	bvec = __bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);
 	offset = bio->bi_iter.bi_bvec_done;
 
-	iov_iter_bvec(&iter, READ|ITER_BVEC, bvec, 1, bio->bi_iter.bi_size);
+	iov_iter_bvec(&iter, READ, bvec, 1, bio->bi_iter.bi_size);
 	iter.iov_offset = offset;
 
 	pos = (bio->bi_iter.bi_sector << SECTOR_SHIFT);
