@@ -273,7 +273,7 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 	read_lock_irq(&ploop->bat_rwlock);
 	if (ploop->tracking_bitmap)
 		p += sprintf(p, "t");
-	if (ploop->noresume)
+	if (READ_ONCE(ploop->noresume))
 		p += sprintf(p, "n");
 	if (ploop->pb) {
 		if (ploop->pb->alive)
@@ -294,8 +294,10 @@ static int ploop_preresume(struct dm_target *ti)
 	struct ploop *ploop = ti->private;
 	int ret = 0;
 
-	if (READ_ONCE(ploop->noresume))
+	down_read(&ploop->ctl_rwsem);
+	if (ploop->noresume)
 		ret = -EAGAIN;
+	up_read(&ploop->ctl_rwsem);
 	return ret;
 }
 
