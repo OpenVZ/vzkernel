@@ -2782,6 +2782,9 @@ iscsi_set_param(struct iscsi_transport *transport, struct iscsi_uevent *ev)
 	struct iscsi_cls_session *session;
 	int err = 0, value = 0;
 
+	if (ev->u.set_param.len > PAGE_SIZE)
+		return -EINVAL;
+
 	session = iscsi_session_lookup(ev->u.set_param.sid);
 	conn = iscsi_conn_lookup(ev->u.set_param.sid, ev->u.set_param.cid);
 	if (!conn || !session)
@@ -2928,6 +2931,9 @@ iscsi_set_host_param(struct iscsi_transport *transport,
 
 	if (!transport->set_host_param)
 		return -ENOSYS;
+
+	if (ev->u.set_host_param.len > PAGE_SIZE)
+		return -EINVAL;
 
 	shost = scsi_host_lookup(ev->u.set_host_param.host_no);
 	if (!shost) {
