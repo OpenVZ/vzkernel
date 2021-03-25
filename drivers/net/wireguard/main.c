@@ -12,6 +12,7 @@
 
 #include <uapi/linux/wireguard.h>
 
+#include <linux/fips.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/genetlink.h>
@@ -20,6 +21,11 @@
 static int __init mod_init(void)
 {
 	int ret;
+
+#ifdef CONFIG_RHEL_DIFFERENCES
+	if (fips_enabled)
+		return -EOPNOTSUPP;
+#endif
 
 	ret = wg_allowedips_slab_init();
 	if (ret < 0)
