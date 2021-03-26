@@ -1328,6 +1328,8 @@ static void *m_start(struct seq_file *m, loff_t *pos)
 	down_read(&namespace_sem);
 	if (!*pos) {
 		prev = &p->ns->list;
+		p->last_pos = 0;
+		p->last_mntpos = NULL;
 	} else {
 		prev = &p->cursor.mnt_list;
 
@@ -1380,10 +1382,10 @@ static void *m_start(struct seq_file *m, loff_t *pos)
 	 * here and just remove following lines and p->last_pos field.
 	 */
 	if (mnt && (*pos == p->last_pos + 1) &&
-	    !(p->last_mntpos && (p->last_mntpos != mnt)))
+	    (p->last_mntpos == mnt))
 		mnt = mnt_list_next(p->ns, &mnt->mnt_list);
 
-	p->last_mntpos = mnt;
+	p->last_pos = *pos;
 
 	return mnt;
 }
@@ -1395,8 +1397,7 @@ static void *m_next(struct seq_file *m, void *v, loff_t *pos)
 
 	++*pos;
 	p->last_pos = *pos;
-	p->last_mntpos = mnt_list_next(p->ns, &mnt->mnt_list);
-	return p->last_mntpos;
+	return mnt_list_next(p->ns, &mnt->mnt_list);
 }
 
 static void m_stop(struct seq_file *m, void *v)
@@ -1405,10 +1406,13 @@ static void m_stop(struct seq_file *m, void *v)
 	struct mount *mnt = v;
 
 	lock_ns_list(p->ns);
-	if (mnt)
+	if (mnt) {
 		list_move_tail(&p->cursor.mnt_list, &mnt->mnt_list);
-	else
+		p->last_mntpos = mnt;
+	} else {
 		list_del_init(&p->cursor.mnt_list);
+		p->last_mntpos = NULL;
+	}
 	unlock_ns_list(p->ns);
 	up_read(&namespace_sem);
 }
