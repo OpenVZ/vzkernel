@@ -299,6 +299,7 @@ bool kmapset_del_value(struct kmapset_map *map, struct kmapset_key *key)
 		hlist_del_rcu(&link->map_link);
 		hlist_del(&link->key_link);
 		kfree_rcu(link, rcu_head);
+		map->size--;
 		ret = true;
 	}
 	kmapset_unlock(set);
