@@ -150,7 +150,7 @@ fi
 # this replaces the old die_floppy_die.patch which removed the PNP-id from
 # the module
 
-floppylist=("$RpmDir"/"$ModDir"/extra/drivers/block/floppy.ko*)
+floppylist=("$RpmDir"/"$ModDir"/kernel/drivers/block/floppy.ko*)
 if [[ -n ${floppylist[0]} && -f ${floppylist[0]} ]]; then
      blacklist "floppy"
 fi
