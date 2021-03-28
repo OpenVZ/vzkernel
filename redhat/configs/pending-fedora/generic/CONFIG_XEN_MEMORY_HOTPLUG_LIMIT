@@ -1,0 +1,23 @@
+# CONFIG_XEN_MEMORY_HOTPLUG_LIMIT:
+# 
+# Maxmium amount of memory (in GiB) that a PV guest can be
+# expanded to when using memory hotplug.
+# 
+# A PV guest can have more memory than this limit if is
+# started with a larger maximum.
+# 
+# This value is used to allocate enough space in internal
+# tables needed for physical memory administration.
+# 
+# Symbol: XEN_MEMORY_HOTPLUG_LIMIT [=512]
+# Type  : integer
+# Defined at drivers/xen/Kconfig:53
+#   Prompt: Hotplugged memory limit (in GiB) for a PV guest
+#   Depends on: XEN [=y] && XEN_HAVE_PVMMU [=y] && MEMORY_HOTPLUG [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Xen driver support
+# 
+# 
+# 
+CONFIG_XEN_MEMORY_HOTPLUG_LIMIT=512
