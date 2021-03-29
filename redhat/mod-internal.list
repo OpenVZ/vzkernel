@@ -1,7 +1,9 @@
 dmatest
+locktorture
 mac80211_hwsim
 netdevsim
 pktgen
+rcutorture
 rocker
 test_klp_atomic_replace
 test_klp_callbacks_demo
@@ -13,3 +15,4 @@ test_klp_shadow_vars
 test_klp_state
 test_klp_state2
 test_klp_state3
+torture
