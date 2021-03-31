@@ -48,8 +48,8 @@ def parse_commit(commit):
     """Extract metadata from a commit log message."""
     lines = commit.split('\n')
 
-    # remove any '%' character, since it'll be used inside the rpm spec changelog
-    log_entry = lines[0].replace("%","")
+    # Escape '%' as it will be used inside the rpm spec changelog
+    log_entry = lines[0].replace("%","%%")
 
     cve_set = set()
     bug_set = set()
