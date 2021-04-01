@@ -778,17 +778,23 @@ static void pcs_fuse_stat_work(struct work_struct *w)
 	mod_delayed_work(cc->wq, &cc->stat.work, STAT_TIMER_PERIOD * HZ);
 }
 
-static struct dentry *fuse_kio_add_dentry(struct dentry *parent,
-					  struct fuse_conn *fc,
-					  const char *name,
-					  int mode, int nlink,
-					  const struct inode_operations *iop,
-					  const struct file_operations *fop,
-					  void *ctx)
+static struct dentry *fuse_stat_add_dentry(struct dentry *parent,
+					   struct pcs_fuse_stat *stat,
+					   const char *name,
+					   int mode, int nlink,
+					   const struct inode_operations *iop,
+					   const struct file_operations *fop,
+					   void *ctx)
 {
+	struct pcs_cluster_core *cc =
+		container_of(stat, struct pcs_cluster_core, stat);
+	struct fuse_conn *fc = container_of(cc,struct pcs_fuse_cluster, cc)->fc;
 	struct inode *inode;
-	struct dentry *dentry = d_alloc_name(parent, name);
+	struct dentry *dentry;
 
+	WARN_ON(stat->ctl_ndents >= STAT_NUM_DENTRIES);
+
+	dentry = d_alloc_name(parent, name);
 	if (!dentry)
 		return NULL;
 
@@ -810,14 +816,22 @@ static struct dentry *fuse_kio_add_dentry(struct dentry *parent,
 	inode->i_private = ctx;
 	d_add(dentry, inode);
 
+	stat->ctl_dentry[stat->ctl_ndents++] = dentry;
+
 	return dentry;
 }
 
-static void fuse_kio_rm_dentry(struct dentry *dentry)
+static void fuse_stat_rm_dentries(struct pcs_fuse_stat *stat)
 {
-	d_inode(dentry)->i_private = NULL;
-	d_drop(dentry);
-	dput(dentry);
+	int i;
+
+	for (i = stat->ctl_ndents - 1; i >= 0; i--) {
+		struct dentry *dentry = stat->ctl_dentry[i];
+		d_inode(dentry)->i_private = NULL;
+		d_drop(dentry);
+		dput(dentry);
+	}
+	stat->ctl_ndents = 0;
 }
 
 int pcs_fuse_fstat_alloc(struct pcs_fuse_io_lat_sync *lat)
@@ -874,86 +888,84 @@ void pcs_fuse_io_stat_free(struct pcs_fuse_io_stat_sync *iostat)
 	free_percpu(iostat->CURR(iostat));
 }
 
-void pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
+int pcs_fuse_stat_init(struct pcs_fuse_stat *stat)
 {
 	struct pcs_cluster_core *cc =
 		container_of(stat, struct pcs_cluster_core, stat);
 	struct fuse_conn *fc = container_of(cc,struct pcs_fuse_cluster, cc)->fc;
+	struct dentry *kio_stat;
 
 	mutex_lock(&fuse_mutex);
+
+	stat->ctl_ndents = 0;
+
 	if (!fuse_control_sb)
-		goto fail1;
+		goto fail;
 
 	if (pcs_fuse_io_stat_alloc(&stat->io))
-		goto fail1;
-
-	stat->kio_stat = fuse_kio_add_dentry(fc->conn_ctl, fc, "kio_stat",
-					     S_IFDIR | S_IXUSR, 2,
-					     &simple_dir_inode_operations,
-					     &simple_dir_operations, fc);
-	if (!stat->kio_stat) {
-		pr_err("kio: can't create kio stat directory");
-		goto fail2;
-	}
+		goto fail;
 
 	INIT_DELAYED_WORK(&stat->work, pcs_fuse_stat_work);
+
+	kio_stat = fuse_stat_add_dentry(fc->conn_ctl, stat, "kio_stat",
+					S_IFDIR | S_IXUSR, 2,
+					&simple_dir_inode_operations,
+					&simple_dir_operations, fc);
+	if (!kio_stat)
+		goto fail_dentries;
+
+	if (!fuse_stat_add_dentry(kio_stat, stat, "iostat",
+				  S_IFREG | S_IRUSR, 1, NULL,
+				  &pcs_fuse_iostat_ops, stat) ||
+	    !fuse_stat_add_dentry(kio_stat, stat, "requests",
+				  S_IFREG | S_IRUSR, 1, NULL,
+				  &pcs_fuse_requests_ops, stat) ||
+	    !fuse_stat_add_dentry(kio_stat, stat, "fstat",
+				  S_IFREG | S_IRUSR, 1, NULL,
+				  &pcs_fuse_fstat_ops, stat) ||
+	    !fuse_stat_add_dentry(kio_stat, stat, "fstat_lat",
+				  S_IFREG | S_IRUSR, 1, NULL,
+				  &pcs_fuse_fstat_lat_ops, stat) ||
+	    !fuse_stat_add_dentry(kio_stat, stat, "cs_stats",
+				  S_IFREG | S_IRUSR, 1, NULL,
+				  &pcs_fuse_cs_stats_ops, stat) ||
+	    !fuse_stat_add_dentry(kio_stat, stat,
+				  "storage_version",
+				  S_IFREG | S_IRUSR | S_IWUSR, 1, NULL,
+				  &pcs_fuse_storage_version_ops,
+				  stat))
+		goto fail_dentries;
+
+	atomic_inc(&fuse_control_sb->s_active);
+
+	mutex_unlock(&fuse_mutex);
+
 	mod_delayed_work(cc->wq, &stat->work, STAT_TIMER_PERIOD * HZ);
 
-	stat->iostat = fuse_kio_add_dentry(stat->kio_stat, fc, "iostat",
-					   S_IFREG | S_IRUSR, 1, NULL,
-					   &pcs_fuse_iostat_ops, stat);
-	stat->requests = fuse_kio_add_dentry(stat->kio_stat, fc, "requests",
-					     S_IFREG | S_IRUSR, 1, NULL,
-					     &pcs_fuse_requests_ops, stat);
-	stat->fstat = fuse_kio_add_dentry(stat->kio_stat, fc, "fstat",
-					  S_IFREG | S_IRUSR, 1, NULL,
-					  &pcs_fuse_fstat_ops, stat);
-	stat->fstat_lat = fuse_kio_add_dentry(stat->kio_stat, fc, "fstat_lat",
-					      S_IFREG | S_IRUSR, 1, NULL,
-					      &pcs_fuse_fstat_lat_ops, stat);
-	stat->cs_stats = fuse_kio_add_dentry(stat->kio_stat, fc, "cs_stats",
-					     S_IFREG | S_IRUSR, 1, NULL,
-					     &pcs_fuse_cs_stats_ops, stat);
-	stat->storage_version = fuse_kio_add_dentry(stat->kio_stat, fc,
-						    "storage_version",
-						    S_IFREG | S_IRUSR | S_IWUSR, 1, NULL,
-						    &pcs_fuse_storage_version_ops,
-						    stat);
-	mutex_unlock(&fuse_mutex);
-	return;
+	return 0;
 
-fail2:
+fail_dentries:
+	fuse_stat_rm_dentries(stat);
 	pcs_fuse_io_stat_free(&stat->io);
-fail1:
-	stat->kio_stat = NULL;
+fail:
 	mutex_unlock(&fuse_mutex);
+
+	return -ENOMEM;
 }
 
 void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat)
 {
 	mutex_lock(&fuse_mutex);
-	if (!stat->kio_stat) {
+	if (!stat->ctl_ndents) {
 		mutex_unlock(&fuse_mutex);
 		return;
 	}
 
-	if (fuse_control_sb) {
-		if (stat->iostat)
-			fuse_kio_rm_dentry(stat->iostat);
-		if (stat->requests)
-			fuse_kio_rm_dentry(stat->requests);
-		if (stat->fstat)
-			fuse_kio_rm_dentry(stat->fstat);
-		if (stat->fstat_lat)
-			fuse_kio_rm_dentry(stat->fstat_lat);
-		if (stat->cs_stats)
-			fuse_kio_rm_dentry(stat->cs_stats);
-		if (stat->storage_version)
-			fuse_kio_rm_dentry(stat->storage_version);
-		fuse_kio_rm_dentry(stat->kio_stat);
-	}
+	fuse_stat_rm_dentries(stat);
 	mutex_unlock(&fuse_mutex);
 
 	cancel_delayed_work_sync(&stat->work);
 	pcs_fuse_io_stat_free(&stat->io);
+
+	deactivate_super(fuse_control_sb);
 }
