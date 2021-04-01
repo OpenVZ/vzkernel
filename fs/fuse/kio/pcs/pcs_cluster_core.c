@@ -165,7 +165,13 @@ int pcs_cc_init(struct pcs_cluster_core *cc, struct workqueue_struct *wq,
 	 * pcs_srandomdev(&cc->rng);
 	 */
 
-	pcs_fuse_stat_init(&cc->stat);
+	err = pcs_fuse_stat_init(&cc->stat);
+	if (err) {
+		pcs_csset_fini(&cc->css);
+		pcs_mapset_fini(&cc->maps);
+		pcs_rpc_engine_fini(&cc->eng);
+		return err;
+	}
 
 	memset(&cc->cfg,   0, sizeof(cc->cfg));
 	memset(&cc->op,	   0, sizeof(cc->op));
