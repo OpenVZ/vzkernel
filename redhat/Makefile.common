@@ -48,7 +48,12 @@ else
 endif
 ifeq ($(VERSION_ON_UPSTREAM),1)
   # master is expected to track mainline.
-  MERGE_BASE:=$(shell $(GIT) merge-base $(HEAD) master)
+  MASTER:=$(shell $(GIT) rev-parse -q --verify origin/master || \
+                  $(GIT) rev-parse -q --verify master)
+  ifeq ($(MASTER),)
+      $(error "Missing an 'origin/master' or 'master' branch")
+  endif
+  MERGE_BASE:=$(shell $(GIT) merge-base $(HEAD) $(MASTER))
   _TAG:=$(shell $(GIT) describe $(MERGE_BASE))
   # a snapshot off of a tagged git is of the form [tag]-[cnt]-g[hash]
   SNAPSHOT:=$(shell echo $(_TAG) | grep -c '\-g')
