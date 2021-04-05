@@ -436,8 +436,10 @@ static int __net_init vti_init_net(struct net *net)
 	int err;
 	struct ip_tunnel_net *itn;
 
-	if (!ve_is_super(net->owner_ve))
-		return net_assign_generic(net, vti_net_id, NULL);
+	if (!ve_is_super(net->owner_ve)) {
+		net_generic_free(net, vti_net_id);
+		return 0;
+	}
 
 	err = ip_tunnel_init_net(net, vti_net_id, &vti_link_ops, "ip_vti0");
 	if (err)
