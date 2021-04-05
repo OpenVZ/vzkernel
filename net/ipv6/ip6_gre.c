@@ -1234,8 +1234,10 @@ static int __net_init ip6gre_init_net(struct net *net)
 	int err;
 
 #ifdef CONFIG_VE
-	if (!(net->owner_ve->features & VE_FEATURE_IPGRE))
-		return net_assign_generic(net, ip6gre_net_id, NULL);
+	if (!(net->owner_ve->features & VE_FEATURE_IPGRE)) {
+		net_generic_free(net, ip6gre_net_id);
+		return 0;
+	}
 #endif
 
 	ign->fb_tunnel_dev = alloc_netdev(sizeof(struct ip6_tnl), "ip6gre0",
