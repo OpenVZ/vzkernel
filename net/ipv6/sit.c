@@ -1740,8 +1740,10 @@ static int __net_init sit_init_net(struct net *net)
 	struct ip_tunnel *t;
 	int err;
 
-	if (!(net->owner_ve->features & VE_FEATURE_SIT))
-		return net_assign_generic(net, sit_net_id, NULL);
+	if (!(net->owner_ve->features & VE_FEATURE_SIT)) {
+		net_generic_free(net, sit_net_id);
+		return 0;
+	}
 
 	sitn->tunnels[0] = sitn->tunnels_wc;
 	sitn->tunnels[1] = sitn->tunnels_l;
@@ -1791,7 +1793,6 @@ static void __net_exit sit_exit_net(struct net *net)
 	sit_destroy_tunnels(net, &list);
 	unregister_netdevice_many(&list);
 	rtnl_unlock();
-	net_assign_generic(net, sit_net_id, NULL);
 }
 
 static struct pernet_operations sit_net_ops = {
