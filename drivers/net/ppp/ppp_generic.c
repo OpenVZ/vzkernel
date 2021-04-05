@@ -884,9 +884,10 @@ static __net_init int ppp_init_net(struct net *net)
 {
 	struct ppp_net *pn = net_generic(net, ppp_net_id);
 
-	if (!(net->owner_ve->features & VE_FEATURE_PPP))
-		return net_assign_generic(net, ppp_net_id, NULL);
-
+	if (!(net->owner_ve->features & VE_FEATURE_PPP)) {
+		net_generic_free(net, ppp_net_id);
+		return 0;
+	}
 	idr_init(&pn->units_idr);
 	mutex_init(&pn->all_ppp_mutex);
 
