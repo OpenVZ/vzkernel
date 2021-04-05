@@ -472,7 +472,7 @@ static struct xfrm_tunnel ipip_handler __read_mostly = {
 static int __net_init ipip_init_net(struct net *net)
 {
 	if (!(net->owner_ve->features & VE_FEATURE_IPIP)) {
-		net_assign_generic(net, ipip_net_id);
+		net_generic_free(net, ipip_net_id);
 		return 0;
 	}
 	return ip_tunnel_init_net(net, ipip_net_id, &ipip_link_ops, "tunl0");
