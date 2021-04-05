@@ -1169,9 +1169,10 @@ static __net_init int pppoe_init_net(struct net *net)
 	struct pppoe_net *pn = pppoe_pernet(net);
 	struct proc_dir_entry *pde;
 
-	if (!(net->owner_ve->features & VE_FEATURE_PPP))
-		return net_assign_generic(net, pppoe_net_id, NULL);
-
+	if (!(net->owner_ve->features & VE_FEATURE_PPP)) {
+		net_generic_free(net, pppoe_net_id);
+		return 0;
+	}
 	rwlock_init(&pn->hash_lock);
 
 	pde = proc_net_create("pppoe", S_IRUGO, net->proc_net, &pppoe_seq_fops);
