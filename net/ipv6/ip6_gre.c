@@ -1097,6 +1097,7 @@ static void ip6gre_tunnel_setup(struct net_device *dev)
 
 	dev->type = ARPHRD_IP6GRE;
 
+	dev->features |= NETIF_F_VIRTUAL;
 	dev->flags |= IFF_NOARP;
 	dev->addr_len = sizeof(struct in6_addr);
 	netif_keep_dst(dev);
