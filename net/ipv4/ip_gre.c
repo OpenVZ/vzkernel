@@ -788,8 +788,10 @@ static const struct gre_protocol ipgre_protocol = {
 static int __net_init ipgre_init_net(struct net *net)
 {
 #ifdef CONFIG_VE
-	if (!(net->owner_ve->features & VE_FEATURE_IPGRE))
-		return net_assign_generic(net, ipgre_net_id, NULL);
+	if (!(net->owner_ve->features & VE_FEATURE_IPGRE)) {
+		net_generic_free(net, ipgre_net_id);
+		return 0;
+	}
 #endif
 	return ip_tunnel_init_net(net, ipgre_net_id, &ipgre_link_ops, NULL);
 }
@@ -1222,8 +1224,10 @@ EXPORT_SYMBOL_GPL(gretap_fb_dev_create);
 static int __net_init ipgre_tap_init_net(struct net *net)
 {
 #ifdef CONFIG_VE
-	if (!(net->owner_ve->features & VE_FEATURE_IPGRE))
-		return net_assign_generic(net, gre_tap_net_id, NULL);
+	if (!(net->owner_ve->features & VE_FEATURE_IPGRE)) {
+		net_generic_free(net, gre_tap_net_id);
+		return 0;
+	}
 #endif
 	return ip_tunnel_init_net(net, gre_tap_net_id, &ipgre_tap_ops, "gretap0");
 }
