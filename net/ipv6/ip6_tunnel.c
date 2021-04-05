@@ -2045,8 +2045,10 @@ static int __net_init ip6_tnl_init_net(struct net *net)
 	int err;
 
 #ifdef CONFIG_VE
-	if (!(net->owner_ve->features & VE_FEATURE_IPIP))
-		return net_assign_generic(net, ip6_tnl_net_id, NULL);
+	if (!(net->owner_ve->features & VE_FEATURE_IPIP)) {
+		net_generic_free(net, ip6_tnl_net_id);
+		return 0;
+	}
 #endif
 
 	ip6n->tnls[0] = ip6n->tnls_wc;
