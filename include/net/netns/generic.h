@@ -56,8 +56,8 @@ static inline void net_generic_free(const struct net *net, unsigned int id)
 
 	rcu_read_lock();
 	ng = rcu_dereference(net->gen);
-	ptr = ng->ptr[id];
-	ng->ptr[id] = NULL;
+	ptr = ng->ptr[id - 1];
+	ng->ptr[id - 1] = NULL;
 	rcu_read_unlock();
 
 	kfree(ptr);
