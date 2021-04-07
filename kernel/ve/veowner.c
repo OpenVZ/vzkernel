@@ -27,6 +27,11 @@ static void prepare_proc(void)
 	if (!proc_vz_dir)
 		panic("Can't create /proc/vz dir");
 
+	/*
+	 * Can't easily drop this: without dropping /proc/vz dir
+	 * systemd considers it's in a Container and Node does not boot.
+	 * https://jira.sw.ru/browse/PSBM-127913
+	 */
 	bc_proc_root = proc_mkdir_mode("bc", 0, NULL);
         if (!bc_proc_root)
                 panic("Can't create /proc/bc entry");
