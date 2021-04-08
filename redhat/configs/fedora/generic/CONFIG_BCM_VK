@@ -21,4 +21,4 @@
 # 
 # 
 # 
-# CONFIG_BCM_VK is not set
+CONFIG_BCM_VK=m

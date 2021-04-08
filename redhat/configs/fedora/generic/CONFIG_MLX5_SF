@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_MLX5_SF is not set
+CONFIG_MLX5_SF=y

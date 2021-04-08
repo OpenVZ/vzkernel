@@ -26,4 +26,4 @@
 # 
 # 
 # 
-# CONFIG_KFENCE is not set
+CONFIG_KFENCE=y

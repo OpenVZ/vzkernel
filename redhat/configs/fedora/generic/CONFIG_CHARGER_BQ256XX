@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_CHARGER_BQ256XX is not set
+CONFIG_CHARGER_BQ256XX=m

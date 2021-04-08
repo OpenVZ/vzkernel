@@ -14,4 +14,4 @@
 # 
 # 
 # 
-# CONFIG_NTB_EPF is not set
+CONFIG_NTB_EPF=m

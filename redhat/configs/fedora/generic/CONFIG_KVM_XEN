@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_KVM_XEN is not set
+CONFIG_KVM_XEN=y

@@ -1,15 +1,15 @@
-# CONFIG_VIDEO_OV5648:
+# CONFIG_VIDEO_OV8865:
 # 
-# This is a Video4Linux2 sensor driver for the OmniVision
-# OV5648 camera.
+# This is a Video4Linux2 sensor driver for OmniVision
+# OV8865 camera sensor.
 # 
 # To compile this driver as a module, choose M here: the
-# module will be called ov5648.
+# module will be called ov8865.
 # 
-# Symbol: VIDEO_OV5648 [=n]
+# Symbol: VIDEO_OV8865 [=n]
 # Type  : tristate
-# Defined at drivers/media/i2c/Kconfig:953
-#   Prompt: OmniVision OV5648 sensor support
+# Defined at drivers/media/i2c/Kconfig:1078
+#   Prompt: OmniVision OV8865 sensor support
 #   Depends on: MEDIA_SUPPORT [=m] && I2C [=y] && PM [=y] && VIDEO_V4L2 [=m]
 #   Visible if: MEDIA_SUPPORT [=m] && I2C [=y] && PM [=y] && VIDEO_V4L2 [=m] && MEDIA_CAMERA_SUPPORT [=y]
 #   Location:
@@ -21,4 +21,4 @@
 # 
 # 
 # 
-# CONFIG_VIDEO_OV5648 is not set
+CONFIG_VIDEO_OV8865=m

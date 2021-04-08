@@ -22,4 +22,4 @@
 # 
 # 
 # 
-# CONFIG_ACRN_HSM is not set
+CONFIG_ACRN_HSM=m

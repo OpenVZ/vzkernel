@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_USB_SERIAL_XR is not set
+CONFIG_USB_SERIAL_XR=m

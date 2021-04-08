@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_NET_DSA_TAG_XRS700X is not set
+CONFIG_NET_DSA_TAG_XRS700X=m

@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_MT7921E is not set
+CONFIG_MT7921E=m
