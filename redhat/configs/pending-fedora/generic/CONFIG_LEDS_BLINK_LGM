@@ -1,0 +1,19 @@
+# CONFIG_LEDS_BLINK_LGM:
+# 
+# Parallel to serial conversion, which is also called SSO controller,
+# can drive external shift register for LED outputs.
+# This enables LED support for Serial Shift Output controller(SSO).
+# 
+# Symbol: LEDS_BLINK_LGM [=n]
+# Type  : tristate
+# Defined at drivers/leds/blink/Kconfig:10
+#   Prompt: LED support for Intel LGM SoC series
+#   Depends on: NEW_LEDS [=y] && LEDS_BLINK [=y] && LEDS_CLASS [=y] && MFD_SYSCON [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> LED Support (NEW_LEDS [=y])
+#         -> LED Blink support (LEDS_BLINK [=y])
+# 
+# 
+# 
+# CONFIG_LEDS_BLINK_LGM is not set

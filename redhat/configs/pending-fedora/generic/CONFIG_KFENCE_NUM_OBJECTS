@@ -1,0 +1,20 @@
+# CONFIG_KFENCE_NUM_OBJECTS:
+# 
+# The number of guarded objects available. For each KFENCE object, 2
+# pages are required; with one containing the object and two adjacent
+# ones used as guard pages.
+# 
+# Symbol: KFENCE_NUM_OBJECTS [=255]
+# Type  : integer
+# Range : [1 65535]
+# Defined at lib/Kconfig.kfence:49
+#   Prompt: Number of guarded objects available
+#   Depends on: KFENCE [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Memory Debugging
+#         -> KFENCE: low-overhead sampling-based memory safety error detector (KFENCE [=y])
+# 
+# 
+# 
+CONFIG_KFENCE_NUM_OBJECTS=255

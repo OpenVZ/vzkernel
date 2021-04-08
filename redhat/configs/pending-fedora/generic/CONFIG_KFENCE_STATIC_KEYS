@@ -1,0 +1,21 @@
+# CONFIG_KFENCE_STATIC_KEYS:
+# 
+# Use static keys (static branches) to set up KFENCE allocations. Using
+# static keys is normally recommended, because it avoids a dynamic
+# branch in the allocator's fast path. However, with very low sample
+# intervals, or on systems that do not support jump labels, a dynamic
+# branch may still be an acceptable performance trade-off.
+# 
+# Symbol: KFENCE_STATIC_KEYS [=y]
+# Type  : bool
+# Defined at lib/Kconfig.kfence:27
+#   Prompt: Use static keys to set up allocations
+#   Depends on: KFENCE [=y] && JUMP_LABEL [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Memory Debugging
+#         -> KFENCE: low-overhead sampling-based memory safety error detector (KFENCE [=y])
+# 
+# 
+# 
+CONFIG_KFENCE_STATIC_KEYS=y

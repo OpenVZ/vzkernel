@@ -1,0 +1,22 @@
+# CONFIG_KFENCE_SAMPLE_INTERVAL:
+# 
+# The KFENCE sample interval determines the frequency with which heap
+# allocations will be guarded by KFENCE. May be overridden via boot
+# parameter "kfence.sample_interval".
+# 
+# Set this to 0 to disable KFENCE by default, in which case only
+# setting "kfence.sample_interval" to a non-zero value enables KFENCE.
+# 
+# Symbol: KFENCE_SAMPLE_INTERVAL [=100]
+# Type  : integer
+# Defined at lib/Kconfig.kfence:38
+#   Prompt: Default sample interval in milliseconds
+#   Depends on: KFENCE [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Memory Debugging
+#         -> KFENCE: low-overhead sampling-based memory safety error detector (KFENCE [=y])
+# 
+# 
+# 
+CONFIG_KFENCE_SAMPLE_INTERVAL=100

@@ -1,0 +1,17 @@
+# CONFIG_DTPM_CPU:
+# 
+# This enables support for CPU power limitation based on
+# energy model.
+# Symbol: DTPM_CPU [=n]
+# Type  : bool
+# Defined at drivers/powercap/Kconfig:53
+#   Prompt: Add CPU power capping based on the energy model
+#   Depends on: POWERCAP [=y] && DTPM [=y] && ENERGY_MODEL [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Generic powercap sysfs driver (POWERCAP [=y])
+#         -> Power capping for Dynamic Thermal Power Management (EXPERIMENTAL) (DTPM [=y])
+# 
+# 
+# 
+# CONFIG_DTPM_CPU is not set

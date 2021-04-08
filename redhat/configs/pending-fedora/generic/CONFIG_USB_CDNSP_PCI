@@ -1,0 +1,19 @@
+# CONFIG_USB_CDNSP_PCI:
+# 
+# Say Y here if your system has a Cadence CDNSP dual-role controller.
+# It supports: dual-role switch Host-only, and Peripheral-only.
+# 
+# If you choose to build this driver is a dynamically linked
+# module, the module will be called cdnsp.ko.
+# Symbol: USB_CDNSP_PCI [=n]
+# Type  : tristate
+# Defined at drivers/usb/cdns3/Kconfig:85
+#   Prompt: Cadence CDNSP Dual-Role Controller
+#   Depends on: USB_SUPPORT [=y] && USB_CDNS_SUPPORT [=m] && USB_PCI [=y] && ACPI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> USB support (USB_SUPPORT [=y])
+# 
+# 
+# 
+# CONFIG_USB_CDNSP_PCI is not set
