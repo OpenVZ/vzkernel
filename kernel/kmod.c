@@ -157,6 +157,10 @@ int __request_module(bool wait, const char *fmt, ...)
 	    !ve_allow_module_load)
 		return -EPERM;
 
+	/* Check that module functionality is permitted */
+	if (!module_payload_allowed(module_name))
+		return -EPERM;
+
 	/*
 	 * This function may be called from ve0, where standard behaviour
 	 * is not to use blacklist. So, we request blacklist reading only
@@ -195,3 +199,32 @@ int __request_module(bool wait, const char *fmt, ...)
 	return ret;
 }
 EXPORT_SYMBOL(__request_module);
+
+#ifdef CONFIG_VE
+
+/* ve0 allowed modules */
+static const char * const ve0_allowed_mod[] = {
+};
+
+/*
+ * module_payload_allowed - check if module functionality is allowed
+ *			    to be used inside current virtual environment.
+ *
+ * Returns true if it is allowed or we're in ve0, false otherwise.
+ */
+bool module_payload_allowed(const char *module)
+{
+	int i;
+
+	if (ve_is_super(get_exec_env()))
+		return true;
+
+	/* Look for full module name in ve0_allowed_mod table */
+	for (i = 0; i < ARRAY_SIZE(ve0_allowed_mod); i++) {
+		if (!strcmp(ve0_allowed_mod[i], module))
+			return true;
+	}
+
+	return false;
+}
+#endif /* CONFIG_VE */
