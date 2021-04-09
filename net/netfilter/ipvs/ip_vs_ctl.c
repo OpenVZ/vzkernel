@@ -36,6 +36,7 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/mutex.h>
+#include <linux/ve.h>
 
 #include <net/net_namespace.h>
 #include <linux/nsproxy.h>
