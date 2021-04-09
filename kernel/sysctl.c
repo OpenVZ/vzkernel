@@ -117,12 +117,17 @@ extern unsigned int sysctl_nr_open_min, sysctl_nr_open_max;
 extern int sysctl_nr_trim_pages;
 #endif
 
+int ve_allow_module_load = 1;
+EXPORT_SYMBOL(ve_allow_module_load);
+
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
 #endif
 
 static int __maybe_unused neg_one = -1;
+static int __maybe_unused zero = 0;
+static int __maybe_unused one = 1;
 static int __maybe_unused two = 2;
 static int __maybe_unused four = 4;
 static unsigned long zero_ul;
@@ -917,6 +922,17 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec_minmax_sysadmin,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= &two,
+	},
+#endif
+#ifdef CONFIG_VE
+        {
+		.procname       = "ve_allow_module_load",
+		.data           = &ve_allow_module_load,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = &proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
 	},
 #endif
 	{
