@@ -9,6 +9,7 @@
 #include <linux/percpu.h>
 #include <linux/netdevice.h>
 #include <linux/security.h>
+#include <linux/ve.h>
 #include <net/net_namespace.h>
 #ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
