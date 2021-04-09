@@ -65,11 +65,11 @@ char modprobe_path[KMOD_PATH_LEN] = "/sbin/modprobe";
 
 static void free_modprobe_argv(struct subprocess_info *info)
 {
-	kfree(info->argv[3]); /* check call_modprobe() */
+	kfree(info->argv[4]); /* check call_modprobe() */
 	kfree(info->argv);
 }
 
-static int call_modprobe(char *module_name, int wait)
+static int call_modprobe(char *module_name, int wait, int blacklist)
 {
 	struct subprocess_info *info;
 	static char *envp[] = {
@@ -79,7 +79,7 @@ static int call_modprobe(char *module_name, int wait)
 		NULL
 	};
 
-	char **argv = kmalloc(sizeof(char *[5]), GFP_KERNEL);
+	char **argv = kmalloc(sizeof(char *[6]), GFP_KERNEL);
 	if (!argv)
 		goto out;
 
@@ -89,9 +89,13 @@ static int call_modprobe(char *module_name, int wait)
 
 	argv[0] = modprobe_path;
 	argv[1] = "-q";
-	argv[2] = "--";
-	argv[3] = module_name;	/* check free_modprobe_argv() */
-	argv[4] = NULL;
+	if (blacklist)
+		argv[2] = "-b";
+	else
+		argv[2] = "-q"; /* just repeat argv[1] */
+	argv[3] = "--";
+	argv[4] = module_name;	/* check free_modprobe_argv() */
+	argv[5] = NULL;
 
 	info = call_usermodehelper_setup(modprobe_path, argv, envp, GFP_KERNEL,
 					 NULL, free_modprobe_argv, NULL);
@@ -128,6 +132,7 @@ int __request_module(bool wait, const char *fmt, ...)
 {
 	va_list args;
 	char module_name[MODULE_NAME_LEN];
+	bool blacklist;
 	int ret;
 
 	/*
@@ -152,6 +157,13 @@ int __request_module(bool wait, const char *fmt, ...)
 	    !ve_allow_module_load)
 		return -EPERM;
 
+	/*
+	 * This function may be called from ve0, where standard behaviour
+	 * is not to use blacklist. So, we request blacklist reading only
+	 * if we're inside CT.
+	 */
+	blacklist = !ve_is_super(get_exec_env());
+
 	ret = security_kernel_module_request(module_name);
 	if (ret)
 		return ret;
@@ -175,7 +187,7 @@ int __request_module(bool wait, const char *fmt, ...)
 
 	trace_module_request(module_name, wait, _RET_IP_);
 
-	ret = call_modprobe(module_name, wait ? UMH_WAIT_PROC : UMH_WAIT_EXEC);
+	ret = call_modprobe(module_name, wait ? UMH_WAIT_PROC : UMH_WAIT_EXEC, blacklist);
 
 	atomic_inc(&kmod_concurrent_max);
 	wake_up(&kmod_wq);
