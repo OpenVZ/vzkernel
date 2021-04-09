@@ -1737,7 +1737,7 @@ int xt_proto_init(struct net *net, u_int8_t af)
 	struct proc_dir_entry *proc;
 	kuid_t root_uid;
 	kgid_t root_gid;
-	int mode = 0440;
+	int mode;
 #endif
 
 	if (af >= ARRAY_SIZE(xt_prefix))
@@ -1745,8 +1745,7 @@ int xt_proto_init(struct net *net, u_int8_t af)
 
 
 #ifdef CONFIG_PROC_FS
-	if (likely(net_ipt_permitted(net, VE_IP_IPTABLES)))
-		mode |= S_ISVTX;
+	mode = 0440 | S_ISVTX;
 
 	root_uid = make_kuid(net->user_ns, 0);
 	root_gid = make_kgid(net->user_ns, 0);
