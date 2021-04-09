@@ -725,7 +725,6 @@ err_kthreadd:
 	ve_list_del(ve);
 err_list:
 	ve_drop_context(ve);
-	kfree(ve->ve_name);
 	return err;
 }
 
