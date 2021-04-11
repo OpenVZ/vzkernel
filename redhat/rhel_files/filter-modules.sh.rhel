@@ -91,7 +91,7 @@ done
 # Filter the char drivers
 for char in ${chardrvs}
 do
-	filter_dir $1 drivers/char/${input}
+	filter_dir $1 drivers/char/${char}
 done
 
 # Filter the ethernet drivers
