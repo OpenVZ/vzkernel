@@ -1195,13 +1195,7 @@ static struct sk_buff *netlink_alloc_large_skb(unsigned int size,
 	struct sk_buff *skb;
 	void *data;
 
-	if (size <= NLMSG_GOODSIZE || broadcast ||
-			/*
-			 * Once we have vmalloc_kmem() that would account
-			 * allocated pages into memcg, this check can be
-			 * removed.
-			 */
-			!ve_is_super(get_exec_env()))
+	if (size <= NLMSG_GOODSIZE || broadcast)
 		return alloc_skb(size, GFP_KERNEL);
 
 	size = SKB_DATA_ALIGN(size) +
