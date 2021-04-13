@@ -7643,7 +7643,7 @@ static int netif_alloc_rx_queues(struct net_device *dev)
 
 	BUG_ON(count < 1);
 
-	rx = kvzalloc(sz, GFP_KERNEL | __GFP_REPEAT);
+	rx = kvzalloc(sz, GFP_KERNEL_ACCOUNT | __GFP_REPEAT);
 	if (!rx)
 		return -ENOMEM;
 
