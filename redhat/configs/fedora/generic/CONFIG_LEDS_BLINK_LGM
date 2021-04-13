@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_LEDS_BLINK_LGM is not set
+CONFIG_LEDS_BLINK_LGM=m

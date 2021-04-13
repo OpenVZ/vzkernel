@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_BCM_VK_TTY is not set
+CONFIG_BCM_VK_TTY=y

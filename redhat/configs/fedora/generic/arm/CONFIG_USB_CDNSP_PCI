@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_USB_CDNSP_PCI is not set
+CONFIG_USB_CDNSP_PCI=m
