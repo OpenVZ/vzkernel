@@ -125,6 +125,12 @@ static void __init cma_activate_area(struct cma *cma)
 	spin_lock_init(&cma->mem_head_lock);
 #endif
 
+#ifdef CONFIG_RHEL_DIFFERENCES
+	/* s390x and ppc64 has been using CMA already in RHEL 8 as default. */
+	if (!IS_ENABLED(CONFIG_S390) && !IS_ENABLED(CONFIG_PPC64))
+		mark_tech_preview("CMA", NULL);
+#endif /* CONFIG_RHEL_DIFFERENCES */
+
 	return;
 
 not_in_zone:
@@ -436,6 +442,10 @@ struct page *cma_alloc(struct cma *cma, unsigned long count,
 
 	if (!cma || !cma->count || !cma->bitmap)
 		goto out;
+
+#ifdef CONFIG_RHEL_DIFFERENCES
+	pr_info_once("Initial CMA usage detected\n");
+#endif /* CONFIG_RHEL_DIFFERENCES */
 
 	pr_debug("%s(cma %p, count %lu, align %d)\n", __func__, (void *)cma,
 		 count, align);
