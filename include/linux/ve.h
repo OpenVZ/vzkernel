@@ -64,6 +64,8 @@ struct ve_struct {
 	int			_randomize_va_space;
 	int			odirect_enable;
 
+	int			fsync_enable;
+
 	u64			_uevent_seqnum;
 
 	struct kstat_lat_pcpu_struct	sched_lat_ve;

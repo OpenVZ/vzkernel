@@ -2282,6 +2282,7 @@ void kill_anon_super(struct super_block *sb);
 void kill_litter_super(struct super_block *sb);
 void deactivate_super(struct super_block *sb);
 void deactivate_locked_super(struct super_block *sb);
+void put_super(struct super_block *sb);
 int set_anon_super(struct super_block *s, void *data);
 int get_anon_bdev(dev_t *);
 void free_anon_bdev(dev_t);
@@ -3007,6 +3008,13 @@ extern bool is_subdir(struct dentry *, struct dentry *);
 extern bool path_is_under(const struct path *, const struct path *);
 
 extern char *file_path(struct file *, char *, int);
+
+int ve_fsync_behavior(void);
+
+#define FSYNC_NEVER	0	/* ve syncs are ignored    */
+#define FSYNC_ALWAYS	1	/* ve syncs work as ususal */
+#define FSYNC_FILTERED	2	/* ve syncs only its files */
+/* For non-ve0 FSYNC_FILTERED value means "get value from ve0". */
 
 #include <linux/err.h>
 

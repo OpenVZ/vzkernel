@@ -48,6 +48,8 @@ SYSCALL_DEFINE3(msync, unsigned long, start, size_t, len, int, flags)
 	end = start + len;
 	if (end < start)
 		goto out;
+	if (ve_fsync_behavior() == FSYNC_NEVER)
+		goto out;
 	error = 0;
 	if (end == start)
 		goto out;
