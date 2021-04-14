@@ -71,7 +71,7 @@ static DEFINE_IDA(mnt_group_ida);
 static struct hlist_head *mount_hashtable __read_mostly;
 static struct hlist_head *mountpoint_hashtable __read_mostly;
 static struct kmem_cache *mnt_cache __read_mostly;
-static DECLARE_RWSEM(namespace_sem);
+DECLARE_RWSEM(namespace_sem);
 
 /* /sys/fs */
 struct kobject *fs_kobj;
@@ -1305,9 +1305,8 @@ struct vfsmount *mnt_clone_internal(const struct path *path)
 	return &p->mnt;
 }
 
-#ifdef CONFIG_PROC_FS
-static struct mount *mnt_list_next(struct mnt_namespace *ns,
-				   struct list_head *p)
+struct mount *mnt_list_next(struct mnt_namespace *ns,
+			    struct list_head *p)
 {
 	struct mount *mnt, *ret = NULL;
 
@@ -1324,6 +1323,7 @@ static struct mount *mnt_list_next(struct mnt_namespace *ns,
 	return ret;
 }
 
+#ifdef CONFIG_PROC_FS
 /* iterator; we want it to have access to namespace_sem, thus here... */
 static void *m_start(struct seq_file *m, loff_t *pos)
 {
