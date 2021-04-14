@@ -8,6 +8,7 @@
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/export.h>
+#include <linux/mount.h>
 #include <linux/namei.h>
 #include <linux/sched.h>
 #include <linux/writeback.h>
@@ -16,7 +17,9 @@
 #include <linux/pagemap.h>
 #include <linux/quotaops.h>
 #include <linux/backing-dev.h>
+#include <linux/ve.h>
 #include "internal.h"
+#include "mount.h"
 
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \
 			SYNC_FILE_RANGE_WAIT_AFTER)
@@ -95,6 +98,133 @@ static void fdatawait_one_bdev(struct block_device *bdev, void *arg)
 	filemap_fdatawait_keep_errors(bdev->bd_inode->i_mapping);
 }
 
+struct sync_sb {
+	struct list_head list;
+	struct super_block *sb;
+};
+
+static void sync_release_filesystems(struct list_head *sync_list)
+{
+	struct sync_sb *ss, *tmp;
+
+	list_for_each_entry_safe(ss, tmp, sync_list, list) {
+		list_del(&ss->list);
+		put_super(ss->sb);
+		kfree(ss);
+	}
+}
+
+static int sync_filesystem_collected(struct list_head *sync_list, struct super_block *sb)
+{
+	struct sync_sb *ss;
+
+	list_for_each_entry(ss, sync_list, list)
+		if (ss->sb == sb)
+			return 1;
+	return 0;
+}
+
+static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync_list)
+{
+	struct mount *mnt;
+	struct mnt_namespace *mnt_ns = ve->ve_ns->mnt_ns;
+	struct sync_sb *ss;
+	int ret = 0;
+
+	BUG_ON(!list_empty(sync_list));
+
+	down_read(&namespace_sem);
+	list_for_each_entry(mnt, &mnt_ns->list, mnt_list) {
+		if (sync_filesystem_collected(sync_list, mnt->mnt.mnt_sb))
+			continue;
+
+		ss = kmalloc(sizeof(*ss), GFP_KERNEL);
+		if (ss == NULL) {
+			ret = -ENOMEM;
+			break;
+		}
+		ss->sb = mnt->mnt.mnt_sb;
+		/*
+		 * We hold mount point and thus can be sure, that superblock is
+		 * alive. And it means, that we can safely increase it's usage
+		 * counter.
+		 */
+		spin_lock(&sb_lock);
+		ss->sb->s_count++;
+		spin_unlock(&sb_lock);
+		list_add_tail(&ss->list, sync_list);
+	}
+	up_read(&namespace_sem);
+	return ret;
+}
+
+static void sync_filesystems_ve(struct ve_struct *ve, int wait)
+{
+	struct super_block *sb;
+	LIST_HEAD(sync_list);
+	struct sync_sb *ss;
+
+	/*
+	 * We don't need to care about allocating failure here. At least we
+	 * don't need to skip sync on such error.
+	 * Let's sync what we collected already instead.
+	 */
+	sync_collect_filesystems(ve, &sync_list);
+
+	list_for_each_entry(ss, &sync_list, list) {
+		sb = ss->sb;
+		down_read(&sb->s_umount);
+		if (!sb_rdonly(sb) && sb->s_root && (sb->s_flags & SB_BORN))
+			__sync_filesystem(sb, wait);
+		up_read(&sb->s_umount);
+	}
+
+	sync_release_filesystems(&sync_list);
+}
+
+static int is_sb_ve_accessible(struct ve_struct *ve, struct super_block *sb)
+{
+	struct mount *mnt;
+	struct mnt_namespace *mnt_ns = ve->ve_ns->mnt_ns;
+	int ret = 0;
+
+	down_read(&namespace_sem);
+	list_for_each_entry(mnt, &mnt_ns->list, mnt_list) {
+		if (mnt->mnt.mnt_sb == sb) {
+			ret = 1;
+			break;
+		}
+	}
+	up_read(&namespace_sem);
+	return ret;
+}
+
+static int __ve_fsync_behavior(struct ve_struct *ve)
+{
+	/*
+	 * - __ve_fsync_behavior() is not called for ve0
+	 * - FSYNC_FILTERED for veX does NOT mean "filtered" behavior
+	 * - FSYNC_FILTERED for veX means "get value from ve0"
+	 */
+	if (ve->fsync_enable == FSYNC_FILTERED)
+		return get_ve0()->fsync_enable;
+	else if (ve->fsync_enable)
+		return FSYNC_FILTERED; /* sync forced by ve is always filtered */
+	else
+		return 0;
+}
+
+int ve_fsync_behavior(void)
+{
+	struct ve_struct *ve;
+
+	ve = get_exec_env();
+	if (ve_is_super(ve))
+		return FSYNC_ALWAYS;
+	else
+		return __ve_fsync_behavior(ve);
+}
+
 /*
  * Sync everything. We start by waking flusher threads so that most of
  * writeback runs on all devices in parallel. Then we sync all inodes reliably
@@ -107,7 +237,31 @@ static void fdatawait_one_bdev(struct block_device *bdev, void *arg)
  */
 void ksys_sync(void)
 {
+	struct ve_struct *ve = get_exec_env();
 	int nowait = 0, wait = 1;
+
+	if (!ve_is_super(ve)) {
+		int fsb;
+		/*
+		 * init can't sync during VE stop. Rationale:
+		 *  - NFS with -o hard will block forever as network is down
+		 *  - no useful job is performed as VE0 will call umount/sync
+		 *    by his own later
+		 *  Den
+		 */
+		if (is_child_reaper(task_pid(current)))
+			return;
+
+		fsb = __ve_fsync_behavior(ve);
+		if (fsb == FSYNC_NEVER)
+			return;
+
+		if (fsb == FSYNC_FILTERED) {
+			sync_filesystems_ve(ve, nowait);
+			sync_filesystems_ve(ve, wait);
+			return;
+		}
+	}
 
 	wakeup_flusher_threads(WB_REASON_SYNC);
 	iterate_supers(sync_inodes_one_sb, NULL);
@@ -161,16 +315,39 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 {
 	struct fd f = fdget(fd);
 	struct super_block *sb;
-	int ret;
+	struct ve_struct *ve;
+	int ret = 0;
 
 	if (!f.file)
 		return -EBADF;
 	sb = f.file->f_path.dentry->d_sb;
 
+	ve = get_exec_env();
+
+	if (!ve_is_super(ve)) {
+		int fsb;
+		/*
+		 * init can't sync during VE stop. Rationale:
+		 *  - NFS with -o hard will block forever as network is down
+		 *  - no useful job is performed as VE0 will call umount/sync
+		 *    by his own later
+		 *  Den
+		 */
+		if (is_child_reaper(task_pid(current)))
+			goto fdput;
+
+		fsb = __ve_fsync_behavior(ve);
+		if (fsb == FSYNC_NEVER)
+			goto fdput;
+
+		if ((fsb == FSYNC_FILTERED) && !is_sb_ve_accessible(ve, sb))
+			goto fdput;
+	}
+
 	down_read(&sb->s_umount);
 	ret = sync_filesystem(sb);
 	up_read(&sb->s_umount);
-
+fdput:
 	fdput(f);
 	return ret;
 }
@@ -214,9 +391,13 @@ EXPORT_SYMBOL(vfs_fsync);
 
 static int do_fsync(unsigned int fd, int datasync)
 {
-	struct fd f = fdget(fd);
+	struct fd f;
 	int ret = -EBADF;
 
+	if (ve_fsync_behavior() == FSYNC_NEVER)
+		return 0;
+
+	f = fdget(fd);
 	if (f.file) {
 		ret = vfs_fsync(f.file, datasync);
 		fdput(f);
