@@ -1,0 +1,21 @@
+# CONFIG_USB_CDNSP_HOST:
+# 
+# Say Y here to enable host controller functionality of the
+# Cadence driver.
+# 
+# Host controller is compliant with XHCI so it uses
+# standard XHCI driver.
+# 
+# Symbol: USB_CDNSP_HOST [=n]
+# Type  : bool
+# Defined at drivers/usb/cdns3/Kconfig:111
+#   Prompt: Cadence CDNSP host controller
+#   Depends on: USB_SUPPORT [=y] && USB_CDNSP_PCI [=m] && (USB [=y]=y || USB [=y]=USB_CDNSP_PCI [=m])
+#   Location:
+#     -> Device Drivers
+#       -> USB support (USB_SUPPORT [=y])
+# Selects: USB_CDNS_HOST [=n]
+# 
+# 
+# 
+# CONFIG_USB_CDNSP_HOST is not set

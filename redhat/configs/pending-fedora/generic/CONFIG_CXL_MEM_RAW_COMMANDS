@@ -1,0 +1,29 @@
+# CONFIG_CXL_MEM_RAW_COMMANDS:
+# 
+# Enable CXL RAW command interface.
+# 
+# The CXL driver ioctl interface may assign a kernel ioctl command
+# number for each specification defined opcode. At any given point in
+# time the number of opcodes that the specification defines and a device
+# may implement may exceed the kernel's set of associated ioctl function
+# numbers. The mismatch is either by omission, specification is too new,
+# or by design. When prototyping new hardware, or developing / debugging
+# the driver it is useful to be able to submit any possible command to
+# the hardware, even commands that may crash the kernel due to their
+# potential impact to memory currently in use by the kernel.
+# 
+# If developing CXL hardware or the driver say Y, otherwise say N.
+# Symbol: CXL_MEM_RAW_COMMANDS [=n]
+# Type  : bool
+# Defined at drivers/cxl/Kconfig:36
+#   Prompt: RAW Command Interface for Memory Devices
+#   Depends on: CXL_BUS [=m] && CXL_MEM [=m]
+#   Location:
+#     -> Device Drivers
+#       -> PCI support (PCI [=y])
+#         -> CXL (Compute Express Link) Devices Support (CXL_BUS [=m])
+#           -> CXL.mem: Memory Devices (CXL_MEM [=m])
+# 
+# 
+# 
+# CONFIG_CXL_MEM_RAW_COMMANDS is not set

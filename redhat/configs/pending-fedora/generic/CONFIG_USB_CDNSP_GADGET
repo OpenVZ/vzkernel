@@ -1,0 +1,23 @@
+# CONFIG_USB_CDNSP_GADGET:
+# 
+# Say Y here to enable device controller functionality of the
+# Cadence CDNSP-DEV driver.
+# 
+# Cadence CDNSP Device Controller in device mode is
+# very similar to XHCI controller. Therefore some algorithms
+# used has been taken from host driver.
+# This controller supports FF, HS, SS and SSP mode.
+# It doesn't support LS.
+# 
+# Symbol: USB_CDNSP_GADGET [=n]
+# Type  : bool
+# Defined at drivers/usb/cdns3/Kconfig:98
+#   Prompt: Cadence CDNSP device controller
+#   Depends on: USB_SUPPORT [=y] && USB_CDNSP_PCI [=m] && (USB_GADGET [=m]=y || USB_GADGET [=m]=USB_CDNSP_PCI [=m])
+#   Location:
+#     -> Device Drivers
+#       -> USB support (USB_SUPPORT [=y])
+# 
+# 
+# 
+# CONFIG_USB_CDNSP_GADGET is not set
