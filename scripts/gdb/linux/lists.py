@@ -15,6 +15,14 @@ import gdb
 
 from linux import utils
 
+# In later versions of gdb COMPLETE_SYMBOL has been renamed to
+# COMPLETE_EXPRESSION. That's the only difference that will lead to
+# inability to debug via python gdb lib. We can safely use this substitution
+# without forcing the developer to go through inconveniences of gdb package
+# versioning.
+if 'COMPLETE_EXPRESSION' not in dir(gdb) and 'COMPLETE_SYMBOL' in dir(gdb):
+    gdb.COMPLETE_EXPRESSION = gdb.COMPLETE_SYMBOL
+
 list_head = utils.CachedType("struct list_head")
 
 
