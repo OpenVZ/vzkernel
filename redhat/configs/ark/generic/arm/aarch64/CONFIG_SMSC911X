@@ -1,1 +1,1 @@
-CONFIG_SMSC911X=m
+# CONFIG_SMSC911X is not set
