@@ -11,7 +11,7 @@
 
 driverdirs="atm auxdisplay bcma bluetooth firewire fpga infiniband media memstick message nfc ntb pcmcia ssb soundwire staging tty uio w1"
 
-ethdrvs="3com adaptec alteon altera amd atheros broadcom cadence chelsio cisco dec dlink emulex mellanox micrel myricom natsemi neterion nvidia oki-semi packetengines qlogic rdc renesas sfc silan sis sun tehuti via wiznet xircom"
+ethdrvs="3com adaptec alteon altera amd atheros broadcom cadence chelsio cisco dec dlink emulex mellanox micrel myricom natsemi neterion nvidia packetengines qlogic rdc sfc silan sis sun tehuti via wiznet xircom"
 
 drmdrvs="amd arm armada bridge ast exynos etnaviv hisilicon i2c imx meson mgag200 msm nouveau omapdrm panel pl111 radeon rockchip sti stm sun4i tegra tilcdc tiny vc4"
 
