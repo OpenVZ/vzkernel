@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_VDPA_SIM_NET is not set
+CONFIG_VDPA_SIM_NET=m
