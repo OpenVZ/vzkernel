@@ -257,7 +257,7 @@ S:	Maintained
 F:	drivers/net/ethernet/realtek/8139cp.c
 
 ACPI SUBSYSTEM
-M:	Al Stone <ahs3@redhat.com>
+M:	Mark Langsdorf <mlangsdo@redhat.com>
 M:	Lenny Szubowicz <lszubowi@redhat.com>
 M:	Prarit Bhargava <prarit@redhat.com>
 M:	David Arcari <darcari@redhat.com>
@@ -426,9 +426,9 @@ F:	block/
 BLUETOOTH SUBSYSTEM
 M:	Gopal Tiwari <gtiwari@redhat.com>
 S:	Maintained
-F:	drivers/bluetooth
+F:	drivers/bluetooth/
 F:	include/net/bluetooth/
-F:	net/bluetooth
+F:	net/bluetooth/
 
 BPF (Safe dynamic programs and tools)
 M:	Jiri Olsa <jolsa@redhat.com>
@@ -503,7 +503,6 @@ F:	drivers/net/bonding/
 F:	include/linux/if_bonding.h
 
 BUS DRIVER
-M:	Myron Stowe <myron.stowe@redhat.com>
 S:	Maintained
 F:	drivers/bus/
 
@@ -624,17 +623,30 @@ M:	Jeff Moyer <jmoyer@redhat.com>
 S:	Maintained
 F:	drivers/dax
 
+DM and MD build and config files
+M:	Mike Snitzer <snitzer@redhat.com>
+M:	Nigel Croxon <ncroxon@redhat.com>
+S:	Maintained
+F:	drivers/md/Kconfig
+F:	drivers/md/Makefile
+
 DEVICE MAPPER SUPPORT
 M:	Mike Snitzer <snitzer@redhat.com>
 S:	Maintained
 F:	Documentation/device-mapper/
-F:	drivers/md/Kconfig
-F:	drivers/md/Makefile
 F:	drivers/md/dm*
 F:	drivers/md/persistent-data/
 F:	include/linux/device-mapper.h
 F:	include/linux/dm-*.h
 F:	include/uapi/linux/dm-*.h
+
+SOFTWARE RAID (Multiple Disks, MD) SUPPORT
+M:	Nigel Croxon <ncroxon@redhat.com>
+S:	Maintained
+F:	drivers/md/md*
+F:	drivers/md/raid*
+F:	include/linux/raid/
+F:	include/uapi/linux/raid/
 
 DEVLINK
 M:	Petr Oros <poros@redhat.com>
@@ -681,7 +693,7 @@ F:	kernel/dma/
 F:	include/linux/dma*
 
 EDAC/HERM
-M:	Aristeu Rozanski <aris@redhat.com>
+M:	Aristeu Rozanski <arozansk@redhat.com>
 S:	Maintained
 F:	drivers/edac/
 
@@ -690,8 +702,13 @@ M:	Ewan D. Milne <emilne@redhat.com>
 S:	Maintained
 F:	drivers/scsi/lpfc
 
+ETHERNET
+S:	Maintained
+F:	drivers/net/ethernet/
+
 ETHERNET BRIDGE
 M:	Ivan Vecera <ivecera@redhat.com>
+M:	Hangbin Liu <haliu@redhat.com>
 S:	Maintained
 F:	net/bridge/
 F:	include/linux/if_bridge.h
@@ -790,17 +807,6 @@ F:	Documentation/devicetree/bindings/phy/
 F:	drivers/phy
 F:	include/linux/phy
 
-FUTEX SUBSYSTEM
-M:	Waiman Long <longman@redhat.com>
-S:	Maintained
-F:	Documentation/*futex*
-F:	include/asm-generic/futex.h
-F:	include/linux/futex.h
-F:	include/uapi/linux/futex.h
-F:	kernel/futex.c
-F:	tools/perf/bench/futex*
-F:	tools/testing/selftests/futex/
-
 GFS2 FILE SYSTEM
 M:	Bob Peterson <rpeterso@redhat.com>
 M:	Andreas Gruenbacher <agruenba@redhat.com>
@@ -875,6 +881,7 @@ F:	include/uapi/linux/input.h
 
 INTEGRITY SUBSYSTEM
 M:	Bruno Meneguele <bmeneg@redhat.com>
+R:	Jerry Snitselaar <jsnitsel@redhat.com>
 S:	Maintained
 F:	security/integrity/
 
@@ -1114,18 +1121,22 @@ LIB
 M:	Prarit Bhargava <prarit@redhat.com>
 S:	Maintained
 F:	lib/
+X:	lib/nlattr.c
 
 LIVE PATCHING / KPATCH
 M:	Josh Poimboeuf <jpoimboe@redhat.com>
 M:	Joe Lawrence <joe.lawrence@redhat.com>
 M:	Artem Savkov <asavkov@redhat.com>
+M:	Yannick Cote <ycote@redhat.com>
 S:	Maintained
-F:	kernel/livepatch/
-F:	include/linux/livepatch.h
+F:	Documentation/ABI/testing/sysfs-kernel-livepatch
+F:	Documentation/livepatch/
+F:	arch/powerpc/include/asm/livepatch.h
 F:	arch/x86/include/asm/livepatch.h
 F:	arch/x86/kernel/livepatch.c
-F:	Documentation/livepatch/
-F:	Documentation/ABI/testing/sysfs-kernel-livepatch
+F:	include/linux/livepatch.h
+F:	kernel/livepatch/
+F:	lib/livepatch/
 F:	samples/livepatch/
 F:	tools/testing/selftests/livepatch/
 
@@ -1183,13 +1194,41 @@ F:	drivers/net/ethernet/mellanox/mlxsw/
 
 MEMORY MANAGEMENT
 M:	Rafael Aquini <aquini@redhat.com>
+R:	Aristeu Rozanski <arozansk@redhat.com>
+R:	Don Dutile <ddutile@redhat.com>
+R:	Nico Pache <npache@redhat.com>
+R:	Waiman Long <longman@redhat.com>
+L:	mm-maint@redhat.com
 S:	Maintained
-F:	include/linux/mm.h
+F:	arch/arm64/mm/
+F:	arch/powerpc/mm/
+F:	arch/s390/mm/
+F:	arch/x86/mm/
+F:	include/linux/compaction.h
 F:	include/linux/gfp.h
-F:	include/linux/memory_hotplug.h
-F:	include/linux/mm.h
-F:	include/linux/mmzone.h
+F:	include/linux/huge*.h
+F:	include/linux/kasan.h
+F:	include/linux/khugepaged.h
+F:	include/linux/kmemleak.h
+F:	include/linux/ksm.h
+F:	include/linux/mem*.h
+F:	include/linux/migrate.h
+F:	include/linux/mm*.h
+F:	include/linux/node*.h
+F:	include/linux/numa.h
+F:	include/linux/oom.h
+F:	include/linux/page*.h
+F:	include/linux/pfn*.h
+F:	include/linux/rmap.h
+F:	include/linux/shm*.h
+F:	include/linux/shrinker.h
+F:	include/linux/slab_def.h
+F:	include/linux/slab.h
+F:	include/linux/slub_def.h
+F:	include/linux/swap*.h
 F:	include/linux/vmalloc.h
+F:	include/linux/vmpressure.h
+F:	include/linux/vmstat.h
 F:	mm/
 
 MEMORY HOTPLUG
@@ -1262,6 +1301,17 @@ F:	Documentation/mmc/
 F:	include/linux/mmc/
 F:	drivers/mmc/
 
+MEDIA INPUT INFRASTRUCTURE (V4L/DVB)
+M:	Jarod Wilson <jarod@redhat.com>
+S:	Maintained
+F:	drivers/media/
+F:	include/media/
+F:	include/uapi/linux/dvb/
+F:	include/uapi/linux/videodev2.h
+F:	include/uapi/linux/media.h
+F:	include/uapi/linux/v4l2-*
+F:	include/uapi/linux/ivtv*
+
 MYRICOM MYRI-10G 10GbE DRIVER (MYRI10GE)
 M:	Jarod Wilson <jarod@redhat.com>
 S:	Maintained
@@ -1313,6 +1363,7 @@ F:	drivers/net/ipvlan/
 F:	drivers/net/loopback.c
 F:	drivers/net/mac*
 F:	drivers/net/netconsole.c
+F:	drivers/net/netdevsim/
 F:	drivers/net/nlmon.c
 F:	drivers/net/veth.c
 F:	drivers/net/vxlan.c
@@ -1358,6 +1409,7 @@ F:	include/uapi/linux/tcp*
 F:	include/uapi/linux/tls.h
 F:	include/uapi/linux/udp.h
 F:	include/uapi/linux/xfrm.h
+F:	lib/nlattr.c
 F:	tools/testing/selftests/net/
 X:	include/net/*80211*
 X:	include/net/*80215*
@@ -1393,14 +1445,9 @@ F:	net/ipv6/calipso.c
 F:	net/netfilter/xt_CONNSECMARK.c
 F:	net/netfilter/xt_SECMARK.c
 
-NETWORKING [NETDEVSIM]
-M:	Hangbin Liu <haliu@redhat.com>
-S:	Maintained
-F:	drivers/net/netdevsim/
-I:	net
-
 NETWORKING [TEAM]
 M:	Hangbin Liu <haliu@redhat.com>
+M:	Xin Long <lxin@redhat.com>
 S:	Maintained
 F:	drivers/net/team/
 F:	include/linux/if_team.h
@@ -1437,7 +1484,8 @@ F:	include/uapi/linux/nitro_enclaves.h
 F:	samples/nitro_enclaves/
 
 NON-MASKABLE INTERRUPT (NMI)
-M:	Don Zickus <dzickus@redhat.com>
+M:	Prarit Bhargava <prarit@redhat.com>
+M:	David Arcari <darcari@redhat.com>
 S:	Maintained
 
 NVDIMM SUBSYSTEM
@@ -1469,6 +1517,13 @@ S:	Maintained
 F:	drivers/nvme/host/tcp.c
 F:	drivers/nvme/target/tcp.c
 F:	include/linux/nvme-tcp*.h
+
+Non Volatile Memory (nvmem)
+M:	Mark Salter <msalter@redhat.com>
+S:	Maintained
+F:	drivers/nvmem/
+F:	include/linux/nvmem-consumer.h
+F:	include/linux/nvmem-producer.h
 
 OMNI-PATH ARCHITECTURE (opa)
 M:	Kamal Heib <kheib@redhat.com>
@@ -1504,7 +1559,7 @@ F:	drivers/pci/hotplug/
 
 PERFORMANCE EVENTS SUBSYSTEM
 M:	Jiri Olsa <jolsa@redhat.com>
-M:	Don Zickus <dzickus@redhat.com>
+M:	Michael Petlan <mpetlan@redhat.com>
 S:	Maintained
 F:	kernel/events/*
 F:	include/linux/perf_event.h
@@ -1680,6 +1735,9 @@ F:	include/linux/wait.h
 
 SCSI CORE SUBSYSTEM (NOT INDIVIDUAL DRIVERS)
 M:	Ewan D. Milne <emilne@redhat.com>
+R:	Tomas Henzl <thenzl@redhat.com>
+R:	Maurizio Lombardi <mlombard@redhat.com>
+R:	Chris Leech <cleech@redhat.com>
 S:	Maintained
 F:	drivers/scsi/
 F:	include/scsi/
@@ -1692,6 +1750,7 @@ F:	include/target/
 
 SCTP PROTOCOL
 M:	Marcelo Ricardo Leitner <mleitner@redhat.com>
+M:	Xin Long <lxin@redhat.com>
 S:	Maintained
 F:	net/sctp/
 F:	include/linux/sctp.h
@@ -1768,16 +1827,6 @@ S:	Maintained
 F:	drivers/infiniband/sw/rxe/
 F:	include/uapi/rdma/rdma_user_rxe.h
 
-SOFTWARE RAID (Multiple Disks, MD) SUPPORT
-M:	Nigel Croxon <ncroxon@redhat.com>
-S:	Maintained
-F:	drivers/md/Kconfig
-F:	drivers/md/Makefile
-F:	drivers/md/md*
-F:	drivers/md/raid*
-F:	include/linux/raid/
-F:	include/uapi/linux/raid/
-
 SQUASHFS FILE SYSTEM
 M:	Abhijith Das <adas@redhat.com>
 S:	Maintained
@@ -1831,6 +1880,15 @@ F:	drivers/thermal/
 F:	include/linux/cpu_cooling.h
 F:	include/linux/thermal.h
 
+THUNDERBOLT SUBSYSTEM
+M:	Torez Smith <torez@redhat.com>
+R:	Jarod Wilson <jarod@redhat.com>
+S:	Maintained
+F:	drivers/net/thunderbolt.c
+F:	drivers/thunderbolt/
+F:	drivers/platform/x86/intel-wmi-thunderbolt.c
+F:	include/linux/thunderbolt.h
+
 TIPC PROTOCOL
 M:	Jon Maloy <jmaloy@redhat.com>
 M:	Xin Long <lxin@redhat.com>
@@ -1859,6 +1917,18 @@ M:	David Arcari <darcari@redhat.com>
 M:	Prarit Bhargava <prarit@redhat.com>
 S:	Maintained
 F:	arch/x86/
+X:	arch/x86/kvm/
+X:	arch/x86/kvm/*/
+X:	arch/x86/include/uapi/asm/kvm*
+X:	arch/x86/include/uapi/asm/vmx.h
+X:	arch/x86/include/asm/kvm*
+X:	arch/x86/include/asm/pvclock-abi.h
+X:	arch/x86/include/asm/vmx*.h
+X:	arch/x86/kernel/kvm.c
+X:	arch/x86/kernel/kvmclock.c
+X:	arch/x86/include/asm/svm.h
+X:	arch/x86/include/uapi/asm/svm.h
+X:	arch/x86/kvm/svm.c
 
 UNIVERSAL EXTENSIBLE FIRMWARE INTERFACE (UEFI/EFI)
 M:	Al Stone <ahs3@redhat.com>
@@ -1871,7 +1941,6 @@ F:	include/linux/efi.h
 
 USB SUBSYSTEM
 M:	Torez Smith <torez@redhat.com>
-M:	Don Zickus <dzickus@redhat.com>
 S:	Maintained
 F:	drivers/usb/
 
@@ -2076,4 +2145,14 @@ M:	Veronika Kabatova <vkabatov@redhat.com>
 M:	Michael Hofmann <mhofmann@redhat.com>
 S:	Maintained
 F:	.gitlab-ci.yml
+F:	.gitlab-ci-private.yml
 I:	INTERNAL
+
+watchdog
+M:	Jonathan Toppins <jtoppins@redhat.com>
+S:	Maintained
+F:	Documentation/watchdog/
+F:	drivers/watchdog/
+F:	drivers/acpi/acpi_watchdog.c
+F:	include/linux/watchdog.h
+F:	include/uapi/linux/watchdog.h
