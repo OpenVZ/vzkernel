@@ -2550,9 +2550,10 @@ success:
 	return 0;
 
 cleanup:
-	if(!killed)
+	if(!killed) {
 		unlock_page(page);
 		page_cache_release(page);
+	}
 error:
 	return err;
 }
