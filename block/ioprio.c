@@ -153,6 +153,10 @@ SYSCALL_DEFINE3(ioprio_set, int, which, int, who, int, ioprio)
 				break;
 
 			for_each_process_thread(g, p) {
+#ifdef CONFIG_VE
+				if (p->task_ve != get_exec_env())
+					continue;
+#endif
 				if (!uid_eq(task_uid(p), uid) ||
 				    !task_pid_vnr(p))
 					continue;
@@ -243,6 +247,10 @@ SYSCALL_DEFINE2(ioprio_get, int, which, int, who)
 				break;
 
 			for_each_process_thread(g, p) {
+#ifdef CONFIG_VE
+				if (p->task_ve != get_exec_env())
+					continue;
+#endif
 				if (!uid_eq(task_uid(p), user->uid) ||
 				    !task_pid_vnr(p))
 					continue;
