@@ -3817,8 +3817,9 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_file *ff = NULL;
 	struct fuse_req *req;
-	struct fuse_ioctl_in inarg;
+	struct fuse_ioctl_in inarg = (struct fuse_ioctl_in) { .cmd = FS_IOC_FIEMAP };
 	struct fuse_ioctl_out outarg;
 	struct fiemap ifiemap;
 	struct fiemap ofiemap;
@@ -3828,11 +3829,30 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 
 	err = 0;
 	spin_lock(&fi->lock);
-	if (!list_empty(&fi->write_files)) {
-		struct fuse_file *ff = list_entry(fi->write_files.next, struct fuse_file, write_entry);
+	/* Kernel API is weird in this place, we have to find a file associated with this inode.
+	 * This problem is similar to writepage routines, but it is much worse. When doing
+	 * writepage, we have some file open for write and can take any file from write_files
+	 * and it is safe to keep it with get/put. But here we can have the file open for read
+	 * and no files open for write. Even worse, if we select a random file open for write,
+	 * it can be closed by user from another thread and its close will violate close_wait requirement.
+	 * So, we have to search for a read-only file first and fallback to writable only
+	 * if there is no such file.
+	 */
+	if (!list_empty(&fi->rw_files)) {
+		struct fuse_file *t_ff;
+		list_for_each_entry(t_ff, &fi->rw_files, rw_entry) {
+			if (list_empty(&t_ff->write_entry)) {
+				ff = t_ff;
+				break;
+			}
+		}
+		if (!ff)
+			ff = list_entry(fi->rw_files.next, struct fuse_file, rw_entry);
+		fuse_file_get(ff);
 		inarg.fh = ff->fh;
-	} else if (!list_empty(&fi->rw_files)) {
-		struct fuse_file *ff = list_entry(fi->rw_files.next, struct fuse_file, rw_entry);
+	} else if (!list_empty(&fi->write_files)) {
+		ff = list_entry(fi->write_files.next, struct fuse_file, write_entry);
+		fuse_file_get(ff);
 		inarg.fh = ff->fh;
 	} else {
 		err = -EINVAL;
@@ -3840,10 +3860,6 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 	spin_unlock(&fi->lock);
 	if (err)
 		return err;
-
-	inarg.cmd = FS_IOC_FIEMAP;
-	inarg.arg = 0;
-	inarg.flags = 0;
 
 	ifiemap.fm_start = *start_p;
 	ifiemap.fm_length = *len_p;
@@ -3856,8 +3872,10 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 		npages = (cur_max*sizeof(struct fiemap_extent) + PAGE_SIZE - 1) / PAGE_SIZE;
 
 	req = fuse_get_req(fc, npages);
-	if (IS_ERR(req))
+	if (IS_ERR(req)) {
+		fuse_file_put(ff, false, false);
 		return PTR_ERR(req);
+	}
 
 	req->io_inode = inode;
 	req->in.h.opcode = FUSE_IOCTL;
@@ -3941,6 +3959,7 @@ out:
 		req->pages[allocated] = NULL;
 	}
 	fuse_put_request(fc, req);
+	fuse_file_put(ff, false, false);
 	return err;
 }
 
