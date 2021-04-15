@@ -232,6 +232,8 @@ Summary: The Linux kernel
 
 %if %{with toolchain_clang}
 %global make_opts %{make_opts} HOSTCC=clang CC=clang
+# clang does not support the -fdump-ipa-clones option
+%global with_ipaclones 0
 %endif
 
 # turn off debug kernel and kabichk for gcov builds
