@@ -690,6 +690,14 @@ static bool has_pid_permissions(struct pid_namespace *pid,
 	return ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS);
 }
 
+static bool is_visible_task(struct pid_namespace *ns, struct task_struct *tsk)
+{
+	if (ns->hide_pidns == 1 && task_active_pid_ns(tsk) != ns)
+		return false;
+	if (!has_pid_permissions(ns, tsk, HIDEPID_INVISIBLE))
+		return false;
+	return true;
+}
 
 static int proc_pid_permission(struct inode *inode, int mask)
 {
@@ -3275,7 +3283,7 @@ int proc_pid_readdir(struct file *file, struct dir_context *ctx)
 		unsigned int len;
 
 		cond_resched();
-		if (!has_pid_permissions(ns, iter.task, HIDEPID_INVISIBLE))
+		if (!is_visible_task(ns, iter.task))
 			continue;
 
 		len = snprintf(name, sizeof(name), "%u", iter.tgid);
