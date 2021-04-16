@@ -60,6 +60,9 @@ struct mount {
 	struct mountpoint *mnt_mp;	/* where is it mounted */
 	struct hlist_node mnt_mp_list;	/* list mounts with the same mountpoint */
 	struct list_head mnt_umounting; /* list entry for umount propagation */
+#ifdef CONFIG_VE
+	struct ve_struct *ve_owner;	/* VE in which this mount was created */
+#endif /* CONFIG_VE */
 #ifdef CONFIG_FSNOTIFY
 	struct fsnotify_mark_connector __rcu *mnt_fsnotify_marks;
 	__u32 mnt_fsnotify_mask;
