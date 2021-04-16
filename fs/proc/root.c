@@ -33,17 +33,20 @@ struct proc_fs_context {
 	struct pid_namespace	*pid_ns;
 	unsigned int		mask;
 	int			hidepid;
+	int			hidepidns;
 	int			gid;
 };
 
 enum proc_param {
 	Opt_gid,
 	Opt_hidepid,
+	Opt_hidepidns,
 };
 
 static const struct fs_parameter_spec proc_fs_parameters[] = {
 	fsparam_u32("gid",	Opt_gid),
 	fsparam_u32("hidepid",	Opt_hidepid),
+	fsparam_u32("hidepidns",Opt_hidepidns),
 	{}
 };
 
@@ -69,6 +72,13 @@ static int proc_parse_param(struct fs_context *fc, struct fs_parameter *param)
 			return invalfc(fc, "hidepid value must be between 0 and 2.\n");
 		break;
 
+	case Opt_hidepidns:
+		ctx->hidepidns = result.uint_32;
+		if (ctx->hidepidns < 0 || ctx->hidepidns > 1) {
+			return invalfc(fc, "proc: hidepidns value must be between 0 and 1.\n");
+		}
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -88,6 +98,8 @@ static void proc_apply_options(struct super_block *s,
 		pid_ns->pid_gid = make_kgid(user_ns, ctx->gid);
 	if (ctx->mask & (1 << Opt_hidepid))
 		pid_ns->hide_pid = ctx->hidepid;
+	if (ctx->mask & (1 << Opt_hidepidns))
+		pid_ns->hide_pidns = ctx->hidepidns;
 }
 
 static int proc_fill_super(struct super_block *s, struct fs_context *fc)
