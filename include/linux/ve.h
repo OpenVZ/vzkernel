@@ -88,6 +88,9 @@ struct ve_struct {
 	struct task_struct	*umh_task;
 
 	unsigned long		meminfo_val;
+
+	atomic_t		mnt_nr;	/* number of present VE mounts */
+
 #ifdef CONFIG_COREDUMP
 	char			core_pattern[CORENAME_MAX_SIZE];
 #endif
@@ -140,6 +143,8 @@ extern int nr_ve;
 
 #define capable_setveid() \
 	(ve_is_super(get_exec_env()) && capable(CAP_SYS_ADMIN))
+
+extern unsigned int sysctl_ve_mount_nr;
 
 #ifdef CONFIG_VE
 void ve_add_to_release_list(struct cgroup *cgrp);

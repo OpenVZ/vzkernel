@@ -71,6 +71,7 @@ struct ve_struct ve0 = {
 #else
 					2,
 #endif
+	.mnt_nr			= ATOMIC_INIT(0),
 	.netns_avail_nr		= ATOMIC_INIT(INT_MAX),
 	.netns_max_nr		= INT_MAX,
 	.meminfo_val		= VE_MEMINFO_SYSTEM,
@@ -922,6 +923,8 @@ do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
 	kmapset_init_key(&ve->sysfs_perms_key);
+
+	atomic_set(&ve->mnt_nr, 0);
 
 #ifdef CONFIG_COREDUMP
 	strcpy(ve->core_pattern, "core");
