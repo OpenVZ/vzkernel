@@ -1040,8 +1040,7 @@ static struct inet6_ifaddr *
 ipv6_add_addr(struct inet6_dev *idev, struct ifa6_config *cfg,
 	      bool can_block, struct netlink_ext_ack *extack)
 {
-	gfp_t gfp_flags = (can_block ? GFP_KERNEL : GFP_ATOMIC) |
-			   __GFP_ACCOUNT;
+	gfp_t gfp_flags = can_block ? GFP_KERNEL : GFP_ATOMIC;
 	int addr_type = ipv6_addr_type(cfg->pfx);
 	struct net *net = dev_net(idev->dev);
 	struct inet6_ifaddr *ifa = NULL;
@@ -1081,7 +1080,7 @@ ipv6_add_addr(struct inet6_dev *idev, struct ifa6_config *cfg,
 			goto out;
 	}
 
-	ifa = kzalloc(sizeof(*ifa), gfp_flags);
+	ifa = kzalloc(sizeof(*ifa), gfp_flags | __GFP_ACCOUNT);
 	if (!ifa) {
 		err = -ENOBUFS;
 		goto out;
