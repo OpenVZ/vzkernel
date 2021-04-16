@@ -1,0 +1,20 @@
+# CONFIG_MLX5_VDPA_NET:
+# 
+# VDPA network driver for ConnectX6 and newer. Provides offloading
+# of virtio net datapath such that descriptors put on the ring will
+# be executed by the hardware. It also supports a variety of stateless
+# offloads depending on the actual device used and firmware version.
+# 
+# Symbol: MLX5_VDPA_NET [=n]
+# Type  : tristate
+# Defined at drivers/vdpa/Kconfig:45
+#   Prompt: vDPA driver for ConnectX devices
+#   Depends on: VDPA [=m] && MLX5_CORE [=m]
+#   Location:
+#     -> Device Drivers
+#       -> vDPA drivers (VDPA [=m])
+# Selects: MLX5_VDPA [=n]
+# 
+# 
+# 
+# CONFIG_MLX5_VDPA_NET is not set

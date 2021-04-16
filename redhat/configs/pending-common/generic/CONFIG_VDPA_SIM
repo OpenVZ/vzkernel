@@ -1,0 +1,18 @@
+# CONFIG_VDPA_SIM:
+# 
+# Enable this module to support vDPA device simulators. These devices
+# are used for testing, prototyping and development of vDPA.
+# 
+# Symbol: VDPA_SIM [=n]
+# Type  : tristate
+# Defined at drivers/vdpa/Kconfig:12
+#   Prompt: vDPA device simulator core
+#   Depends on: VDPA [=m] && RUNTIME_TESTING_MENU [=y] && HAS_DMA [=y]
+#   Location:
+#     -> Device Drivers
+#       -> vDPA drivers (VDPA [=m])
+# Selects: DMA_OPS [=y] && VHOST_RING [=n]
+# 
+# 
+# 
+# CONFIG_VDPA_SIM is not set

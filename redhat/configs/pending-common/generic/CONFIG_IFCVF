@@ -1,0 +1,19 @@
+# CONFIG_IFCVF:
+# 
+# This kernel module can drive Intel IFC VF NIC to offload
+# virtio dataplane traffic to hardware.
+# To compile this driver as a module, choose M here: the module will
+# be called ifcvf.
+# 
+# Symbol: IFCVF [=n]
+# Type  : tristate
+# Defined at drivers/vdpa/Kconfig:28
+#   Prompt: Intel IFC VF vDPA driver
+#   Depends on: VDPA [=m] && PCI_MSI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> vDPA drivers (VDPA [=m])
+# 
+# 
+# 
+# CONFIG_IFCVF is not set
