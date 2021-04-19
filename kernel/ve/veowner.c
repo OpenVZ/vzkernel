@@ -72,7 +72,7 @@ static struct ctl_table vz_fs_table[] = {
 		.extra1		= &ve_mount_nr_min,
 		.extra2		= &ve_mount_nr_max,
 	},
-	{ 0 }
+	{ }
 };
 
 static struct ctl_path fs_path[] = {
