@@ -54,14 +54,8 @@ include Makefile.cross
 default: dist-help
 
 dist-python-check:
-	@if [ ! -f /usr/libexec/platform-python ]; then \
-		if ! which python3 > /dev/null 2>&1; then \
-			echo "ERROR: Python 3 is needed." ; \
-			exit 1; \
-		fi; \
-		echo "ERROR: your build environment is not compatible with this distribution."; \
-		echo "To fix this, run:"; \
-		echo "ln -s `which python3` /usr/libexec/platform-python"; \
+	@if [ ! -x /usr/bin/python3 ]; then \
+		echo "ERROR: Python 3 is needed." ; \
 		exit 1; \
 	fi
 
