@@ -22,6 +22,9 @@
 # 
 #
 
-# Note this should be set for F34+ and not set for older Fedora releases, see:
+# Note there were plans to enable this by default for F34+ :
 # https://fedoraproject.org/w/index.php?title=Changes/SofDefaultForIntelLpe
-CONFIG_SND_INTEL_BYT_PREFER_SOF=y
+# But there are still too many issues with the new SOF driver, so keep this disabled:
+# https://mailman.alsa-project.org/pipermail/sound-open-firmware/2021-March/004175.html
+
+# CONFIG_SND_INTEL_BYT_PREFER_SOF is not set
