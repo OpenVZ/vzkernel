@@ -936,10 +936,6 @@ void cgroup1_release_agent(struct work_struct *work)
 
 		mutex_unlock(&cgroup_mutex);
 
-		down_write(&ve->op_sem);
-		if (!ve->is_running)
-			goto continue_with_mutex;
-
 		err = call_usermodehelper_ve(ve, argv[0], argv,
 			envp, UMH_WAIT_EXEC);
 
@@ -947,8 +943,6 @@ void cgroup1_release_agent(struct work_struct *work)
 			pr_warn_ratelimited("cgroup1_release_agent "
 					    "%s %s failed: %d\n",
 					    agentbuf, pathbuf, err);
-continue_with_mutex:
-		up_write(&ve->op_sem);
 		mutex_lock(&cgroup_mutex);
 continue_free:
 		kfree(pathbuf);
