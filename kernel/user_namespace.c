@@ -1114,7 +1114,7 @@ const struct proc_ns_operations userns_operations = {
 
 static __init int user_namespaces_init(void)
 {
-	user_ns_cachep = KMEM_CACHE(user_namespace, SLAB_PANIC);
+	user_ns_cachep = KMEM_CACHE(user_namespace, SLAB_PANIC | SLAB_ACCOUNT);
 	/* To make user namespaces something to opt in to for existing
 	 * RHEL users default ucount_max to 0.
 	 */
