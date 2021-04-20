@@ -2713,7 +2713,7 @@ fi
 #
 # This macro defines the %%files sections for a kernel package
 # and its devel and debuginfo packages.
-#	%%kernel_variant_files [-k vmlinux] <condition> <subpackage> <without_modules>
+#	%%kernel_variant_files [-k vmlinux] <use_vdso> <condition> <subpackage>
 #
 %define kernel_variant_files(k:) \
 %if %{2}\
@@ -2769,7 +2769,7 @@ fi
 %kernel_variant_files %{_use_vdso} %{with_up}
 %kernel_variant_files %{_use_vdso} %{with_debug} debug
 %kernel_variant_files %{use_vdso} %{with_pae} lpae
-%kernel_variant_files %{_use_vdso} %{with_zfcpdump} zfcpdump 1
+%kernel_variant_files %{_use_vdso} %{with_zfcpdump} zfcpdump
 
 %define kernel_variant_ipaclones(k:) \
 %if %{1}\
