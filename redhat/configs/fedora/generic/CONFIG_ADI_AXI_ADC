@@ -29,4 +29,4 @@
 # 
 # 
 # 
-CONFIG_ADI_AXI_ADC=m
+# CONFIG_ADI_AXI_ADC is not set
