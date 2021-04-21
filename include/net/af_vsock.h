@@ -18,7 +18,7 @@
 
 #include <linux/kernel.h>
 #include <linux/workqueue.h>
-#include <linux/vm_sockets.h>
+#include <uapi/linux/vm_sockets.h>
 
 #include "vsock_addr.h"
 
