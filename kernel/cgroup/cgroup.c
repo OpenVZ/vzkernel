@@ -1996,6 +1996,7 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 	cset = rcu_dereference(ve->ve_ns)->cgroup_ns->root_cset;
 	if (WARN_ON(!cset)) {
 		rcu_read_unlock();
+		spin_unlock_irq(&css_set_lock);
 		return -ENODEV;
 	}
 
