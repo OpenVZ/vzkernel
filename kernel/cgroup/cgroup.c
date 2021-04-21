@@ -1928,12 +1928,6 @@ static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
 #ifdef CONFIG_VE
 static inline bool is_virtualized_cgroup(struct cgroup *cgrp)
 {
-	/*
-	 * no parent means this is the host cgroup
-	 */
-	if (!cgrp->kn->parent)
-		return false;
-
 #if IS_ENABLED(CONFIG_CGROUP_DEBUG)
 	if (cgrp->subsys[debug_cgrp_id])
 		return false;
@@ -1944,6 +1938,31 @@ static inline bool is_virtualized_cgroup(struct cgroup *cgrp)
 	if (!strcmp(cgrp->root->name, "systemd"))
 		return true;
 
+	return false;
+}
+
+/*
+ * Iterate all cgroups in a given css_set and check if it is a top cgroup
+ * of it's hierarchy.
+ * rootnode should be ignored as it is always present in each css set as
+ * a placeholder for any unmounted subsystem and will give false positive.
+ */
+static inline bool css_has_host_cgroups(struct css_set *cset)
+{
+	struct cgrp_cset_link *link;
+
+	lockdep_assert_held(&css_set_lock);
+
+	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
+		if (link->cgrp->root == &cgrp_dfl_root)
+			continue;
+
+		if (!is_virtualized_cgroup(link->cgrp))
+			continue;
+
+		if (!link->cgrp->kn->parent)
+			return true;
+	}
 	return false;
 }
 
@@ -1979,6 +1998,18 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 		rcu_read_unlock();
 		spin_unlock_irq(&css_set_lock);
 		return -ENODEV;
+	}
+
+	/*
+	 * Return early if we know that this procedure will fail due to
+	 * existing root cgroups which are not allowed to be root's in ve's
+	 * context. This is for the case when some task wants to start VE
+	 * without adding itself to all virtualized subgroups (+systemd) first.
+	 */
+	if (css_has_host_cgroups(cset)) {
+		rcu_read_unlock();
+		spin_unlock_irq(&css_set_lock);
+		return -EINVAL;
 	}
 
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
