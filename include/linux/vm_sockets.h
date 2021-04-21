@@ -18,6 +18,4 @@
 
 #include <uapi/linux/vm_sockets.h>
 
-int vm_sockets_get_local_cid(void);
-
 #endif /* _VM_SOCKETS_H */
