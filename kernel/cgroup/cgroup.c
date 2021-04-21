@@ -1934,6 +1934,10 @@ static inline bool is_virtualized_cgroup(struct cgroup *cgrp)
 	if (!cgrp->kn->parent)
 		return false;
 
+#if IS_ENABLED(CONFIG_CGROUP_DEBUG)
+	if (cgrp->subsys[debug_cgrp_id])
+		return false;
+#endif
 	if (cgrp->root->subsys_mask)
 		return true;
 
