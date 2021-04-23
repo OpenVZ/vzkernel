@@ -64,10 +64,12 @@ static void on_read_done(struct pcs_fuse_req *r, size_t size)
 static void on_sync_done(struct pcs_fuse_req *r)
 {
 	struct pcs_fuse_cluster *pfc = cl_from_req(r);
+	struct fuse_inode *fi = get_fuse_inode(r->req.args->io_inode);
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
 	fuse_stat_observe(pfc->fc, KFUSE_OP_FSYNC, ktime_sub(ktime_get(), r->exec.ireq.ts));
 	fuse_stat_account(pfc->fc, KFUSE_OP_FSYNC, 0);
+	fuse_read_dio_end(fi);
 	fuse_request_end(pfc->fc, &r->req);
 }
 
