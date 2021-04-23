@@ -1517,8 +1517,8 @@ static int fuse_bdi_init(struct fuse_conn *fc, struct super_block *sb)
 	/*
 	 * These values have precedence over max_ratio
 	 */
-	bdi_set_max_dirty(sb->s_bdi, (256 * 1024 * 1024) / PAGE_SIZE);
-	bdi_set_min_dirty(sb->s_bdi, (64 * 1024 * 1024) / PAGE_SIZE);
+	bdi_set_max_dirty(sb->s_bdi, (512 * 1024 * 1024) / PAGE_SIZE);
+	bdi_set_min_dirty(sb->s_bdi, (256 * 1024 * 1024) / PAGE_SIZE);
 
 	return 0;
 }
