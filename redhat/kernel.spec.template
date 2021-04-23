@@ -2169,6 +2169,15 @@ pushd tools/testing/selftests
 # We need to install here because we need to call make with ARCH set which
 # doesn't seem possible to do in the install section.
 %{make} %{?_smp_mflags} ARCH=$Arch V=1 TARGETS="bpf livepatch net net/mptcp netfilter" INSTALL_PATH=%{buildroot}%{_libexecdir}/kselftests install
+
+# 'make install' for bpf is broken and upstream refuses to fix it.
+# Install the needed files manually.
+for dir in bpf bpf/no_alu32; do
+	mkdir -p %{buildroot}%{_libexecdir}/kselftests/$dir
+	find $dir -maxdepth 1 -type f \( -executable -o -name '*.py' -o -name settings -o \
+		-name '*.o' -exec sh -c 'readelf -h "{}" | grep -q "^  Machine:.*BPF"' \; \) -print0 | \
+	xargs -0 cp -t %{buildroot}%{_libexecdir}/kselftests/$dir
+done
 popd
 %endif
 
