@@ -595,7 +595,7 @@ BuildRequires: clang llvm
 %ifnarch %{arm}
 BuildRequires: numactl-devel
 %endif
-BuildRequires: libcap-devel libcap-ng-devel rsync
+BuildRequires: libcap-devel libcap-ng-devel rsync libmnl-devel
 %endif
 BuildConflicts: rhbuildsys(DiskFree) < 500Mb
 %if %{with_debuginfo}
