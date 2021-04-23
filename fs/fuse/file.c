@@ -616,16 +616,15 @@ static void fuse_wait_on_page_writeback(struct inode *inode, pgoff_t index)
 /*
  * Can be woken up by FUSE_NOTIFY_INVAL_FILES
  */
-static int fuse_wait_on_page_writeback_or_invalidate(struct inode *inode,
-						     struct file *file,
-						     pgoff_t index)
+static void fuse_wait_on_page_writeback_or_invalidate(struct inode *inode,
+						      struct file *file,
+						      pgoff_t index)
 {
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct fuse_file *ff = file->private_data;
 
 	wait_event(fi->page_waitq, !fuse_page_is_writeback(inode, index) ||
 		   test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state));
-	return 0;
 }
 
 /*
