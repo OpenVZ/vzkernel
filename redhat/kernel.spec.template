@@ -127,6 +127,10 @@ Summary: The Linux kernel
 
 %define pkg_release %{specrelease}
 
+# libexec dir is not used by the linker, so the shared object there
+# should not be exported to RPM provides
+%global __provides_exclude_from ^%{_libexecdir}/kselftests
+
 # The following build options are enabled by default, but may become disabled
 # by later architecture-specific checks. These can also be disabled by using
 # --without <opt> in the rpmbuild command, or by forcing these values to 0.
