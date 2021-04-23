@@ -2514,9 +2514,9 @@ truncate_tail:
  * user space already has good map with newer version it will return it
  * immediately and kernel/user will be in sync again.
  */
-noinline void pcs_mapping_truncate(struct pcs_dentry_info *di, u64 old_size)
+noinline void pcs_mapping_truncate(struct pcs_dentry_info *di, u64 new_size)
 {
-	u64 new_size = DENTRY_SIZE(di), offset;
+	u64 old_size = DENTRY_SIZE(di), offset;
 	struct pcs_map_entry *m;
 
 	di->local_mtime = get_real_time_ms();
