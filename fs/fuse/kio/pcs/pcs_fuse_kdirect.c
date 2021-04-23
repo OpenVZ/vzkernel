@@ -1271,6 +1271,8 @@ static void fuse_trace_free(struct fuse_ktrace *tr)
 		free_percpu(tr->prometheus_metrics);
 	free_percpu(tr->buf);
 	debugfs_remove(tr->dir);
+	if (tr->fc)
+		fuse_conn_put(tr->fc);
 	kfree(tr);
 }
 
@@ -1394,6 +1396,24 @@ static int prometheus_file_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
+static void prometheus_req_iter(struct fuse_file *ff, struct fuse_req *req,
+				void *ctx)
+{
+	struct kfuse_metrics *stats = ctx;
+	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
+	struct pcs_int_request *ireq = &r->exec.ireq;
+	s64 duration;
+
+	duration = ktime_to_ms(ktime_sub(ktime_get(), ireq->ts));
+
+	if (duration >= 8 * MSEC_PER_SEC)
+		stats->stucked_reqs_cnt_8s++;
+	if (duration >= 30 * MSEC_PER_SEC)
+		stats->stucked_reqs_cnt_30s++;
+	if (duration >= 120 * MSEC_PER_SEC)
+		stats->stucked_reqs_cnt_120s++;
+}
+
 /* NOTE: old versions of userspace could read only histograms */
 static ssize_t prometheus_file_read(struct file *filp,
 				    char __user *buffer,
@@ -1439,6 +1459,10 @@ static ssize_t prometheus_file_read(struct file *filp,
 		}
 	}
 
+	spin_lock(&tr->fc->lock);
+	pcs_kio_req_list(tr->fc, prometheus_req_iter, stats);
+	spin_unlock(&tr->fc->lock);
+
 	if (copy_to_user(buffer, (char *)stats + *ppos, count))
 		count = -EFAULT;
 	else
@@ -1470,6 +1494,8 @@ static int fuse_ktrace_setup(struct fuse_conn * fc)
 	tr = kzalloc(sizeof(*tr), GFP_KERNEL);
 	if (!tr)
 		return -ENOMEM;
+
+	tr->fc = fuse_conn_get(fc);
 
 	ret = -ENOMEM;
 	tr->ovfl = alloc_percpu(unsigned long);
