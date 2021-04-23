@@ -301,6 +301,15 @@ Summary: The Linux kernel
 %if %{with_baseonly}
 %define with_pae 0
 %define with_debug 0
+%define with_vdso_install 0
+%define with_perf 0
+%define with_tools 0
+%define with_bpftool 0
+%define with_kernel_abi_whitelists 0
+%define with_selftests 0
+%define with_cross 0
+%define with_cross_headers 0
+%define with_ipaclones 0
 %endif
 
 # if requested, only build pae kernel
@@ -312,9 +321,15 @@ Summary: The Linux kernel
 # if requested, only build debug kernel
 %if %{with_dbgonly}
 %define with_up 0
-%define with_tools 0
+%define with_vdso_install 0
 %define with_perf 0
+%define with_tools 0
 %define with_bpftool 0
+%define with_kernel_abi_whitelists 0
+%define with_selftests 0
+%define with_cross 0
+%define with_cross_headers 0
+%define with_ipaclones 0
 %endif
 
 # turn off kABI DUP check and DWARF-based check if kABI check is disabled
