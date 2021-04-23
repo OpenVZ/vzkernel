@@ -3226,13 +3226,19 @@ fuse_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	 * By default, we want to optimize all I/Os with async request
 	 * submission to the client filesystem if supported.
 	 */
-	io->async = ff->fm->fc->async_dio;
+	io->async = ff->fm->fc->async_dio | ff->fm->fc->writeback_cache;
 	io->iocb = iocb;
 	io->blocking = is_sync_kiocb(iocb);
 
 	/* optimization for short read */
 	if (io->async && !io->write && offset + count > i_size) {
-		iov_iter_truncate(iter, fuse_round_up(ff->fm->fc, i_size - offset));
+		loff_t new_count;
+
+		new_count = i_size - offset;
+		if (!ff->fm->fc->writeback_cache)
+			new_count = fuse_round_up(ff->fm->fc, new_count);
+
+		iov_iter_truncate(iter, new_count);
 		shortened = count - iov_iter_count(iter);
 		count -= shortened;
 	}
