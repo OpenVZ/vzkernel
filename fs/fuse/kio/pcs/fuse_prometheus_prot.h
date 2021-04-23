@@ -47,6 +47,10 @@ struct kfuse_metrics {
 
 	/* Counters were added in 3.5 release */
 	struct kfuse_counter	cnts[KFUSE_OP_MAX];
+
+	u64 stucked_reqs_cnt_8s;
+	u64 stucked_reqs_cnt_30s;
+	u64 stucked_reqs_cnt_120s;
 };
 
 #endif /* __FUSE_PROMETHEUS_PROT__ */
