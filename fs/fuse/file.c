@@ -469,9 +469,7 @@ static int fuse_release(struct inode *inode, struct file *file)
 		 * it is safe, because we essentially wait only for writeback (and readahead)
 		 * enqueued on this file and it is not going to get new one: it is closing.
 		 */
-		if (!fc->close_wait)
-			wait_event(fi->page_waitq, RB_EMPTY_ROOT(&fi->writepages));
-		else
+		if (fc->close_wait)
 			wait_event(fi->page_waitq, refcount_read(&ff->count) == 1);
 
 		spin_lock(&fi->lock);
@@ -1890,7 +1888,7 @@ static void fuse_writepage_free(struct fuse_writepage_args *wpa)
 	for (i = 0; i < ap->num_pages; i++)
 		__free_page(ap->pages[i]);
 
-	if (wpa->ia.ff && !fc->writeback_cache && !fc->close_wait)
+	if (wpa->ia.ff && !fc->close_wait)
 		fuse_file_put(wpa->ia.ff, false, false);
 
 	kfree(ap->pages);
@@ -1906,7 +1904,7 @@ static void fuse_writepage_finish(struct fuse_mount *fm,
 	struct backing_dev_info *bdi = inode_to_bdi(inode);
 	int i;
 
-	if (wpa->ia.ff && (fm->fc->writeback_cache || fm->fc->close_wait))
+	if (wpa->ia.ff && fm->fc->close_wait)
 		__fuse_file_put(wpa->ia.ff);
 
 	for (i = 0; i < ap->num_pages; i++) {
