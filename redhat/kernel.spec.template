@@ -2306,12 +2306,7 @@ rm -f %{buildroot}%{_bindir}/trace
 
 # remove examples
 rm -rf %{buildroot}/usr/lib/perf/examples
-# remove the stray files that somehow got packaged
-rm -rf %{buildroot}/usr/lib/perf/include/bpf/bpf.h
-rm -rf %{buildroot}/usr/lib/perf/include/bpf/stdio.h
-rm -rf %{buildroot}/usr/lib/perf/include/bpf/linux/socket.h
-rm -rf %{buildroot}/usr/lib/perf/include/bpf/pid_filter.h
-rm -rf %{buildroot}/usr/lib/perf/include/bpf/unistd.h
+rm -rf %{buildroot}/usr/lib/perf/include
 
 # python-perf extension
 %{perf_make} DESTDIR=$RPM_BUILD_ROOT install-python_ext
