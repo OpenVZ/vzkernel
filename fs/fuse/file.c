@@ -1559,11 +1559,12 @@ static ssize_t fuse_cache_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	loff_t endbyte = 0;
 
 	if (get_fuse_conn(inode)->writeback_cache) {
+#if 0 /* fixes performance degradation PSBM-99138 */
 		/* Update size (EOF optimization) and mode (SUID clearing) */
 		err = fuse_update_attributes(mapping->host, file);
 		if (err)
 			return err;
-
+#endif
 		return generic_file_write_iter(iocb, from);
 	}
 
