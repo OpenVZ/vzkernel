@@ -311,7 +311,7 @@ dist-rpms: RPMBUILDOPTS=--target $(MACH) -bb
 dist-rpms: dist-sources do-rpmbuild
 
 dist-kernel-%: dist-sources
-	RPMBUILDOPTS="--target $(MACH) --with $* --without vdso_install --without perf --without tools -bb" make do-rpmbuild
+	RPMBUILDOPTS="--target $(MACH) --with $* -bb" make do-rpmbuild
 
 dist-prep: RPMBUILDOPTS=--nodeps --target noarch -bp
 dist-prep: dist-sources do-rpmbuild
