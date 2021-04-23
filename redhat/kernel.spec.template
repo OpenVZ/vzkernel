@@ -2410,6 +2410,12 @@ find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/drivers/net/
 find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/mlxsw/{} \;
 find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/mlxsw/{} \;
 popd
+# install drivers/net/netdevsim selftests
+pushd tools/testing/selftests/drivers/net/netdevsim
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/drivers/net/netdevsim/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/netdevsim/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/netdevsim/{} \;
+popd
 # install net/forwarding selftests
 pushd tools/testing/selftests/net/forwarding
 find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/net/forwarding/{} \;
