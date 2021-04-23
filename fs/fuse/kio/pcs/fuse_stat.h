@@ -9,6 +9,7 @@
 #define _FUSE_STAT_H_ 1
 
 #define STAT_TIMER_PERIOD 5
+#define STAT_NUM_DENTRIES 7
 
 struct pcs_msg;
 struct pcs_int_request;
@@ -38,13 +39,8 @@ struct pcs_fuse_stat {
 	struct pcs_fuse_io_stat_sync io;
 	struct delayed_work work;
 
-	struct dentry *kio_stat;
-	struct dentry *iostat;
-	struct dentry *requests;
-	struct dentry *fstat;
-	struct dentry *fstat_lat;
-	struct dentry *cs_stats;
-	struct dentry *storage_version;
+	struct dentry *ctl_dentry[STAT_NUM_DENTRIES];
+	int ctl_ndents;
 };
 
 enum {
@@ -83,7 +79,7 @@ struct fuse_io_cnt {
 	abs_time_t created_ts;
 };
 
-void pcs_fuse_stat_init(struct pcs_fuse_stat *stat);
+int pcs_fuse_stat_init(struct pcs_fuse_stat *stat);
 void pcs_fuse_stat_fini(struct pcs_fuse_stat *stat);
 
 void pcs_fuse_stat_io_count(struct pcs_int_request *ireq, struct pcs_msg *resp,
