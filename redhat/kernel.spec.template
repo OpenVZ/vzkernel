@@ -1013,13 +1013,13 @@ Linux kernel ABI, including lists of kernel symbols that are needed by
 external Linux kernel modules, and a yum plugin to aid enforcement.
 
 %if %{with_kabidw_base}
-%package kabidw-base
+%package kernel-kabidw-base-internal
 Summary: The baseline dataset for kABI verification using DWARF data
 Group: System Environment/Kernel
 AutoReqProv: no
-%description kabidw-base
-The kabidw-base package contains data describing the current ABI of the Red Hat
-Enterprise Linux kernel, suitable for the kabi-dw tool.
+%description kernel-kabidw-base-internal
+The package contains data describing the current ABI of the Red Hat Enterprise
+Linux kernel, suitable for the kabi-dw tool.
 %endif
 
 #
@@ -2581,7 +2581,7 @@ fi
 
 %if %{with_kabidw_base}
 %ifarch x86_64 s390x ppc64 ppc64le aarch64
-%files kabidw-base
+%files kernel-kabidw-base-internal
 %defattr(-,root,root)
 /kabidw-base/%{_target_cpu}/*
 %endif
