@@ -1681,7 +1681,7 @@ BuildKernel() {
 
 %if %{with_kabidw_base}
     # Don't build kabi base for debug kernels
-    if [ "$Variant" != "kdump" -a "$Variant" != "debug" ]; then
+    if [ "$Variant" != "zfcpdump" -a "$Variant" != "debug" ]; then
         mkdir -p $RPM_BUILD_ROOT/kabi-dwarf
         tar xjvf %{SOURCE301} -C $RPM_BUILD_ROOT/kabi-dwarf
 
@@ -1700,7 +1700,7 @@ BuildKernel() {
 %endif
 
 %if %{with_kabidwchk}
-    if [ "$Variant" != "kdump" ]; then
+    if [ "$Variant" != "zfcpdump" ]; then
         mkdir -p $RPM_BUILD_ROOT/kabi-dwarf
         tar xjvf %{SOURCE301} -C $RPM_BUILD_ROOT/kabi-dwarf
         if [ -d "$RPM_BUILD_ROOT/kabi-dwarf/base/%{_target_cpu}${Variant:+.${Variant}}" ]; then
