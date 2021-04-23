@@ -437,9 +437,7 @@ static int fuse_release(struct inode *inode, struct file *file)
 		 * it is safe, because we essentially wait only for writeback (and readahead)
 		 * enqueued on this file and it is not going to get new one: it is closing.
 		 */
-		if (!ff->fc->close_wait)
-			wait_event(fi->page_waitq, RB_EMPTY_ROOT(&fi->writepages));
-		else
+		if (ff->fc->close_wait)
 			wait_event(fi->page_waitq, refcount_read(&ff->count) == 1);
 
 		spin_lock(&fi->lock);
@@ -1886,7 +1884,7 @@ static void fuse_writepage_free(struct fuse_writepage_args *wpa)
 	for (i = 0; i < ap->num_pages; i++)
 		__free_page(ap->pages[i]);
 
-	if (wpa->ia.ff && !fc->writeback_cache && !fc->close_wait)
+	if (wpa->ia.ff && !fc->close_wait)
 		fuse_file_put(wpa->ia.ff, false, false);
 
 	kfree(ap->pages);
@@ -1904,7 +1902,7 @@ static void fuse_writepage_finish(struct fuse_conn *fc,
 
 	if (!RB_EMPTY_NODE(&wpa->writepages_entry))
 		rb_erase(&wpa->writepages_entry, &fi->writepages);
-	if (wpa->ia.ff && (fc->writeback_cache || fc->close_wait))
+	if (wpa->ia.ff && fc->close_wait)
 		__fuse_file_put(wpa->ia.ff);
 	for (i = 0; i < ap->num_pages; i++) {
 		dec_wb_stat(&bdi->wb, WB_WRITEBACK);
@@ -2026,24 +2024,11 @@ static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_args *args,
 		container_of(args, typeof(*wpa), ia.ap.args);
 	struct inode *inode = wpa->inode;
 	struct fuse_inode *fi = get_fuse_inode(inode);
-	struct fuse_writepage_args dummy_wpa = {};
 
 	mapping_set_error(inode->i_mapping, error);
 	spin_lock(&fi->lock);
-	if (wpa->next) {
-		/*
-		 * The next wpa always intersect with current wap,
-		 * and to avoid BUG in the tree_insert() function we should first
-		 * remove the current wpa. And also we temprorary insert an dummy wpa
-		 * in order to the fi->writepages tree is not empty here
-		 * (this actual for fuse_release as example).
-		 */
-		dummy_wpa.ia.write.in.offset = U64_MAX;
-		dummy_wpa.ia.ap.num_pages = 1;
-		tree_insert(&fi->writepages, &dummy_wpa);
-		rb_erase(&wpa->writepages_entry, &fi->writepages);
-		RB_CLEAR_NODE(&wpa->writepages_entry);
-	}
+	rb_erase(&wpa->writepages_entry, &fi->writepages);
+	RB_CLEAR_NODE(&wpa->writepages_entry);
 	while (wpa->next) {
 		struct fuse_conn *fc = get_fuse_conn(inode);
 		struct fuse_write_in *inarg = &wpa->ia.write.in;
@@ -2079,8 +2064,6 @@ static void fuse_writepage_end(struct fuse_conn *fc, struct fuse_args *args,
 		 */
 		fuse_send_writepage(fc, next, inarg->offset + inarg->size);
 	}
-	if (dummy_wpa.ia.ap.num_pages)
-		rb_erase(&dummy_wpa.writepages_entry, &fi->writepages);
 	fi->writectr--;
 	fuse_writepage_finish(fc, wpa);
 	spin_unlock(&fi->lock);
