@@ -241,6 +241,8 @@ Summary: The Linux kernel
 %define with_kabichk 0
 %define with_kabidupchk 0
 %define with_kabidwchk 0
+%define with_kabidw_base 0
+%define with_kernel_abi_whitelists 0
 %endif
 
 # turn off kABI DWARF-based check if we're generating the base dataset
