@@ -161,43 +161,52 @@ static DEVICE_ATTR_RW(name);
 
 BDI_SHOW(read_ahead_kb, K(bdi->ra_pages))
 
-static ssize_t min_ratio_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
+static inline ssize_t generic_uint_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count,
+		int (*set_func) (struct backing_dev_info *, unsigned int))
 {
 	struct backing_dev_info *bdi = dev_get_drvdata(dev);
-	unsigned int ratio;
+	unsigned int val;
 	ssize_t ret;
 
-	ret = kstrtouint(buf, 10, &ratio);
+	ret = kstrtouint(buf, 10, &val);
 	if (ret < 0)
 		return ret;
 
-	ret = bdi_set_min_ratio(bdi, ratio);
+	ret = set_func(bdi, val);
 	if (!ret)
 		ret = count;
 
 	return ret;
+}
+
+static ssize_t min_ratio_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return generic_uint_store(dev, attr, buf, count, bdi_set_min_ratio);
 }
 BDI_SHOW(min_ratio, bdi->min_ratio)
 
 static ssize_t max_ratio_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct backing_dev_info *bdi = dev_get_drvdata(dev);
-	unsigned int ratio;
-	ssize_t ret;
-
-	ret = kstrtouint(buf, 10, &ratio);
-	if (ret < 0)
-		return ret;
-
-	ret = bdi_set_max_ratio(bdi, ratio);
-	if (!ret)
-		ret = count;
-
-	return ret;
+	return generic_uint_store(dev, attr, buf, count, bdi_set_max_ratio);
 }
 BDI_SHOW(max_ratio, bdi->max_ratio)
+
+static ssize_t min_dirty_pages_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return generic_uint_store(dev, attr, buf, count, bdi_set_min_dirty);
+}
+BDI_SHOW(min_dirty_pages, bdi->min_dirty_pages)
+
+static ssize_t max_dirty_pages_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return generic_uint_store(dev, attr, buf, count, bdi_set_max_dirty);
+}
+BDI_SHOW(max_dirty_pages, bdi->max_dirty_pages)
 
 static ssize_t stable_pages_required_show(struct device *dev,
 					  struct device_attribute *attr,
@@ -213,6 +222,8 @@ static struct attribute *bdi_dev_attrs[] = {
 	&dev_attr_read_ahead_kb.attr,
 	&dev_attr_min_ratio.attr,
 	&dev_attr_max_ratio.attr,
+	&dev_attr_min_dirty_pages.attr,
+	&dev_attr_max_dirty_pages.attr,
 	&dev_attr_stable_pages_required.attr,
 	NULL,
 };
@@ -810,6 +821,8 @@ int bdi_init(struct backing_dev_info *bdi)
 	bdi->min_ratio = 0;
 	bdi->max_ratio = 100;
 	bdi->max_prop_frac = FPROP_FRAC_BASE;
+	bdi->min_dirty_pages = 0;
+	bdi->max_dirty_pages = 0;
 	INIT_LIST_HEAD(&bdi->bdi_list);
 	INIT_LIST_HEAD(&bdi->wb_list);
 	init_waitqueue_head(&bdi->wb_waitq);
