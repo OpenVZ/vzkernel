@@ -20,6 +20,13 @@
 #include <linux/fs.h>
 #include <linux/task_io_accounting_ops.h>
 #include <linux/fiemap.h>
+#include <linux/file.h>
+
+struct workqueue_struct *fuse_fput_wq;
+static DEFINE_SPINLOCK(fuse_fput_lock);
+static LIST_HEAD(fuse_fput_head);
+static void fuse_fput_routine(struct work_struct *);
+static DECLARE_WORK(fuse_fput_work, fuse_fput_routine);
 
 static int fuse_send_open(struct fuse_mount *fm, u64 nodeid,
 			  unsigned int open_flags, int opcode,
@@ -825,6 +832,29 @@ static ssize_t fuse_get_res_by_io(struct fuse_io_priv *io)
 	return io->bytes < 0 ? io->size : io->bytes;
 }
 
+static void fuse_fput_routine(struct work_struct *data)
+{
+	spin_lock(&fuse_fput_lock);
+	while (likely(!list_empty(&fuse_fput_head))) {
+		struct fuse_io_priv *io = list_entry(fuse_fput_head.next,
+						     struct fuse_io_priv,
+						     list);
+		struct file *file = io->file;
+
+		list_del(&io->list);
+		spin_unlock(&fuse_fput_lock);
+
+		/* hack: __fput() is not visible outside fs/file_table.c */
+		BUG_ON(atomic_long_read(&file->f_count));
+		atomic_long_inc(&file->f_count);
+		fput(file);
+
+		kref_put(&io->refcnt, fuse_io_release);
+		spin_lock(&fuse_fput_lock);
+	}
+	spin_unlock(&fuse_fput_lock);
+}
+
 /**
  * In case of short read, the caller sets 'pos' to the position of
  * actual end of fuse request in IO request. Otherwise, if bytes_requested
@@ -858,6 +888,7 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 
 	if (!left && !io->blocking) {
 		ssize_t res = fuse_get_res_by_io(io);
+		struct file *file = io->iocb->ki_filp;
 
 		if (res >= 0) {
 			struct inode *inode = file_inode(io->iocb->ki_filp);
@@ -876,7 +907,23 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 			       io->iocb->ki_flags, io->iocb->ki_pos);
 		}
 
+		/* We have to bump f_count here to avoid deadlock for
+		 * single-threaded fuse daemon: if process who generated
+		 * AIO is already close(2) the file, fput() called from
+		 * aio_complete will be the last fput(); hence, it will send
+		 * flush_mtime (or release) request to userspace who is busy
+		 * now writing ACK for given AIO to in-kernel fuse */
+		get_file(file);
 		io->iocb->ki_complete(io->iocb, res);
+
+		if (unlikely(atomic_long_dec_and_test(&file->f_count))) {
+			io->file = file;
+			spin_lock(&fuse_fput_lock);
+			list_add(&io->list, &fuse_fput_head);
+			spin_unlock(&fuse_fput_lock);
+			queue_work(fuse_fput_wq, &fuse_fput_work);
+			return;
+		}
 	}
 
 	kref_put(&io->refcnt, fuse_io_release);
