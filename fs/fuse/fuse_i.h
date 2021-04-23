@@ -584,6 +584,7 @@ struct fuse_fs_context {
 	bool close_wait:1;
 	bool disable_close_wait:1;
 	bool compat_inval_files:1;
+	bool no_fiemap:1;
 	bool kdirect_io:1;
 	bool destroy:1;
 	bool no_control:1;
