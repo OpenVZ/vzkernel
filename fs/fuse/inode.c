@@ -1507,10 +1507,10 @@ static int fuse_bdi_init(struct fuse_conn *fc, struct super_block *sb)
 	sb->s_bdi->capabilities |= BDI_CAP_STRICTLIMIT;
 
 	/*
-	 * For a single fuse filesystem use max 1% of dirty +
+	 * For a single fuse filesystem use max 20% of dirty +
 	 * writeback threshold.
 	 *
-	 * This gives about 1M of write buffer for memory maps on a
+	 * This gives about 20M of write buffer for memory maps on a
 	 * machine with 1G and 10% dirty_ratio, which should be more
 	 * than enough.
 	 *
@@ -1518,7 +1518,13 @@ static int fuse_bdi_init(struct fuse_conn *fc, struct super_block *sb)
 	 *
 	 *    /sys/class/bdi/<bdi>/max_ratio
 	 */
-	bdi_set_max_ratio(sb->s_bdi, 1);
+	bdi_set_max_ratio(sb->s_bdi, 20);
+
+	/*
+	 * These values have precedence over max_ratio
+	 */
+	bdi_set_max_dirty(sb->s_bdi, (256 * 1024 * 1024) / PAGE_SIZE);
+	bdi_set_min_dirty(sb->s_bdi, (64 * 1024 * 1024) / PAGE_SIZE);
 
 	return 0;
 }
