@@ -2164,7 +2164,7 @@ popd
 pushd tools/testing/selftests
 # We need to install here because we need to call make with ARCH set which
 # doesn't seem possible to do in the install section.
-%{make} -s %{?_smp_mflags} ARCH=$Arch V=1 TARGETS="bpf livepatch net" INSTALL_PATH=%{buildroot}%{_libexecdir}/kselftests install
+%{make} -s %{?_smp_mflags} ARCH=$Arch V=1 TARGETS="bpf livepatch net netfilter" INSTALL_PATH=%{buildroot}%{_libexecdir}/kselftests install
 popd
 %endif
 
@@ -2442,6 +2442,12 @@ pushd tools/testing/selftests/livepatch
 find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/livepatch/{} \;
 find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/livepatch/{} \;
 find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/livepatch/{} \;
+popd
+# install netfilter selftests
+pushd tools/testing/selftests/netfilter
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/netfilter/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/netfilter/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/netfilter/{} \;
 popd
 %endif
 
