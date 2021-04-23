@@ -769,13 +769,19 @@ static int fuse_parse_param(struct fs_context *fc, struct fs_parameter *param)
 
 		/* Hack to distinguish pcs fuse service and to force
 		 * synchronous close for it.
+		 *
+		 * libfuse is not ready for fiemap autodetection, so disable
+		 * fiemap support check in advance for all FUSE fs except for
+		 * pStorage.
 		 */
 		if (fc->source &&
 		    (strncmp(fc->source, "pstorage://", 11) == 0 ||
 		     strncmp(fc->source, "vstorage://", 11) == 0)) {
 			ctx->close_wait = 1;
 			ctx->compat_inval_files = 1;
-		}
+		} else
+			ctx->no_fiemap = 1;
+
 		break;
 
 	case OPT_SUBTYPE:
@@ -1721,6 +1727,7 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->close_wait = ctx->close_wait;
 	fc->disable_close_wait = ctx->disable_close_wait;
 	fc->compat_inval_files = ctx->compat_inval_files;
+	fc->no_fiemap = ctx->no_fiemap;
 	fc->writeback_cache = ctx->writeback_cache;
 	fc->destroy = ctx->destroy || ctx->umount_wait;
 	fc->no_control = ctx->no_control;
