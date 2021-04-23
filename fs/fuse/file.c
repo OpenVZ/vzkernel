@@ -3189,6 +3189,11 @@ fuse_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	if ((offset + count > i_size) && io->write)
 		io->blocking = true;
 
+	/* Process small sync direct reads synchronously */
+	if (iov_iter_rw(iter) != WRITE && is_sync_kiocb(iocb) &&
+	    count <= (FUSE_DEFAULT_MAX_PAGES_PER_REQ << PAGE_SHIFT))
+		io->async = false;
+
 	if (io->async && io->blocking) {
 		/*
 		 * Additional reference to keep io around after
