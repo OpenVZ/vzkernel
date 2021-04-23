@@ -765,11 +765,14 @@ static int fuse_fsync(struct file *file, loff_t start, loff_t end,
 	if (fc->no_fsync)
 		goto out;
 
+	inode_unlock(inode);
+
 	err = fuse_fsync_common(file, start, end, datasync, FUSE_FSYNC);
 	if (err == -ENOSYS) {
 		fc->no_fsync = 1;
 		err = 0;
 	}
+	return err;
 out:
 	inode_unlock(inode);
 
