@@ -2141,6 +2141,10 @@ pushd tools/gpio/
 # Needs to be fixed to pick up CFLAGS
 %{__make}
 popd
+# build VM tools
+pushd tools/vm/
+%{tools_make} slabinfo page_owner_sort
+popd
 %endif
 
 %global bpftool_make \
@@ -2374,6 +2378,11 @@ popd
 pushd tools/kvm/kvm_stat
 %{__make} INSTALL_ROOT=%{buildroot} install-tools
 %{__make} INSTALL_ROOT=%{buildroot} install-man
+popd
+# install VM tools
+pushd tools/vm/
+install -m755 slabinfo %{buildroot}%{_bindir}/slabinfo
+install -m755 page_owner_sort %{buildroot}%{_bindir}/page_owner_sort
 popd
 %endif
 
@@ -2676,6 +2685,8 @@ fi
 %{_bindir}/gpio-watch
 %{_mandir}/man1/kvm_stat*
 %{_bindir}/kvm_stat
+%{_bindir}/page_owner_sort
+%{_bindir}/slabinfo
 
 %if %{with_debuginfo}
 %files -f kernel-tools-debuginfo.list -n kernel-tools-debuginfo
