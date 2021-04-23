@@ -2180,7 +2180,7 @@ pushd tools/testing/selftests
 
 # 'make install' for bpf is broken and upstream refuses to fix it.
 # Install the needed files manually.
-for dir in bpf bpf/no_alu32; do
+for dir in bpf bpf/no_alu32 bpf/progs; do
 	# In ARK, the rpm build continues even if some of the selftests
 	# cannot be built. It's not always possible to build selftests,
 	# as upstream sometimes dependens on too new llvm version or has
@@ -2188,6 +2188,7 @@ for dir in bpf bpf/no_alu32; do
 	test -d $dir || continue
 	mkdir -p %{buildroot}%{_libexecdir}/kselftests/$dir
 	find $dir -maxdepth 1 -type f \( -executable -o -name '*.py' -o -name settings -o \
+		-name 'btf_dump_test_case_*.c' -o \
 		-name '*.o' -exec sh -c 'readelf -h "{}" | grep -q "^  Machine:.*BPF"' \; \) -print0 | \
 	xargs -0 cp -t %{buildroot}%{_libexecdir}/kselftests/$dir
 done
