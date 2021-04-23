@@ -130,10 +130,12 @@ static void fuse_file_put(struct fuse_file *ff, bool sync, bool isdir)
 			/* Do nothing when client does not implement 'open' */
 			fuse_release_end(ff->fm, args, 0);
 		} else if (sync) {
-			fuse_simple_request(ff->fm, args);
+			if (fuse_simple_request(ff->fm, args) == -EINTR)
+				goto async_fallback;
 			fuse_file_list_del(ff);
 			fuse_release_end(ff->fm, args, 0);
 		} else {
+async_fallback:
 			fuse_file_list_del(ff);
 			args->end = fuse_release_end;
 			if (fuse_simple_background(ff->fm, args,
