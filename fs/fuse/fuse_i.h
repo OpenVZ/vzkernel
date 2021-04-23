@@ -359,6 +359,8 @@ struct fuse_io_priv {
 	struct kiocb *iocb;
 	struct completion *done;
 	bool blocking;
+	struct list_head list;
+	struct file * file;
 };
 
 #define FUSE_IO_PRIV_SYNC(i) \
