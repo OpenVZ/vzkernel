@@ -701,6 +701,41 @@ int bdi_set_max_ratio(struct backing_dev_info *bdi, unsigned max_ratio)
 }
 EXPORT_SYMBOL(bdi_set_max_ratio);
 
+int bdi_set_min_dirty(struct backing_dev_info *bdi, unsigned min_dirty)
+{
+	int ret = 0;
+
+	spin_lock_bh(&bdi_lock);
+	if (min_dirty > bdi->max_dirty_pages) {
+		ret = -EINVAL;
+	} else {
+		bdi->min_dirty_pages = min_dirty;
+	}
+	spin_unlock_bh(&bdi_lock);
+
+	return ret;
+}
+EXPORT_SYMBOL(bdi_set_min_dirty);
+
+int bdi_set_max_dirty(struct backing_dev_info *bdi, unsigned max_dirty)
+{
+	int ret = 0;
+
+	if (max_dirty > get_num_physpages())
+		return -EINVAL;
+
+	spin_lock_bh(&bdi_lock);
+	if (bdi->min_dirty_pages > max_dirty) {
+		ret = -EINVAL;
+	} else {
+		bdi->max_dirty_pages = max_dirty;
+	}
+	spin_unlock_bh(&bdi_lock);
+
+	return ret;
+}
+EXPORT_SYMBOL(bdi_set_max_dirty);
+
 static unsigned long dirty_freerun_ceiling(unsigned long thresh,
 					   unsigned long bg_thresh)
 {
@@ -752,6 +787,7 @@ static void mdtc_calc_avail(struct dirty_throttle_control *mdtc,
 static unsigned long __wb_calc_thresh(struct dirty_throttle_control *dtc)
 {
 	struct wb_domain *dom = dtc_dom(dtc);
+	struct backing_dev_info *bdi = dtc->wb->bdi;
 	unsigned long thresh = dtc->thresh;
 	u64 wb_thresh;
 	unsigned long numerator, denominator;
@@ -772,6 +808,12 @@ static unsigned long __wb_calc_thresh(struct dirty_throttle_control *dtc)
 	wb_thresh += (thresh * wb_min_ratio) / 100;
 	if (wb_thresh > (thresh * wb_max_ratio) / 100)
 		wb_thresh = thresh * wb_max_ratio / 100;
+
+	if (bdi->min_dirty_pages && wb_thresh < bdi->min_dirty_pages)
+		wb_thresh = min((unsigned long)bdi->min_dirty_pages, thresh);
+
+	if (bdi->max_dirty_pages && wb_thresh > bdi->max_dirty_pages)
+		wb_thresh = bdi->max_dirty_pages;
 
 	return wb_thresh;
 }
@@ -1960,7 +2002,9 @@ bool wb_over_bg_thresh(struct bdi_writeback *wb)
 	if (gdtc->dirty > gdtc->bg_thresh)
 		return true;
 
-	thresh = wb_calc_thresh(gdtc->wb, gdtc->bg_thresh);
+	thresh = __wb_calc_thresh(gdtc);
+	thresh = gdtc->thresh ? div_u64((u64)thresh * gdtc->bg_thresh,
+					       gdtc->thresh) : 0;
 	if (thresh < 2 * wb_stat_error())
 		reclaimable = wb_stat_sum(wb, WB_RECLAIMABLE);
 	else
