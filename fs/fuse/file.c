@@ -1567,10 +1567,12 @@ static ssize_t fuse_cache_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	loff_t endbyte = 0;
 
 	if (fc->writeback_cache) {
+#if 0 /* fixes performance degradation PSBM-99138 */
 		/* Update size (EOF optimization) and mode (SUID clearing) */
 		err = fuse_update_attributes(mapping->host, file);
 		if (err)
 			return err;
+#endif
 
 		if (fc->handle_killpriv_v2 &&
 		    should_remove_suid(file_dentry(file))) {
