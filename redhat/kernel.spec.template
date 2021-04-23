@@ -2136,6 +2136,10 @@ popd
 %endif
 
 %if %{with_selftests}
+# Unfortunately, samples/bpf/Makefile expects that the headers are installed
+# in the source tree. We installed them previously to $RPM_BUILD_ROOT/usr
+# but there's no way to tell the Makefile to take them from there.
+%{make} %{?_smp_mflags} headers_install
 %{make} -s %{?_smp_mflags} ARCH=$Arch V=1 samples/bpf/
 pushd tools/testing/selftests
 # We need to install here because we need to call make with ARCH set which
@@ -2379,6 +2383,7 @@ install -m755 *.sh %{buildroot}%{_libexecdir}/ksamples/bpf
 # test_lwt_bpf.sh compiles test_lwt_bpf.c when run; this works only from the
 # kernel tree. Just remove it.
 rm %{buildroot}%{_libexecdir}/ksamples/bpf/test_lwt_bpf.sh
+install -m644 *_kern.o %{buildroot}%{_libexecdir}/ksamples/bpf
 install -m644 tcp_bpf.readme %{buildroot}%{_libexecdir}/ksamples/bpf
 popd
 # install pktgen samples
