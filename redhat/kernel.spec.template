@@ -346,6 +346,10 @@ Summary: The Linux kernel
 %define use_vdso 1
 %endif
 
+# selftests require bpftool to be built
+%if %{with_selftests}
+%define with_bpftool 1
+%endif
 
 %ifnarch noarch
 %define with_kernel_abi_whitelists 0
@@ -2165,6 +2169,10 @@ popd
 # but there's no way to tell the Makefile to take them from there.
 %{make} %{?_smp_mflags} headers_install
 %{make} %{?_smp_mflags} ARCH=$Arch V=1 samples/bpf/
+
+# Prevent bpf selftests to build bpftool repeatedly:
+export BPFTOOL=$(pwd)/tools/bpf/bpftool/bpftool
+
 pushd tools/testing/selftests
 # We need to install here because we need to call make with ARCH set which
 # doesn't seem possible to do in the install section.
@@ -2184,6 +2192,7 @@ for dir in bpf bpf/no_alu32; do
 	xargs -0 cp -t %{buildroot}%{_libexecdir}/kselftests/$dir
 done
 popd
+export -n BPFTOOL
 %endif
 
 %if %{with_doc}
