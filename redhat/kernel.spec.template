@@ -2096,7 +2096,7 @@ chmod +x tools/perf/check-headers.sh
 # cpupower
 # make sure version-gen.sh is executable.
 chmod +x tools/power/cpupower/utils/version-gen.sh
-%{tools_make} %{?_smp_mflags} -C tools/power/cpupower CPUFREQ_BENCH=false
+%{tools_make} %{?_smp_mflags} -C tools/power/cpupower CPUFREQ_BENCH=false DEBUG=false
 %ifarch x86_64
     pushd tools/power/cpupower/debug/x86_64
     %{tools_make} %{?_smp_mflags} centrino-decode powernow-k8-decode
