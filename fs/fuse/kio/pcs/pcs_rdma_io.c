@@ -437,7 +437,8 @@ static int rio_submit_rdma_read(struct pcs_rdmaio *rio, struct pcs_msg *msg,
 	tx->msg = msg;
 	tx->xid = rb->xid;
 
-	if (rdmaio_use_dma_mr_for_rdma_rw) {
+	if (rdmaio_use_dma_mr_for_rdma_rw &&
+	    !rdma_protocol_iwarp(rio->cmid->device, rio->cmid->qp->port)) {
 		if (pcs_rdma_rw_init_from_msg(&tx->rdma_rw, rio->cmid->device,
 					      DMA_FROM_DEVICE, rb->rbuf, rb->rkey,
 					      rio->dev->pd->local_dma_lkey, msg, offset,
