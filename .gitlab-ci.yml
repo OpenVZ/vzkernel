@@ -115,6 +115,9 @@ rawhide_release:
           -o merge_request.remove_source_branch \
           gitlab "$branch"
       done;
+    # ark-create-release.sh creates a tag for ark-latest to be pushed.
+    # Make sure the ark-latest branch is checked out.
+    - git checkout ark-latest
     - git push gitlab "$(git describe)"
     - git push gitlab ark/*
     - git push -f gitlab ark-latest
