@@ -1641,7 +1641,7 @@ static void kpcs_kill_requests(struct fuse_conn *fc, struct inode *inode)
 static struct fuse_kio_ops kio_pcs_ops = {
 	.name		= "pcs",
 	.owner		= THIS_MODULE,
-	.probe		= kpcs_probe, /*TODO: check sb->dev name */
+	.probe		= kpcs_probe,
 
 	.conn_init	= kpcs_conn_init,
 	.conn_fini	= kpcs_conn_fini,
