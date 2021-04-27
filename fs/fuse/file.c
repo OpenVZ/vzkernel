@@ -415,7 +415,7 @@ void fuse_file_release(struct inode *inode, struct fuse_file *ff,
 	 * fuse file release is synchronous
 	 */
 	if (ff->fm->fc->close_wait) {
-		BUG_ON(refcount_read(&ff->count) != 1);
+		WARN_ON(refcount_read(&ff->count) != 1);
 	}
 
 	/*
@@ -448,6 +448,10 @@ static int fuse_release(struct inode *inode, struct file *file)
 	struct fuse_file *ff = file->private_data;
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct fuse_conn *fc = ff->fm->fc;
+
+	set_bit(FUSE_S_CLOSING, &ff->ff_state);
+	spin_lock(&fi->lock);
+	spin_unlock(&fi->lock);
 
 	if (fc->writeback_cache) {
 		if (file->f_mode & FMODE_WRITE) {
@@ -3629,28 +3633,23 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 	err = 0;
 	spin_lock(&fi->lock);
 	/* Kernel API is weird in this place, we have to find a file associated with this inode.
-	 * This problem is similar to writepage routines, but it is much worse. When doing
+	 * This problem is similar to writepage routines, but it is worse. When doing
 	 * writepage, we have some file open for write and can take any file from write_files
 	 * and it is safe to keep it with get/put. But here we can have the file open for read
-	 * and no files open for write. Even worse, if we select a random file open for write,
-	 * it can be closed by user from another thread and its close will violate close_wait requirement.
-	 * So, we have to search for a read-only file first and fallback to writable only
-	 * if there is no such file.
+	 * and no files open for write. So, we have to take a file from rw_files.
 	 */
 	if (!list_empty(&fi->rw_files)) {
 		struct fuse_file *t_ff;
 		list_for_each_entry(t_ff, &fi->rw_files, rw_entry) {
-			if (list_empty(&t_ff->write_entry)) {
+			if (!test_bit(FUSE_S_CLOSING, &t_ff->ff_state)) {
 				ff = t_ff;
 				break;
 			}
 		}
-		if (!ff)
-			ff = list_entry(fi->rw_files.next, struct fuse_file, rw_entry);
-		fuse_file_get(ff);
-		inarg.fh = ff->fh;
-	} else if (!list_empty(&fi->write_files)) {
+	}
+	if (!ff && !list_empty(&fi->write_files))
 		ff = list_entry(fi->write_files.next, struct fuse_file, write_entry);
+	if (ff) {
 		fuse_file_get(ff);
 		inarg.fh = ff->fh;
 	} else {
@@ -3672,7 +3671,7 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 
 	ap.pages = fuse_pages_alloc(fc->max_pages, GFP_KERNEL, &ap.descs);
 	if (!ap.pages) {
-		fuse_file_put(ff, false, false);
+		fuse_release_ff(inode, ff);
 		return -ENOMEM;
 	}
 
@@ -3757,7 +3756,7 @@ out:
 		ap.pages[allocated] = NULL;
 	}
 	kfree(ap.pages);
-	fuse_file_put(ff, false, false);
+	fuse_release_ff(inode, ff);
 	return err;
 }
 
