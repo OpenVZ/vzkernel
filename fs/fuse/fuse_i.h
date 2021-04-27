@@ -270,7 +270,8 @@ struct fuse_file {
 /** FUSE file states (ff_state) */
 enum {
 	/** Any fops on given ff should fail immediately */
-	FUSE_S_FAIL_IMMEDIATELY,
+	FUSE_S_FAIL_IMMEDIATELY = 0,
+	FUSE_S_CLOSING		= 1
 };
 
 /** One input argument of a request */
