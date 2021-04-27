@@ -732,7 +732,6 @@ Source50: kernel-x86_64-debug-fedora.config
 Source51: generate_all_configs.sh
 
 Source52: process_configs.sh
-Source53: generate_bls_conf.sh
 Source56: update_scripts.sh
 
 Source54: mod-internal.list
@@ -1981,9 +1980,6 @@ BuildKernel() {
     # prune junk from kernel-devel
     find $RPM_BUILD_ROOT/usr/src/kernels -name ".*.cmd" -delete
 
-    # build a BLS config for this kernel
-    %{SOURCE53} "$KernelVer" "$RPM_BUILD_ROOT" "%{?variant}"
-
     # Red Hat UEFI Secure Boot CA cert, which can be used to authenticate the kernel
     mkdir -p $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer
     %ifarch x86_64 aarch64
@@ -2733,7 +2729,6 @@ fi
 /lib/modules/%{KVERREL}%{?3:+%{3}}/build\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/source\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/updates\
-/lib/modules/%{KVERREL}%{?3:+%{3}}/bls.conf\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/weak-updates\
 %{_datadir}/doc/kernel-keys/%{KVERREL}%{?3:+%{3}}\
 %if %{1}\
