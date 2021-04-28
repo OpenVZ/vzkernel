@@ -1,0 +1,17 @@
+# CONFIG_LOCKDEP_STACK_TRACE_HASH_BITS:
+# 
+# Try increasing this value if you need large MAX_STACK_TRACE_ENTRIES.
+# 
+# Symbol: LOCKDEP_STACK_TRACE_HASH_BITS [=14]
+# Type  : integer
+# Range : [10 30]
+# Defined at lib/Kconfig.debug:1397
+#   Prompt: Bitsize for STACK_TRACE_HASH_SIZE
+#   Depends on: LOCKDEP [=y] && !LOCKDEP_SMALL [=n]
+#   Location:
+#     -> Kernel hacking
+#       -> Lock Debugging (spinlocks, mutexes, etc...)
+# 
+# 
+# 
+CONFIG_LOCKDEP_STACK_TRACE_HASH_BITS=14

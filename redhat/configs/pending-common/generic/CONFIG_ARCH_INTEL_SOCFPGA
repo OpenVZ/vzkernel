@@ -1,0 +1,15 @@
+# CONFIG_ARCH_INTEL_SOCFPGA:
+# 
+# This enables support for Intel's SoCFPGA ARMv8 families:
+# Stratix 10 (ex. Altera), Agilex and eASIC N5X.
+# 
+# Symbol: ARCH_INTEL_SOCFPGA [=n]
+# Type  : bool
+# Defined at arch/arm64/Kconfig.platforms:254
+#   Prompt: Intel's SoCFPGA ARMv8 Families
+#   Location:
+#     -> Platform selection
+# 
+# 
+# 
+# CONFIG_ARCH_INTEL_SOCFPGA is not set

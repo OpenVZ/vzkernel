@@ -1,0 +1,16 @@
+# CONFIG_ARCH_APPLE:
+# 
+# This enables support for Apple's in-house ARM SoC family, starting
+# with the Apple M1.
+# 
+# Symbol: ARCH_APPLE [=n]
+# Type  : bool
+# Defined at arch/arm64/Kconfig.platforms:29
+#   Prompt: Apple Silicon SoC family
+#   Location:
+#     -> Platform selection
+# Selects: APPLE_AIC [=n]
+# 
+# 
+# 
+# CONFIG_ARCH_APPLE is not set

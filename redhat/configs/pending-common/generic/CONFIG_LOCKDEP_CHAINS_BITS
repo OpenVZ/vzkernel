@@ -1,0 +1,17 @@
+# CONFIG_LOCKDEP_CHAINS_BITS:
+# 
+# Try increasing this value if you hit "BUG: MAX_LOCKDEP_CHAINS too low!" message.
+# 
+# Symbol: LOCKDEP_CHAINS_BITS [=16]
+# Type  : integer
+# Range : [10 30]
+# Defined at lib/Kconfig.debug:1381
+#   Prompt: Bitsize for MAX_LOCKDEP_CHAINS
+#   Depends on: LOCKDEP [=y] && !LOCKDEP_SMALL [=n]
+#   Location:
+#     -> Kernel hacking
+#       -> Lock Debugging (spinlocks, mutexes, etc...)
+# 
+# 
+# 
+CONFIG_LOCKDEP_CHAINS_BITS=16

@@ -1,0 +1,17 @@
+# CONFIG_LOCKDEP_STACK_TRACE_BITS:
+# 
+# Try increasing this value if you hit "BUG: MAX_STACK_TRACE_ENTRIES too low!" message.
+# 
+# Symbol: LOCKDEP_STACK_TRACE_BITS [=19]
+# Type  : integer
+# Range : [10 30]
+# Defined at lib/Kconfig.debug:1389
+#   Prompt: Bitsize for MAX_STACK_TRACE_ENTRIES
+#   Depends on: LOCKDEP [=y] && !LOCKDEP_SMALL [=n]
+#   Location:
+#     -> Kernel hacking
+#       -> Lock Debugging (spinlocks, mutexes, etc...)
+# 
+# 
+# 
+CONFIG_LOCKDEP_STACK_TRACE_BITS=19

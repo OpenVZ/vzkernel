@@ -1,0 +1,17 @@
+# CONFIG_LOCKDEP_BITS:
+# 
+# Try increasing this value if you hit "BUG: MAX_LOCKDEP_ENTRIES too low!" message.
+# 
+# Symbol: LOCKDEP_BITS [=15]
+# Type  : integer
+# Range : [10 30]
+# Defined at lib/Kconfig.debug:1373
+#   Prompt: Bitsize for MAX_LOCKDEP_ENTRIES
+#   Depends on: LOCKDEP [=y] && !LOCKDEP_SMALL [=n]
+#   Location:
+#     -> Kernel hacking
+#       -> Lock Debugging (spinlocks, mutexes, etc...)
+# 
+# 
+# 
+CONFIG_LOCKDEP_BITS=15

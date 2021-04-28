@@ -1,0 +1,26 @@
+# CONFIG_NETFS_STATS:
+# 
+# This option causes statistical information to be gathered on local
+# caching and exported through file:
+# 
+#       /proc/fs/fscache/stats
+# 
+# The gathering of statistics adds a certain amount of overhead to
+# execution as there are a quite a few stats gathered, and on a
+# multi-CPU system these may be on cachelines that keep bouncing
+# between CPUs.  On the other hand, the stats are very useful for
+# debugging purposes.  Saying 'Y' here is recommended.
+# 
+# Symbol: NETFS_STATS [=n]
+# Type  : bool
+# Defined at fs/netfs/Kconfig:10
+#   Prompt: Gather statistical information on local caching
+#   Depends on: NETFS_SUPPORT [=m] && PROC_FS [=y]
+#   Location:
+#     -> File systems
+#       -> Caches
+#         -> Support for network filesystem high-level I/O (NETFS_SUPPORT [=m])
+# 
+# 
+# 
+# CONFIG_NETFS_STATS is not set

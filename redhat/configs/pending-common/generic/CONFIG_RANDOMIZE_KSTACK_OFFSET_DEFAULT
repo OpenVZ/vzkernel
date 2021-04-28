@@ -1,0 +1,20 @@
+# CONFIG_RANDOMIZE_KSTACK_OFFSET_DEFAULT:
+# 
+# The kernel stack offset can be randomized (after pt_regs) by
+# roughly 5 bits of entropy, frustrating memory corruption
+# attacks that depend on stack address determinism or
+# cross-syscall address exposures. This feature is controlled
+# by kernel boot param "randomize_kstack_offset=on/off", and this
+# config chooses the default boot state.
+# 
+# Symbol: RANDOMIZE_KSTACK_OFFSET_DEFAULT [=n]
+# Type  : bool
+# Defined at arch/Kconfig:1114
+#   Prompt: Randomize kernel stack offset on syscall entry
+#   Depends on: HAVE_ARCH_RANDOMIZE_KSTACK_OFFSET [=y]
+#   Location:
+#     -> General architecture-dependent options
+# 
+# 
+# 
+# CONFIG_RANDOMIZE_KSTACK_OFFSET_DEFAULT is not set

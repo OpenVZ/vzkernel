@@ -1,0 +1,22 @@
+# CONFIG_SENSORS_STPDDC60:
+# 
+# If you say yes here you get hardware monitoring support for ST
+# STPDDC60 Universal Digital Multicell Controller, as well as for
+# Flex BMR481.
+# 
+# This driver can also be built as a module. If so, the module will
+# be called stpddc60.
+# 
+# Symbol: SENSORS_STPDDC60 [=n]
+# Type  : tristate
+# Defined at drivers/hwmon/pmbus/Kconfig:287
+#   Prompt: ST STPDDC60
+#   Depends on: HWMON [=y] && PMBUS [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Monitoring support (HWMON [=y])
+#         -> PMBus support (PMBUS [=m])
+# 
+# 
+# 
+# CONFIG_SENSORS_STPDDC60 is not set
