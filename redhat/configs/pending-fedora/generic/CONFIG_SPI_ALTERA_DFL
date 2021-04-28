@@ -1,0 +1,19 @@
+# CONFIG_SPI_ALTERA_DFL:
+# 
+# This is a Device Feature List (DFL) bus driver for the
+# Altera SPI master controller.  The SPI master is connected
+# to a SPI slave to Avalon bridge in a Intel MAX BMC.
+# 
+# Symbol: SPI_ALTERA_DFL [=n]
+# Type  : tristate
+# Defined at drivers/spi/Kconfig:73
+#   Prompt: DFL bus driver for Altera SPI Controller
+#   Depends on: SPI [=y] && SPI_MASTER [=y] && FPGA_DFL [=m]
+#   Location:
+#     -> Device Drivers
+#       -> SPI support (SPI [=y])
+# Selects: SPI_ALTERA_CORE [=n]
+# 
+# 
+# 
+# CONFIG_SPI_ALTERA_DFL is not set

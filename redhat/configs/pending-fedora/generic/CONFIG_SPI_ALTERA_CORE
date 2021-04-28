@@ -1,0 +1,20 @@
+# CONFIG_SPI_ALTERA_CORE:
+# 
+# "The core code for the Altera SPI Controller"
+# 
+# Symbol: SPI_ALTERA_CORE [=n]
+# Type  : tristate
+# Defined at drivers/spi/Kconfig:67
+#   Prompt: Altera SPI Controller core code
+#   Depends on: SPI [=y] && SPI_MASTER [=y]
+#   Location:
+#     -> Device Drivers
+#       -> SPI support (SPI [=y])
+# Selects: REGMAP [=y]
+# Selected by [n]:
+#   - SPI_ALTERA [=n] && SPI [=y] && SPI_MASTER [=y]
+#   - SPI_ALTERA_DFL [=n] && SPI [=y] && SPI_MASTER [=y] && FPGA_DFL [=m]
+# 
+# 
+# 
+# CONFIG_SPI_ALTERA_CORE is not set

@@ -1,0 +1,20 @@
+# CONFIG_SPI_HISI_KUNPENG:
+# 
+# This enables support for HiSilicon SPI controller found on
+# Kunpeng SoCs.
+# 
+# This driver can also be built as a module. If so, the module
+# will be called hisi-kunpeng-spi.
+# 
+# Symbol: SPI_HISI_KUNPENG [=n]
+# Type  : tristate
+# Defined at drivers/spi/Kconfig:351
+#   Prompt: HiSilicon SPI Controller for Kunpeng SoCs
+#   Depends on: SPI [=y] && SPI_MASTER [=y] && (ARM64 [=y] && ACPI [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> SPI support (SPI [=y])
+# 
+# 
+# 
+# CONFIG_SPI_HISI_KUNPENG is not set

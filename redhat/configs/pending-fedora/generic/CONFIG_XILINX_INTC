@@ -1,0 +1,19 @@
+# CONFIG_XILINX_INTC:
+# 
+# Support for the Xilinx Interrupt Controller IP core.
+# This is used as a primary controller with MicroBlaze and can also
+# be used as a secondary chained controller on other platforms.
+# 
+# Symbol: XILINX_INTC [=n]
+# Type  : bool
+# Defined at drivers/irqchip/Kconfig:281
+#   Prompt: Xilinx Interrupt Controller IP
+#   Depends on: MICROBLAZE || ARCH_ZYNQ [=y] || ARCH_ZYNQMP
+#   Location:
+#     -> Device Drivers
+#       -> IRQ chip support
+# Selects: IRQ_DOMAIN [=y]
+# 
+# 
+# 
+# CONFIG_XILINX_INTC is not set

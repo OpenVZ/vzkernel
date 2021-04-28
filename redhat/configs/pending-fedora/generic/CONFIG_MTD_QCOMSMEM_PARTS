@@ -1,0 +1,18 @@
+# CONFIG_MTD_QCOMSMEM_PARTS:
+# 
+# This provides support for parsing partitions from Shared Memory (SMEM)
+# for NAND and SPI flash on Qualcomm platforms.
+# 
+# Symbol: MTD_QCOMSMEM_PARTS [=n]
+# Type  : tristate
+# Defined at drivers/mtd/parsers/Kconfig:183
+#   Prompt: Qualcomm SMEM flash partition parser
+#   Depends on: MTD [=m] && QCOM_SMEM [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Memory Technology Device (MTD) support (MTD [=m])
+#         -> Partition parsers
+# 
+# 
+# 
+# CONFIG_MTD_QCOMSMEM_PARTS is not set

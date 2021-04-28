@@ -1,0 +1,19 @@
+# CONFIG_ARM64_EPAN:
+# 
+# Enhanced Privileged Access Never (EPAN) allows Privileged
+# Access Never to be used with Execute-only mappings.
+# 
+# The feature is detected at runtime, and will remain disabled
+# if the cpu does not implement the feature.
+# Symbol: ARM64_EPAN [=y]
+# Type  : bool
+# Defined at arch/arm64/Kconfig:1695
+#   Prompt: Enable support for Enhanced Privileged Access Never (EPAN)
+#   Depends on: ARM64_PAN [=y]
+#   Location:
+#     -> Kernel Features
+#       -> ARMv8.7 architectural features
+# 
+# 
+# 
+CONFIG_ARM64_EPAN=y

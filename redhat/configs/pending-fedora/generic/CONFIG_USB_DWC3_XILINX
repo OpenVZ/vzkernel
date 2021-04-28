@@ -1,0 +1,19 @@
+# CONFIG_USB_DWC3_XILINX:
+# 
+# Support Xilinx SoCs with DesignWare Core USB3 IP.
+# This driver handles both ZynqMP and Versal SoC operations.
+# Say 'Y' or 'M' if you have one such device.
+# 
+# Symbol: USB_DWC3_XILINX [=m]
+# Type  : tristate
+# Defined at drivers/usb/dwc3/Kconfig:152
+#   Prompt: Xilinx Platforms
+#   Depends on: USB_SUPPORT [=y] && USB_DWC3 [=m] && (ARCH_ZYNQMP [=y] || ARCH_VERSAL) && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> USB support (USB_SUPPORT [=y])
+#         -> DesignWare USB3 DRD Core Support (USB_DWC3 [=m])
+# 
+# 
+# 
+CONFIG_USB_DWC3_XILINX=m

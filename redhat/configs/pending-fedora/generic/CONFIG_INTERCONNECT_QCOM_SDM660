@@ -1,0 +1,18 @@
+# CONFIG_INTERCONNECT_QCOM_SDM660:
+# 
+# This is a driver for the Qualcomm Network-on-Chip on sdm660-based
+# platforms.
+# 
+# Symbol: INTERCONNECT_QCOM_SDM660 [=n]
+# Type  : tristate
+# Defined at drivers/interconnect/qcom/Kconfig:77
+#   Prompt: Qualcomm SDM660 interconnect driver
+#   Depends on: INTERCONNECT [=y] && INTERCONNECT_QCOM [=y] && QCOM_SMD_RPM [=m]
+#   Location:
+#     -> Device Drivers
+#       -> On-Chip Interconnect management support (INTERCONNECT [=y])
+# Selects: INTERCONNECT_QCOM_SMD_RPM [=m]
+# 
+# 
+# 
+# CONFIG_INTERCONNECT_QCOM_SDM660 is not set

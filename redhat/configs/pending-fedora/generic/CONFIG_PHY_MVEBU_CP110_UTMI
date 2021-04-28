@@ -1,0 +1,17 @@
+# CONFIG_PHY_MVEBU_CP110_UTMI:
+# 
+# Enable this to support Marvell CP110 UTMI PHY driver.
+# 
+# Symbol: PHY_MVEBU_CP110_UTMI [=n]
+# Type  : tristate
+# Defined at drivers/phy/marvell/Kconfig:70
+#   Prompt: Marvell CP110 UTMI driver
+#   Depends on: (ARCH_MVEBU [=y] || COMPILE_TEST [=n]) && OF [=y] && USB_COMMON [=y]
+#   Location:
+#     -> Device Drivers
+#       -> PHY Subsystem
+# Selects: GENERIC_PHY [=y]
+# 
+# 
+# 
+# CONFIG_PHY_MVEBU_CP110_UTMI is not set

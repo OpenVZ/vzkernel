@@ -1,0 +1,20 @@
+# CONFIG_IIO_SCMI:
+# 
+# Say yes here to build support for IIO SCMI Driver.
+# This provides ARM SCMI Protocol based IIO device.
+# This driver provides support for accelerometer and gyroscope
+# sensors available on SCMI based platforms.
+# Symbol: IIO_SCMI [=n]
+# Type  : tristate
+# Defined at drivers/iio/common/scmi_sensors/Kconfig:8
+#   Prompt: IIO SCMI
+#   Depends on: IIO [=m] && ARM_SCMI_PROTOCOL [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> IIO SCMI Sensors
+# Selects: IIO_BUFFER [=y] && IIO_KFIFO_BUF [=m]
+# 
+# 
+# 
+# CONFIG_IIO_SCMI is not set

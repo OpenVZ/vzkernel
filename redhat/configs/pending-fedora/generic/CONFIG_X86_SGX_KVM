@@ -1,0 +1,23 @@
+# CONFIG_X86_SGX_KVM:
+# 
+# 
+# Enables KVM guests to create SGX enclaves.
+# 
+# This includes support to expose "raw" unreclaimable enclave memory to
+# guests via a device node, e.g. /dev/sgx_vepc.
+# 
+# If unsure, say N.
+# 
+# Symbol: X86_SGX_KVM [=n]
+# Type  : bool
+# Defined at arch/x86/kvm/Kconfig:87
+#   Prompt: Software Guard eXtensions (SGX) Virtualization
+#   Depends on: VIRTUALIZATION [=y] && X86_SGX [=y] && KVM_INTEL [=m]
+#   Location:
+#     -> Virtualization (VIRTUALIZATION [=y])
+#       -> Kernel-based Virtual Machine (KVM) support (KVM [=m])
+#         -> KVM for Intel (and compatible) processors support (KVM_INTEL [=m])
+# 
+# 
+# 
+# CONFIG_X86_SGX_KVM is not set

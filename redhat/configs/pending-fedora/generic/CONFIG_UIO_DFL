@@ -1,0 +1,26 @@
+# CONFIG_UIO_DFL:
+# 
+# Generic DFL (Device Feature List) driver for Userspace I/O devices.
+# It is useful to provide direct access to DFL devices from userspace.
+# A sample userspace application using this driver is available for
+# download in a git repository:
+# 
+#   git clone https://github.com/OPAE/opae-sdk.git
+# 
+# It could be found at:
+# 
+#   opae-sdk/tools/libopaeuio/
+# 
+# If you compile this as a module, it will be called uio_dfl.
+# Symbol: UIO_DFL [=n]
+# Type  : tristate
+# Defined at drivers/uio/Kconfig:169
+#   Prompt: Generic driver for DFL (Device Feature List) bus
+#   Depends on: UIO [=m] && FPGA_DFL [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Userspace I/O drivers (UIO [=m])
+# 
+# 
+# 
+# CONFIG_UIO_DFL is not set

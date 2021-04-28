@@ -1,0 +1,22 @@
+# CONFIG_CROS_EC_MKBP_PROXIMITY:
+# 
+# Say Y here to enable the proximity sensor implemented via the ChromeOS EC MKBP
+# switches protocol. You must enable one bus option (CROS_EC_I2C or CROS_EC_SPI)
+# to use this.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called cros_ec_mkbp_proximity.
+# 
+# Symbol: CROS_EC_MKBP_PROXIMITY [=n]
+# Type  : tristate
+# Defined at drivers/iio/proximity/Kconfig:24
+#   Prompt: ChromeOS EC MKBP Proximity sensor
+#   Depends on: IIO [=m] && CROS_EC [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Proximity and distance sensors
+# 
+# 
+# 
+# CONFIG_CROS_EC_MKBP_PROXIMITY is not set

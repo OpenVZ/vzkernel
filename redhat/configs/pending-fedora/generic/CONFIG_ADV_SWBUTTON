@@ -1,0 +1,21 @@
+# CONFIG_ADV_SWBUTTON:
+# 
+# Say Y here to enable support for Advantech software defined
+# button feature. More information can be found at
+# <http://www.advantech.com.tw/products/>
+# 
+# To compile this driver as a module, choose M here. The module will
+# be called adv_swbutton.
+# 
+# Symbol: ADV_SWBUTTON [=n]
+# Type  : tristate
+# Defined at drivers/platform/x86/Kconfig:207
+#   Prompt: Advantech ACPI Software Button Driver
+#   Depends on: X86 [=y] && X86_PLATFORM_DEVICES [=y] && ACPI [=y] && INPUT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> X86 Platform Specific Device Drivers (X86_PLATFORM_DEVICES [=y])
+# 
+# 
+# 
+# CONFIG_ADV_SWBUTTON is not set

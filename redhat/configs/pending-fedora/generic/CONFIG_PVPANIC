@@ -1,0 +1,17 @@
+# CONFIG_PVPANIC:
+# 
+# This option allows to select a specific pvpanic device driver.
+# pvpanic is a paravirtualized device provided by QEMU; it lets
+# a virtual machine (guest) communicate panic events to the host.
+# 
+# Symbol: PVPANIC [=n]
+# Type  : bool
+# Defined at drivers/misc/pvpanic/Kconfig:8
+#   Prompt: pvpanic device support
+#   Location:
+#     -> Device Drivers
+#       -> Misc devices
+# 
+# 
+# 
+# CONFIG_PVPANIC is not set
