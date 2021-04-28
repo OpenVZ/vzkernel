@@ -23,7 +23,8 @@ function cleanup {
 trap cleanup EXIT
 
 # Easy way to get each of the files to process
-git diff --name-only HEAD HEAD^ > "$tmpdir"/new_config_files
+# Not interested in Fedora configs
+git diff --name-only HEAD HEAD^ | grep -v "pending-fedora" > "$tmpdir"/new_config_files
 
 while read -r line; do
 	# Read all the files and split up by file path of each config item.
