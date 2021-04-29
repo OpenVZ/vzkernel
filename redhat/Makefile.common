@@ -75,7 +75,7 @@ ifeq ($(SNAPSHOT),1)
   endif
   # Follow the packaging guidelines to include the date + git snapshot
   PREBUILD:=$(PREBUILD)$(shell date +%Y%m%d)git$(MARKER).
-  UPSTREAM_TARBALL_NAME:=$(shell date +%Y%m%d)git$(MARKER)
+  UPSTREAM_TARBALL_NAME:=$(patsubst v%,%,$(_TAG))
 endif
 
 
