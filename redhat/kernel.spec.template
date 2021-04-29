@@ -2440,7 +2440,7 @@ if [ -f /etc/sysconfig/kernel ]\
 then\
     . /etc/sysconfig/kernel || exit $?\
 fi\
-if [ "$HARDLINK" != "no" -a -x /usr/sbin/hardlink -a ! -e /run/ostree-booted ] \
+if [ "$HARDLINK" != "no" -a -x /usr/bin/hardlink -a ! -e /run/ostree-booted ] \
 then\
     (cd /usr/src/kernels/%{KVERREL}%{?1:+%{1}} &&\
      /usr/bin/find . -type f | while read f; do\
