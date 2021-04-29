@@ -73,8 +73,9 @@ ifeq ($(SNAPSHOT),1)
     PREBUILD:=0$(KEXTRAVERSION).
     RPMKPATCHLEVEL:=$(shell expr $(RPMKPATCHLEVEL) + 1)
   endif
-  # Follow the packaging guidelines to include the date + git snapshot
-  PREBUILD:=$(PREBUILD)$(shell date +%Y%m%d)git$(MARKER).
+  # Obtain the date that HEAD was committed (not the snapshot commit).
+  HEAD_DATE:=$(shell $(GIT) show -s --format=%cd --date=format:%Y%m%d $(HEAD))
+  PREBUILD:=$(PREBUILD)$(HEAD_DATE)git$(MARKER).
   UPSTREAM_TARBALL_NAME:=$(patsubst v%,%,$(_TAG))
 endif
 
