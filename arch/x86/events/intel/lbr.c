@@ -5,6 +5,7 @@
 #include <asm/perf_event.h>
 #include <asm/msr.h>
 #include <asm/insn.h>
+#include <asm/intel-family.h>
 
 #include "../perf_event.h"
 
@@ -1199,7 +1200,7 @@ static const int hsw_lbr_sel_map[PERF_SAMPLE_BRANCH_MAX_SHIFT] = {
 };
 
 /* core */
-void __init intel_pmu_lbr_init_core(struct x86_pmu_lbr *lbr)
+static void intel_pmu_lbr_init_core(struct x86_pmu_lbr *lbr)
 {
 	lbr->nr     = 4;
 	lbr->tos    = MSR_LBR_TOS;
@@ -1213,7 +1214,7 @@ void __init intel_pmu_lbr_init_core(struct x86_pmu_lbr *lbr)
 }
 
 /* nehalem/westmere */
-void __init intel_pmu_lbr_init_nhm(struct x86_pmu_lbr *lbr)
+static void intel_pmu_lbr_init_nhm(struct x86_pmu_lbr *lbr)
 {
 	lbr->nr     = 16;
 	lbr->tos    = MSR_LBR_TOS;
@@ -1233,7 +1234,7 @@ void __init intel_pmu_lbr_init_nhm(struct x86_pmu_lbr *lbr)
 }
 
 /* sandy bridge */
-void __init intel_pmu_lbr_init_snb(struct x86_pmu_lbr *lbr)
+static void intel_pmu_lbr_init_snb(struct x86_pmu_lbr *lbr)
 {
 	lbr->nr   = 16;
 	lbr->tos  = MSR_LBR_TOS;
@@ -1252,7 +1253,7 @@ void __init intel_pmu_lbr_init_snb(struct x86_pmu_lbr *lbr)
 }
 
 /* haswell */
-void intel_pmu_lbr_init_hsw(struct x86_pmu_lbr *lbr)
+static void intel_pmu_lbr_init_hsw(struct x86_pmu_lbr *lbr)
 {
 	lbr->nr	 = 16;
 	lbr->tos = MSR_LBR_TOS;
@@ -1267,7 +1268,7 @@ void intel_pmu_lbr_init_hsw(struct x86_pmu_lbr *lbr)
 }
 
 /* skylake */
-__init void intel_pmu_lbr_init_skl(struct x86_pmu_lbr *lbr)
+static void intel_pmu_lbr_init_skl(struct x86_pmu_lbr *lbr)
 {
 	lbr->nr	 = 32;
 	lbr->tos = MSR_LBR_TOS;
@@ -1286,19 +1287,8 @@ __init void intel_pmu_lbr_init_skl(struct x86_pmu_lbr *lbr)
 }
 
 /* atom */
-void __init intel_pmu_lbr_init_atom(struct x86_pmu_lbr *lbr)
+static void intel_pmu_lbr_init_atom(struct x86_pmu_lbr *lbr)
 {
-	/*
-	 * only models starting at stepping 10 seems
-	 * to have an operational LBR which can freeze
-	 * on PMU interrupt
-	 */
-	if (boot_cpu_data.x86_model == 28
-	    && boot_cpu_data.x86_stepping < 10) {
-		pr_cont("LBR disabled due to erratum");
-		return;
-	}
-
 	lbr->nr   = 8;
 	lbr->tos  = MSR_LBR_TOS;
 	lbr->from = MSR_LBR_CORE_FROM;
@@ -1311,7 +1301,7 @@ void __init intel_pmu_lbr_init_atom(struct x86_pmu_lbr *lbr)
 }
 
 /* slm */
-void __init intel_pmu_lbr_init_slm(struct x86_pmu_lbr *lbr)
+static void intel_pmu_lbr_init_slm(struct x86_pmu_lbr *lbr)
 {
 	lbr->nr   = 8;
 	lbr->tos  = MSR_LBR_TOS;
@@ -1329,7 +1319,7 @@ void __init intel_pmu_lbr_init_slm(struct x86_pmu_lbr *lbr)
 }
 
 /* Knights Landing */
-void intel_pmu_lbr_init_knl(struct x86_pmu_lbr *lbr)
+static void intel_pmu_lbr_init_knl(struct x86_pmu_lbr *lbr)
 {
 	lbr->nr   = 8;
 	lbr->tos  = MSR_LBR_TOS;
@@ -1343,3 +1333,128 @@ void intel_pmu_lbr_init_knl(struct x86_pmu_lbr *lbr)
 	if (x86_pmu.intel_cap.lbr_format == LBR_FORMAT_LIP)
 		x86_pmu.intel_cap.lbr_format = LBR_FORMAT_EIP_FLAGS;
 }
+
+static void __intel_pmu_lbr_fill(struct x86_pmu_lbr *lbr, u8 family, u8 model)
+{
+	if (family != 0x6)
+		return;
+
+	switch (model) {
+	case INTEL_FAM6_CORE_YONAH:
+		break;
+	case INTEL_FAM6_CORE2_MEROM:
+	case INTEL_FAM6_CORE2_MEROM_L:
+	case INTEL_FAM6_CORE2_PENRYN:
+	case INTEL_FAM6_CORE2_DUNNINGTON:
+		intel_pmu_lbr_init_core(lbr);
+		break;
+	case INTEL_FAM6_NEHALEM:
+	case INTEL_FAM6_NEHALEM_EP:
+	case INTEL_FAM6_NEHALEM_EX:
+		intel_pmu_lbr_init_nhm(lbr);
+		break;
+	case INTEL_FAM6_ATOM_BONNELL:
+	case INTEL_FAM6_ATOM_BONNELL_MID:
+	case INTEL_FAM6_ATOM_SALTWELL:
+	case INTEL_FAM6_ATOM_SALTWELL_MID:
+	case INTEL_FAM6_ATOM_SALTWELL_TABLET:
+		intel_pmu_lbr_init_atom(lbr);
+		break;
+	case INTEL_FAM6_ATOM_SILVERMONT:
+	case INTEL_FAM6_ATOM_SILVERMONT_D:
+	case INTEL_FAM6_ATOM_SILVERMONT_MID:
+	case INTEL_FAM6_ATOM_AIRMONT:
+	case INTEL_FAM6_ATOM_AIRMONT_MID:
+		intel_pmu_lbr_init_slm(lbr);
+		break;
+	case INTEL_FAM6_ATOM_GOLDMONT:
+	case INTEL_FAM6_ATOM_GOLDMONT_D:
+		intel_pmu_lbr_init_skl(lbr);
+		lbr->pt_coexist = true;
+		break;
+	case INTEL_FAM6_ATOM_GOLDMONT_PLUS:
+		intel_pmu_lbr_init_skl(lbr);
+		lbr->pt_coexist = true;
+		break;
+	case INTEL_FAM6_ATOM_TREMONT_D:
+	case INTEL_FAM6_ATOM_TREMONT:
+		intel_pmu_lbr_init_skl(lbr);
+		lbr->pt_coexist = true;
+		break;
+	case INTEL_FAM6_WESTMERE:
+	case INTEL_FAM6_WESTMERE_EP:
+	case INTEL_FAM6_WESTMERE_EX:
+		intel_pmu_lbr_init_nhm(lbr);
+		break;
+	case INTEL_FAM6_SANDYBRIDGE:
+	case INTEL_FAM6_SANDYBRIDGE_X:
+		intel_pmu_lbr_init_snb(lbr);
+		break;
+	case INTEL_FAM6_IVYBRIDGE:
+	case INTEL_FAM6_IVYBRIDGE_X:
+		intel_pmu_lbr_init_snb(lbr);
+		break;
+	case INTEL_FAM6_HASWELL:
+	case INTEL_FAM6_HASWELL_X:
+	case INTEL_FAM6_HASWELL_L:
+	case INTEL_FAM6_HASWELL_G:
+		intel_pmu_lbr_init_hsw(lbr);
+		lbr->double_abort = true;
+		break;
+	case INTEL_FAM6_BROADWELL:
+	case INTEL_FAM6_BROADWELL_D:
+	case INTEL_FAM6_BROADWELL_G:
+	case INTEL_FAM6_BROADWELL_X:
+		intel_pmu_lbr_init_hsw(lbr);
+		break;
+	case INTEL_FAM6_XEON_PHI_KNL:
+	case INTEL_FAM6_XEON_PHI_KNM:
+		intel_pmu_lbr_init_knl(lbr);
+		break;
+	case INTEL_FAM6_SKYLAKE_X:
+	case INTEL_FAM6_SKYLAKE_L:
+	case INTEL_FAM6_SKYLAKE:
+	case INTEL_FAM6_KABYLAKE_L:
+	case INTEL_FAM6_KABYLAKE:
+	case INTEL_FAM6_COMETLAKE_L:
+	case INTEL_FAM6_COMETLAKE:
+		intel_pmu_lbr_init_skl(lbr);
+		break;
+	case INTEL_FAM6_ICELAKE_X:
+	case INTEL_FAM6_ICELAKE_D:
+	case INTEL_FAM6_ICELAKE_L:
+	case INTEL_FAM6_ICELAKE:
+	case INTEL_FAM6_TIGERLAKE_L:
+	case INTEL_FAM6_TIGERLAKE:
+		intel_pmu_lbr_init_skl(lbr);
+		lbr->pt_coexist = true;
+		break;
+	}
+}
+
+void __init intel_pmu_lbr_init(void)
+{
+	memset(&x86_pmu.lbr, 0, sizeof(struct x86_pmu_lbr));
+
+	/*
+	 * only models starting at stepping 10 seems
+	 * to have an operational LBR which can freeze
+	 * on PMU interrupt
+	 */
+	if (boot_cpu_data.x86_model == INTEL_FAM6_ATOM_BONNELL
+	    && boot_cpu_data.x86_stepping < 10) {
+		pr_cont("LBR disabled due to erratum");
+		return;
+	}
+
+	__intel_pmu_lbr_fill(&x86_pmu.lbr, boot_cpu_data.x86,
+			     boot_cpu_data.x86_model);
+}
+
+void intel_pmu_lbr_fill(struct x86_pmu_lbr *lbr, u8 family, u8 model)
+{
+	memset(&x86_pmu.lbr, 0, sizeof(struct x86_pmu_lbr));
+
+	__intel_pmu_lbr_fill(lbr, family, model);
+}
+EXPORT_SYMBOL_GPL(intel_pmu_lbr_fill);

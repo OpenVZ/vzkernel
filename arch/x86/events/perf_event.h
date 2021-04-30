@@ -1058,21 +1058,7 @@ void intel_pmu_lbr_disable_all(void);
 
 void intel_pmu_lbr_read(void);
 
-void intel_pmu_lbr_init_core(struct x86_pmu_lbr *lbr);
-
-void intel_pmu_lbr_init_nhm(struct x86_pmu_lbr *lbr);
-
-void intel_pmu_lbr_init_atom(struct x86_pmu_lbr *lbr);
-
-void intel_pmu_lbr_init_slm(struct x86_pmu_lbr *lbr);
-
-void intel_pmu_lbr_init_snb(struct x86_pmu_lbr *lbr);
-
-void intel_pmu_lbr_init_hsw(struct x86_pmu_lbr *lbr);
-
-void intel_pmu_lbr_init_skl(struct x86_pmu_lbr *lbr);
-
-void intel_pmu_lbr_init_knl(struct x86_pmu_lbr *lbr);
+void intel_pmu_lbr_init(void);
 
 void intel_pmu_pebs_data_source_nhm(void);
 
