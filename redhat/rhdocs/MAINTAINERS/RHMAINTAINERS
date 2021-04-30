@@ -669,7 +669,8 @@ S:	Maintained
 F:	drivers/scsi/hpsa*
 
 DISTRIBUTED LOCK MANAGER (DLM)
-M:	David Teigland <teigland@redhat.com>
+M:	Alexander Aring <aahringo@redhat.com>
+R:	David Teigland <teigland@redhat.com>
 S:	Maintained
 F:	fs/dlm/
 
@@ -990,6 +991,24 @@ M:	Lukas Czerner <lczerner@redhat.com>
 S:	Maintained
 F:	fs/jbd2/
 F:	include/linux/jbd2.h
+
+KEXEC/KDUMP
+M:	Baoquan He <bhe@redhat.com>
+R:	Kairui Song <kasong@redhat.com>
+L:	kdump-bugs@redhat.com
+S:	Maintained
+F:	Documentation/admin-guide/kdump/
+F:	include/linux/crash_core.h
+F:	include/linux/crash_dump.h
+F:	include/uapi/linux/vmcore.h
+F:	include/linux/kexec.h
+F:	include/uapi/linux/kexec.h
+F:	fs/proc/vmcore.c
+F:	kernel/crash_*.c
+F:	kernel/kexec*
+F:	arch/x86/kernel/machine_kexec_*.c
+F:	arch/x86/kernel/crash*.c
+F:	arch/x86/kernel/kexec-bzimage64.c
 
 KERNEL VIRTUAL MACHINE (KVM)
 M:	Paolo Bonzini <pbonzini@redhat.com>
@@ -1331,6 +1350,16 @@ F:	include/net/netns/netfilter.h
 F:	include/net/netns/nftables.h
 F:	include/net/netns/x_tables.h
 
+NETWORKING [DSA]
+M:	Ivan Vecera <ivecera@redhat.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/net/dsa/
+F:	drivers/net/dsa/
+F:	include/linux/dsa/
+F:	include/linux/platform_data/dsa.h
+F:	include/net/dsa.h
+F:	net/dsa/
+
 NETWORKING [GENERAL]
 M:	Jiri Benc <jbenc@redhat.com>
 M:	Marcelo Leitner <mleitner@redhat.com>
@@ -1583,7 +1612,17 @@ PLATFORM DRIVERS
 M:	David Arcari <darcari@redhat.com>
 M:	Mark Langsdorf <mlangsdo@redhat.com>
 S:	Maintained
-F:	drivers/platform/
+F:	drivers/platform/Kconfig
+
+PLATFORM DRIVERS MELLANOX
+M:	Mark Langsdorf <mlangsdo@redhat.com>
+S:	Maintained
+F:	drivers/platform/mellanox/
+
+PLATFORM DRIVERS X86
+M:	David Arcari <darcari@redhat.com>
+S:	Maintained
+F:	drivers/platform/x86/
 
 POWER DRIVERS (Batteries, power supplies, etc.)
 M:	Lenny Szubowicz <lszubowi@redhat.com>
@@ -1710,6 +1749,18 @@ M:	John Linville <linville@redhat.com>
 S:	Maintained
 F:	Documentation/rfkill.txt
 F:	net/rfkill/
+
+REAL TIME CLOCK (RTC) SUBSYSTEM
+M:	Waiman Long <longman@redhat.com>
+S:	Maintained
+F:	Documentation/rtc.*
+F:	Documentation/admin-guide/rtc.*
+F:	drivers/rtc/
+F:	include/linux/platform_data/rtc-*
+F:	include/linux/rtc.h
+F:	include/linux/rtc/
+F:	include/uapi/linux/rtc.h
+F:	tools/testing/selftests/rtc/
 
 S390 VFIO-CCW DRIVER
 M:	Cornelia Huck <cohuck@redhat.com>
@@ -2029,7 +2080,7 @@ F:	drivers/net/virtio_net.c
 F:	drivers/vdpa/
 F:	drivers/block/virtio_blk.c
 F:	include/linux/virtio*.h
-F:	include/linxu/vdpa.h
+F:	include/linux/vdpa.h
 F:	include/uapi/linux/virtio_*.h
 F:	drivers/crypto/virtio/
 F:	mm/balloon_compaction.c
