@@ -2114,7 +2114,6 @@ struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
 {
 	struct cgroup *ve_root = NULL;
 
-	rcu_read_lock();
 	do {
 		if (test_bit(CGRP_VE_ROOT, &cgrp->flags)) {
 			ve_root = cgrp;
@@ -2122,7 +2121,6 @@ struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
 		}
 		cgrp = cgroup_parent(cgrp);
 	} while (cgrp);
-	rcu_read_unlock();
 
 	return ve_root;
 }
