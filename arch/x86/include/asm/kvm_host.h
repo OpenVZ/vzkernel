@@ -37,6 +37,7 @@
 #include <asm/kvm_page_track.h>
 #include <asm/kvm_vcpu_regs.h>
 #include <asm/hyperv-tlfs.h>
+#include <asm/perf_event.h>
 
 #define __KVM_HAVE_ARCH_VCPU_DEBUGFS
 
@@ -506,6 +507,8 @@ struct kvm_pmu {
 	 * redundant check before cleanup if guest don't use vPMU at all.
 	 */
 	u8 event_count;
+
+	struct x86_pmu_lbr lbr;
 };
 
 struct kvm_pmu_ops;
