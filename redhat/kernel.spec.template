@@ -2349,8 +2349,6 @@ popd
 pushd tools/bpf/bpftool
 %{bpftool_make} prefix=%{_prefix} bash_compdir=%{_sysconfdir}/bash_completion.d/ mandir=%{_mandir} install doc-install
 popd
-# man-pages packages this (rhbz #1686954, #1918707)
-rm %{buildroot}%{_mandir}/man7/bpf-helpers.7
 %endif
 
 %if %{with_selftests}
