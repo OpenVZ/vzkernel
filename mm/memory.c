@@ -3037,7 +3037,9 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 	int locked;
 	int exclusive = 0;
 	vm_fault_t ret = 0;
+	cycles_t start;
 
+	start = get_cycles();
 	if (!pte_unmap_same(vma->vm_mm, vmf->pmd, vmf->pte, vmf->orig_pte))
 		goto out;
 
@@ -3226,6 +3228,10 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 unlock:
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 out:
+	local_irq_disable();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.swap_in, get_cycles() - start);
+	local_irq_enable();
+
 	return ret;
 out_nomap:
 	mem_cgroup_cancel_charge(page, memcg, false);
