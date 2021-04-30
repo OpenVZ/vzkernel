@@ -110,7 +110,7 @@ static int ploop_bio_cluster(struct ploop *ploop, struct bio *bio,
 	end_byte = ((sector << 9) + bio->bi_iter.bi_size - 1);
 	end_cluster = end_byte >> (ploop->cluster_log + 9);
 
-	if (unlikely(cluster > ploop->nr_bat_entries) ||
+	if (unlikely(cluster >= ploop->nr_bat_entries) ||
 		     cluster != end_cluster) {
 		/*
 		 * This mustn't happen, since we set max_io_len
