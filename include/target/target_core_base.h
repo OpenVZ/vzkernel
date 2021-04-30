@@ -854,6 +854,8 @@ struct se_device {
 	unsigned char		dev_alias[SE_DEV_ALIAS_LEN];
 #define SE_UDEV_PATH_LEN 512		/* must be less than PAGE_SIZE */
 	unsigned char		udev_path[SE_UDEV_PATH_LEN];
+#define ALUA_USER_HELPER_LEN 512	/* must be less than PAGE_SIZE */
+	char			alua_user_helper[ALUA_USER_HELPER_LEN];
 	/* Pointer to template of function pointers for transport */
 	const struct target_backend_ops *transport;
 	struct se_lun		xcopy_lun;

@@ -33,6 +33,7 @@
 #include <linux/fs.h>
 #include <scsi/scsi_proto.h>
 #include <asm/unaligned.h>
+#include <linux/kmod.h>
 
 #include <target/target_core_base.h>
 #include <target/target_core_backend.h>
@@ -140,6 +141,8 @@ target_emulate_report_referrals(struct se_cmd *cmd)
 	return 0;
 }
 
+static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp,
+			struct se_device *l_dev, int new_state, int explicit);
 /*
  * REPORT_TARGET_PORT_GROUPS
  *
@@ -173,6 +176,8 @@ target_emulate_report_target_port_groups(struct se_cmd *cmd)
 	buf = transport_kmap_data_sg(cmd);
 	if (!buf)
 		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+
+	core_alua_usermode_helper(dev->t10_alua.default_tg_pt_gp, dev, -1, 0);
 
 	spin_lock(&dev->t10_alua.tg_pt_gps_lock);
 	list_for_each_entry(tg_pt_gp, &dev->t10_alua.tg_pt_gps_list,
@@ -1013,12 +1018,45 @@ static void core_alua_queue_state_change_ua(struct t10_alua_tg_pt_gp *tg_pt_gp)
 	spin_unlock(&tg_pt_gp->tg_pt_gp_lock);
 }
 
+static int core_alua_usermode_helper(struct t10_alua_tg_pt_gp *tg_pt_gp,
+			struct se_device *l_dev, int new_state, int explicit)
+{
+	char *envp[] = { "HOME=/",
+			"TERM=linux",
+			"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
+			NULL };
+	char *argv[8] = {}, str_id[6];
+	int ret;
+
+	if (!l_dev->alua_user_helper[0])
+		return 0;
+
+	argv[0] = l_dev->alua_user_helper;
+	snprintf(str_id, sizeof(str_id), "%hu", tg_pt_gp->tg_pt_gp_id);
+	argv[1] = config_item_name(&tg_pt_gp->tg_pt_gp_group.cg_item);
+	argv[2] = str_id;
+	argv[3] = core_alua_dump_state(tg_pt_gp->tg_pt_gp_alua_access_state);
+	argv[4] = new_state < 0 ? "Read" : core_alua_dump_state(new_state);
+	argv[5] = (explicit) ? "explicit" : "implicit";
+	argv[6] = config_item_name(&l_dev->dev_group.cg_item);
+	argv[7] = NULL;
+
+	ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC | UMH_KILLABLE);
+	pr_debug("helper command: %s exit code %u (0x%x)\n",
+			argv[0], (ret >> 8) & 0xff, ret);
+	return ret;
+}
+
 static int core_alua_do_transition_tg_pt(
 	struct t10_alua_tg_pt_gp *tg_pt_gp,
+	struct se_device *l_dev,
 	int new_state,
 	int explicit)
 {
 	int prev_state;
+
+	if (core_alua_usermode_helper(tg_pt_gp, l_dev, new_state, explicit))
+		return -EAGAIN;
 
 	mutex_lock(&tg_pt_gp->tg_pt_gp_transition_mutex);
 	/* Nothing to be done here */
@@ -1128,7 +1166,7 @@ int core_alua_do_port_transition(
 		 */
 		l_tg_pt_gp->tg_pt_gp_alua_lun = l_lun;
 		l_tg_pt_gp->tg_pt_gp_alua_nacl = l_nacl;
-		rc = core_alua_do_transition_tg_pt(l_tg_pt_gp,
+		rc = core_alua_do_transition_tg_pt(l_tg_pt_gp, l_dev,
 						   new_state, explicit);
 		atomic_dec_mb(&lu_gp->lu_gp_ref_cnt);
 		return rc;
@@ -1177,7 +1215,7 @@ int core_alua_do_port_transition(
 			 * core_alua_do_transition_tg_pt() will always return
 			 * success.
 			 */
-			rc = core_alua_do_transition_tg_pt(tg_pt_gp,
+			rc = core_alua_do_transition_tg_pt(tg_pt_gp, l_dev,
 					new_state, explicit);
 
 			spin_lock(&dev->t10_alua.tg_pt_gps_lock);
@@ -2107,6 +2145,30 @@ ssize_t core_alua_store_trans_delay_msecs(
 		return -EINVAL;
 	}
 	tg_pt_gp->tg_pt_gp_trans_delay_msecs = (int)tmp;
+
+	return count;
+}
+
+ssize_t core_alua_show_user_helper(
+	struct se_device *dev,
+	char *page)
+{
+	return sprintf(page, "%s\n", dev->alua_user_helper);
+}
+
+ssize_t core_alua_store_user_helper(
+	struct se_device *dev,
+	const char *page,
+	size_t count)
+{
+	if (count == 1 && page[0] == '-') {
+		dev->alua_user_helper[0] = 0;
+	} else if (count > ALUA_USER_HELPER_LEN - 1) {
+		return -EINVAL;
+	} else {
+		memcpy(dev->alua_user_helper, page, count);
+		dev->alua_user_helper[count] = 0;
+	}
 
 	return count;
 }
