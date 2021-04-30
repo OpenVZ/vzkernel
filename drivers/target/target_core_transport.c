@@ -888,6 +888,9 @@ void target_complete_cmd(struct se_cmd *cmd, u8 scsi_status)
 	cmd->transport_state |= (CMD_T_COMPLETE | CMD_T_ACTIVE);
 	spin_unlock_irqrestore(&cmd->t_state_lock, flags);
 
+	if (success)
+		cmd->finished_exec_at = ktime_get_ns() / NSEC_PER_USEC;
+
 	INIT_WORK(&cmd->work, success ? target_complete_ok_work :
 		  target_complete_failure_work);
 	if (cmd->se_cmd_flags & SCF_USE_CPUID)
@@ -1991,6 +1994,7 @@ void __target_execute_cmd(struct se_cmd *cmd, bool do_checks)
 		}
 	}
 
+	cmd->started_exec_at = ktime_get_ns() / NSEC_PER_USEC;
 	ret = cmd->execute_cmd(cmd);
 	if (!ret)
 		return;
@@ -2373,6 +2377,15 @@ static void target_complete_ok_work(struct work_struct *work)
 	}
 
 queue_rsp:
+	if (cmd->t_task_cdb[0] == SYNCHRONIZE_CACHE ||
+		cmd->t_task_cdb[0] == SYNCHRONIZE_CACHE_16) {
+		rcu_read_lock();
+		scsi_port_stats_hist_observe(
+			rcu_dereference(cmd->se_lun->lun_stats.sync_hist),
+			cmd->finished_exec_at - cmd->started_exec_at);
+		rcu_read_unlock();
+	}
+
 	switch (cmd->data_direction) {
 	case DMA_FROM_DEVICE:
 		/*
@@ -2393,6 +2406,12 @@ queue_rsp:
 				&cmd->se_lun->lun_stats.tx_data_octets);
 
 		atomic_long_inc(&cmd->se_lun->lun_stats.read_cmds);
+
+		rcu_read_lock();
+		scsi_port_stats_hist_observe(
+			rcu_dereference(cmd->se_lun->lun_stats.read_hist),
+			cmd->finished_exec_at - cmd->started_exec_at);
+		rcu_read_unlock();
 
 		/*
 		 * Perform READ_STRIP of PI using software emulation when
@@ -2422,6 +2441,12 @@ queue_rsp:
 		(cmd->se_cmd_flags & SCF_BIDI) ?
 			atomic_long_inc(&cmd->se_lun->lun_stats.bidi_cmds) :
 			atomic_long_inc(&cmd->se_lun->lun_stats.write_cmds);
+
+		rcu_read_lock();
+		scsi_port_stats_hist_observe(
+			rcu_dereference(cmd->se_lun->lun_stats.write_hist),
+			cmd->finished_exec_at - cmd->started_exec_at);
+		rcu_read_unlock();
 
 		/*
 		 * Check if we need to send READ payload for BIDI-COMMAND
