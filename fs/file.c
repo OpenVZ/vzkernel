@@ -70,7 +70,7 @@ static void copy_fd_bitmaps(struct fdtable *nfdt, struct fdtable *ofdt,
  * Copy all file descriptors from the old table to the new, expanded table and
  * clear the extra space.  Called with the files spinlock held for write.
  */
-static void copy_fdtable(struct fdtable *nfdt, struct fdtable *ofdt)
+static void copy_fdtable(struct fdtable *nfdt, struct fdtable *ofdt, bool shrink)
 {
 	unsigned int cpy, set;
 
@@ -147,7 +147,7 @@ out:
  * Return <0 error code on error; 1 on successful completion.
  * The files->file_lock should be held on entry, and will be held on exit.
  */
-static int expand_fdtable(struct files_struct *files, unsigned int nr)
+static int expand_fdtable(struct files_struct *files, unsigned int nr, bool shrink)
 	__releases(files->file_lock)
 	__acquires(files->file_lock)
 {
@@ -175,7 +175,7 @@ static int expand_fdtable(struct files_struct *files, unsigned int nr)
 	}
 	cur_fdt = files_fdtable(files);
 	BUG_ON(nr < cur_fdt->max_fds);
-	copy_fdtable(new_fdt, cur_fdt);
+	copy_fdtable(new_fdt, cur_fdt, shrink);
 	rcu_assign_pointer(files->fdt, new_fdt);
 	if (cur_fdt != &files->fdtab)
 		call_rcu(&cur_fdt->rcu, free_fdtable_rcu);
@@ -192,7 +192,7 @@ static int expand_fdtable(struct files_struct *files, unsigned int nr)
  * expanded and execution may have blocked.
  * The files->file_lock should be held on entry, and will be held on exit.
  */
-static int expand_files(struct files_struct *files, unsigned int nr)
+static int expand_files(struct files_struct *files, unsigned int nr, bool shrink)
 	__releases(files->file_lock)
 	__acquires(files->file_lock)
 {
@@ -220,7 +220,7 @@ repeat:
 
 	/* All good, so we try */
 	files->resize_in_progress = true;
-	expanded = expand_fdtable(files, nr);
+	expanded = expand_fdtable(files, nr, shrink);
 	files->resize_in_progress = false;
 
 	wake_up_all(&files->resize_wait);
@@ -513,7 +513,7 @@ repeat:
 	if (fd >= end)
 		goto out;
 
-	error = expand_files(files, fd);
+	error = expand_files(files, fd, false);
 	if (error < 0)
 		goto out;
 
@@ -1025,7 +1025,7 @@ int replace_fd(unsigned fd, struct file *file, unsigned flags)
 		return -EBADF;
 
 	spin_lock(&files->file_lock);
-	err = expand_files(files, fd);
+	err = expand_files(files, fd, false);
 	if (unlikely(err < 0))
 		goto out_unlock;
 	return do_dup2(files, file, fd, flags);
@@ -1051,7 +1051,7 @@ static int ksys_dup3(unsigned int oldfd, unsigned int newfd, int flags)
 		return -EBADF;
 
 	spin_lock(&files->file_lock);
-	err = expand_files(files, newfd);
+	err = expand_files(files, newfd, false);
 	file = fcheck(oldfd);
 	if (unlikely(!file))
 		goto Ebadf;
