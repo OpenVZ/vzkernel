@@ -1898,9 +1898,19 @@ static bool has_reqs_active(struct kioctx *ctx)
 {
 	unsigned long flags;
 	unsigned nr;
+	int cpu;
+	unsigned reqs_avail_batch = 0;
 
 	spin_lock_irqsave(&ctx->completion_lock, flags);
-	nr = (ctx->nr_events - 1) - atomic_read(&ctx->reqs_available);
+	/*
+	 * See get_reqs_available()/put_reqs_available() about
+	 * how reqs_available distributed between atomic
+	 * ctx->reqs_available and percpu ctx->cpu reqs_available.
+	 */
+	for_each_possible_cpu(cpu)
+		reqs_avail_batch += per_cpu_ptr(ctx->cpu, cpu)->reqs_available;
+	nr = ctx->nr_events - 1;
+	nr -= atomic_read(&ctx->reqs_available) + reqs_avail_batch;
 	nr -= ctx->completed_events;
 	spin_unlock_irqrestore(&ctx->completion_lock, flags);
 
