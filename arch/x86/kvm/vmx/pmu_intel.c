@@ -12,6 +12,7 @@
 #include <linux/kvm_host.h>
 #include <linux/perf_event.h>
 #include <asm/perf_event.h>
+#include <asm/cpu.h>
 #include "x86.h"
 #include "cpuid.h"
 #include "lapic.h"
@@ -150,6 +151,24 @@ static struct kvm_pmc *intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
 	return &counters[array_index_nospec(idx, num_counters)];
 }
 
+static bool intel_is_lbr_msr(struct kvm_vcpu *vcpu, u32 msr)
+{
+	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
+	struct x86_pmu_lbr *lbr = &pmu->lbr;
+
+	if (!lbr->nr)
+		return false;
+
+	if (msr == lbr->tos)
+		return true;
+	if (msr >= lbr->from && msr < lbr->from + lbr->nr)
+		return true;
+	if (msr >= lbr->to && msr < lbr->to + lbr->nr)
+		return true;
+
+	return false;
+}
+
 static bool intel_is_valid_msr(struct kvm_vcpu *vcpu, u32 msr)
 {
 	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
@@ -163,6 +182,10 @@ static bool intel_is_valid_msr(struct kvm_vcpu *vcpu, u32 msr)
 		ret = pmu->version > 1;
 		break;
 	default:
+		if (intel_is_lbr_msr(vcpu, msr)) {
+			ret = true;
+			break;
+		}
 		ret = get_gp_pmc(pmu, msr, MSR_IA32_PERFCTR0) ||
 			get_gp_pmc(pmu, msr, MSR_P6_EVNTSEL0) ||
 			get_fixed_pmc(pmu, msr);
@@ -204,6 +227,10 @@ static int intel_pmu_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		msr_info->data = pmu->global_ovf_ctrl;
 		return 0;
 	default:
+		if (intel_is_lbr_msr(vcpu, msr)) {
+			msr_info->data = 0;
+			return 0;
+		}
 		if ((pmc = get_gp_pmc(pmu, msr, MSR_IA32_PERFCTR0))) {
 			u64 val = pmc_read_counter(pmc);
 			msr_info->data =
@@ -262,6 +289,8 @@ static int intel_pmu_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		}
 		break;
 	default:
+		if (intel_is_lbr_msr(vcpu, msr))
+			return 0;
 		if ((pmc = get_gp_pmc(pmu, msr, MSR_IA32_PERFCTR0))) {
 			if (!msr_info->host_initiated)
 				data = (s64)(s32)data;
@@ -303,6 +332,11 @@ static void intel_pmu_refresh(struct kvm_vcpu *vcpu)
 	pmu->counter_bitmask[KVM_PMC_FIXED] = 0;
 	pmu->version = 0;
 	pmu->reserved_bits = 0xffffffff00200000ull;
+
+	entry = kvm_find_cpuid_entry(vcpu, 1, 0);
+	if (entry)
+		intel_pmu_lbr_fill(&pmu->lbr,
+			x86_family(entry->eax), x86_model(entry->eax));
 
 	entry = kvm_find_cpuid_entry(vcpu, 0xa, 0);
 	if (!entry)
