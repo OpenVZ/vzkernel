@@ -126,7 +126,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	struct ploop *ploop;
 	int i, ret;
 
-	if (argc < 1)
+	if (argc < 2)
 		return -EINVAL;
 
 	ploop = kzalloc(sizeof(*ploop), GFP_KERNEL);
