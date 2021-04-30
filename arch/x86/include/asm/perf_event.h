@@ -172,6 +172,8 @@ struct x86_pmu_lbr {
 #define lbr_double_abort	lbr.double_abort
 #define lbr_pt_coexist		lbr.pt_coexist
 
+void intel_pmu_lbr_fill(struct x86_pmu_lbr *lbr, u8 family, u8 model);
+
 /*
  * Fixed-purpose performance events:
  */
