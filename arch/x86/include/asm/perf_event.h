@@ -152,6 +152,26 @@ struct x86_pmu_capability {
 	int		events_mask_len;
 };
 
+struct x86_pmu_lbr {
+	unsigned long	tos, from, to;	/* MSR base regs */
+	int		nr;		/* hardware stack size */
+	u64		sel_mask;	/* LBR_SELECT valid bits */
+	const int	*sel_map;	/* lbr_select mappings */
+	bool		double_abort;	/* duplicated lbr aborts */
+	bool		pt_coexist;	/* (LBR|BTS) may coexist with PT */
+};
+
+/*
+ * Convenience defines to keep more of the code unchanged - it makes it
+ * easier to rebase the kernel to newer versions.
+ */
+#define lbr_tos			lbr.tos
+#define lbr_nr			lbr.nr
+#define lbr_sel_mask		lbr.sel_mask
+#define lbr_sel_map		lbr.sel_map
+#define lbr_double_abort	lbr.double_abort
+#define lbr_pt_coexist		lbr.pt_coexist
+
 /*
  * Fixed-purpose performance events:
  */

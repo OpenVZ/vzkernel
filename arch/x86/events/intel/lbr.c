@@ -199,7 +199,7 @@ static void intel_pmu_lbr_reset_32(void)
 	int i;
 
 	for (i = 0; i < x86_pmu.lbr_nr; i++)
-		wrmsrl(x86_pmu.lbr_from + i, 0);
+		wrmsrl(x86_pmu.lbr.from + i, 0);
 }
 
 static void intel_pmu_lbr_reset_64(void)
@@ -207,8 +207,8 @@ static void intel_pmu_lbr_reset_64(void)
 	int i;
 
 	for (i = 0; i < x86_pmu.lbr_nr; i++) {
-		wrmsrl(x86_pmu.lbr_from + i, 0);
-		wrmsrl(x86_pmu.lbr_to   + i, 0);
+		wrmsrl(x86_pmu.lbr.from + i, 0);
+		wrmsrl(x86_pmu.lbr.to   + i, 0);
 		if (x86_pmu.intel_cap.lbr_format == LBR_FORMAT_INFO)
 			wrmsrl(MSR_LBR_INFO_0 + i, 0);
 	}
@@ -311,19 +311,19 @@ static u64 lbr_from_signext_quirk_rd(u64 val)
 static inline void wrlbr_from(unsigned int idx, u64 val)
 {
 	val = lbr_from_signext_quirk_wr(val);
-	wrmsrl(x86_pmu.lbr_from + idx, val);
+	wrmsrl(x86_pmu.lbr.from + idx, val);
 }
 
 static inline void wrlbr_to(unsigned int idx, u64 val)
 {
-	wrmsrl(x86_pmu.lbr_to + idx, val);
+	wrmsrl(x86_pmu.lbr.to + idx, val);
 }
 
 static inline u64 rdlbr_from(unsigned int idx)
 {
 	u64 val;
 
-	rdmsrl(x86_pmu.lbr_from + idx, val);
+	rdmsrl(x86_pmu.lbr.from + idx, val);
 
 	return lbr_from_signext_quirk_rd(val);
 }
@@ -332,7 +332,7 @@ static inline u64 rdlbr_to(unsigned int idx)
 {
 	u64 val;
 
-	rdmsrl(x86_pmu.lbr_to + idx, val);
+	rdmsrl(x86_pmu.lbr.to + idx, val);
 
 	return val;
 }
@@ -572,7 +572,7 @@ static void intel_pmu_lbr_read_32(struct cpu_hw_events *cpuc)
 			u64     lbr;
 		} msr_lastbranch;
 
-		rdmsrl(x86_pmu.lbr_from + lbr_idx, msr_lastbranch.lbr);
+		rdmsrl(x86_pmu.lbr.from + lbr_idx, msr_lastbranch.lbr);
 
 		cpuc->lbr_entries[i].from	= msr_lastbranch.from;
 		cpuc->lbr_entries[i].to		= msr_lastbranch.to;
@@ -1199,12 +1199,12 @@ static const int hsw_lbr_sel_map[PERF_SAMPLE_BRANCH_MAX_SHIFT] = {
 };
 
 /* core */
-void __init intel_pmu_lbr_init_core(void)
+void __init intel_pmu_lbr_init_core(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr     = 4;
-	x86_pmu.lbr_tos    = MSR_LBR_TOS;
-	x86_pmu.lbr_from   = MSR_LBR_CORE_FROM;
-	x86_pmu.lbr_to     = MSR_LBR_CORE_TO;
+	lbr->nr     = 4;
+	lbr->tos    = MSR_LBR_TOS;
+	lbr->from   = MSR_LBR_CORE_FROM;
+	lbr->to     = MSR_LBR_CORE_TO;
 
 	/*
 	 * SW branch filter usage:
@@ -1213,15 +1213,15 @@ void __init intel_pmu_lbr_init_core(void)
 }
 
 /* nehalem/westmere */
-void __init intel_pmu_lbr_init_nhm(void)
+void __init intel_pmu_lbr_init_nhm(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr     = 16;
-	x86_pmu.lbr_tos    = MSR_LBR_TOS;
-	x86_pmu.lbr_from   = MSR_LBR_NHM_FROM;
-	x86_pmu.lbr_to     = MSR_LBR_NHM_TO;
+	lbr->nr     = 16;
+	lbr->tos    = MSR_LBR_TOS;
+	lbr->from   = MSR_LBR_NHM_FROM;
+	lbr->to     = MSR_LBR_NHM_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = nhm_lbr_sel_map;
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = nhm_lbr_sel_map;
 
 	/*
 	 * SW branch filter usage:
@@ -1233,15 +1233,15 @@ void __init intel_pmu_lbr_init_nhm(void)
 }
 
 /* sandy bridge */
-void __init intel_pmu_lbr_init_snb(void)
+void __init intel_pmu_lbr_init_snb(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr	 = 16;
-	x86_pmu.lbr_tos	 = MSR_LBR_TOS;
-	x86_pmu.lbr_from = MSR_LBR_NHM_FROM;
-	x86_pmu.lbr_to   = MSR_LBR_NHM_TO;
+	lbr->nr   = 16;
+	lbr->tos  = MSR_LBR_TOS;
+	lbr->from = MSR_LBR_NHM_FROM;
+	lbr->to   = MSR_LBR_NHM_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = snb_lbr_sel_map;
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = snb_lbr_sel_map;
 
 	/*
 	 * SW branch filter usage:
@@ -1252,30 +1252,30 @@ void __init intel_pmu_lbr_init_snb(void)
 }
 
 /* haswell */
-void intel_pmu_lbr_init_hsw(void)
+void intel_pmu_lbr_init_hsw(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr	 = 16;
-	x86_pmu.lbr_tos	 = MSR_LBR_TOS;
-	x86_pmu.lbr_from = MSR_LBR_NHM_FROM;
-	x86_pmu.lbr_to   = MSR_LBR_NHM_TO;
+	lbr->nr	 = 16;
+	lbr->tos = MSR_LBR_TOS;
+	lbr->from = MSR_LBR_NHM_FROM;
+	lbr->to   = MSR_LBR_NHM_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = hsw_lbr_sel_map;
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = hsw_lbr_sel_map;
 
 	if (lbr_from_signext_quirk_needed())
 		static_branch_enable(&lbr_from_quirk_key);
 }
 
 /* skylake */
-__init void intel_pmu_lbr_init_skl(void)
+__init void intel_pmu_lbr_init_skl(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr	 = 32;
-	x86_pmu.lbr_tos	 = MSR_LBR_TOS;
-	x86_pmu.lbr_from = MSR_LBR_NHM_FROM;
-	x86_pmu.lbr_to   = MSR_LBR_NHM_TO;
+	lbr->nr	 = 32;
+	lbr->tos = MSR_LBR_TOS;
+	lbr->from = MSR_LBR_NHM_FROM;
+	lbr->to   = MSR_LBR_NHM_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = hsw_lbr_sel_map;
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = hsw_lbr_sel_map;
 
 	/*
 	 * SW branch filter usage:
@@ -1286,7 +1286,7 @@ __init void intel_pmu_lbr_init_skl(void)
 }
 
 /* atom */
-void __init intel_pmu_lbr_init_atom(void)
+void __init intel_pmu_lbr_init_atom(struct x86_pmu_lbr *lbr)
 {
 	/*
 	 * only models starting at stepping 10 seems
@@ -1299,10 +1299,10 @@ void __init intel_pmu_lbr_init_atom(void)
 		return;
 	}
 
-	x86_pmu.lbr_nr	   = 8;
-	x86_pmu.lbr_tos    = MSR_LBR_TOS;
-	x86_pmu.lbr_from   = MSR_LBR_CORE_FROM;
-	x86_pmu.lbr_to     = MSR_LBR_CORE_TO;
+	lbr->nr   = 8;
+	lbr->tos  = MSR_LBR_TOS;
+	lbr->from = MSR_LBR_CORE_FROM;
+	lbr->to   = MSR_LBR_CORE_TO;
 
 	/*
 	 * SW branch filter usage:
@@ -1311,15 +1311,15 @@ void __init intel_pmu_lbr_init_atom(void)
 }
 
 /* slm */
-void __init intel_pmu_lbr_init_slm(void)
+void __init intel_pmu_lbr_init_slm(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr	   = 8;
-	x86_pmu.lbr_tos    = MSR_LBR_TOS;
-	x86_pmu.lbr_from   = MSR_LBR_CORE_FROM;
-	x86_pmu.lbr_to     = MSR_LBR_CORE_TO;
+	lbr->nr   = 8;
+	lbr->tos  = MSR_LBR_TOS;
+	lbr->from = MSR_LBR_CORE_FROM;
+	lbr->to   = MSR_LBR_CORE_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = nhm_lbr_sel_map;
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = nhm_lbr_sel_map;
 
 	/*
 	 * SW branch filter usage:
@@ -1329,15 +1329,15 @@ void __init intel_pmu_lbr_init_slm(void)
 }
 
 /* Knights Landing */
-void intel_pmu_lbr_init_knl(void)
+void intel_pmu_lbr_init_knl(struct x86_pmu_lbr *lbr)
 {
-	x86_pmu.lbr_nr	   = 8;
-	x86_pmu.lbr_tos    = MSR_LBR_TOS;
-	x86_pmu.lbr_from   = MSR_LBR_NHM_FROM;
-	x86_pmu.lbr_to     = MSR_LBR_NHM_TO;
+	lbr->nr   = 8;
+	lbr->tos  = MSR_LBR_TOS;
+	lbr->from = MSR_LBR_NHM_FROM;
+	lbr->to   = MSR_LBR_NHM_TO;
 
-	x86_pmu.lbr_sel_mask = LBR_SEL_MASK;
-	x86_pmu.lbr_sel_map  = snb_lbr_sel_map;
+	lbr->sel_mask = LBR_SEL_MASK;
+	lbr->sel_map  = snb_lbr_sel_map;
 
 	/* Knights Landing does have MISPREDICT bit */
 	if (x86_pmu.intel_cap.lbr_format == LBR_FORMAT_LIP)
