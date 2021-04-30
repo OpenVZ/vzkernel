@@ -166,6 +166,9 @@ void core_tmr_abort_task(
 
 		target_put_cmd_and_wait(se_cmd);
 
+		if (se_cmd->se_cmd_flags & SCF_SE_LUN_CMD)
+			atomic_long_inc(&se_cmd->se_lun->lun_stats.aborts);
+
 		printk("ABORT_TASK: Sending TMR_FUNCTION_COMPLETE for"
 				" ref_tag: %llu\n", ref_tag);
 		tmr->response = TMR_FUNCTION_COMPLETE;
