@@ -1,0 +1,21 @@
+# CONFIG_MFD_ATC260X_I2C:
+# 
+# Support for the Actions Semi ATC260x PMICs controlled via I2C.
+# 
+# This driver provides common support for accessing the ATC2603C
+# and ATC2609A chip variants, additional drivers must be enabled
+# in order to use the functionality of the device.
+# 
+# Symbol: MFD_ATC260X_I2C [=n]
+# Type  : tristate
+# Defined at drivers/mfd/Kconfig:2064
+#   Prompt: Actions Semi ATC260x PMICs with I2C
+#   Depends on: HAS_IOMEM [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multifunction device drivers
+# Selects: MFD_ATC260X [=n] && REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_MFD_ATC260X_I2C is not set
