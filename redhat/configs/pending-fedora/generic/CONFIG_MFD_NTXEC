@@ -1,0 +1,19 @@
+# CONFIG_MFD_NTXEC:
+# 
+# Say yes here if you want to support the embedded controller found in
+# certain e-book readers designed by the original design manufacturer
+# Netronix.
+# 
+# Symbol: MFD_NTXEC [=n]
+# Type  : tristate
+# Defined at drivers/mfd/Kconfig:970
+#   Prompt: Netronix embedded controller (EC)
+#   Depends on: HAS_IOMEM [=y] && (OF [=y] || COMPILE_TEST [=n]) && I2C [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Multifunction device drivers
+# Selects: REGMAP_I2C [=m] && MFD_CORE [=m]
+# 
+# 
+# 
+# CONFIG_MFD_NTXEC is not set

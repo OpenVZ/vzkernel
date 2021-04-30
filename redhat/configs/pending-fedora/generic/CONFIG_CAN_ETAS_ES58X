@@ -1,0 +1,24 @@
+# CONFIG_CAN_ETAS_ES58X:
+# 
+# This driver supports the ES581.4, ES582.1 and ES584.1 interfaces
+# from ETAS GmbH (https://www.etas.com/en/products/es58x.php).
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called etas_es58x.
+# 
+# Symbol: CAN_ETAS_ES58X [=n]
+# Type  : tristate
+# Defined at drivers/net/can/usb/Kconfig:23
+#   Prompt: ETAS ES58X CAN/USB interfaces
+#   Depends on: NET [=y] && CAN [=m] && CAN_DEV [=m] && USB [=y]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> CAN bus subsystem support (CAN [=m])
+#         -> CAN Device Drivers
+#           -> Platform CAN drivers with Netlink support (CAN_DEV [=m])
+#             -> CAN USB interfaces
+# Selects: CRC16 [=y]
+# 
+# 
+# 
+# CONFIG_CAN_ETAS_ES58X is not set

@@ -1,0 +1,18 @@
+# CONFIG_BATTERY_GOLDFISH:
+# 
+# Say Y to enable support for the Goldfish battery and AC power
+# driver. Originated in the Android Studio Emulator (goldfish) it is
+# going to be used in other emulators.
+# 
+# Symbol: BATTERY_GOLDFISH [=n]
+# Type  : tristate
+# Defined at drivers/power/supply/Kconfig:705
+#   Prompt: Goldfish battery driver
+#   Depends on: POWER_SUPPLY [=y] && HAS_IOMEM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Power supply class support (POWER_SUPPLY [=y])
+# 
+# 
+# 
+# CONFIG_BATTERY_GOLDFISH is not set

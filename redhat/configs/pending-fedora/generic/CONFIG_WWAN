@@ -1,0 +1,17 @@
+# CONFIG_WWAN:
+# 
+# This section contains Wireless WAN configuration for WWAN framework
+# and drivers.
+# 
+# Symbol: WWAN [=n]
+# Type  : bool
+# Defined at drivers/net/wwan/Kconfig:6
+#   Prompt: Wireless WAN
+#   Depends on: NETDEVICES [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+# 
+# 
+# 
+# CONFIG_WWAN is not set

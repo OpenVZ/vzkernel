@@ -1,0 +1,23 @@
+# CONFIG_VIDEO_TI_CAL_MC:
+# 
+# Enables Media Controller centric mode by default.
+# 
+# If set, CAL driver will start in Media Controller mode by
+# default. Note that this behavior can be overridden via
+# module parameter 'mc_api'.
+# 
+# Symbol: VIDEO_TI_CAL_MC [=n]
+# Type  : bool
+# Defined at drivers/media/platform/Kconfig:191
+#   Prompt: Media Controller centric mode by default
+#   Depends on: MEDIA_SUPPORT [=m] && MEDIA_PLATFORM_SUPPORT [=y] && V4L_PLATFORM_DRIVERS [=y] && VIDEO_TI_CAL [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media drivers
+#           -> V4L platform devices (V4L_PLATFORM_DRIVERS [=y])
+#             -> TI CAL (Camera Adaptation Layer) driver (VIDEO_TI_CAL [=m])
+# 
+# 
+# 
+# CONFIG_VIDEO_TI_CAL_MC is not set

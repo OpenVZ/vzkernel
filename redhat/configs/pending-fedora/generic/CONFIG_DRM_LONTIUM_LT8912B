@@ -1,0 +1,23 @@
+# CONFIG_DRM_LONTIUM_LT8912B:
+# 
+# Driver for Lontium LT8912B DSI to HDMI bridge
+# chip driver.
+# Please say Y if you have such hardware.
+# 
+# Say M here if you want to support this hardware as a module.
+# The module will be named "lontium-lt8912b".
+# 
+# Symbol: DRM_LONTIUM_LT8912B [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/Kconfig:64
+#   Prompt: Lontium LT8912B DSI/HDMI bridge
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_BRIDGE [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# Selects: DRM_PANEL_BRIDGE [=y] && DRM_KMS_HELPER [=m] && DRM_MIPI_DSI [=y] && REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_DRM_LONTIUM_LT8912B is not set

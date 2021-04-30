@@ -1,0 +1,20 @@
+# CONFIG_VIDEO_IMX8_JPEG:
+# 
+# This is a video4linux2 driver for the i.MX8 QXP/QM integrated
+# JPEG encoder/decoder.
+# 
+# Symbol: VIDEO_IMX8_JPEG [=n]
+# Type  : tristate
+# Defined at drivers/media/platform/imx-jpeg/Kconfig:2
+#   Prompt: IMX8 JPEG Encoder/Decoder
+#   Depends on: MEDIA_SUPPORT [=m] && MEDIA_PLATFORM_SUPPORT [=y] && V4L_MEM2MEM_DRIVERS [=y] && (ARCH_MXC [=y] || COMPILE_TEST [=n]) && VIDEO_DEV [=m] && VIDEO_V4L2 [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Multimedia support (MEDIA_SUPPORT [=m])
+#         -> Media drivers
+#           -> Memory-to-memory multimedia devices (V4L_MEM2MEM_DRIVERS [=y])
+# Selects: VIDEOBUF2_DMA_CONTIG [=m] && V4L2_MEM2MEM_DEV [=m] && V4L2_JPEG_HELPER [=m]
+# 
+# 
+# 
+# CONFIG_VIDEO_IMX8_JPEG is not set

@@ -1,0 +1,19 @@
+# CONFIG_MFD_ROHM_BD957XMUF:
+# 
+# Select this option to get support for the ROHM BD9576MUF and
+# BD9573MUF Power Management ICs. BD9576 and BD9573 are primarily
+# designed to be used to power R-Car series processors.
+# 
+# Symbol: MFD_ROHM_BD957XMUF [=n]
+# Type  : tristate
+# Defined at drivers/mfd/Kconfig:1981
+#   Prompt: ROHM BD9576MUF and BD9573MUF Power Management ICs
+#   Depends on: HAS_IOMEM [=y] && I2C [=y]=y && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multifunction device drivers
+# Selects: REGMAP_I2C [=y] && MFD_CORE [=y]
+# 
+# 
+# 
+# CONFIG_MFD_ROHM_BD957XMUF is not set

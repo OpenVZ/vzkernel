@@ -1,0 +1,22 @@
+# CONFIG_NETFILTER_XTABLES_COMPAT:
+# 
+# This option provides a translation layer to run 32bit arp,ip(6),ebtables
+# binaries on 64bit kernels.
+# 
+# If unsure, say N.
+# 
+# Symbol: NETFILTER_XTABLES_COMPAT [=y]
+# Type  : bool
+# Defined at net/netfilter/Kconfig:731
+#   Prompt: Netfilter Xtables 32bit support
+#   Depends on: NET [=y] && INET [=y] && NETFILTER [=y] && NETFILTER_XTABLES [=y] && COMPAT [=y]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Network packet filtering framework (Netfilter) (NETFILTER [=y])
+#           -> Core Netfilter Configuration
+#             -> Netfilter Xtables support (required for ip_tables) (NETFILTER_XTABLES [=y])
+# 
+# 
+# 
+CONFIG_NETFILTER_XTABLES_COMPAT=y

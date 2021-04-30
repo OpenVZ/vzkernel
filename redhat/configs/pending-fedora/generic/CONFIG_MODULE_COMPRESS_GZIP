@@ -1,0 +1,17 @@
+# CONFIG_MODULE_COMPRESS_GZIP:
+# 
+# Compress modules with GZIP. The installed modules are suffixed
+# with .ko.gz.
+# 
+# Symbol: MODULE_COMPRESS_GZIP [=n]
+# Type  : bool
+# Defined at init/Kconfig:2264
+#   Prompt: GZIP
+#   Depends on: <choice>
+#   Location:
+#     -> Enable loadable module support (MODULES [=y])
+#       -> Module compression mode (<choice> [=y])
+# 
+# 
+# 
+# CONFIG_MODULE_COMPRESS_GZIP is not set
