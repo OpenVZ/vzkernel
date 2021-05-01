@@ -1,0 +1,25 @@
+# CONFIG_SND_SOC_IMX_RPMSG:
+# 
+# SoC Audio support for i.MX boards with rpmsg.
+# There should be rpmsg devices defined in other core (M core)
+# Say Y if you want to add support for SoC audio on an i.MX board with
+# a rpmsg devices.
+# 
+# Symbol: SND_SOC_IMX_RPMSG [=n]
+# Type  : tristate
+# Defined at sound/soc/fsl/Kconfig:342
+#   Prompt: SoC Audio support for i.MX boards with rpmsg
+#   Depends on: SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && SND_IMX_SOC [=m] && RPMSG [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Sound card support (SOUND [=m])
+#         -> Advanced Linux Sound Architecture (SND [=m])
+#           -> ALSA for SoC audio support (SND_SOC [=m])
+#             -> SoC Audio for Freescale CPUs
+# Selects: SND_SOC_IMX_PCM_RPMSG [=n] && SND_SOC_IMX_AUDIO_RPMSG [=n]
+# Selected by [n]:
+#   - SND_SOC_FSL_RPMSG [=n] && SOUND [=m] && !UML && SND [=m] && SND_SOC [=m] && COMMON_CLK [=y] && RPMSG [=m] && SND_IMX_SOC [=m]!=n
+# 
+# 
+# 
+# CONFIG_SND_SOC_IMX_RPMSG is not set

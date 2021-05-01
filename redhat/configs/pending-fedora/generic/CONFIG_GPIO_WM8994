@@ -1,0 +1,18 @@
+# CONFIG_GPIO_WM8994:
+# 
+# Say yes here to access the GPIO signals of WM8994 audio hub
+# CODECs from Wolfson Microelectronics.
+# 
+# Symbol: GPIO_WM8994 [=n]
+# Type  : tristate
+# Defined at drivers/gpio/Kconfig:1426
+#   Prompt: WM8994 GPIOs
+#   Depends on: GPIOLIB [=y] && MFD_WM8994 [=m]
+#   Location:
+#     -> Device Drivers
+#       -> GPIO Support (GPIOLIB [=y])
+#         -> MFD GPIO expanders
+# 
+# 
+# 
+# CONFIG_GPIO_WM8994 is not set

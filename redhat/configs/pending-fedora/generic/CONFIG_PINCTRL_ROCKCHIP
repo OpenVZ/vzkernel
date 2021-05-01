@@ -1,0 +1,17 @@
+# CONFIG_PINCTRL_ROCKCHIP:
+# 
+# This support pinctrl and gpio driver for Rockchip SoCs.
+# 
+# Symbol: PINCTRL_ROCKCHIP [=y]
+# Type  : tristate
+# Defined at drivers/pinctrl/Kconfig:210
+#   Prompt: Rockchip gpio and pinctrl driver
+#   Depends on: PINCTRL [=y] && (ARCH_ROCKCHIP [=y] || COMPILE_TEST [=n]) && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Pin controllers (PINCTRL [=y])
+# Selects: GPIOLIB [=y] && PINMUX [=y] && GENERIC_PINCONF [=y] && GENERIC_IRQ_CHIP [=y] && MFD_SYSCON [=y] && OF_GPIO [=y]
+# 
+# 
+# 
+CONFIG_PINCTRL_ROCKCHIP=y

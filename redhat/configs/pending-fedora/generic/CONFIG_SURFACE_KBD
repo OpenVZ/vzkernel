@@ -1,0 +1,26 @@
+# CONFIG_SURFACE_KBD:
+# 
+# Driver to support HID keyboards on Surface Laptop 1 and 2 devices.
+# 
+# This driver provides support for the HID transport protocol provided
+# by the Surface Aggregator Module (i.e. the embedded controller) on
+# Microsoft Surface Laptops 1 and 2. It is used to connect the
+# integrated keyboard on those devices.
+# 
+# Say M or Y here, if you want support for the integrated keyboard on
+# Microsoft Surface Laptops 1 and 2.
+# 
+# Symbol: SURFACE_KBD [=n]
+# Type  : tristate
+# Defined at drivers/hid/surface-hid/Kconfig:24
+#   Prompt: HID keyboard transport driver for Surface System Aggregator Module
+#   Depends on: SURFACE_AGGREGATOR [=m] && INPUT [=y]
+#   Location:
+#     -> Device Drivers
+#       -> HID support
+#         -> Surface System Aggregator Module HID support
+# Selects: SURFACE_HID_CORE [=n]
+# 
+# 
+# 
+# CONFIG_SURFACE_KBD is not set
