@@ -1,0 +1,27 @@
+# CONFIG_LEDS_LGM:
+# 
+# This option enables support for LEDs connected to GPIO lines on
+# Lightning Mountain (LGM) SoC. Lightning Mountain is a AnyWAN
+# gateway-on-a-chip SoC to be shipped on mid and high end home
+# gateways and routers.
+# 
+# These LEDs are driven by a Serial Shift Output (SSO) controller.
+# The driver supports hardware blinking and the LEDs can be configured
+# to be triggered by software/CPU or by hardware.
+# 
+# Say 'Y' here if you are working on LGM SoC based platform. Otherwise,
+# say 'N'. To compile this driver as a module, choose M here: the module
+# will be called leds-lgm-sso.
+# 
+# Symbol: LEDS_LGM [=n]
+# Type  : tristate
+# Defined at drivers/leds/blink/Kconfig:1
+#   Prompt: LED support for LGM SoC series
+#   Depends on: NEW_LEDS [=y] && (X86 [=y] || COMPILE_TEST [=n]) && GPIOLIB [=y] && LEDS_CLASS [=y] && MFD_SYSCON [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> LED Support (NEW_LEDS [=y])
+# 
+# 
+# 
+# CONFIG_LEDS_LGM is not set

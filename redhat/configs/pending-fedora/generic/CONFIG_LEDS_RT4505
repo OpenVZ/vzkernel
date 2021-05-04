@@ -1,0 +1,20 @@
+# CONFIG_LEDS_RT4505:
+# 
+# This option enables support for the RT4505 flash LED controller.
+# RT4505 includes torch and flash functions with programmable current.
+# And it's commonly used to compensate the illuminance for the camera
+# inside the mobile product like as phones or tablets.
+# 
+# Symbol: LEDS_RT4505 [=n]
+# Type  : tristate
+# Defined at drivers/leds/flash/Kconfig:5
+#   Prompt: LED support for RT4505 flashlight controller
+#   Depends on: NEW_LEDS [=y] && LEDS_CLASS_FLASH [=m] && I2C [=m] && OF [=y] && (V4L2_FLASH_LED_CLASS [=n] || !V4L2_FLASH_LED_CLASS [=n])
+#   Location:
+#     -> Device Drivers
+#       -> LED Support (NEW_LEDS [=y])
+# Selects: REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_LEDS_RT4505 is not set
