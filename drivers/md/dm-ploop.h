@@ -46,7 +46,6 @@ struct ploop_delta {
 
 struct ploop_cmd {
 #define PLOOP_CMD_RESIZE		1
-#define PLOOP_CMD_ADD_DELTA		2
 #define PLOOP_CMD_MERGE_SNAPSHOT	3
 #define PLOOP_CMD_NOTIFY_DELTA_MERGED	4
 #define PLOOP_CMD_SWITCH_TOP_DELTA	5
@@ -74,12 +73,6 @@ struct ploop_cmd {
 			unsigned int cluster, dst_cluster;
 			struct bio *bio;
 		} resize;
-		struct {
-			struct file *file;
-			struct ploop_delta *deltas;
-			void *hdr; /* hdr and bat_entries consequentially */
-			unsigned int raw_clusters;
-		} add_delta;
 		struct {
 #define NR_MERGE_BIOS			64
 			atomic_t nr_available;
