@@ -499,6 +499,23 @@ static int venet_xmit(struct sk_buff *skb, struct net_device *dev)
 	skb_reset_mac_header(skb);
 	memset(skb->data - dev->hard_header_len, 0, dev->hard_header_len);
 
+	/*
+	 * Vzctl configures tc on Host for shaping based on skb->marks
+	 * which are set by nft "ingress" rules in host netns. We don't
+	 * want container user see those vz-specific marks.
+	 *
+	 * On the other hand someone might also set own marks inside a
+	 * Container, thus we don't want those user marks to conflict with
+	 * our traffic shaping on host.
+	 *
+	 * Same applies to intercontainer communication.
+	 *
+	 * => if the packet goes between different VEs we must drop all
+	 * skb marks.
+	 */
+	if (ve != dev_net(dev)->owner_ve)
+		skb->mark = 0;
+
 	nf_reset(skb);
 	length = skb->len;
 
