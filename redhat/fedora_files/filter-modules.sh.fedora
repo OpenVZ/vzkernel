@@ -27,6 +27,8 @@ ethdrvs="3com adaptec alteon amd aquantia atheros broadcom cadence calxeda chels
 
 inputdrvs="gameport tablet touchscreen"
 
+hiddrvs="surface-hid"
+
 scsidrvs="aacraid aic7xxx be2iscsi bfa bnx2i bnx2fc csiostor cxgbi esas2r fcoe fnic isci libsas lpfc megaraid mpt3sas mvsas pm8001 qla2xxx qla4xxx sym53c8xx_2 ufs qedf"
 
 usbdrvs="atm image misc serial"
@@ -110,6 +112,12 @@ done
 for input in ${inputdrvs}
 do
 	filter_dir $1 drivers/input/${input}
+done
+
+# hid
+for hid in ${hiddrvs}
+do
+	filter_dir $1 drivers/hid/${hid}
 done
 
 # USB
