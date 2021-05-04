@@ -21,6 +21,11 @@
 
 #define DM_MSG_PREFIX "ploop"
 
+bool ignore_signature_disk_in_use = false; /* For development purposes */
+module_param(ignore_signature_disk_in_use, bool, 0444);
+MODULE_PARM_DESC(ignore_signature_disk_in_use,
+                "Does not check for SIGNATURE_DISK_IN_USE");
+
 struct kmem_cache *piocb_cache;
 struct kmem_cache *cow_cache;
 
