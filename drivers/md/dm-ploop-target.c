@@ -172,6 +172,11 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "could not parse cluster_log";
 		goto err;
 	}
+	ret = dm_set_target_max_io_len(ti, 1 << ploop->cluster_log);
+	if (ret) {
+		ti->error = "could not set max_io_len";
+		goto err;
+	}
 
 	/*
 	 * We do not add FMODE_EXCL, because further open_table_device()
@@ -187,12 +192,6 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ret = ploop_check_origin_dev(ti, ploop);
 	if (ret) {
 		/* ploop_check_origin_dev() assigns ti->error */
-		goto err;
-	}
-
-	ret = dm_set_target_max_io_len(ti, 1 << ploop->cluster_log);
-	if (ret) {
-		ti->error = "could not set max_io_len";
 		goto err;
 	}
 
