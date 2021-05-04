@@ -262,7 +262,7 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 
 	ret = -ENOLCK;
 	if (m_hdr->m_DiskInUse != cpu_to_le32(SIGNATURE_DISK_IN_USE) &&
-	    !ploop_is_ro(ploop))
+	    !ploop_is_ro(ploop) && !ignore_signature_disk_in_use)
 		goto out;
 
 	ret = -EINVAL;
