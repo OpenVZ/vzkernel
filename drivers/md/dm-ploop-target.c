@@ -117,16 +117,42 @@ static int ploop_check_origin_dev(struct dm_target *ti, struct ploop *ploop)
 	return 0;
 }
 
+static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
+{
+	int i, delta_fd, ret;
+	const char *arg;
+	bool is_raw;
+
+	ret = -EINVAL;
+	for (i = 0; i < argc; i++) {
+		arg = argv[i];
+		is_raw = false;
+		if (strncmp(arg, "raw@", 4) == 0) {
+			if (i != 0)
+				goto out;
+			arg += 4;
+			is_raw = true;
+		}
+		if (kstrtos32(arg, 10, &delta_fd) < 0)
+			goto out;
+
+		ret = ploop_add_delta(ploop, delta_fd, is_raw);
+		if (ret < 0)
+			goto out;
+	}
+
+	ret = 0;
+out:
+	return ret;
+}
 /*
  * <data dev>
  */
 static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 {
 	percpu_ref_func_t *release;
-	int i, delta_fd, ret;
 	struct ploop *ploop;
-	bool is_raw;
-	char *arg;
+	int i, ret;
 
 	if (argc < 2)
 		return -EINVAL;
@@ -203,23 +229,9 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto err;
 	}
 
-	ret = -EINVAL;
-	for (i = 2; i < argc; i++) {
-		arg = argv[i];
-		is_raw = false;
-		if (strncmp(arg, "raw@", 4) == 0) {
-			if (i != 2)
-				goto err;
-			arg += 4;
-			is_raw = true;
-		}
-		if (kstrtos32(arg, 10, &delta_fd) < 0)
-			goto err;
-
-		ret = ploop_add_delta(ploop, delta_fd, is_raw);
-		if (ret < 0)
-			goto err;
-	}
+	ret = ploop_add_deltas_stack(ploop, &argv[2], argc - 2);
+	if (ret)
+		goto err;
 
 	ti->per_io_data_size = sizeof(struct dm_ploop_endio_hook);
 	ti->num_flush_bios = 1;
