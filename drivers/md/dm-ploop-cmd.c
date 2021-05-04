@@ -1853,10 +1853,6 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 		if (argc != 2 || kstrtou64(argv[1], 10, &val) < 0)
 			goto unlock;
 		ret = ploop_resize(ploop, val);
-	} else if (!strcmp(argv[0], "add_delta")) {
-		if (argc != 2)
-			goto unlock;
-		ret = ploop_add_delta(ploop, argv[1]);
 	} else if (!strcmp(argv[0], "merge")) {
 		if (argc == 1)
 			ret = ploop_merge_latest_snapshot(ploop);
