@@ -119,9 +119,22 @@ static int ploop_check_origin_dev(struct dm_target *ti, struct ploop *ploop)
 
 static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 {
-	int i, delta_fd, ret;
+	struct ploop_delta *deltas;
+	int i, delta_fd, ret = 0;
 	const char *arg;
 	bool is_raw;
+
+	if (!argc)
+		goto out;
+	ret = -EINVAL;
+	if (argc > BAT_LEVEL_TOP - 1)
+		goto out;
+
+	ret = -ENOMEM;
+	deltas = kcalloc(argc, sizeof(*deltas), GFP_KERNEL);
+	if (!deltas)
+		goto out;
+	ploop->deltas = deltas;
 
 	ret = -EINVAL;
 	for (i = 0; i < argc; i++) {

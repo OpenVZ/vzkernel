@@ -627,11 +627,9 @@ static int apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
 		delta_bat_entries += PAGE_SIZE / sizeof(map_index_t);
 	}
 
-	swap(ploop->deltas, deltas);
 	ploop->nr_deltas++;
 	write_unlock_irq(&ploop->bat_rwlock);
 
-	kfree(deltas);
 	get_file(ploop->deltas[level].file);
 	return 0;
 }
@@ -654,16 +652,13 @@ static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
  */
 int ploop_add_delta(struct ploop *ploop, int fd, bool is_raw)
 {
+	struct ploop_delta *deltas = ploop->deltas;
 	unsigned int level = ploop->nr_deltas;
-	struct ploop_delta *deltas;
-	unsigned int size;
 	struct file *file;
 	u64 size_in_clus;
 	void *hdr = NULL;
 	int ret;
 
-	if (level == BAT_LEVEL_TOP)
-		return -EMFILE;
 	file = fget(fd);
 	if (!file)
 		return -ENOENT;
@@ -671,12 +666,6 @@ int ploop_add_delta(struct ploop *ploop, int fd, bool is_raw)
 	if (!(file->f_mode & FMODE_READ))
 		goto out;
 
-	ret = -ENOMEM;
-	deltas = kcalloc(level + 1, sizeof(*deltas), GFP_KERNEL);
-	if (!deltas)
-		goto out;
-	size = level * sizeof(*deltas);
-	memcpy(deltas, ploop->deltas, size);
 	deltas[level].file = file;
 	deltas[level].is_raw = is_raw;
 
