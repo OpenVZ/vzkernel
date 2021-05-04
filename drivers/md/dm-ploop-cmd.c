@@ -578,8 +578,8 @@ err:
 	return ret;
 }
 
-/* FIXME: this must not be called on running device */
-static void process_add_delta_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
+static int apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
+				void *hdr, u64 size_in_clus)
 {
 	map_index_t *bat_entries, *delta_bat_entries;
 	unsigned int i, end, level, dst_cluster;
@@ -587,16 +587,10 @@ static void process_add_delta_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 	struct md_page *md;
 	bool is_raw;
 
-	if (unlikely(ploop->force_link_inflight_bios)) {
-		cmd->retval = -EBUSY;
-		pr_err("ploop: adding delta on running device\n");
-		goto out;
-	}
-
 	level = ploop->nr_deltas;
 	/* Points to hdr since md_page[0] also contains hdr. */
-	delta_bat_entries = (map_index_t *)cmd->add_delta.hdr;
-	is_raw = cmd->add_delta.deltas[level].is_raw;
+	delta_bat_entries = (map_index_t *)hdr;
+	is_raw = deltas[level].is_raw;
 
 	write_lock_irq(&ploop->bat_rwlock);
 
@@ -611,7 +605,7 @@ static void process_add_delta_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 				dst_cluster = delta_bat_entries[i];
 			else {
 				dst_cluster = page_clu_idx_to_bat_clu(md->id, i);
-				if (dst_cluster >= cmd->add_delta.raw_clusters)
+				if (dst_cluster >= size_in_clus)
 					dst_cluster = BAT_ENTRY_NONE;
 			}
 			if (dst_cluster == BAT_ENTRY_NONE)
@@ -633,24 +627,24 @@ static void process_add_delta_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 		delta_bat_entries += PAGE_SIZE / sizeof(map_index_t);
 	}
 
-	swap(ploop->deltas, cmd->add_delta.deltas);
+	swap(ploop->deltas, deltas);
 	ploop->nr_deltas++;
 	write_unlock_irq(&ploop->bat_rwlock);
+
+	kfree(deltas);
 	get_file(ploop->deltas[level].file);
-	cmd->retval = 0;
-out:
-	complete(&cmd->comp); /* Last touch of cmd memory */
+	return 0;
 }
 
-static int ploop_check_raw_delta(struct ploop *ploop, struct file *file,
-				 struct ploop_cmd *cmd)
+static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
+				    u64 *size_in_clus)
 {
 	loff_t loff = i_size_read(file->f_mapping->host);
 	unsigned int cluster_log = ploop->cluster_log;
 
 	if (loff & ((1 << (cluster_log + SECTOR_SHIFT)) - 1))
 		return -EPROTO;
-	cmd->add_delta.raw_clusters = loff >> (cluster_log + SECTOR_SHIFT);
+	*size_in_clus = loff >> (cluster_log + SECTOR_SHIFT);
 	return 0;
 }
 
@@ -661,10 +655,11 @@ static int ploop_check_raw_delta(struct ploop *ploop, struct file *file,
 int ploop_add_delta(struct ploop *ploop, int fd, bool is_raw)
 {
 	unsigned int level = ploop->nr_deltas;
-	struct ploop_cmd cmd = { {0} };
 	struct ploop_delta *deltas;
 	unsigned int size;
 	struct file *file;
+	u64 size_in_clus;
+	void *hdr = NULL;
 	int ret;
 
 	if (level == BAT_LEVEL_TOP)
@@ -684,30 +679,19 @@ int ploop_add_delta(struct ploop *ploop, int fd, bool is_raw)
 	memcpy(deltas, ploop->deltas, size);
 	deltas[level].file = file;
 	deltas[level].is_raw = is_raw;
-	/*
-	 * BAT update in general is driven by the kwork
-	 * (see comment in process_one_deferred_bio()),
-	 * so we delegate the cmd to it.
-	 */
-	cmd.add_delta.deltas = deltas;
-	cmd.type = PLOOP_CMD_ADD_DELTA;
-	cmd.ploop = ploop;
 
-	if (is_raw)
-		ret = ploop_check_raw_delta(ploop, file, &cmd);
-	else
-		ret = ploop_read_delta_metadata(ploop, file,
-						&cmd.add_delta.hdr);
+	ret = ploop_check_delta_length(ploop, file, &size_in_clus);
 	if (ret)
 		goto out;
 
-	init_completion(&cmd.comp);
-	ploop_queue_deferred_cmd(ploop, &cmd);
-	wait_for_completion(&cmd.comp);
-	ret = cmd.retval;
+	if (!is_raw)
+		ret = ploop_read_delta_metadata(ploop, file, &hdr);
+	if (ret)
+		goto out;
+
+	ret = apply_delta_mappings(ploop, deltas, hdr, size_in_clus);
 out:
-	vfree(cmd.add_delta.hdr);
-	kfree(cmd.add_delta.deltas);
+	vfree(hdr);
 	fput(file);
 	return ret;
 }
@@ -1781,8 +1765,6 @@ void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 
 	if (cmd->type == PLOOP_CMD_RESIZE) {
 		process_resize_cmd(ploop, piwb, cmd);
-	} else if (cmd->type == PLOOP_CMD_ADD_DELTA) {
-		process_add_delta_cmd(ploop, cmd);
 	} else if (cmd->type == PLOOP_CMD_MERGE_SNAPSHOT) {
 		process_merge_latest_snapshot_cmd(ploop, cmd);
 	} else if (cmd->type == PLOOP_CMD_NOTIFY_DELTA_MERGED) {
