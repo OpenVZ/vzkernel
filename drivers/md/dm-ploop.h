@@ -274,6 +274,7 @@ struct ploop_cow {
 	void *data; /* Second argument of end_fn */
 };
 
+extern bool ignore_signature_disk_in_use;
 extern struct kmem_cache *piocb_cache;
 extern struct kmem_cache *cow_cache;
 
