@@ -123,8 +123,10 @@ static int ploop_check_origin_dev(struct dm_target *ti, struct ploop *ploop)
 static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 {
 	percpu_ref_func_t *release;
+	int i, delta_fd, ret;
 	struct ploop *ploop;
-	int i, ret;
+	bool is_raw;
+	char *arg;
 
 	if (argc < 2)
 		return -EINVAL;
@@ -146,6 +148,8 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	bio_list_init(&ploop->delta_cow_action_list);
 	atomic_set(&ploop->nr_discard_bios, 0);
 	ploop->bat_entries = RB_ROOT;
+	ploop->exclusive_bios_rbtree = RB_ROOT;
+	ploop->inflight_bios_rbtree = RB_ROOT;
 
 	INIT_WORK(&ploop->worker, do_ploop_work);
 	init_completion(&ploop->inflight_bios_ref_comp);
@@ -200,11 +204,20 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto err;
 	}
 
-	ploop->exclusive_bios_rbtree = RB_ROOT;
-	ploop->inflight_bios_rbtree = RB_ROOT;
 	ret = -EINVAL;
 	for (i = 2; i < argc; i++) {
-		ret = ploop_add_delta(ploop, argv[i]);
+		arg = argv[i];
+		is_raw = false;
+		if (strncmp(arg, "raw@", 4) == 0) {
+			if (i != 2)
+				goto err;
+			arg += 4;
+			is_raw = true;
+		}
+		if (kstrtos32(arg, 10, &delta_fd) < 0)
+			goto err;
+
+		ret = ploop_add_delta(ploop, delta_fd, is_raw);
 		if (ret < 0)
 			goto err;
 	}

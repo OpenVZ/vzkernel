@@ -658,28 +658,17 @@ static int ploop_check_raw_delta(struct ploop *ploop, struct file *file,
  * @fd refers to a new delta, which is placed right before top_delta.
  * So, userspace has to populate deltas stack from oldest to newest.
  */
-int ploop_add_delta(struct ploop *ploop, const char *arg)
+int ploop_add_delta(struct ploop *ploop, int fd, bool is_raw)
 {
 	unsigned int level = ploop->nr_deltas;
 	struct ploop_cmd cmd = { {0} };
 	struct ploop_delta *deltas;
-	bool is_raw = false;
 	unsigned int size;
 	struct file *file;
-	int fd, ret;
+	int ret;
 
-	if (ploop->maintaince)
-		return -EBUSY;
-	if (strncmp(arg, "raw@", 4) == 0) {
-		is_raw = true;
-		arg += 4;
-	}
-	/* Only ploop->deltas[0] may be raw */
-	if (level == BAT_LEVEL_TOP || (is_raw && level))
+	if (level == BAT_LEVEL_TOP)
 		return -EMFILE;
-	if (kstrtos32(arg, 10, &fd) < 0)
-		return -EINVAL;
-
 	file = fget(fd);
 	if (!file)
 		return -ENOENT;
