@@ -488,11 +488,6 @@ static inline struct dm_ploop_endio_hook *find_endio_hook(struct ploop *ploop,
 	return find_endio_hook_range(ploop, root, cluster, cluster);
 }
 
-static inline struct pio *bio_to_endio_hook(struct bio *bio)
-{
-	return dm_per_bio_data(bio, sizeof(struct pio));
-}
-
 extern int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
 			     unsigned int new_nr_bat_entries);
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);
