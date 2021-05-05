@@ -64,6 +64,7 @@ struct ploop_cmd {
 			u64 new_size;
 			/* Preallocated data */
 			struct rb_root md_pages_root;
+			struct md_page *md0;
 			void *holes_bitmap;
 #define PLOOP_GROW_STAGE_INITIAL	0
 			unsigned int stage;
