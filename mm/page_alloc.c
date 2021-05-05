@@ -71,6 +71,7 @@
 #include <linux/nmi.h>
 #include <linux/psi.h>
 #include <linux/padata.h>
+#include <linux/vzstat.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
@@ -4516,6 +4517,36 @@ static __always_inline void warn_high_order(int order, gfp_t gfp_mask)
 	}
 }
 
+static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
+		struct page *page, u64 time)
+{
+#ifdef CONFIG_VE
+	unsigned long flags;
+	int ind, cpu;
+
+	time = jiffies_to_usecs(jiffies - time) * 1000;
+	if (!(gfp_mask & __GFP_RECLAIM))
+		ind = KSTAT_ALLOCSTAT_ATOMIC;
+	else if (!(gfp_mask & __GFP_HIGHMEM))
+		if (order > 0)
+			ind = KSTAT_ALLOCSTAT_LOW_MP;
+		else
+			ind = KSTAT_ALLOCSTAT_LOW;
+	else
+		if (order > 0)
+			ind = KSTAT_ALLOCSTAT_HIGH_MP;
+		else
+			ind = KSTAT_ALLOCSTAT_HIGH;
+
+	local_irq_save(flags);
+	cpu = smp_processor_id();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.alloc_lat[ind], time);
+	if (!page)
+		kstat_glob.alloc_fails[cpu][ind]++;
+	local_irq_restore(flags);
+#endif
+}
+
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
@@ -4527,6 +4558,7 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_mask; /* The gfp_t that was actually used for allocation */
 	struct alloc_context ac = { };
+	cycles_t start;
 
 	gfp_mask &= gfp_allowed_mask;
 	alloc_mask = gfp_mask;
@@ -4538,6 +4570,7 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 
 	finalise_ac(gfp_mask, &ac);
 
+	start = jiffies;
 	/* First allocation attempt */
 	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac);
 	if (likely(page))
@@ -4568,6 +4601,7 @@ out:
 		page = NULL;
 	}
 
+	__alloc_collect_stats(alloc_mask, order, page, start);
 	trace_mm_page_alloc(page, order, alloc_mask, ac.migratetype);
 
 	return page;

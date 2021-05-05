@@ -3244,7 +3244,7 @@ out_release:
 		unlock_page(swapcache);
 		put_page(swapcache);
 	}
-	return ret;
+	goto out;
 }
 
 /*
@@ -3371,6 +3371,7 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	vm_fault_t ret;
+	cycles_t start;
 
 	/*
 	 * Preallocate pte before we take page_lock because this might lead to
@@ -3394,6 +3395,7 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
 		smp_wmb(); /* See comment in __pte_alloc() */
 	}
 
+	start = get_cycles();
 	ret = vma->vm_ops->fault(vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY |
 			    VM_FAULT_DONE_COW)))
@@ -3411,6 +3413,10 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
 		lock_page(vmf->page);
 	else
 		VM_BUG_ON_PAGE(!PageLocked(vmf->page), vmf->page);
+
+	local_irq_disable();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.page_in, get_cycles() - start);
+	local_irq_enable();
 
 	return ret;
 }
