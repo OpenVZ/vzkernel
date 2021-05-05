@@ -427,7 +427,7 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 				 u32 level, void *hdr, u64 size_in_clus)
 {
 	map_index_t *bat_entries, *delta_bat_entries;
-	unsigned int i, end, dst_cluster;
+	unsigned int i, end, dst_cluster, clu;
 	struct rb_node *node;
 	struct md_page *md;
 	bool is_raw;
@@ -441,13 +441,16 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 		init_bat_entries_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
+			clu = page_clu_idx_to_bat_clu(md->id, i);
+			if (clu >= size_in_clus)
+				goto unlock;
 			if (bat_entries[i] != BAT_ENTRY_NONE)
 				continue;
 
 			if (!is_raw)
 				dst_cluster = delta_bat_entries[i];
 			else {
-				dst_cluster = page_clu_idx_to_bat_clu(md->id, i);
+				dst_cluster = clu;
 				if (dst_cluster >= size_in_clus)
 					dst_cluster = BAT_ENTRY_NONE;
 			}
@@ -460,11 +463,12 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 		kunmap_atomic(bat_entries);
 		delta_bat_entries += PAGE_SIZE / sizeof(map_index_t);
 	}
+unlock:
 	write_unlock_irq(&ploop->bat_rwlock);
 }
 
 static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
-				    u64 *size_in_clus)
+				    u32 *size_in_clus)
 {
 	loff_t loff = i_size_read(file->f_mapping->host);
 	unsigned int cluster_log = ploop->cluster_log;
@@ -482,9 +486,9 @@ static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
 int ploop_add_delta(struct ploop *ploop, u32 level, int fd, bool is_raw)
 {
 	struct ploop_delta *deltas = ploop->deltas;
+	struct ploop_pvd_header *hdr = NULL;
 	struct file *file;
-	u64 size_in_clus;
-	void *hdr = NULL;
+	u32 size_in_clus;
 	int ret;
 
 	file = fget(fd);
@@ -498,14 +502,22 @@ int ploop_add_delta(struct ploop *ploop, u32 level, int fd, bool is_raw)
 	if (ret)
 		goto out;
 
-	if (!is_raw)
-		ret = ploop_read_delta_metadata(ploop, file, &hdr);
-	if (ret)
+	if (!is_raw) {
+		ret = ploop_read_delta_metadata(ploop, file, (void *)&hdr);
+		if (ret)
+			goto out;
+		size_in_clus = le32_to_cpu(hdr->m_Size);
+	}
+
+	ret = -EBADSLT;
+	if (level != ploop->nr_deltas - 1 &&
+	    size_in_clus > deltas[level + 1].size_in_clus)
 		goto out;
 
-	apply_delta_mappings(ploop, deltas, level, hdr, size_in_clus);
+	apply_delta_mappings(ploop, deltas, level, (void *)hdr, size_in_clus);
 
 	deltas[level].file = file;
+	deltas[level].size_in_clus = size_in_clus;
 	deltas[level].is_raw = is_raw;
 	ret = 0;
 out:
