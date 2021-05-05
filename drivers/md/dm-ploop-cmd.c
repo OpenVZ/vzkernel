@@ -320,6 +320,8 @@ static int ploop_grow_update_header(struct ploop *ploop,
 {
 	unsigned int size, first_block_off, cluster_log = ploop->cluster_log;
 	struct ploop_pvd_header *hdr;
+	u32 nr_be, offset;
+	u64 sectors;
 	int ret;
 
 	/* hdr is in the same page as bat_entries[0] index */
@@ -334,13 +336,21 @@ static int ploop_grow_update_header(struct ploop *ploop,
 
 	hdr = kmap_atomic(piwb->bat_page);
 	/* TODO: head and cylinders */
-	hdr->m_Size = cpu_to_le32(cmd->resize.nr_bat_entries);
-	hdr->m_SizeInSectors_v2 = cpu_to_le64(cmd->resize.new_size);
-	hdr->m_FirstBlockOffset = cpu_to_le32(first_block_off);
+	nr_be = hdr->m_Size = cpu_to_le32(cmd->resize.nr_bat_entries);
+	sectors = hdr->m_SizeInSectors_v2 = cpu_to_le64(cmd->resize.new_size);
+	offset = hdr->m_FirstBlockOffset = cpu_to_le32(first_block_off);
 	kunmap_atomic(hdr);
 
 	ploop_submit_index_wb_sync(ploop, piwb);
 	ret = blk_status_to_errno(piwb->bi_status);
+	if (!ret) {
+		/* Now update our cached page */
+		hdr = kmap_atomic(cmd->resize.md0->page);
+		hdr->m_Size = nr_be;
+		hdr->m_SizeInSectors_v2 = sectors;
+		hdr->m_FirstBlockOffset = offset;
+		kunmap_atomic(hdr);
+	}
 
 	ploop_reset_bat_update(piwb);
 	return ret;
@@ -470,7 +480,7 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 	unsigned int hb_nr, size, cluster_log = ploop->cluster_log;
 	struct ploop_cmd cmd = { .resize.md_pages_root = RB_ROOT };
 	struct ploop_pvd_header *hdr;
-	struct md_page *md;
+	struct md_page *md0;
 	int ret = -ENOMEM;
 	u64 old_size;
 
@@ -479,12 +489,12 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 	if (ploop_is_ro(ploop))
 		return -EROFS;
 
-	md = md_page_find(ploop, 0);
-	if (WARN_ON(!md))
+	md0 = md_page_find(ploop, 0);
+	if (WARN_ON(!md0))
 		return -EIO;
-	hdr = kmap(md->page);
+	hdr = kmap(md0->page);
 	old_size = le64_to_cpu(hdr->m_SizeInSectors_v2);
-	kunmap(md->page);
+	kunmap(md0->page);
 
 	if (old_size == new_size)
 		return 0;
@@ -535,6 +545,7 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 	cmd.resize.nr_bat_entries = nr_bat_entries;
 	cmd.resize.hb_nr = hb_nr;
 	cmd.resize.new_size = new_size;
+	cmd.resize.md0 = md0;
 	cmd.retval = 0;
 	cmd.type = PLOOP_CMD_RESIZE;
 	cmd.ploop = ploop;
