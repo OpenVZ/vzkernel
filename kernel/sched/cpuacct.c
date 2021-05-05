@@ -376,7 +376,7 @@ struct cgroup_subsys cpuacct_cgrp_subsys = {
 	.early_init	= true,
 };
 
-extern inline struct task_group *css_tg(struct cgroup_subsys_state *css);
+extern struct task_group *css_tg(struct cgroup_subsys_state *css);
 
 static struct task_group *ve_root_tg(struct task_group *tg) {
 	struct cgroup *cg;

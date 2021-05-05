@@ -1676,7 +1676,7 @@ int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p)
 	return err;
 }
 
-inline struct task_group *css_tg(struct cgroup_subsys_state *css);
+struct task_group *css_tg(struct cgroup_subsys_state *css);
 int get_avenrun_tg(struct task_group *tg, unsigned long *loads,
 		   unsigned long offset, int shift);
 
