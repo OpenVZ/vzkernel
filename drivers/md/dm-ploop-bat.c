@@ -417,15 +417,14 @@ out_put_page:
 }
 
 static int apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
-				void *hdr, u64 size_in_clus)
+				u32 level, void *hdr, u64 size_in_clus)
 {
 	map_index_t *bat_entries, *delta_bat_entries;
-	unsigned int i, end, level, dst_cluster;
+	unsigned int i, end, dst_cluster;
 	struct rb_node *node;
 	struct md_page *md;
 	bool is_raw;
 
-	level = ploop->nr_deltas;
 	/* Points to hdr since md_page[0] also contains hdr. */
 	delta_bat_entries = (map_index_t *)hdr;
 	is_raw = deltas[level].is_raw;
@@ -464,8 +463,6 @@ static int apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
 		kunmap_atomic(bat_entries);
 		delta_bat_entries += PAGE_SIZE / sizeof(map_index_t);
 	}
-
-	ploop->nr_deltas++;
 	write_unlock_irq(&ploop->bat_rwlock);
 
 	get_file(ploop->deltas[level].file);
@@ -488,10 +485,9 @@ static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
  * @fd refers to a new delta, which is placed right before top_delta.
  * So, userspace has to populate deltas stack from oldest to newest.
  */
-int ploop_add_delta(struct ploop *ploop, int fd, bool is_raw)
+int ploop_add_delta(struct ploop *ploop, u32 level, int fd, bool is_raw)
 {
 	struct ploop_delta *deltas = ploop->deltas;
-	unsigned int level = ploop->nr_deltas;
 	struct file *file;
 	u64 size_in_clus;
 	void *hdr = NULL;
@@ -516,7 +512,7 @@ int ploop_add_delta(struct ploop *ploop, int fd, bool is_raw)
 	if (ret)
 		goto out;
 
-	ret = apply_delta_mappings(ploop, deltas, hdr, size_in_clus);
+	ret = apply_delta_mappings(ploop, deltas, level, hdr, size_in_clus);
 out:
 	vfree(hdr);
 	fput(file);

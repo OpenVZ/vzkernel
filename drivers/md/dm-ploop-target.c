@@ -128,6 +128,7 @@ static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 	int i, delta_fd, ret = 0;
 	const char *arg;
 	bool is_raw;
+	u32 level;
 
 	if (!argc)
 		goto out;
@@ -154,9 +155,11 @@ static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 		if (kstrtos32(arg, 10, &delta_fd) < 0)
 			goto out;
 
-		ret = ploop_add_delta(ploop, delta_fd, is_raw);
+		level = ploop->nr_deltas;
+		ret = ploop_add_delta(ploop, level, delta_fd, is_raw);
 		if (ret < 0)
 			goto out;
+		ploop->nr_deltas++;
 	}
 
 	ret = 0;
