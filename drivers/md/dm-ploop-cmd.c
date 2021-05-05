@@ -463,32 +463,6 @@ void free_bio_with_pages(struct ploop *ploop, struct bio *bio)
 	bio_put(bio);
 }
 
-static int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
-			     unsigned int new_nr_bat_entries)
-{
-	unsigned int i, nr_pages, new_nr_pages;
-	struct md_page *md;
-	void *addr;
-
-	new_nr_pages = bat_clu_to_page_nr(new_nr_bat_entries - 1) + 1;
-	nr_pages = bat_clu_to_page_nr(nr_bat_entries - 1) + 1;
-
-	for (i = nr_pages; i < new_nr_pages; i++) {
-		md = alloc_md_page(i); /* Any id is OK */
-		if (!md)
-			return -ENOMEM;
-		addr = kmap_atomic(md->page);
-		memset(addr, 0, PAGE_SIZE);
-		kunmap_atomic(addr);
-
-		/* No order */
-		rb_link_node(&md->node, NULL, &root->rb_node);
-		rb_insert_color(&md->node, root);
-	}
-
-	return 0;
-}
-
 /* @new_size is in sectors */
 static int ploop_resize(struct ploop *ploop, u64 new_size)
 {
