@@ -124,13 +124,28 @@ static int ploop_check_origin_dev(struct dm_target *ti, struct ploop *ploop)
 	return 0;
 }
 
+static struct file * get_delta_file(int fd)
+{
+	struct file *file;
+
+	file = fget(fd);
+	if (!file)
+		return ERR_PTR(-ENOENT);
+	if (!(file->f_mode & FMODE_READ)) {
+		fput(file);
+		return ERR_PTR(-EBADF);
+	}
+
+	return file;
+}
+
 static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 {
 	struct ploop_delta *deltas;
 	int i, delta_fd, ret = 0;
+	struct file *file;
 	const char *arg;
 	bool is_raw;
-	u32 level;
 
 	if (!argc)
 		goto out;
@@ -158,10 +173,17 @@ static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 		if (kstrtos32(arg, 10, &delta_fd) < 0)
 			goto out;
 
-		level = i;
-		ret = ploop_add_delta(ploop, level, delta_fd, is_raw);
-		if (ret < 0)
+		file = get_delta_file(delta_fd);
+		if (IS_ERR(file)) {
+			ret = PTR_ERR(file);
 			goto out;
+		}
+
+		ret = ploop_add_delta(ploop, i, file, is_raw);
+		if (ret < 0) {
+			fput(file);
+			goto out;
+		}
 	}
 
 	ret = 0;
