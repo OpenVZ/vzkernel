@@ -6,6 +6,7 @@
  */
 
 #include <linux/init.h>
+#include <linux/file.h>
 #include <linux/uio.h>
 #include <linux/mm.h>
 #include "dm-ploop.h"
@@ -412,5 +413,112 @@ out_vfree:
 	}
 out_put_page:
 	put_page(page);
+	return ret;
+}
+
+static int apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
+				void *hdr, u64 size_in_clus)
+{
+	map_index_t *bat_entries, *delta_bat_entries;
+	unsigned int i, end, level, dst_cluster;
+	struct rb_node *node;
+	struct md_page *md;
+	bool is_raw;
+
+	level = ploop->nr_deltas;
+	/* Points to hdr since md_page[0] also contains hdr. */
+	delta_bat_entries = (map_index_t *)hdr;
+	is_raw = deltas[level].is_raw;
+
+	write_lock_irq(&ploop->bat_rwlock);
+
+	/* FIXME: Stop on old delta's nr_bat_entries */
+	ploop_for_each_md_page(ploop, md, node) {
+		init_bat_entries_iter(ploop, md->id, &i, &end);
+		bat_entries = kmap_atomic(md->page);
+		for (; i <= end; i++) {
+			if (md_page_cluster_is_in_top_delta(md, i))
+				continue;
+			if (!is_raw)
+				dst_cluster = delta_bat_entries[i];
+			else {
+				dst_cluster = page_clu_idx_to_bat_clu(md->id, i);
+				if (dst_cluster >= size_in_clus)
+					dst_cluster = BAT_ENTRY_NONE;
+			}
+			if (dst_cluster == BAT_ENTRY_NONE)
+				continue;
+			/*
+			 * Prefer last added delta, since the order is:
+			 * 1)add top device
+			 * 2)add oldest delta
+			 * ...
+			 * n)add newest delta
+			 * Keep in mind, top device is current image, and
+			 * it is added first in contrary the "age" order.
+			 */
+			md->bat_levels[i] = level;
+			bat_entries[i] = dst_cluster;
+
+		}
+		kunmap_atomic(bat_entries);
+		delta_bat_entries += PAGE_SIZE / sizeof(map_index_t);
+	}
+
+	ploop->nr_deltas++;
+	write_unlock_irq(&ploop->bat_rwlock);
+
+	get_file(ploop->deltas[level].file);
+	return 0;
+}
+
+static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
+				    u64 *size_in_clus)
+{
+	loff_t loff = i_size_read(file->f_mapping->host);
+	unsigned int cluster_log = ploop->cluster_log;
+
+	if (loff & ((1 << (cluster_log + SECTOR_SHIFT)) - 1))
+		return -EPROTO;
+	*size_in_clus = loff >> (cluster_log + SECTOR_SHIFT);
+	return 0;
+}
+
+/*
+ * @fd refers to a new delta, which is placed right before top_delta.
+ * So, userspace has to populate deltas stack from oldest to newest.
+ */
+int ploop_add_delta(struct ploop *ploop, int fd, bool is_raw)
+{
+	struct ploop_delta *deltas = ploop->deltas;
+	unsigned int level = ploop->nr_deltas;
+	struct file *file;
+	u64 size_in_clus;
+	void *hdr = NULL;
+	int ret;
+
+	file = fget(fd);
+	if (!file)
+		return -ENOENT;
+	ret = -EBADF;
+	if (!(file->f_mode & FMODE_READ))
+		goto out;
+
+	deltas[level].file = file;
+	deltas[level].is_raw = is_raw;
+
+	ret = ploop_check_delta_length(ploop, file, &size_in_clus);
+	if (ret)
+		goto out;
+
+	if (!is_raw)
+		ret = ploop_read_delta_metadata(ploop, file, &hdr);
+	if (ret)
+		goto out;
+
+	ret = apply_delta_mappings(ploop, deltas, hdr, size_in_clus);
+out:
+	vfree(hdr);
+	fput(file);
 	return ret;
 }
