@@ -92,8 +92,10 @@ static void ploop_destroy(struct ploop *ploop)
 	for (i = 0; i < 2; i++)
 		percpu_ref_exit(&ploop->inflight_bios_ref[i]);
 	/* Nobody uses it after destroy_workqueue() */
-	while (ploop->nr_deltas-- > 0)
-		fput(ploop->deltas[ploop->nr_deltas].file);
+	while (ploop->nr_deltas-- > 0) {
+		if (ploop->deltas[ploop->nr_deltas].file)
+			fput(ploop->deltas[ploop->nr_deltas].file);
+	}
 	WARN_ON(!RB_EMPTY_ROOT(&ploop->exclusive_bios_rbtree));
 	WARN_ON(!RB_EMPTY_ROOT(&ploop->inflight_bios_rbtree));
 	kfree(ploop->deltas);
@@ -141,9 +143,10 @@ static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 	if (!deltas)
 		goto out;
 	ploop->deltas = deltas;
+	ploop->nr_deltas = argc;
 
 	ret = -EINVAL;
-	for (i = 0; i < argc; i++) {
+	for (i = argc - 1; i >= 0; i--) {
 		arg = argv[i];
 		is_raw = false;
 		if (strncmp(arg, "raw@", 4) == 0) {
@@ -155,11 +158,10 @@ static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 		if (kstrtos32(arg, 10, &delta_fd) < 0)
 			goto out;
 
-		level = ploop->nr_deltas;
+		level = i;
 		ret = ploop_add_delta(ploop, level, delta_fd, is_raw);
 		if (ret < 0)
 			goto out;
-		ploop->nr_deltas++;
 	}
 
 	ret = 0;

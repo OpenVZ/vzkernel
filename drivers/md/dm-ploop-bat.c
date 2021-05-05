@@ -416,8 +416,15 @@ out_put_page:
 	return ret;
 }
 
-static int apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
-				u32 level, void *hdr, u64 size_in_clus)
+/*
+ * Prefer first added delta, since the order is:
+ * 1)add top device
+ * 2)add newest delta
+ * ...
+ * n)add oldest delta
+ */
+static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
+				 u32 level, void *hdr, u64 size_in_clus)
 {
 	map_index_t *bat_entries, *delta_bat_entries;
 	unsigned int i, end, dst_cluster;
@@ -430,14 +437,13 @@ static int apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
 	is_raw = deltas[level].is_raw;
 
 	write_lock_irq(&ploop->bat_rwlock);
-
-	/* FIXME: Stop on old delta's nr_bat_entries */
 	ploop_for_each_md_page(ploop, md, node) {
 		init_bat_entries_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
-			if (md_page_cluster_is_in_top_delta(md, i))
+			if (bat_entries[i] != BAT_ENTRY_NONE)
 				continue;
+
 			if (!is_raw)
 				dst_cluster = delta_bat_entries[i];
 			else {
@@ -447,15 +453,6 @@ static int apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
 			}
 			if (dst_cluster == BAT_ENTRY_NONE)
 				continue;
-			/*
-			 * Prefer last added delta, since the order is:
-			 * 1)add top device
-			 * 2)add oldest delta
-			 * ...
-			 * n)add newest delta
-			 * Keep in mind, top device is current image, and
-			 * it is added first in contrary the "age" order.
-			 */
 			md->bat_levels[i] = level;
 			bat_entries[i] = dst_cluster;
 
@@ -464,9 +461,6 @@ static int apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
 		delta_bat_entries += PAGE_SIZE / sizeof(map_index_t);
 	}
 	write_unlock_irq(&ploop->bat_rwlock);
-
-	get_file(ploop->deltas[level].file);
-	return 0;
 }
 
 static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
@@ -500,9 +494,6 @@ int ploop_add_delta(struct ploop *ploop, u32 level, int fd, bool is_raw)
 	if (!(file->f_mode & FMODE_READ))
 		goto out;
 
-	deltas[level].file = file;
-	deltas[level].is_raw = is_raw;
-
 	ret = ploop_check_delta_length(ploop, file, &size_in_clus);
 	if (ret)
 		goto out;
@@ -512,9 +503,14 @@ int ploop_add_delta(struct ploop *ploop, u32 level, int fd, bool is_raw)
 	if (ret)
 		goto out;
 
-	ret = apply_delta_mappings(ploop, deltas, level, hdr, size_in_clus);
+	apply_delta_mappings(ploop, deltas, level, hdr, size_in_clus);
+
+	deltas[level].file = file;
+	deltas[level].is_raw = is_raw;
+	ret = 0;
 out:
 	vfree(hdr);
-	fput(file);
+	if (ret)
+		fput(file);
 	return ret;
 }
