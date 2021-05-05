@@ -105,7 +105,9 @@ int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
 	void *addr;
 
 	new_nr_pages = bat_clu_to_page_nr(new_nr_bat_entries - 1) + 1;
-	nr_pages = bat_clu_to_page_nr(nr_bat_entries - 1) + 1;
+	nr_pages = 0;
+	if (nr_bat_entries)
+		nr_pages = bat_clu_to_page_nr(nr_bat_entries - 1) + 1;
 
 	for (i = nr_pages; i < new_nr_pages; i++) {
 		md = alloc_md_page(i);
@@ -189,12 +191,11 @@ static int ploop_read_bat(struct ploop *ploop, struct bio *bio)
 	do {
 		for (page = 0; page < nr_pages_in_cluster(ploop); page++) {
 			id = i * sizeof(map_index_t) / PAGE_SIZE;
-			md = alloc_md_page(id);
-			if (!md) {
-				ret = -ENOMEM;
+			md = md_page_find(ploop, id);
+			if (WARN_ON_ONCE(!md)) {
+				ret = -ENOENT;
 				goto out;
 			}
-			md_page_insert(ploop, md);
 
 			nr_copy = entries_per_page;
 			if (i + nr_copy > nr_all)
@@ -314,6 +315,10 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 	m_hdr = NULL;
 
 	ret = ploop_setup_holes_bitmap(ploop, bat_clusters);
+	if (ret)
+		goto out;
+
+	ret = prealloc_md_pages(&ploop->bat_entries, 0, ploop->nr_bat_entries);
 	if (ret)
 		goto out;
 
