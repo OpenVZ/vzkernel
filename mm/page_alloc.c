@@ -157,7 +157,7 @@ static inline void set_pcppage_migratetype(struct page *page, int migratetype)
 }
 
 static int zero_data_pages_enabled;
-struct static_key __initdata zero_free_pages = STATIC_KEY_INIT_FALSE;
+struct static_key zero_free_pages = STATIC_KEY_INIT_FALSE;
 
 static int __init enable_zero_free_pages(char *__unused)
 {
