@@ -483,20 +483,12 @@ static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
  * @fd refers to a new delta, which is placed right before top_delta.
  * So, userspace has to populate deltas stack from oldest to newest.
  */
-int ploop_add_delta(struct ploop *ploop, u32 level, int fd, bool is_raw)
+int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw)
 {
 	struct ploop_delta *deltas = ploop->deltas;
 	struct ploop_pvd_header *hdr = NULL;
-	struct file *file;
 	u32 size_in_clus;
 	int ret;
-
-	file = fget(fd);
-	if (!file)
-		return -ENOENT;
-	ret = -EBADF;
-	if (!(file->f_mode & FMODE_READ))
-		goto out;
 
 	ret = ploop_check_delta_length(ploop, file, &size_in_clus);
 	if (ret)
@@ -522,7 +514,5 @@ int ploop_add_delta(struct ploop *ploop, u32 level, int fd, bool is_raw)
 	ret = 0;
 out:
 	vfree(hdr);
-	if (ret)
-		fput(file);
 	return ret;
 }

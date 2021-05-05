@@ -495,7 +495,7 @@ extern void free_md_pages_tree(struct rb_root *root);
 extern bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
 				 u8 level, unsigned int dst_cluster);
 
-extern int ploop_add_delta(struct ploop *ploop, u32 level, int fd, bool is_raw);
+extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
 extern void defer_bios(struct ploop *ploop, struct bio *bio, struct bio_list *bio_list);
 extern void do_ploop_work(struct work_struct *ws);
 extern void process_deferred_cmd(struct ploop *ploop,
