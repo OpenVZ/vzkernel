@@ -1759,8 +1759,7 @@ BuildKernel() {
     if [ -f arch/%{asmarch}/kernel/module.lds ]; then
       cp -a --parents arch/%{asmarch}/kernel/module.lds $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
     fi
-    rm -f $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/scripts/*.o
-    rm -f $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/scripts/*/*.o
+    find $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/scripts \( -iname "*.o" -o -iname "*.cmd" \) -exec rm -f {} +
 %ifarch ppc64le
     cp -a --parents arch/powerpc/lib/crtsavres.[So] $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
 %endif
