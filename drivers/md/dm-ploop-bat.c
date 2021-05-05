@@ -31,9 +31,8 @@ struct md_page * md_page_find(struct ploop *ploop, unsigned int id)
 	return NULL;
 }
 
-void md_page_insert(struct ploop *ploop, struct md_page *new_md)
+static void __md_page_insert(struct rb_root *root, struct md_page *new_md)
 {
-	struct rb_root *root = &ploop->bat_entries;
 	unsigned int new_id = new_md->id;
 	struct rb_node *parent, **node;
 	struct md_page *md;
@@ -56,7 +55,12 @@ void md_page_insert(struct ploop *ploop, struct md_page *new_md)
 	rb_insert_color(&new_md->node, root);
 }
 
-struct md_page * alloc_md_page(unsigned int id)
+void md_page_insert(struct ploop *ploop, struct md_page *new_md)
+{
+	__md_page_insert(&ploop->bat_entries, new_md);
+}
+
+static struct md_page * alloc_md_page(unsigned int id)
 {
 	struct md_page *md;
 	struct page *page;
@@ -91,6 +95,30 @@ void free_md_page(struct md_page *md)
 	put_page(md->page);
 	kfree(md->bat_levels);
 	kfree(md);
+}
+
+int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
+		      unsigned int new_nr_bat_entries)
+{
+	unsigned int i, nr_pages, new_nr_pages;
+	struct md_page *md;
+	void *addr;
+
+	new_nr_pages = bat_clu_to_page_nr(new_nr_bat_entries - 1) + 1;
+	nr_pages = bat_clu_to_page_nr(nr_bat_entries - 1) + 1;
+
+	for (i = nr_pages; i < new_nr_pages; i++) {
+		md = alloc_md_page(i);
+		if (!md)
+			return -ENOMEM;
+		addr = kmap_atomic(md->page);
+		memset(addr, 0, PAGE_SIZE);
+		kunmap_atomic(addr);
+
+		__md_page_insert(root, md);
+	}
+
+	return 0;
 }
 
 bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
