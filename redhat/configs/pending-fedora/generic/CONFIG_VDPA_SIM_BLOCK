@@ -1,0 +1,18 @@
+# CONFIG_VDPA_SIM_BLOCK:
+# 
+# vDPA block device simulator which terminates IO request in a
+# memory buffer.
+# 
+# Symbol: VDPA_SIM_BLOCK [=n]
+# Type  : tristate
+# Defined at drivers/vdpa/Kconfig:29
+#   Prompt: vDPA simulator for block device
+#   Depends on: VDPA [=m] && VDPA_SIM [=m]
+#   Location:
+#     -> Device Drivers
+#       -> vDPA drivers (VDPA [=m])
+#         -> vDPA device simulator core (VDPA_SIM [=m])
+# 
+# 
+# 
+# CONFIG_VDPA_SIM_BLOCK is not set
