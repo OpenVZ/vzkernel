@@ -1,0 +1,21 @@
+# CONFIG_MODPROBE_PATH:
+# 
+# When kernel code requests a module, it does so by calling
+# the "modprobe" userspace utility. This option allows you to
+# set the path where that binary is found. This can be changed
+# at runtime via the sysctl file
+# /proc/sys/kernel/modprobe. Setting this to the empty string
+# removes the kernel's ability to request modules (but
+# userspace can still load modules explicitly).
+# 
+# Symbol: MODPROBE_PATH [=/sbin/modprobe]
+# Type  : string
+# Defined at init/Kconfig:2302
+#   Prompt: Path to modprobe binary
+#   Depends on: MODULES [=y]
+#   Location:
+#     -> Enable loadable module support (MODULES [=y])
+# 
+# 
+# 
+CONFIG_MODPROBE_PATH="/sbin/modprobe"

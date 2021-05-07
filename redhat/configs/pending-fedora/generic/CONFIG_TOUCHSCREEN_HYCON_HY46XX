@@ -1,0 +1,23 @@
+# CONFIG_TOUCHSCREEN_HYCON_HY46XX:
+# 
+# Say Y here if you have a touchscreen using Hycon hy46xx
+# 
+# If unsure, say N.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called hycon-hy46xx.
+# 
+# Symbol: TOUCHSCREEN_HYCON_HY46XX [=n]
+# Type  : tristate
+# Defined at drivers/input/touchscreen/Kconfig:414
+#   Prompt: Hycon hy46xx touchscreen support
+#   Depends on: !UML && INPUT [=y] && INPUT_TOUCHSCREEN [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Input device support
+#         -> Generic input layer (needed for keyboard, mouse, ...) (INPUT [=y])
+#           -> Touchscreens (INPUT_TOUCHSCREEN [=y])
+# 
+# 
+# 
+# CONFIG_TOUCHSCREEN_HYCON_HY46XX is not set
