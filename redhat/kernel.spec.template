@@ -766,6 +766,7 @@ Source3001: kernel-local
 Source3003: Patchlist.changelog
 
 Source4000: README.rst
+Source4001: rpminspect.yaml
 
 ## Patches needed for building this package
 
