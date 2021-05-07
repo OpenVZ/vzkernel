@@ -1,0 +1,24 @@
+# CONFIG_TOUCHSCREEN_ILITEK:
+# 
+# Say Y here if you have touchscreen with ILITEK touch IC,
+# it supports 213X/23XX/25XX and other Lego series.
+# 
+# If unsure, say N.
+# 
+# To compile this driver as a module, choose M here: the
+# module will be called ilitek_ts_i2c.
+# 
+# Symbol: TOUCHSCREEN_ILITEK [=n]
+# Type  : tristate
+# Defined at drivers/input/touchscreen/Kconfig:440
+#   Prompt: Ilitek I2C 213X/23XX/25XX/Lego Series Touch ICs
+#   Depends on: !UML && INPUT [=y] && INPUT_TOUCHSCREEN [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Input device support
+#         -> Generic input layer (needed for keyboard, mouse, ...) (INPUT [=y])
+#           -> Touchscreens (INPUT_TOUCHSCREEN [=y])
+# 
+# 
+# 
+# CONFIG_TOUCHSCREEN_ILITEK is not set
