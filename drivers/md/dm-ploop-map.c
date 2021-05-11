@@ -629,7 +629,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 
 		if (success) {
 			bat_entries[i] = dst_cluster[i];
-			md->bat_levels[i] = BAT_LEVEL_TOP;
+			md->bat_levels[i] = top_level(ploop);
 		} else {
 			/*
 			 * Despite set_bit() is atomic, we take read_lock()

@@ -163,7 +163,7 @@ static int parse_bat_entries(struct ploop *ploop, map_index_t *bat_entries,
 		if (bat_entries[i] == BAT_ENTRY_NONE)
 			return -EINVAL;
 		if (bat_entries[i]) {
-			bat_levels[i] = BAT_LEVEL_TOP;
+			bat_levels[i] = nr_deltas; /* See top_level() */
 			/* Cluster may refer out holes_bitmap after shrinking */
 			if (bat_entries[i] < ploop->hb_nr)
 				ploop_hole_clear_bit(bat_entries[i], ploop);

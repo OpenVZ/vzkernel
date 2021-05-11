@@ -150,7 +150,7 @@ static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 	if (!argc)
 		goto out;
 	ret = -EINVAL;
-	if (argc > BAT_LEVEL_TOP - 1)
+	if (argc > BAT_LEVEL_MAX - 1)
 		goto out;
 
 	ret = -ENOMEM;
