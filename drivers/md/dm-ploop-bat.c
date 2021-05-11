@@ -151,7 +151,8 @@ bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
  * BAT_ENTRY_NONE.
  */
 static int parse_bat_entries(struct ploop *ploop, map_index_t *bat_entries,
-		     u8 *bat_levels, unsigned int nr, unsigned int page_id)
+			     u8 *bat_levels, unsigned int nr,
+			     unsigned int page_id, u8 nr_deltas)
 {
 	int i = 0;
 
@@ -178,7 +179,7 @@ static int parse_bat_entries(struct ploop *ploop, map_index_t *bat_entries,
  * Read from disk and fill bat_entries. Note, that on enter here, cluster #0
  * is already read from disk (with header) -- just parse bio pages content.
  */
-static int ploop_read_bat(struct ploop *ploop, struct bio *bio)
+static int ploop_read_bat(struct ploop *ploop, struct bio *bio, u8 nr_deltas)
 {
 	unsigned int id, entries_per_page, nr_copy, nr_all, page, i = 0;
 	map_index_t *from, *to, cluster = 0;
@@ -211,7 +212,7 @@ static int ploop_read_bat(struct ploop *ploop, struct bio *bio)
 			}
 
 			ret = parse_bat_entries(ploop, to, md->bat_levels,
-						nr_copy, id);
+						nr_copy, id, nr_deltas);
 			kunmap(md->page);
 			if (ret)
 				goto out;
@@ -264,7 +265,7 @@ static int ploop_setup_holes_bitmap(struct ploop *ploop,
  * Allocate memory for bat_entries, bat_levels and holes_bitmap,
  * and read their content from disk.
  */
-int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
+int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop, u8 nr_deltas)
 {
 	unsigned int bat_clusters, offset_clusters, cluster_log;
 	struct ploop_pvd_header *m_hdr = NULL;
@@ -322,7 +323,7 @@ int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop)
 	if (ret)
 		goto out;
 
-	ret = ploop_read_bat(ploop, bio);
+	ret = ploop_read_bat(ploop, bio, nr_deltas);
 out:
 	if (m_hdr)
 		kunmap(page);

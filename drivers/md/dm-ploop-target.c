@@ -105,7 +105,7 @@ static void ploop_destroy(struct ploop *ploop)
 	kfree(ploop);
 }
 
-static int ploop_check_origin_dev(struct dm_target *ti, struct ploop *ploop)
+static int ploop_check_origin_dev(struct dm_target *ti, struct ploop *ploop, u8 nr_deltas)
 {
 	struct block_device *bdev = ploop->origin_dev->bdev;
 	int r;
@@ -115,7 +115,7 @@ static int ploop_check_origin_dev(struct dm_target *ti, struct ploop *ploop)
 		return -EINVAL;
 	}
 
-	r = ploop_read_metadata(ti, ploop);
+	r = ploop_read_metadata(ti, ploop, nr_deltas);
 	if (r) {
 		ti->error = "Can't read ploop header";
 		return r;
@@ -267,7 +267,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto err;
 	}
 
-	ret = ploop_check_origin_dev(ti, ploop);
+	ret = ploop_check_origin_dev(ti, ploop, argc - 2);
 	if (ret) {
 		/* ploop_check_origin_dev() assigns ti->error */
 		goto err;

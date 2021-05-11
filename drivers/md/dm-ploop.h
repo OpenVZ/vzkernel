@@ -531,7 +531,7 @@ extern void cleanup_backup(struct ploop *ploop);
 
 extern int ploop_read_cluster_sync(struct ploop *, struct bio *, unsigned int);
 
-extern int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop);
+extern int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop, u8 nr_deltas);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 				     void **d_hdr);
 
