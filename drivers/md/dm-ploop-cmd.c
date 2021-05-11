@@ -295,7 +295,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 
 	/* Update local BAT copy */
 	write_lock_irq(&ploop->bat_rwlock);
-	WARN_ON(!try_update_bat_entry(ploop, cluster, BAT_LEVEL_TOP, new_dst));
+	WARN_ON(!try_update_bat_entry(ploop, cluster, top_level(ploop), new_dst));
 	write_unlock_irq(&ploop->bat_rwlock);
 not_occupied:
 	/*
@@ -641,7 +641,7 @@ static void process_merge_latest_snapshot_cmd(struct ploop *ploop,
 		/*
 		 * This adds cluster lk. Further write bios to *cluster will go
 		 * from ploop_map to kwork (because bat_levels[*cluster] is not
-		 * BAT_LEVEL_TOP), so they will see the lk.
+		 * top_level()), so they will see the lk.
 		 */
 		if (submit_cluster_cow(ploop, level, *cluster, dst_cluster,
 				    ploop_queue_deferred_cmd_wrapper, cmd)) {
@@ -955,9 +955,9 @@ static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd
 			if (bat_entries[i] == BAT_ENTRY_NONE)
 				continue;
 			if (md->bat_levels[i] == level) {
-				md->bat_levels[i] = BAT_LEVEL_TOP;
+				md->bat_levels[i] = top_level(ploop);
 				clear_bit(bat_entries[i], holes_bitmap);
-			} else if (md->bat_levels[i] == BAT_LEVEL_TOP) {
+			} else if (md->bat_levels[i] == top_level(ploop)) {
 				md->bat_levels[i] = level;
 			}
 		}
@@ -1010,7 +1010,7 @@ static void process_tracking_start(struct ploop *ploop, struct ploop_cmd *cmd)
 		for (; i <= end; i++) {
 			dst_cluster = bat_entries[i];
 			if (dst_cluster == BAT_ENTRY_NONE ||
-			    md->bat_levels[i] != BAT_LEVEL_TOP)
+			    md->bat_levels[i] != top_level(ploop))
 				continue;
 			if (WARN_ON(dst_cluster >= tb_nr)) {
 				ret = -EIO;
@@ -1072,7 +1072,7 @@ static unsigned int max_dst_cluster_in_top_delta(struct ploop *ploop)
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
 			if (dst_cluster < bat_entries[i] &&
-			    md->bat_levels[i] == BAT_LEVEL_TOP)
+			    md->bat_levels[i] == top_level(ploop))
 				dst_cluster = bat_entries[i];
 		}
 		kunmap_atomic(bat_entries);

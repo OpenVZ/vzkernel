@@ -107,7 +107,6 @@ struct ploop_cmd {
 /* We can't use 0 for unmapped clusters, since RAW image references 0 cluster */
 #define BAT_ENTRY_NONE		UINT_MAX
 
-#define BAT_LEVEL_TOP		U8_MAX
 #define CLEANUP_DELAY		20
 #define PLOOP_INFLIGHT_TIMEOUT	(60 * HZ)
 
@@ -317,6 +316,12 @@ static inline bool whole_cluster(struct ploop *ploop, struct bio *bio)
 	return !(bio_end_sector(bio) & ((1 << ploop->cluster_log) - 1));
 }
 
+#define BAT_LEVEL_MAX		(U8_MAX - 1)
+static inline u8 top_level(struct ploop *ploop)
+{
+	return ploop->nr_deltas;
+}
+
 static inline void ploop_hole_set_bit(unsigned long nr, struct ploop *ploop)
 {
 	if (!WARN_ON_ONCE(nr >= ploop->hb_nr))
@@ -407,7 +412,7 @@ static inline bool cluster_is_in_top_delta(struct ploop *ploop,
 		return false;
 	dst_cluster = ploop_bat_entries(ploop, cluster, &level);
 
-	if (dst_cluster == BAT_ENTRY_NONE || level < BAT_LEVEL_TOP)
+	if (dst_cluster == BAT_ENTRY_NONE || level < top_level(ploop))
 		return false;
 	return true;
 }
@@ -427,7 +432,7 @@ static inline bool md_page_cluster_is_in_top_delta(struct ploop *ploop,
 
 	bat_entries = kmap_atomic(md->page);
 	if (bat_entries[cluster] == BAT_ENTRY_NONE ||
-	    md->bat_levels[cluster] < BAT_LEVEL_TOP)
+	    md->bat_levels[cluster] < top_level(ploop))
 		ret = false;
 	kunmap_atomic(bat_entries);
 	return ret;
