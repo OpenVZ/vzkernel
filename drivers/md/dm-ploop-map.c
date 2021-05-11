@@ -84,7 +84,7 @@ static void __ploop_init_end_io(struct ploop *ploop,
 	h->action = PLOOP_END_IO_NONE;
 	h->ref_index = PLOOP_REF_INDEX_INVALID;
 	h->piwb = NULL;
-	memset(&h->list, 0, sizeof(h->list));
+	INIT_LIST_HEAD(&h->list);
 	h->endio_bio_list = NULL;
 	/* FIXME: assign real cluster? */
 	h->cluster = UINT_MAX;
@@ -1506,9 +1506,7 @@ void unlink_postponed_backup_endio(struct ploop *ploop,
 	unlink_endio_hook(ploop, &pb->rb_root, h, bio_list);
 
 	/* Unlink from pb->pending */
-	list_del(&h->list);
-	/* Zero {list,piwb} union as it may be used later in further */
-	memset(&h->list, 0, sizeof(h->list));
+	list_del_init(&h->list);
 
 	/* Queue relared bio itself */
 	bio = dm_bio_from_per_bio_data(h, sizeof(*h));

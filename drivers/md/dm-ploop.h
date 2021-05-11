@@ -236,10 +236,8 @@ struct ploop {
 };
 
 struct dm_ploop_endio_hook {
-	union {
-		struct ploop_index_wb *piwb;
-		struct list_head list;
-	};
+	struct list_head list;
+
 	struct rb_node node;
 	/* List of bios, which will be queued from this bio end */
 	struct bio *endio_bio_list;
@@ -257,6 +255,8 @@ struct dm_ploop_endio_hook {
 	 */
 #define PLOOP_REF_INDEX_INVALID	2
 	unsigned int ref_index:2;
+
+	struct ploop_index_wb *piwb;
 };
 
 struct ploop_iocb {
