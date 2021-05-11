@@ -272,7 +272,6 @@ static int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 	struct mm_struct *mm;
 	kuid_t caller_uid;
 	kgid_t caller_gid;
-	int vps_dumpable = 0;
 
 	if (!(mode & PTRACE_MODE_FSCREDS) == !(mode & PTRACE_MODE_REALCREDS)) {
 		WARN(1, "denying ptrace access check without PTRACE_MODE_*CREDS\n");
@@ -337,8 +336,8 @@ ok:
 	     !ptrace_has_cap(mm->user_ns, mode)))
 	    return -EPERM;
 
-	vps_dumpable = (mm ? mm->vps_dumpable == VD_PTRACE_COREDUMP : 0);
-	if (!vps_dumpable && !ve_is_super(get_exec_env()))
+	if (mm && (mm->vps_dumpable != VD_PTRACE_COREDUMP) &&
+	    !ve_is_super(get_exec_env()))
 		return -EPERM;
 
 	return security_ptrace_access_check(task, mode);
@@ -391,8 +390,8 @@ static int ptrace_attach(struct task_struct *task, long request,
 	task_lock(task);
 	retval = __ptrace_may_access(task, PTRACE_MODE_ATTACH_REALCREDS);
 	if (!retval) {
-		if (!task->mm || task->mm->vps_dumpable == VD_LICDATA_ACCESS)
-			retval = -EACCES;
+		if (task->mm && task->mm->vps_dumpable == VD_LICDATA_ACCESS)
+			retval = -EPERM;
 	}
 	task_unlock(task);
 	if (retval)
