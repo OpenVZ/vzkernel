@@ -716,6 +716,7 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
 				    struct ploop_index_wb *piwb)
 {
 	unsigned int i, off, last, *bat_entries;
+	bool is_last_page = true;
 	struct md_page *md;
 	struct page *page;
 	struct bio *bio;
@@ -746,8 +747,10 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
 
 	/* Last and first index in copied page */
 	last = ploop->nr_bat_entries - off;
-	if (last > PAGE_SIZE / sizeof(map_index_t))
+	if (last > PAGE_SIZE / sizeof(map_index_t)) {
 		last = PAGE_SIZE / sizeof(map_index_t);
+		is_last_page = false;
+	}
 	i = 0;
 	if (!page_nr)
 		i = PLOOP_MAP_OFFSET;
@@ -757,6 +760,11 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
 		if (cluster_is_in_top_delta(ploop, i + off))
 			continue;
 		to[i] = 0;
+	}
+	if (is_last_page) {
+	/* Fill tail of page with 0 */
+		for (i = last; i < PAGE_SIZE / sizeof(map_index_t); i++)
+			to[i] = 0;
 	}
 
 	kunmap_atomic(to);

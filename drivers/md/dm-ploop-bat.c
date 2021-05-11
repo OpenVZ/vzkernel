@@ -114,7 +114,7 @@ int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
 		if (!md)
 			return -ENOMEM;
 		addr = kmap_atomic(md->page);
-		memset(addr, 0, PAGE_SIZE);
+		memset32(addr, BAT_ENTRY_NONE, PAGE_SIZE / 4);
 		kunmap_atomic(addr);
 
 		__md_page_insert(root, md);
