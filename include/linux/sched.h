@@ -1855,8 +1855,6 @@ static inline bool vcpu_is_preempted(int cpu)
 #ifdef CONFIG_CFS_CPULIMIT
 extern unsigned int task_nr_cpus(struct task_struct *p);
 extern unsigned int task_vcpu_id(struct task_struct *p);
-extern unsigned int sysctl_sched_vcpu_hotslice;
-extern unsigned int sysctl_sched_cpulimit_scale_cpufreq;
 extern unsigned int sched_cpulimit_scale_cpufreq(unsigned int freq);
 #else
 static inline unsigned int task_nr_cpus(struct task_struct *p)
