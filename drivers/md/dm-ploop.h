@@ -49,7 +49,6 @@ struct ploop_cmd {
 #define PLOOP_CMD_RESIZE		1
 #define PLOOP_CMD_MERGE_SNAPSHOT	3
 #define PLOOP_CMD_NOTIFY_DELTA_MERGED	4
-#define PLOOP_CMD_SWITCH_TOP_DELTA	5
 #define PLOOP_CMD_UPDATE_DELTA_INDEX	6
 #define PLOOP_CMD_TRACKING_START	7
 #define PLOOP_CMD_FLIP_UPPER_DELTAS	8
@@ -86,10 +85,6 @@ struct ploop_cmd {
 			u8 level;
 			bool forward;
 		} notify_delta_merged;
-		struct {
-			struct dm_dev *origin_dev;
-			struct ploop_delta *deltas;
-		} switch_top_delta;
 		struct {
 			u8 level;
 			const char *map;
@@ -520,8 +515,6 @@ extern int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 extern int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 			      unsigned int cluster, unsigned int dst_cluster,
 			      void (*end_fn)(struct ploop *, int, void *), void *data);
-extern void restart_delta_cow(struct ploop *ploop);
-extern void cancel_discard_bios(struct ploop *ploop);
 
 extern struct bio * alloc_bio_with_pages(struct ploop *ploop);
 extern void free_bio_with_pages(struct ploop *ploop, struct bio *bio);

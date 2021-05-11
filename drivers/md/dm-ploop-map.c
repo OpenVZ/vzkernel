@@ -1109,6 +1109,7 @@ static void queue_or_fail(struct ploop *ploop, int err, void *data)
 {
 	struct bio *bio = data;
 
+	/* FIXME: do we use BLK_STS_AGAIN? */
 	if (err && err != BLK_STS_AGAIN) {
 		bio->bi_status = errno_to_blk_status(err);
 		bio_endio(bio);
@@ -1235,25 +1236,6 @@ static void process_delta_wb(struct ploop *ploop, struct ploop_index_wb *piwb)
 	}
 
 	spin_lock_irq(&ploop->deferred_lock);
-}
-
-void restart_delta_cow(struct ploop *ploop)
-{
-	struct bio_list cow_list = BIO_EMPTY_LIST;
-	struct bio *cluster_bio;
-	struct ploop_cow *cow;
-
-	spin_lock_irq(&ploop->deferred_lock);
-	bio_list_merge(&cow_list, &ploop->delta_cow_action_list);
-	bio_list_init(&ploop->delta_cow_action_list);
-	spin_unlock_irq(&ploop->deferred_lock);
-
-	while ((cluster_bio = bio_list_pop(&cow_list)) != NULL) {
-		cow = cluster_bio->bi_private;
-		/* This may restart only normal cow */
-		WARN_ON_ONCE(cow->end_fn != queue_or_fail);
-		complete_cow(cow, BLK_STS_AGAIN);
-	}
 }
 
 /*
@@ -1509,22 +1491,6 @@ static void process_discard_bios(struct ploop *ploop, struct bio_list *bios,
 			continue;
 		}
 		process_one_discard_bio(ploop, bio, piwb);
-	}
-}
-
-void cancel_discard_bios(struct ploop *ploop)
-{
-	struct bio_list bio_list = BIO_EMPTY_LIST;
-	struct bio *bio;
-
-	spin_lock_irq(&ploop->deferred_lock);
-	bio_list_merge(&bio_list, &ploop->discard_bios);
-	bio_list_init(&ploop->discard_bios);
-	spin_unlock_irq(&ploop->deferred_lock);
-
-	while ((bio = bio_list_pop(&bio_list)) != NULL) {
-		bio->bi_status = BLK_STS_NOTSUPP;
-		bio_endio(bio);
 	}
 }
 

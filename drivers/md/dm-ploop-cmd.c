@@ -927,99 +927,6 @@ static int ploop_update_delta_index(struct ploop *ploop, unsigned int level,
 	return cmd.retval;
 }
 
-static void process_switch_top_delta(struct ploop *ploop, struct ploop_cmd *cmd)
-{
-	unsigned int i, end, size, bat_clusters, *bat_entries, level = ploop->nr_deltas;
-	struct rb_node *node;
-	struct md_page *md;
-	int ret;
-
-	force_defer_bio_count_inc(ploop);
-	ret = ploop_inflight_bios_ref_switch(ploop, true);
-	if (ret)
-		goto out;
-
-	/* If you add more two-stages-actions, you must cancel them here too */
-	cancel_discard_bios(ploop);
-	restart_delta_cow(ploop);
-
-	write_lock_irq(&ploop->bat_rwlock);
-	swap(ploop->origin_dev, cmd->switch_top_delta.origin_dev);
-	swap(ploop->deltas, cmd->switch_top_delta.deltas);
-	ploop_for_each_md_page(ploop, md, node) {
-		init_bat_entries_iter(ploop, md->id, &i, &end);
-		bat_entries = kmap_atomic(md->page);
-		for (; i <= end; i++) {
-			if (md->bat_levels[i] == BAT_LEVEL_TOP)
-				md->bat_levels[i] = level;
-		}
-	}
-
-	/* Header and BAT-occupied clusters at start of file */
-	size = (PLOOP_MAP_OFFSET + ploop->nr_bat_entries) * sizeof(map_index_t);
-	bat_clusters = DIV_ROUND_UP(size, 1 << (ploop->cluster_log + 9));
-	for (i = 0; i < ploop->hb_nr; i++) {
-		if (i < bat_clusters)
-			clear_bit(i, ploop->holes_bitmap);
-		else
-			set_bit(i, ploop->holes_bitmap);
-	}
-
-	ploop->nr_deltas++;
-	write_unlock_irq(&ploop->bat_rwlock);
-out:
-	force_defer_bio_count_dec(ploop);
-
-	cmd->retval = ret;
-	complete(&cmd->comp); /* Last touch of cmd memory */
-}
-
-/* Switch top delta to new device after userspace has created snapshot */
-static int ploop_switch_top_delta(struct ploop *ploop, int new_ro_fd,
-				  char *new_dev)
-{
-	struct dm_target *ti = ploop->ti;
-	struct ploop_cmd cmd = { {0} };
-	struct file *file;
-	unsigned int size;
-	int ret;
-
-	cmd.type = PLOOP_CMD_SWITCH_TOP_DELTA;
-	cmd.ploop = ploop;
-
-	if (ploop->maintaince)
-		return -EBUSY;
-	if (ploop->nr_deltas == BAT_LEVEL_TOP)
-		return -EMFILE;
-	if (!(file = fget(new_ro_fd)))
-		return -EBADF;
-	ret = dm_get_device(ti, new_dev, dm_table_get_mode(ti->table),
-			    &cmd.switch_top_delta.origin_dev);
-	if (ret)
-		goto fput;
-	ret = -ENOMEM;
-	size = (ploop->nr_deltas + 1) * sizeof(struct ploop_delta);
-	cmd.switch_top_delta.deltas = kmalloc(size, GFP_NOIO);
-	if (!cmd.switch_top_delta.deltas)
-		goto put_dev;
-	size -= sizeof(struct ploop_delta);
-	memcpy(cmd.switch_top_delta.deltas, ploop->deltas, size);
-	cmd.switch_top_delta.deltas[ploop->nr_deltas].file = file;
-	cmd.switch_top_delta.deltas[ploop->nr_deltas].is_raw = false;
-
-	init_completion(&cmd.comp);
-	ploop_queue_deferred_cmd(ploop, &cmd);
-	wait_for_completion(&cmd.comp);
-	ret = cmd.retval;
-	kfree(cmd.switch_top_delta.deltas);
-put_dev:
-	dm_put_device(ploop->ti, cmd.switch_top_delta.origin_dev);
-fput:
-	if (ret)
-		fput(file);
-	return ret;
-}
-
 static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd)
 {
 	unsigned int i, size, end, bat_clusters, hb_nr, *bat_entries;
@@ -1637,8 +1544,6 @@ void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 		process_merge_latest_snapshot_cmd(ploop, cmd);
 	} else if (cmd->type == PLOOP_CMD_NOTIFY_DELTA_MERGED) {
 		process_notify_delta_merged(ploop, cmd);
-	} else if (cmd->type == PLOOP_CMD_SWITCH_TOP_DELTA) {
-		process_switch_top_delta(ploop, cmd);
 	} else if (cmd->type == PLOOP_CMD_UPDATE_DELTA_INDEX) {
 		process_update_delta_index(ploop, cmd);
 	} else if (cmd->type == PLOOP_CMD_TRACKING_START) {
@@ -1711,10 +1616,6 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 		if (argc != 3 || kstrtou64(argv[1], 10, &val) < 0)
 			goto unlock;
 		ret = ploop_update_delta_index(ploop, val, argv[2]);
-	} else if (!strcmp(argv[0], "snapshot")) {
-		if (argc != 3 || kstrtou64(argv[1], 10, &val) < 0)
-			goto unlock;
-		ret = ploop_switch_top_delta(ploop, val, argv[2]);
 	} else if (!strncmp(argv[0], "tracking_", 9)) {
 		if (argc != 1)
 			goto unlock;
