@@ -151,6 +151,12 @@ void fence_wdog_do_fence(void)
 
 inline int fence_wdog_check_timer(void)
 {
+	static unsigned long print_alive_time;
+
+	if (fence_wdog_jiffies64 != MAX_U64)
+		if (printk_timed_ratelimit(&print_alive_time, 30*60*HZ))
+			printk("fence-watchdog: alive\n");
+
 	if (unlikely(get_jiffies_64() > fence_wdog_jiffies64 &&
 			fence_wdog_action != FENCE_WDOG_NETFILTER)) {
 		if (atomic_cmpxchg(&fence_stage, NOT_FENCED, FENCED) == NOT_FENCED
