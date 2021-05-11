@@ -205,7 +205,6 @@ static int ploop_write_cluster_sync(struct ploop *ploop, struct bio *bio,
 	bio_set_op_attrs(bio, REQ_OP_WRITE, REQ_FUA | REQ_PREFLUSH);
 
 	ret = submit_bio_wait(bio);
-	track_bio(ploop, bio);
 	if (ret)
 		return ret;
 
