@@ -241,6 +241,13 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto err;
 	}
 
+	ploop->wq = alloc_ordered_workqueue("dm-" DM_MSG_PREFIX, WQ_MEM_RECLAIM);
+	if (!ploop->wq) {
+		ti->error = "could not create workqueue for metadata object";
+		ret = -ENOMEM;
+		goto err;
+	}
+
 	/*
 	 * We do not add FMODE_EXCL, because further open_table_device()
 	 * unconditionally adds it. See call stack.
@@ -255,14 +262,6 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ret = ploop_check_origin_dev(ti, ploop);
 	if (ret) {
 		/* ploop_check_origin_dev() assigns ti->error */
-		goto err;
-	}
-
-	ret = -ENOMEM;
-
-	ploop->wq = alloc_ordered_workqueue("dm-" DM_MSG_PREFIX, WQ_MEM_RECLAIM);
-	if (!ploop->wq) {
-		ti->error = "could not create workqueue for metadata object";
 		goto err;
 	}
 
