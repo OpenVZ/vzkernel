@@ -417,8 +417,8 @@ static inline bool cluster_is_in_top_delta(struct ploop *ploop,
 	return true;
 }
 
-static inline bool md_page_cluster_is_in_top_delta(struct md_page *md,
-						   unsigned int cluster)
+static inline bool md_page_cluster_is_in_top_delta(struct ploop *ploop,
+			      struct md_page *md, unsigned int cluster)
 {
 	unsigned int count, *bat_entries;
 	bool ret = true;

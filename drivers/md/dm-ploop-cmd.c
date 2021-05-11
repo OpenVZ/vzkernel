@@ -53,7 +53,7 @@ static void ploop_advance_holes_bitmap(struct ploop *ploop,
 		init_bat_entries_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
-			if (!md_page_cluster_is_in_top_delta(md, i))
+			if (!md_page_cluster_is_in_top_delta(ploop, md, i))
 				continue;
 			dst_cluster = bat_entries[i];
 			/* This may happen after grow->shrink->(now) grow */
@@ -145,7 +145,7 @@ static unsigned int ploop_find_bat_entry(struct ploop *ploop,
 		for (; i <= end; i++) {
 			if (bat_entries[i] != dst_cluster)
 				continue;
-			if (md_page_cluster_is_in_top_delta(md, i)) {
+			if (md_page_cluster_is_in_top_delta(ploop, md, i)) {
 				cluster = page_clu_idx_to_bat_clu(md->id, i);
 				break;
 			}
@@ -735,7 +735,7 @@ static void process_notify_delta_merged(struct ploop *ploop,
 		init_bat_entries_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
-			if (md_page_cluster_is_in_top_delta(md, i) ||
+			if (md_page_cluster_is_in_top_delta(ploop, md, i) ||
 			    delta_bat_entries[i] == BAT_ENTRY_NONE ||
 			    md->bat_levels[i] < level)
 				continue;
