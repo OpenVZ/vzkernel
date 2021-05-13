@@ -35,7 +35,7 @@ static void proc_evict_inode(struct inode *inode)
 	const struct proc_ns_operations *ns_ops;
 	void *ns;
 
-	truncate_inode_pages(&inode->i_data, 0);
+	truncate_inode_pages_final(&inode->i_data);
 	clear_inode(inode);
 
 	/* Stop tracking associated processes */
@@ -45,10 +45,11 @@ static void proc_evict_inode(struct inode *inode)
 	de = PROC_I(inode)->pde;
 	if (de)
 		pde_put(de);
+
 	head = PROC_I(inode)->sysctl;
 	if (head) {
 		rcu_assign_pointer(PROC_I(inode)->sysctl, NULL);
-		sysctl_head_put(head);
+		proc_sys_evict_inode(inode, head);
 	}
 	/* Release any associated namespace */
 	ns_ops = PROC_I(inode)->ns.ns_ops;
@@ -103,7 +104,8 @@ void __init proc_init_inodecache(void)
 	proc_inode_cachep = kmem_cache_create("proc_inode_cache",
 					     sizeof(struct proc_inode),
 					     0, (SLAB_RECLAIM_ACCOUNT|
-						SLAB_MEM_SPREAD|SLAB_PANIC),
+						SLAB_MEM_SPREAD|SLAB_ACCOUNT|
+						SLAB_PANIC),
 					     init_once);
 }
 
@@ -382,6 +384,10 @@ struct inode *proc_get_inode(struct super_block *sb, struct proc_dir_entry *de)
 		inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;
 		PROC_I(inode)->pde = de;
 
+		if (is_empty_pde(de)) {
+			make_empty_dir_inode(inode);
+			return inode;
+		}
 		if (de->mode) {
 			inode->i_mode = de->mode;
 			inode->i_uid = de->uid;
@@ -411,10 +417,16 @@ struct inode *proc_get_inode(struct super_block *sb, struct proc_dir_entry *de)
 	return inode;
 }
 
-int proc_fill_super(struct super_block *s)
+int proc_fill_super(struct super_block *s, void *data, int silent)
 {
+	struct pid_namespace *ns = get_pid_ns(s->s_fs_info);
 	struct inode *root_inode;
 
+	if (!proc_parse_options(data, ns))
+		return -EINVAL;
+
+	/* User space would break if executables or devices appear on proc */
+	s->s_iflags |= SB_I_USERNS_VISIBLE | SB_I_NOEXEC | SB_I_NODEV;
 	s->s_flags |= MS_NODIRATIME | MS_NOSUID | MS_NOEXEC;
 	s->s_blocksize = 1024;
 	s->s_blocksize_bits = 10;

@@ -7,6 +7,8 @@
 
 #include <linux/uidgid.h>
 #include <net/inet_frag.h>
+#include <linux/rcupdate.h>
+#include <linux/siphash.h>
 
 struct tcpm_hash_bucket;
 struct ctl_table_header;
@@ -15,6 +17,11 @@ struct fib_rules_ops;
 struct hlist_head;
 struct fib_table;
 struct sock;
+
+struct local_ports {
+	seqlock_t	lock;
+	int		range[2];
+};
 
 struct netns_ipv4 {
 #ifdef CONFIG_SYSCTL
@@ -29,13 +36,15 @@ struct netns_ipv4 {
 #ifdef CONFIG_IP_MULTIPLE_TABLES
 	struct fib_rules_ops	*rules_ops;
 	bool			fib_has_custom_rules;
-	struct fib_table	*fib_local;
-	struct fib_table	*fib_main;
-	struct fib_table	*fib_default;
+	RH_KABI_DEPRECATE(struct fib_table __rcu *, fib_local)
+	struct fib_table __rcu	*fib_main;
+	struct fib_table __rcu	*fib_default;
 #endif
 #ifdef CONFIG_IP_ROUTE_CLASSID
 	int			fib_num_tclassid_users;
 #endif
+	RH_KABI_FILL_HOLE(bool	fib_offload_disabled)
+	/* Hole - 3 bytes remain */
 	struct hlist_head	*fib_table_hash;
 	struct sock		*fibnl;
 
@@ -68,6 +77,7 @@ struct netns_ipv4 {
 	long sysctl_tcp_mem[3];
 
 	atomic_t dev_addr_genid;
+	RH_KABI_FILL_HOLE(unsigned int	fib_seq)	/* protected by rtnl_mutex */
 
 #ifdef CONFIG_IP_MROUTE
 #ifndef CONFIG_IP_MROUTE_MULTIPLE_TABLES

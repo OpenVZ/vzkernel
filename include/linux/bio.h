@@ -44,6 +44,9 @@
 #define BIO_MAX_SIZE		(BIO_MAX_PAGES << PAGE_CACHE_SHIFT)
 #define BIO_MAX_SECTORS		(BIO_MAX_SIZE >> 9)
 
+#define bio_op(bio)				(op_from_rq_bits((bio)->bi_rw))
+#define bio_set_op_attrs(bio, op, flags)	((bio)->bi_rw |= (op | flags))
+
 /*
  * upper 16 bits of bi_rw define the io priority of this bio
  */
@@ -187,7 +190,12 @@ struct bio_integrity_payload {
 	unsigned short		bip_slab;	/* slab the bip came from */
 	unsigned short		bip_vcnt;	/* # of integrity bio_vecs */
 	unsigned short		bip_idx;	/* current bip_vec index */
+#ifdef __GENKSYMS__
 	unsigned		bip_owns_buf:1;	/* should free bip_buf */
+#else
+	unsigned		bip_owns_buf:1;	/* should free bip_buf */
+	unsigned		saved_bi_idx:16;/* for rewind bio */
+#endif
 
 	struct work_struct	bip_work;	/* I/O completion */
 
@@ -195,6 +203,23 @@ struct bio_integrity_payload {
 	struct bio_vec		bip_inline_vecs[0];/* embedded bvec array */
 };
 #endif /* CONFIG_BLK_DEV_INTEGRITY */
+
+/*
+ * A bio_pair2 is used when we need to split a bio. This can be used for
+ * splitting any bios, but only for addressing some corner cases, such as
+ * some unusual MD queues with variable max_hw_sectors limit, like linear,
+ * faulty and multipath MD.
+ *
+ * bio1 points to the embedded __bio for saving one allocation.
+ */
+struct bio_pair2 {
+	struct bio			*master_bio, *bio1, *bio2;
+	atomic_t			cnt;
+	int				error;
+	struct bio			__bio;
+};
+extern struct bio_pair2 *bio_split2(struct bio *bi, int first_sectors);
+extern void bio_pair2_release(struct bio_pair2 *dbio);
 
 /*
  * A bio_pair is used when we need to split a bio.
@@ -218,6 +243,7 @@ struct bio_pair {
 };
 extern struct bio_pair *bio_split(struct bio *bi, int first_sectors);
 extern void bio_pair_release(struct bio_pair *dbio);
+extern void bio_trim(struct bio *bio, int offset, int size);
 
 extern struct bio_set *bioset_create(unsigned int, unsigned int);
 extern void bioset_free(struct bio_set *);
@@ -260,7 +286,9 @@ extern int submit_bio_wait(int rw, struct bio *bio);
 extern void bio_advance(struct bio *, unsigned);
 
 extern void bio_init(struct bio *);
+extern void bio_init_aux(struct bio *bio, struct bio_aux *bio_aux);
 extern void bio_reset(struct bio *);
+void bio_chain(struct bio *, struct bio *);
 
 extern int bio_add_page(struct bio *, struct page *, unsigned int,unsigned int);
 extern int bio_add_pc_page(struct request_queue *, struct bio *, struct page *,
@@ -281,6 +309,12 @@ extern struct bio *bio_copy_kern(struct request_queue *, void *, unsigned int,
 				 gfp_t, int);
 extern void bio_set_pages_dirty(struct bio *bio);
 extern void bio_check_pages_dirty(struct bio *bio);
+
+void generic_start_io_acct(struct request_queue *q, int rw,
+				unsigned long sectors, struct hd_struct *part);
+void generic_end_io_acct(struct request_queue *q, int rw,
+				struct hd_struct *part,
+				unsigned long start_time);
 
 #ifndef ARCH_IMPLEMENTS_FLUSH_DCACHE_PAGE
 # error	"You should define ARCH_IMPLEMENTS_FLUSH_DCACHE_PAGE for your platform"
@@ -419,6 +453,8 @@ static inline void bio_list_init(struct bio_list *bl)
 	bl->head = bl->tail = NULL;
 }
 
+#define BIO_EMPTY_LIST	{ NULL, NULL }
+
 #define bio_list_for_each(bio, bl) \
 	for (bio = (bl)->head; bio; bio = bio->bi_next)
 
@@ -509,6 +545,20 @@ static inline struct bio *bio_list_get(struct bio_list *bl)
 	bl->head = bl->tail = NULL;
 
 	return bio;
+}
+
+/*
+ * Increment chain count for the bio. Make sure the CHAIN flag update
+ * is visible before the raised count.
+ */
+static inline void bio_inc_remaining(struct bio *bio)
+{
+	if (WARN_ON_ONCE(!bio->bio_aux))
+		return;
+
+	bio->bio_aux->bi_flags |= (1 << BIO_AUX_CHAIN);
+	smp_mb__before_atomic();
+	atomic_inc(&bio->bio_aux->__bi_remaining);
 }
 
 /*

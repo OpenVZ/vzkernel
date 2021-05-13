@@ -17,14 +17,6 @@
 
 #include "bpf_jit.h"
 
-#ifndef __BIG_ENDIAN
-/* There are endianness assumptions herein. */
-#error "Little-endian PPC not supported in BPF compiler"
-#endif
-
-int bpf_jit_enable __read_mostly;
-
-
 static inline void bpf_flush_icache(void *start, void *end)
 {
 	smp_wmb();
@@ -193,6 +185,26 @@ static int bpf_jit_build_body(struct sk_filter *fp, u32 *image,
 				PPC_MUL(r_A, r_A, r_scratch1);
 			}
 			break;
+		case BPF_S_ALU_MOD_X: /* A %= X; */
+			ctx->seen |= SEEN_XREG;
+			PPC_CMPWI(r_X, 0);
+			if (ctx->pc_ret0 != -1) {
+				PPC_BCC(COND_EQ, addrs[ctx->pc_ret0]);
+			} else {
+				PPC_BCC_SHORT(COND_NE, (ctx->idx*4)+12);
+				PPC_LI(r_ret, 0);
+				PPC_JMP(exit_addr);
+			}
+			PPC_DIVWU(r_scratch1, r_A, r_X);
+			PPC_MUL(r_scratch1, r_X, r_scratch1);
+			PPC_SUB(r_A, r_A, r_scratch1);
+			break;
+		case BPF_S_ALU_MOD_K: /* A %= K; */
+			PPC_LI32(r_scratch2, K);
+			PPC_DIVWU(r_scratch1, r_A, r_scratch2);
+			PPC_MUL(r_scratch1, r_scratch2, r_scratch1);
+			PPC_SUB(r_A, r_A, r_scratch1);
+			break;
 		case BPF_S_ALU_DIV_X: /* A /= X; */
 			ctx->seen |= SEEN_XREG;
 			PPC_CMPWI(r_X, 0);
@@ -209,10 +221,11 @@ static int bpf_jit_build_body(struct sk_filter *fp, u32 *image,
 			}
 			PPC_DIVWU(r_A, r_A, r_X);
 			break;
-		case BPF_S_ALU_DIV_K: /* A = reciprocal_divide(A, K); */
+		case BPF_S_ALU_DIV_K: /* A /= K */
+			if (K == 1)
+				break;
 			PPC_LI32(r_scratch1, K);
-			/* Top 32 bits of 64bit result -> A */
-			PPC_MULHWU(r_A, r_A, r_scratch1);
+			PPC_DIVWU(r_A, r_A, r_scratch1);
 			break;
 		case BPF_S_ALU_AND_X:
 			ctx->seen |= SEEN_XREG;
@@ -346,18 +359,11 @@ static int bpf_jit_build_body(struct sk_filter *fp, u32 *image,
 			break;
 
 			/*** Ancillary info loads ***/
-
-			/* None of the BPF_S_ANC* codes appear to be passed by
-			 * sk_chk_filter().  The interpreter and the x86 BPF
-			 * compiler implement them so we do too -- they may be
-			 * planted in future.
-			 */
 		case BPF_S_ANC_PROTOCOL: /* A = ntohs(skb->protocol); */
 			BUILD_BUG_ON(FIELD_SIZEOF(struct sk_buff,
 						  protocol) != 2);
-			PPC_LHZ_OFFS(r_A, r_skb, offsetof(struct sk_buff,
-							  protocol));
-			/* ntohs is a NOP with BE loads. */
+			PPC_NTOHS_OFFS(r_A, r_skb, offsetof(struct sk_buff,
+							    protocol));
 			break;
 		case BPF_S_ANC_IFINDEX:
 			PPC_LD_OFFS(r_scratch1, r_skb, offsetof(struct sk_buff,
@@ -382,19 +388,23 @@ static int bpf_jit_build_body(struct sk_filter *fp, u32 *image,
 							  mark));
 			break;
 		case BPF_S_ANC_RXHASH:
-			BUILD_BUG_ON(FIELD_SIZEOF(struct sk_buff, rxhash) != 4);
+			BUILD_BUG_ON(FIELD_SIZEOF(struct sk_buff, hash) != 4);
 			PPC_LWZ_OFFS(r_A, r_skb, offsetof(struct sk_buff,
-							  rxhash));
+							  hash));
 			break;
 		case BPF_S_ANC_VLAN_TAG:
 		case BPF_S_ANC_VLAN_TAG_PRESENT:
 			BUILD_BUG_ON(FIELD_SIZEOF(struct sk_buff, vlan_tci) != 2);
+			BUILD_BUG_ON(VLAN_TAG_PRESENT != 0x1000);
+
 			PPC_LHZ_OFFS(r_A, r_skb, offsetof(struct sk_buff,
 							  vlan_tci));
-			if (filter[i].code == BPF_S_ANC_VLAN_TAG)
-				PPC_ANDI(r_A, r_A, VLAN_VID_MASK);
-			else
+			if (filter[i].code == BPF_S_ANC_VLAN_TAG) {
+				PPC_ANDI(r_A, r_A, ~VLAN_TAG_PRESENT);
+			} else {
 				PPC_ANDI(r_A, r_A, VLAN_TAG_PRESENT);
+				PPC_SRWI(r_A, r_A, 12);
+			}
 			break;
 		case BPF_S_ANC_QUEUE:
 			BUILD_BUG_ON(FIELD_SIZEOF(struct sk_buff,
@@ -575,6 +585,14 @@ void bpf_jit_compile(struct sk_filter *fp)
 	int pass;
 	int flen = fp->len;
 
+	/*
+	 * RHEL7: Disable cBPF jit for Power. It's not supported in
+	 * upstream and nobody cares to maintain it, while it causes
+	 * problems:
+	 * https://bugzilla.redhat.com/show_bug.cgi?id=1700744
+	 */
+	return;
+
 	if (!bpf_jit_enable)
 		return;
 
@@ -678,9 +696,11 @@ void bpf_jit_compile(struct sk_filter *fp)
 
 	if (image) {
 		bpf_flush_icache(code_base, code_base + (proglen/4));
+#ifdef PPC64_ELF_ABI_v1
 		/* Function descriptor nastiness: Address + TOC */
 		((u64 *)image)[0] = (u64)code_base;
 		((u64 *)image)[1] = local_paca->kernel_toc;
+#endif
 		fp->bpf_func = (void *)image;
 	}
 out:

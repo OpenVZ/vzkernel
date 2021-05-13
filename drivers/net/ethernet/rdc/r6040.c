@@ -1043,7 +1043,7 @@ static int r6040_mii_probe(struct net_device *dev)
 		return -ENODEV;
 	}
 
-	phydev = phy_connect(dev, dev_name(&phydev->dev), &r6040_adjust_link,
+	phydev = phy_connect(dev, phydev_name(phydev), &r6040_adjust_link,
 			     PHY_INTERFACE_MODE_MII);
 
 	if (IS_ERR(phydev)) {
@@ -1065,9 +1065,7 @@ static int r6040_mii_probe(struct net_device *dev)
 	lp->old_link = 0;
 	lp->old_duplex = -1;
 
-	dev_info(&lp->pdev->dev, "attached PHY driver [%s] "
-		"(mii_bus:phy_addr=%s)\n",
-		phydev->drv->name, dev_name(&phydev->dev));
+	phy_attached_info(phydev);
 
 	return 0;
 }
@@ -1261,7 +1259,7 @@ static void r6040_remove_one(struct pci_dev *pdev)
 }
 
 
-static DEFINE_PCI_DEVICE_TABLE(r6040_pci_tbl) = {
+static const struct pci_device_id r6040_pci_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_RDC, 0x6040) },
 	{ 0 }
 };

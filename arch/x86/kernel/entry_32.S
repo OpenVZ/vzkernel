@@ -459,12 +459,11 @@ sysenter_audit:
 	jnz syscall_trace_entry
 	addl $4,%esp
 	CFI_ADJUST_CFA_OFFSET -4
-	/* %esi already in 8(%esp)	   6th arg: 4th syscall arg */
-	/* %edx already in 4(%esp)	   5th arg: 3rd syscall arg */
-	/* %ecx already in 0(%esp)	   4th arg: 2nd syscall arg */
-	movl %ebx,%ecx			/* 3rd arg: 1st syscall arg */
-	movl %eax,%edx			/* 2nd arg: syscall number */
-	movl $AUDIT_ARCH_I386,%eax	/* 1st arg: audit arch */
+	movl %esi,4(%esp)		/* 5th arg: 4th syscall arg */
+	movl %edx,(%esp)		/* 4th arg: 3rd syscall arg */
+	/* %ecx already in %ecx		   3rd arg: 2nd syscall arg */
+	movl %ebx,%edx			/* 2nd arg: 1st syscall arg */
+	/* %eax already in %eax		   1st arg: syscall number */
 	call __audit_syscall_entry
 	pushl_cfi %ebx
 	movl PT_EAX(%esp),%eax		/* reload syscall number */
@@ -530,6 +529,7 @@ syscall_exit:
 restore_all:
 	TRACE_IRQS_IRET
 restore_all_notrace:
+#ifdef CONFIG_X86_ESPFIX32
 	movl PT_EFLAGS(%esp), %eax	# mix EFLAGS, SS and CS
 	# Warning: PT_OLDSS(%esp) contains the wrong/random values if we
 	# are returning to the kernel.
@@ -540,9 +540,15 @@ restore_all_notrace:
 	cmpl $((SEGMENT_LDT << 8) | USER_RPL), %eax
 	CFI_REMEMBER_STATE
 	je ldt_ss			# returning to user-space with LDT SS
+#endif
 restore_nocheck:
 	RESTORE_REGS 4			# skip orig_eax/error_code
 irq_return:
+	/*
+	 * ARCH_HAS_MEMBARRIER_SYNC_CORE rely on IRET core serialization
+	 * when returning from IPI handler and when returning from
+	 * scheduler to user-space.
+	 */
 	INTERRUPT_RETURN
 .section .fixup,"ax"
 ENTRY(iret_exc)
@@ -552,6 +558,7 @@ ENTRY(iret_exc)
 .previous
 	_ASM_EXTABLE(irq_return,iret_exc)
 
+#ifdef CONFIG_X86_ESPFIX32
 	CFI_RESTORE_STATE
 ldt_ss:
 	larl PT_OLDSS(%esp), %eax
@@ -600,6 +607,7 @@ ldt_ss:
 	lss (%esp), %esp		/* switch to espfix segment */
 	CFI_ADJUST_CFA_OFFSET -8
 	jmp restore_nocheck
+#endif
 	CFI_ENDPROC
 ENDPROC(system_call)
 
@@ -707,6 +715,7 @@ END(syscall_badsys)
  * the high word of the segment base from the GDT and swiches to the
  * normal stack and adjusts ESP with the matching offset.
  */
+#ifdef CONFIG_X86_ESPFIX32
 	/* fixup the stack */
 	mov GDT_ESPFIX_SS + 4, %al /* bits 16..23 */
 	mov GDT_ESPFIX_SS + 7, %ah /* bits 24..31 */
@@ -716,8 +725,10 @@ END(syscall_badsys)
 	pushl_cfi %eax
 	lss (%esp), %esp		/* switch to the normal stack segment */
 	CFI_ADJUST_CFA_OFFSET -8
+#endif
 .endm
 .macro UNWIND_ESPFIX_STACK
+#ifdef CONFIG_X86_ESPFIX32
 	movl %ss, %eax
 	/* see if on espfix stack */
 	cmpw $__ESPFIX_SS, %ax
@@ -728,6 +739,7 @@ END(syscall_badsys)
 	/* switch to normal stack */
 	FIXUP_ESPFIX_STACK
 27:
+#endif
 .endm
 
 /*
@@ -801,7 +813,17 @@ ENTRY(name)				\
 	CFI_ENDPROC;			\
 ENDPROC(name)
 
-#define BUILD_INTERRUPT(name, nr)	BUILD_INTERRUPT3(name, nr, smp_##name)
+
+#ifdef CONFIG_TRACING
+#define TRACE_BUILD_INTERRUPT(name, nr)		\
+	BUILD_INTERRUPT3(trace_##name, nr, smp_trace_##name)
+#else
+#define TRACE_BUILD_INTERRUPT(name, nr)
+#endif
+
+#define BUILD_INTERRUPT(name, nr) \
+	BUILD_INTERRUPT3(name, nr, smp_##name); \
+	TRACE_BUILD_INTERRUPT(name, nr)
 
 /* The include is where all of the SMP etc. interrupts come from */
 #include <asm/entry_arch.h>
@@ -1056,6 +1078,9 @@ BUILD_INTERRUPT3(xen_hvm_callback_vector, HYPERVISOR_CALLBACK_VECTOR,
 BUILD_INTERRUPT3(hyperv_callback_vector, HYPERVISOR_CALLBACK_VECTOR,
 	hyperv_vector_handler)
 
+BUILD_INTERRUPT3(hv_stimer0_callback_vector, HYPERV_STIMER0_VECTOR,
+        hv_stimer0_vector_handler)
+
 #endif /* CONFIG_HYPERV */
 
 #ifdef CONFIG_FUNCTION_TRACER
@@ -1066,16 +1091,13 @@ ENTRY(mcount)
 END(mcount)
 
 ENTRY(ftrace_caller)
-	cmpl $0, function_trace_stop
-	jne  ftrace_stub
-
 	pushl %eax
 	pushl %ecx
 	pushl %edx
 	pushl $0	/* Pass NULL as regs pointer */
 	movl 4*4(%esp), %eax
 	movl 0x4(%ebp), %edx
-	leal function_trace_op, %ecx
+	movl function_trace_op, %ecx
 	subl $MCOUNT_INSN_SIZE, %eax
 
 .globl ftrace_call
@@ -1100,8 +1122,6 @@ END(ftrace_caller)
 
 ENTRY(ftrace_regs_caller)
 	pushf	/* push flags before compare (in cs location) */
-	cmpl $0, function_trace_stop
-	jne ftrace_restore_flags
 
 	/*
 	 * i386 does not save SS and ESP when coming from kernel.
@@ -1133,7 +1153,7 @@ ENTRY(ftrace_regs_caller)
 	movl 12*4(%esp), %eax	/* Load ip (1st parameter) */
 	subl $MCOUNT_INSN_SIZE, %eax	/* Adjust ip */
 	movl 0x4(%ebp), %edx	/* Load parent ip (2nd parameter) */
-	leal function_trace_op, %ecx /* Save ftrace_pos in 3rd parameter */
+	movl function_trace_op, %ecx /* Save ftrace_pos in 3rd parameter */
 	pushl %esp		/* Save pt_regs as 4th parameter */
 
 GLOBAL(ftrace_regs_call)
@@ -1160,15 +1180,11 @@ GLOBAL(ftrace_regs_call)
 	popf			/* Pop flags at end (no addl to corrupt flags) */
 	jmp ftrace_ret
 
-ftrace_restore_flags:
 	popf
 	jmp  ftrace_stub
 #else /* ! CONFIG_DYNAMIC_FTRACE */
 
 ENTRY(mcount)
-	cmpl $0, function_trace_stop
-	jne  ftrace_stub
-
 	cmpl $ftrace_stub, ftrace_trace_function
 	jnz trace
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
@@ -1233,6 +1249,16 @@ return_to_handler:
  * Some functions should be protected against kprobes
  */
 	.pushsection .kprobes.text, "ax"
+
+#ifdef CONFIG_TRACING
+ENTRY(trace_page_fault)
+	RING0_EC_FRAME
+	ASM_CLAC
+	pushl_cfi $trace_do_page_fault
+	jmp error_code
+	CFI_ENDPROC
+END(trace_page_fault)
+#endif
 
 ENTRY(page_fault)
 	RING0_EC_FRAME
@@ -1335,11 +1361,13 @@ END(debug)
 ENTRY(nmi)
 	RING0_INT_FRAME
 	ASM_CLAC
+#ifdef CONFIG_X86_ESPFIX32
 	pushl_cfi %eax
 	movl %ss, %eax
 	cmpw $__ESPFIX_SS, %ax
 	popl_cfi %eax
 	je nmi_espfix_stack
+#endif
 	cmpl $ia32_sysenter_target,(%esp)
 	je nmi_stack_fixup
 	pushl_cfi %eax
@@ -1379,6 +1407,7 @@ nmi_debug_stack_check:
 	FIX_STACK 24, nmi_stack_correct, 1
 	jmp nmi_stack_correct
 
+#ifdef CONFIG_X86_ESPFIX32
 nmi_espfix_stack:
 	/* We have a RING0_INT_FRAME here.
 	 *
@@ -1400,6 +1429,7 @@ nmi_espfix_stack:
 	lss 12+4(%esp), %esp		# back to espfix stack
 	CFI_ADJUST_CFA_OFFSET -24
 	jmp irq_return
+#endif
 	CFI_ENDPROC
 END(nmi)
 

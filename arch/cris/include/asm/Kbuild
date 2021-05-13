@@ -5,5 +5,7 @@ header-y += arch-v32/
 
 generic-y += clkdev.h
 generic-y += exec.h
+generic-y += mm-arch-hooks.h
 generic-y += module.h
 generic-y += trace_clock.h
+generic-y += barrier.h

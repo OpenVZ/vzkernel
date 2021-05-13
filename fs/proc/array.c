@@ -79,9 +79,12 @@
 #include <linux/delayacct.h>
 #include <linux/seq_file.h>
 #include <linux/pid_namespace.h>
+#include <linux/prctl.h>
 #include <linux/ptrace.h>
 #include <linux/tracehook.h>
 #include <linux/user_namespace.h>
+#include <linux/fs_struct.h>
+#include <linux/nospec.h>
 
 #include <asm/pgtable.h>
 #include <asm/processor.h>
@@ -151,6 +154,14 @@ static inline const char *get_task_state(struct task_struct *tsk)
 	unsigned int state = (tsk->state & TASK_REPORT) | tsk->exit_state;
 	const char * const *p = &task_state_array[0];
 
+	/*
+	 * Parked tasks do not run; they sit in __kthread_parkme().
+	 * Without this check, we would report them as running, which is
+	 * clearly wrong, so we report them as sleeping instead.
+	 */
+	if (tsk->state == TASK_PARKED)
+		state = TASK_INTERRUPTIBLE;
+
 	BUILD_BUG_ON(1 + ilog2(TASK_STATE_MAX) != ARRAY_SIZE(task_state_array));
 
 	while (state) {
@@ -160,12 +171,25 @@ static inline const char *get_task_state(struct task_struct *tsk)
 	return *p;
 }
 
+static inline int get_task_umask(struct task_struct *tsk)
+{
+	struct fs_struct *fs;
+	int umask = -ENOENT;
+
+	task_lock(tsk);
+	fs = tsk->fs;
+	if (fs)
+		umask = fs->umask;
+	task_unlock(tsk);
+	return umask;
+}
+
 static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *p)
 {
 	struct user_namespace *user_ns = seq_user_ns(m);
 	struct group_info *group_info;
-	int g;
+	int g, umask;
 	struct fdtable *fdt = NULL;
 	const struct cred *cred;
 	pid_t ppid, tpid;
@@ -180,9 +204,15 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 			tpid = task_pid_nr_ns(tracer, ns);
 	}
 	cred = get_task_cred(p);
+
+	umask = get_task_umask(p);
+	if (umask >= 0)
+		seq_printf(m, "Umask:\t%#04o\n", umask);
+
 	seq_printf(m,
 		"State:\t%s\n"
 		"Tgid:\t%d\n"
+		"Ngid:\t%d\n"
 		"Pid:\t%d\n"
 		"PPid:\t%d\n"
 		"TracerPid:\t%d\n"
@@ -190,6 +220,7 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 		"Gid:\t%d\t%d\t%d\t%d\n",
 		get_task_state(p),
 		task_tgid_nr_ns(p, ns),
+		task_numa_group_id(p),
 		pid_nr_ns(pid, ns),
 		ppid, tpid,
 		from_kuid_munged(user_ns, cred->uid),
@@ -304,19 +335,16 @@ static void render_cap_t(struct seq_file *m, const char *header,
 	seq_puts(m, header);
 	CAP_FOR_EACH_U32(__capi) {
 		seq_printf(m, "%08x",
-			   a->cap[(_KERNEL_CAPABILITY_U32S-1) - __capi]);
+			   a->cap[CAP_LAST_U32 - __capi]);
 	}
 	seq_putc(m, '\n');
 }
 
-/* Remove non-existent capabilities */
-#define NORM_CAPS(v) (v.cap[CAP_TO_INDEX(CAP_LAST_CAP)] &= \
-				CAP_TO_MASK(CAP_LAST_CAP + 1) - 1)
-
 static inline void task_cap(struct seq_file *m, struct task_struct *p)
 {
 	const struct cred *cred;
-	kernel_cap_t cap_inheritable, cap_permitted, cap_effective, cap_bset;
+	kernel_cap_t cap_inheritable, cap_permitted, cap_effective,
+			cap_bset, cap_ambient;
 
 	rcu_read_lock();
 	cred = __task_cred(p);
@@ -324,24 +352,47 @@ static inline void task_cap(struct seq_file *m, struct task_struct *p)
 	cap_permitted	= cred->cap_permitted;
 	cap_effective	= cred->cap_effective;
 	cap_bset	= cred->cap_bset;
+	cap_ambient	= cred->cap_ambient;
 	rcu_read_unlock();
-
-	NORM_CAPS(cap_inheritable);
-	NORM_CAPS(cap_permitted);
-	NORM_CAPS(cap_effective);
-	NORM_CAPS(cap_bset);
 
 	render_cap_t(m, "CapInh:\t", &cap_inheritable);
 	render_cap_t(m, "CapPrm:\t", &cap_permitted);
 	render_cap_t(m, "CapEff:\t", &cap_effective);
 	render_cap_t(m, "CapBnd:\t", &cap_bset);
+	render_cap_t(m, "CapAmb:\t", &cap_ambient);
 }
 
 static inline void task_seccomp(struct seq_file *m, struct task_struct *p)
 {
+	seq_printf(m, "NoNewPrivs:\t%d\n",task_no_new_privs(p));
 #ifdef CONFIG_SECCOMP
 	seq_printf(m, "Seccomp:\t%d\n", p->seccomp.mode);
 #endif
+	seq_printf(m, "Speculation_Store_Bypass:\t");
+	switch (arch_prctl_spec_ctrl_get(p, PR_SPEC_STORE_BYPASS)) {
+	case -EINVAL:
+		seq_printf(m, "unknown");
+		break;
+	case PR_SPEC_NOT_AFFECTED:
+		seq_printf(m, "not vulnerable");
+		break;
+	case PR_SPEC_PRCTL | PR_SPEC_FORCE_DISABLE:
+		seq_printf(m, "thread force mitigated");
+		break;
+	case PR_SPEC_PRCTL | PR_SPEC_DISABLE:
+		seq_printf(m, "thread mitigated");
+		break;
+	case PR_SPEC_PRCTL | PR_SPEC_ENABLE:
+		seq_printf(m, "thread vulnerable");
+		break;
+	case PR_SPEC_DISABLE:
+		seq_printf(m, "globally mitigated");
+		break;
+	default:
+		seq_printf(m, "vulnerable");
+		break;
+	}
+	seq_putc(m, '\n');
 }
 
 static inline void task_context_switch_counts(struct seq_file *m,
@@ -407,7 +458,7 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 
 	state = *get_task_state(task);
 	vsize = eip = esp = 0;
-	permitted = ptrace_may_access(task, PTRACE_MODE_READ | PTRACE_MODE_NOAUDIT);
+	permitted = ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS | PTRACE_MODE_NOAUDIT);
 	mm = get_task_mm(task);
 	if (mm) {
 		vsize = task_vsize(mm);
@@ -605,7 +656,7 @@ get_children_pid(struct inode *inode, struct pid *pid_prev, loff_t pos)
 	struct task_struct *start, *task;
 	struct pid *pid = NULL;
 
-	read_lock(&tasklist_lock);
+	tasklist_read_lock();
 
 	start = pid_task(proc_pid(inode), PIDTYPE_PID);
 	if (!start)
@@ -651,7 +702,7 @@ get_children_pid(struct inode *inode, struct pid *pid_prev, loff_t pos)
 	}
 
 out:
-	read_unlock(&tasklist_lock);
+	qread_unlock(&tasklist_lock);
 	return pid;
 }
 

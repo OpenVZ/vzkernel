@@ -677,6 +677,9 @@ static int dn_create(struct net *net, struct socket *sock, int protocol,
 {
 	struct sock *sk;
 
+	if (protocol < 0 || protocol > SK_PROTOCOL_MAX)
+		return -EINVAL;
+
 	if (!net_eq(net, &init_net))
 		return -EAFNOSUPPORT;
 
@@ -2030,7 +2033,7 @@ static int dn_sendmsg(struct kiocb *iocb, struct socket *sock,
 
 		skb_reserve(skb, 64 + DN_MAX_NSP_DATA_HEADER);
 
-		if (memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len)) {
+		if (memcpy_from_msg(skb_put(skb, len), msg, len)) {
 			err = -EFAULT;
 			goto out;
 		}
@@ -2078,9 +2081,9 @@ out_err:
 }
 
 static int dn_device_event(struct notifier_block *this, unsigned long event,
-			void *ptr)
+			   void *ptr)
 {
-	struct net_device *dev = (struct net_device *)ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 
 	if (!net_eq(dev_net(dev), &init_net))
 		return NOTIFY_DONE;
@@ -2379,7 +2382,7 @@ static int __init decnet_init(void)
 
 	sock_register(&dn_family_ops);
 	dev_add_pack(&dn_dix_packet_type);
-	register_netdevice_notifier(&dn_dev_notifier);
+	register_netdevice_notifier_rh(&dn_dev_notifier);
 
 	proc_create("decnet", S_IRUGO, init_net.proc_net, &dn_socket_seq_fops);
 	dn_register_sysctl();
@@ -2403,7 +2406,7 @@ static void __exit decnet_exit(void)
 
 	dn_unregister_sysctl();
 
-	unregister_netdevice_notifier(&dn_dev_notifier);
+	unregister_netdevice_notifier_rh(&dn_dev_notifier);
 
 	dn_route_cleanup();
 	dn_dev_cleanup();

@@ -62,7 +62,7 @@ int dccp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	nexthop = daddr = usin->sin_addr.s_addr;
 
 	inet_opt = rcu_dereference_protected(inet->inet_opt,
-					     sock_owned_by_user(sk));
+					     lockdep_sock_is_held(sk));
 	if (inet_opt != NULL && inet_opt->opt.srr) {
 		if (daddr == 0)
 			return -EINVAL;
@@ -75,7 +75,7 @@ int dccp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	rt = ip_route_connect(fl4, nexthop, inet->inet_saddr,
 			      RT_CONN_FLAGS(sk), sk->sk_bound_dev_if,
 			      IPPROTO_DCCP,
-			      orig_sport, orig_dport, sk, true);
+			      orig_sport, orig_dport, sk);
 	if (IS_ERR(rt))
 		return PTR_ERR(rt);
 
@@ -174,6 +174,7 @@ static inline void dccp_do_pmtu_discovery(struct sock *sk,
 	mtu = dst_mtu(dst);
 
 	if (inet->pmtudisc != IP_PMTUDISC_DONT &&
+	    ip_sk_accept_pmtu(sk) &&
 	    inet_csk(sk)->icsk_pmtu_cookie > mtu) {
 		dccp_sync_mss(sk, mtu);
 
@@ -261,7 +262,8 @@ static void dccp_v4_err(struct sk_buff *skb, u32 info)
 
 	switch (type) {
 	case ICMP_REDIRECT:
-		dccp_do_redirect(skb, sk);
+		if (!sock_owned_by_user(sk))
+			dccp_do_redirect(skb, sk);
 		goto out;
 	case ICMP_SOURCE_QUENCH:
 		/* Just silently ignore these. */
@@ -409,9 +411,9 @@ struct sock *dccp_v4_request_recv_sock(struct sock *sk, struct sk_buff *skb,
 
 	newinet		   = inet_sk(newsk);
 	ireq		   = inet_rsk(req);
-	newinet->inet_daddr	= ireq->rmt_addr;
-	newinet->inet_rcv_saddr = ireq->loc_addr;
-	newinet->inet_saddr	= ireq->loc_addr;
+	newinet->inet_daddr	= ireq->ir_rmt_addr;
+	newinet->inet_rcv_saddr = ireq->ir_loc_addr;
+	newinet->inet_saddr	= ireq->ir_loc_addr;
 	newinet->inet_opt	= ireq->opt;
 	ireq->opt	   = NULL;
 	newinet->mc_index  = inet_iif(skb);
@@ -516,10 +518,10 @@ static int dccp_v4_send_response(struct sock *sk, struct request_sock *req)
 		const struct inet_request_sock *ireq = inet_rsk(req);
 		struct dccp_hdr *dh = dccp_hdr(skb);
 
-		dh->dccph_checksum = dccp_v4_csum_finish(skb, ireq->loc_addr,
-							      ireq->rmt_addr);
-		err = ip_build_and_send_pkt(skb, sk, ireq->loc_addr,
-					    ireq->rmt_addr,
+		dh->dccph_checksum = dccp_v4_csum_finish(skb, ireq->ir_loc_addr,
+							      ireq->ir_rmt_addr);
+		err = ip_build_and_send_pkt(skb, sk, ireq->ir_loc_addr,
+					    ireq->ir_rmt_addr,
 					    ireq->opt);
 		err = net_xmit_eval(err);
 	}
@@ -641,8 +643,9 @@ int dccp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 		goto drop_and_free;
 
 	ireq = inet_rsk(req);
-	ireq->loc_addr = ip_hdr(skb)->daddr;
-	ireq->rmt_addr = ip_hdr(skb)->saddr;
+	ireq->ir_loc_addr = ip_hdr(skb)->daddr;
+	ireq->ir_rmt_addr = ip_hdr(skb)->saddr;
+	ireq->ireq_family = AF_INET;
 
 	/*
 	 * Step 3: Process LISTEN state
@@ -1022,7 +1025,6 @@ static struct inet_protosw dccp_v4_protosw = {
 	.protocol	= IPPROTO_DCCP,
 	.prot		= &dccp_v4_prot,
 	.ops		= &inet_dccp_ops,
-	.no_check	= 0,
 	.flags		= INET_PROTOSW_ICSK,
 };
 
@@ -1049,33 +1051,34 @@ static int __init dccp_v4_init(void)
 {
 	int err = proto_register(&dccp_v4_prot, 1);
 
-	if (err != 0)
+	if (err)
 		goto out;
-
-	err = inet_add_protocol(&dccp_v4_protocol, IPPROTO_DCCP);
-	if (err != 0)
-		goto out_proto_unregister;
 
 	inet_register_protosw(&dccp_v4_protosw);
 
 	err = register_pernet_subsys(&dccp_v4_ops);
 	if (err)
 		goto out_destroy_ctl_sock;
+
+	err = inet_add_protocol(&dccp_v4_protocol, IPPROTO_DCCP);
+	if (err)
+		goto out_proto_unregister;
+
 out:
 	return err;
+out_proto_unregister:
+	unregister_pernet_subsys(&dccp_v4_ops);
 out_destroy_ctl_sock:
 	inet_unregister_protosw(&dccp_v4_protosw);
-	inet_del_protocol(&dccp_v4_protocol, IPPROTO_DCCP);
-out_proto_unregister:
 	proto_unregister(&dccp_v4_prot);
 	goto out;
 }
 
 static void __exit dccp_v4_exit(void)
 {
+	inet_del_protocol(&dccp_v4_protocol, IPPROTO_DCCP);
 	unregister_pernet_subsys(&dccp_v4_ops);
 	inet_unregister_protosw(&dccp_v4_protosw);
-	inet_del_protocol(&dccp_v4_protocol, IPPROTO_DCCP);
 	proto_unregister(&dccp_v4_prot);
 }
 

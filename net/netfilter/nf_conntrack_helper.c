@@ -104,6 +104,9 @@ static void nf_conntrack_helper_fini_sysctl(struct net *net)
 }
 #endif /* CONFIG_SYSCTL */
 
+static DEFINE_MUTEX(nf_ct_nat_helpers_mutex);
+static struct list_head nf_ct_nat_helpers __read_mostly;
+
 /* Stupid hash, but collision free for the default registrations of the
  * helpers currently in the kernel. */
 static unsigned int helper_hash(const struct nf_conntrack_tuple *tuple)
@@ -167,6 +170,76 @@ nf_conntrack_helper_try_module_get(const char *name, u16 l3num, u8 protonum)
 }
 EXPORT_SYMBOL_GPL(nf_conntrack_helper_try_module_get);
 
+static struct nf_conntrack_nat_helper *
+nf_conntrack_nat_helper_find(const char *mod_name)
+{
+	struct nf_conntrack_nat_helper *cur;
+	bool found = false;
+
+	list_for_each_entry_rcu(cur, &nf_ct_nat_helpers, list) {
+		if (!strcmp(cur->mod_name, mod_name)) {
+			found = true;
+			break;
+		}
+	}
+	return found ? cur : NULL;
+}
+
+int
+nf_nat_helper_try_module_get(const char *name, u16 l3num, u8 protonum)
+{
+	struct nf_conntrack_helper *h;
+	struct nf_conntrack_nat_helper *nat;
+	char mod_name[NF_CT_HELPER_NAME_LEN];
+	int ret = 0;
+
+	rcu_read_lock();
+	h = __nf_conntrack_helper_find(name, l3num, protonum);
+	if (!h) {
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	nat = nf_conntrack_nat_helper_find(h->nat_mod_name);
+	if (!nat) {
+		snprintf(mod_name, sizeof(mod_name), "%s", h->nat_mod_name);
+		rcu_read_unlock();
+		request_module(mod_name);
+
+		rcu_read_lock();
+		nat = nf_conntrack_nat_helper_find(mod_name);
+		if (!nat) {
+			rcu_read_unlock();
+			return -ENOENT;
+		}
+	}
+
+	if (!try_module_get(nat->module))
+		ret = -ENOENT;
+
+	rcu_read_unlock();
+	return ret;
+}
+EXPORT_SYMBOL_GPL(nf_nat_helper_try_module_get);
+
+void nf_nat_helper_put(struct nf_conntrack_helper *helper)
+{
+	struct nf_conntrack_nat_helper *nat;
+
+	nat = nf_conntrack_nat_helper_find(helper->nat_mod_name);
+	if (WARN_ON_ONCE(!nat))
+		return;
+
+	module_put(nat->module);
+}
+EXPORT_SYMBOL_GPL(nf_nat_helper_put);
+
+void nf_conntrack_helper_put(struct nf_conntrack_helper *helper)
+{
+	module_put(helper->me);
+}
+EXPORT_SYMBOL_GPL(nf_conntrack_helper_put);
+
 struct nf_conn_help *
 nf_ct_helper_ext_add(struct nf_conn *ct,
 		     struct nf_conntrack_helper *helper, gfp_t gfp)
@@ -209,16 +282,8 @@ int __nf_ct_try_assign_helper(struct nf_conn *ct, struct nf_conn *tmpl,
 	}
 
 	help = nfct_help(ct);
-	if (net->ct.sysctl_auto_assign_helper && helper == NULL) {
+	if (net->ct.sysctl_auto_assign_helper && helper == NULL)
 		helper = __nf_ct_helper_find(&ct->tuplehash[IP_CT_DIR_REPLY].tuple);
-		if (unlikely(!net->ct.auto_assign_helper_warned && helper)) {
-			pr_info("nf_conntrack: automatic helper "
-				"assignment is deprecated and it will "
-				"be removed soon. Use the iptables CT target "
-				"to attach helpers instead.\n");
-			net->ct.auto_assign_helper_warned = true;
-		}
-	}
 
 	if (helper == NULL) {
 		if (help)
@@ -250,16 +315,14 @@ out:
 }
 EXPORT_SYMBOL_GPL(__nf_ct_try_assign_helper);
 
+/* appropriate ct lock protecting must be taken by caller */
 static inline int unhelp(struct nf_conntrack_tuple_hash *i,
 			 const struct nf_conntrack_helper *me)
 {
 	struct nf_conn *ct = nf_ct_tuplehash_to_ctrack(i);
 	struct nf_conn_help *help = nfct_help(ct);
 
-	if (help && rcu_dereference_protected(
-			help->helper,
-			lockdep_is_held(&nf_conntrack_lock)
-			) == me) {
+	if (help && rcu_dereference_raw(help->helper) == me) {
 		nf_conntrack_event(IPCT_HELPER, ct);
 		RCU_INIT_POINTER(help->helper, NULL);
 	}
@@ -284,17 +347,17 @@ static LIST_HEAD(nf_ct_helper_expectfn_list);
 
 void nf_ct_helper_expectfn_register(struct nf_ct_helper_expectfn *n)
 {
-	spin_lock_bh(&nf_conntrack_lock);
+	spin_lock_bh(&nf_conntrack_expect_lock);
 	list_add_rcu(&n->head, &nf_ct_helper_expectfn_list);
-	spin_unlock_bh(&nf_conntrack_lock);
+	spin_unlock_bh(&nf_conntrack_expect_lock);
 }
 EXPORT_SYMBOL_GPL(nf_ct_helper_expectfn_register);
 
 void nf_ct_helper_expectfn_unregister(struct nf_ct_helper_expectfn *n)
 {
-	spin_lock_bh(&nf_conntrack_lock);
+	spin_lock_bh(&nf_conntrack_expect_lock);
 	list_del_rcu(&n->head);
-	spin_unlock_bh(&nf_conntrack_lock);
+	spin_unlock_bh(&nf_conntrack_expect_lock);
 }
 EXPORT_SYMBOL_GPL(nf_ct_helper_expectfn_unregister);
 
@@ -396,15 +459,17 @@ static void __nf_conntrack_helper_unregister(struct nf_conntrack_helper *me,
 	const struct hlist_node *next;
 	const struct hlist_nulls_node *nn;
 	unsigned int i;
+	int cpu;
 
 	/* Get rid of expectations */
+	spin_lock_bh(&nf_conntrack_expect_lock);
 	for (i = 0; i < nf_ct_expect_hsize; i++) {
 		hlist_for_each_entry_safe(exp, next,
 					  &net->ct.expect_hash[i], hnode) {
 			struct nf_conn_help *help = nfct_help(exp->master);
 			if ((rcu_dereference_protected(
 					help->helper,
-					lockdep_is_held(&nf_conntrack_lock)
+					lockdep_is_held(&nf_conntrack_expect_lock)
 					) == me || exp->helper == me) &&
 			    del_timer(&exp->timeout)) {
 				nf_ct_unlink_expect(exp);
@@ -412,14 +477,28 @@ static void __nf_conntrack_helper_unregister(struct nf_conntrack_helper *me,
 			}
 		}
 	}
+	spin_unlock_bh(&nf_conntrack_expect_lock);
 
 	/* Get rid of expecteds, set helpers to NULL. */
-	hlist_nulls_for_each_entry(h, nn, &net->ct.unconfirmed, hnnode)
-		unhelp(h, me);
-	for (i = 0; i < net->ct.htable_size; i++) {
-		hlist_nulls_for_each_entry(h, nn, &net->ct.hash[i], hnnode)
+	for_each_possible_cpu(cpu) {
+		struct ct_pcpu *pcpu = per_cpu_ptr(net->ct.pcpu_lists, cpu);
+
+		spin_lock_bh(&pcpu->lock);
+		hlist_nulls_for_each_entry(h, nn, &pcpu->unconfirmed, hnnode)
 			unhelp(h, me);
+		spin_unlock_bh(&pcpu->lock);
 	}
+	local_bh_disable();
+	for (i = 0; i < net->ct.htable_size; i++) {
+		spin_lock(&nf_conntrack_locks[i % CONNTRACK_LOCKS]);
+		if (i < net->ct.htable_size) {
+			gmb();
+			hlist_nulls_for_each_entry(h, nn, &net->ct.hash[i], hnnode)
+				unhelp(h, me);
+		}
+		spin_unlock(&nf_conntrack_locks[i % CONNTRACK_LOCKS]);
+	}
+	local_bh_enable();
 }
 
 void nf_conntrack_helper_unregister(struct nf_conntrack_helper *me)
@@ -437,13 +516,86 @@ void nf_conntrack_helper_unregister(struct nf_conntrack_helper *me)
 	synchronize_rcu();
 
 	rtnl_lock();
-	spin_lock_bh(&nf_conntrack_lock);
 	for_each_net(net)
 		__nf_conntrack_helper_unregister(me, net);
-	spin_unlock_bh(&nf_conntrack_lock);
 	rtnl_unlock();
 }
 EXPORT_SYMBOL_GPL(nf_conntrack_helper_unregister);
+
+void nf_nat_helper_register(struct nf_conntrack_nat_helper *nat)
+{
+	mutex_lock(&nf_ct_nat_helpers_mutex);
+	list_add_rcu(&nat->list, &nf_ct_nat_helpers);
+	mutex_unlock(&nf_ct_nat_helpers_mutex);
+}
+EXPORT_SYMBOL_GPL(nf_nat_helper_register);
+
+void nf_nat_helper_unregister(struct nf_conntrack_nat_helper *nat)
+{
+	mutex_lock(&nf_ct_nat_helpers_mutex);
+	list_del_rcu(&nat->list);
+	mutex_unlock(&nf_ct_nat_helpers_mutex);
+}
+EXPORT_SYMBOL_GPL(nf_nat_helper_unregister);
+
+void nf_ct_helper_init(struct nf_conntrack_helper *helper,
+		       u16 l3num, u16 protonum, const char *name,
+		       u16 default_port, u16 spec_port, u32 id,
+		       const struct nf_conntrack_expect_policy *exp_pol,
+		       u32 expect_class_max, u32 data_len,
+		       int (*help)(struct sk_buff *skb, unsigned int protoff,
+				   struct nf_conn *ct,
+				   enum ip_conntrack_info ctinfo),
+		       int (*from_nlattr)(struct nlattr *attr,
+					  struct nf_conn *ct),
+		       struct module *module)
+{
+	helper->tuple.src.l3num = l3num;
+	helper->tuple.dst.protonum = protonum;
+	helper->tuple.src.u.all = htons(spec_port);
+	helper->expect_policy = exp_pol;
+	helper->expect_class_max = expect_class_max;
+	helper->data_len = data_len;
+	helper->help = help;
+	helper->from_nlattr = from_nlattr;
+	helper->me = module;
+	snprintf(helper->nat_mod_name, sizeof(helper->nat_mod_name),
+		 NF_NAT_HELPER_PREFIX "%s", name);
+
+	if (spec_port == default_port)
+		snprintf(helper->name, sizeof(helper->name), "%s", name);
+	else
+		snprintf(helper->name, sizeof(helper->name), "%s-%u", name, id);
+}
+EXPORT_SYMBOL_GPL(nf_ct_helper_init);
+
+int nf_conntrack_helpers_register(struct nf_conntrack_helper *helper,
+				  unsigned int n)
+{
+	unsigned int i;
+	int err = 0;
+
+	for (i = 0; i < n; i++) {
+		err = nf_conntrack_helper_register(&helper[i]);
+		if (err < 0)
+			goto err;
+	}
+
+	return err;
+err:
+	if (i > 0)
+		nf_conntrack_helpers_unregister(helper, i);
+	return err;
+}
+EXPORT_SYMBOL_GPL(nf_conntrack_helpers_register);
+
+void nf_conntrack_helpers_unregister(struct nf_conntrack_helper *helper,
+				unsigned int n)
+{
+	while (n-- > 0)
+		nf_conntrack_helper_unregister(&helper[n]);
+}
+EXPORT_SYMBOL_GPL(nf_conntrack_helpers_unregister);
 
 static struct nf_ct_ext_type helper_extend __read_mostly = {
 	.len	= sizeof(struct nf_conn_help),
@@ -453,7 +605,6 @@ static struct nf_ct_ext_type helper_extend __read_mostly = {
 
 int nf_conntrack_helper_pernet_init(struct net *net)
 {
-	net->ct.auto_assign_helper_warned = false;
 	net->ct.sysctl_auto_assign_helper = nf_ct_auto_assign_helper;
 	return nf_conntrack_helper_init_sysctl(net);
 }
@@ -478,6 +629,7 @@ int nf_conntrack_helper_init(void)
 		goto out_extend;
 	}
 
+	INIT_LIST_HEAD(&nf_ct_nat_helpers);
 	return 0;
 out_extend:
 	nf_ct_free_hashtable(nf_ct_helper_hash, nf_ct_helper_hsize);

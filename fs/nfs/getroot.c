@@ -95,7 +95,7 @@ struct dentry *nfs_get_root(struct super_block *sb, struct nfs_fh *mntfh,
 		goto out;
 	}
 
-	inode = nfs_fhget(sb, mntfh, fsinfo.fattr);
+	inode = nfs_fhget(sb, mntfh, fsinfo.fattr, NULL);
 	if (IS_ERR(inode)) {
 		dprintk("nfs_get_root: get root inode failed\n");
 		ret = ERR_CAST(inode);
@@ -120,7 +120,8 @@ struct dentry *nfs_get_root(struct super_block *sb, struct nfs_fh *mntfh,
 
 	security_d_instantiate(ret, inode);
 	spin_lock(&ret->d_lock);
-	if (IS_ROOT(ret) && !(ret->d_flags & DCACHE_NFSFS_RENAMED)) {
+	if (IS_ROOT(ret) && !ret->d_fsdata &&
+	    !(ret->d_flags & DCACHE_NFSFS_RENAMED)) {
 		ret->d_fsdata = name;
 		name = NULL;
 	}

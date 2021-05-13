@@ -47,10 +47,18 @@ struct snd_dma_device {
 #define SNDRV_DMA_TYPE_UNKNOWN		0	/* not defined */
 #define SNDRV_DMA_TYPE_CONTINUOUS	1	/* continuous no-DMA memory */
 #define SNDRV_DMA_TYPE_DEV		2	/* generic device continuous */
+#define SNDRV_DMA_TYPE_DEV_UC		5	/* continuous non-cahced */
 #ifdef CONFIG_SND_DMA_SGBUF
 #define SNDRV_DMA_TYPE_DEV_SG		3	/* generic device SG-buffer */
+#define SNDRV_DMA_TYPE_DEV_UC_SG	6	/* SG non-cached */
 #else
 #define SNDRV_DMA_TYPE_DEV_SG	SNDRV_DMA_TYPE_DEV /* no SG-buf support */
+#define SNDRV_DMA_TYPE_DEV_UC_SG	SNDRV_DMA_TYPE_DEV_UC
+#endif
+#ifdef CONFIG_GENERIC_ALLOCATOR
+#define SNDRV_DMA_TYPE_DEV_IRAM		4	/* generic device iram-buffer */
+#else
+#define SNDRV_DMA_TYPE_DEV_IRAM	SNDRV_DMA_TYPE_DEV
 #endif
 
 /*
@@ -103,7 +111,7 @@ static inline dma_addr_t snd_sgbuf_get_addr(struct snd_dma_buffer *dmab,
 {
 	struct snd_sg_buf *sgbuf = dmab->private_data;
 	dma_addr_t addr = sgbuf->table[offset >> PAGE_SHIFT].addr;
-	addr &= PAGE_MASK;
+	addr &= ~((dma_addr_t)PAGE_SIZE - 1);
 	return addr + offset % PAGE_SIZE;
 }
 
@@ -143,17 +151,6 @@ int snd_dma_alloc_pages(int type, struct device *dev, size_t size,
 int snd_dma_alloc_pages_fallback(int type, struct device *dev, size_t size,
                                  struct snd_dma_buffer *dmab);
 void snd_dma_free_pages(struct snd_dma_buffer *dmab);
-
-/* buffer-preservation managements */
-
-#define snd_dma_pci_buf_id(pci)	(((unsigned int)(pci)->vendor << 16) | (pci)->device)
-
-size_t snd_dma_get_reserved_buf(struct snd_dma_buffer *dmab, unsigned int id);
-int snd_dma_reserve_buf(struct snd_dma_buffer *dmab, unsigned int id);
-
-/* basic memory allocation functions */
-void *snd_malloc_pages(size_t size, gfp_t gfp_flags);
-void snd_free_pages(void *ptr, size_t size);
 
 #endif /* __SOUND_MEMALLOC_H */
 

@@ -87,12 +87,18 @@ static int drff_init(struct hid_device *hid)
 {
 	struct drff_device *drff;
 	struct hid_report *report;
-	struct hid_input *hidinput = list_first_entry(&hid->inputs,
-						struct hid_input, list);
+	struct hid_input *hidinput;
 	struct list_head *report_list =
 			&hid->report_enum[HID_OUTPUT_REPORT].report_list;
-	struct input_dev *dev = hidinput->input;
+	struct input_dev *dev;
 	int error;
+
+	if (list_empty(&hid->inputs)) {
+		hid_err(hid, "no inputs found\n");
+		return -ENODEV;
+	}
+	hidinput = list_first_entry(&hid->inputs, struct hid_input, list);
+	dev = hidinput->input;
 
 	if (list_empty(report_list)) {
 		hid_err(hid, "no output reports found\n");
@@ -248,6 +254,30 @@ static __u8 *dr_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 	return rdesc;
 }
 
+#define map_abs(c)      hid_map_usage(hi, usage, bit, max, EV_ABS, (c))
+#define map_rel(c)      hid_map_usage(hi, usage, bit, max, EV_REL, (c))
+
+static int dr_input_mapping(struct hid_device *hdev, struct hid_input *hi,
+			    struct hid_field *field, struct hid_usage *usage,
+			    unsigned long **bit, int *max)
+{
+	switch (usage->hid) {
+	/*
+	 * revert to the old hid-input behavior where axes
+	 * can be randomly assigned when hid->usage is reused.
+	 */
+	case HID_GD_X: case HID_GD_Y: case HID_GD_Z:
+	case HID_GD_RX: case HID_GD_RY: case HID_GD_RZ:
+		if (field->flags & HID_MAIN_ITEM_RELATIVE)
+			map_rel(usage->hid & 0xf);
+		else
+			map_abs(usage->hid & 0xf);
+		return 1;
+	}
+
+	return 0;
+}
+
 static int dr_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
 	int ret;
@@ -294,6 +324,7 @@ static struct hid_driver dr_driver = {
 	.id_table = dr_devices,
 	.report_fixup = dr_report_fixup,
 	.probe = dr_probe,
+	.input_mapping = dr_input_mapping,
 };
 module_hid_driver(dr_driver);
 

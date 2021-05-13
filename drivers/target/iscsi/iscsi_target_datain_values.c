@@ -1,9 +1,7 @@
 /*******************************************************************************
  * This file contains the iSCSI Target DataIN value generation functions.
  *
- * \u00a9 Copyright 2007-2011 RisingTide Systems LLC.
- *
- * Licensed to the Linux Foundation under the General Public License (GPL) version 2.
+ * (c) Copyright 2007-2013 Datera, Inc.
  *
  * Author: Nicholas A. Bellinger <nab@linux-iscsi.org>
  *
@@ -20,7 +18,7 @@
 
 #include <scsi/iscsi_proto.h>
 
-#include "iscsi_target_core.h"
+#include <target/iscsi/iscsi_target_core.h>
 #include "iscsi_target_seq_pdu_list.h"
 #include "iscsi_target_erl1.h"
 #include "iscsi_target_util.h"
@@ -129,10 +127,12 @@ static struct iscsi_datain_req *iscsit_set_datain_values_yes_and_yes(
 		if ((next_burst_len +
 		     conn->conn_ops->MaxRecvDataSegmentLength) <
 		     conn->sess->sess_ops->MaxBurstLength) {
+			gmb();
 			datain->length =
 				conn->conn_ops->MaxRecvDataSegmentLength;
 			next_burst_len += datain->length;
 		} else {
+			gmb();
 			datain->length = (conn->sess->sess_ops->MaxBurstLength -
 					  next_burst_len);
 			next_burst_len = 0;
@@ -526,3 +526,4 @@ struct iscsi_datain_req *iscsit_get_datain_values(
 
 	return NULL;
 }
+EXPORT_SYMBOL(iscsit_get_datain_values);

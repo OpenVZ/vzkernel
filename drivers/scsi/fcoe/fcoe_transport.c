@@ -83,6 +83,41 @@ static struct notifier_block libfcoe_notifier = {
 	.notifier_call = libfcoe_device_notification,
 };
 
+static const struct {
+	u32 fc_port_speed;
+#define SPEED_2000	2000
+#define SPEED_4000	4000
+#define SPEED_8000	8000
+#define SPEED_16000	16000
+#define SPEED_32000	32000
+	u32 eth_port_speed;
+} fcoe_port_speed_mapping[] = {
+	{ FC_PORTSPEED_1GBIT,   SPEED_1000   },
+	{ FC_PORTSPEED_2GBIT,   SPEED_2000   },
+	{ FC_PORTSPEED_4GBIT,   SPEED_4000   },
+	{ FC_PORTSPEED_8GBIT,   SPEED_8000   },
+	{ FC_PORTSPEED_10GBIT,  SPEED_10000  },
+	{ FC_PORTSPEED_16GBIT,  SPEED_16000  },
+	{ FC_PORTSPEED_20GBIT,  SPEED_20000  },
+	{ FC_PORTSPEED_25GBIT,  SPEED_25000  },
+	{ FC_PORTSPEED_32GBIT,  SPEED_32000  },
+	{ FC_PORTSPEED_40GBIT,  SPEED_40000  },
+	{ FC_PORTSPEED_50GBIT,  SPEED_50000  },
+	{ FC_PORTSPEED_100GBIT, SPEED_100000 },
+};
+
+static inline u32 eth2fc_speed(u32 eth_port_speed)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(fcoe_port_speed_mapping); i++) {
+		if (fcoe_port_speed_mapping[i].eth_port_speed == eth_port_speed)
+			return fcoe_port_speed_mapping[i].fc_port_speed;
+	}
+
+	return FC_PORTSPEED_UNKNOWN;
+}
+
 /**
  * fcoe_link_speed_update() - Update the supported and actual link speeds
  * @lport: The local port to update speeds for
@@ -93,25 +128,40 @@ static struct notifier_block libfcoe_notifier = {
 int fcoe_link_speed_update(struct fc_lport *lport)
 {
 	struct net_device *netdev = fcoe_get_netdev(lport);
-	struct ethtool_cmd ecmd;
+	struct ethtool_link_ksettings ecmd;
 
-	if (!__ethtool_get_settings(netdev, &ecmd)) {
-		lport->link_supported_speeds &=
-			~(FC_PORTSPEED_1GBIT | FC_PORTSPEED_10GBIT);
-		if (ecmd.supported & (SUPPORTED_1000baseT_Half |
-				      SUPPORTED_1000baseT_Full))
+	if (!__ethtool_get_link_ksettings(netdev, &ecmd)) {
+		lport->link_supported_speeds &= ~(FC_PORTSPEED_1GBIT  |
+		                                  FC_PORTSPEED_10GBIT |
+		                                  FC_PORTSPEED_20GBIT |
+		                                  FC_PORTSPEED_40GBIT);
+
+		if (ecmd.link_modes.supported[0] & (
+			    SUPPORTED_1000baseT_Half |
+			    SUPPORTED_1000baseT_Full |
+			    SUPPORTED_1000baseKX_Full))
 			lport->link_supported_speeds |= FC_PORTSPEED_1GBIT;
-		if (ecmd.supported & SUPPORTED_10000baseT_Full)
-			lport->link_supported_speeds |=
-				FC_PORTSPEED_10GBIT;
-		switch (ethtool_cmd_speed(&ecmd)) {
-		case SPEED_1000:
-			lport->link_speed = FC_PORTSPEED_1GBIT;
-			break;
-		case SPEED_10000:
-			lport->link_speed = FC_PORTSPEED_10GBIT;
-			break;
-		}
+
+		if (ecmd.link_modes.supported[0] & (
+			    SUPPORTED_10000baseT_Full   |
+			    SUPPORTED_10000baseKX4_Full |
+			    SUPPORTED_10000baseKR_Full  |
+			    SUPPORTED_10000baseR_FEC))
+			lport->link_supported_speeds |= FC_PORTSPEED_10GBIT;
+
+		if (ecmd.link_modes.supported[0] & (
+			    SUPPORTED_20000baseMLD2_Full |
+			    SUPPORTED_20000baseKR2_Full))
+			lport->link_supported_speeds |= FC_PORTSPEED_20GBIT;
+
+		if (ecmd.link_modes.supported[0] & (
+			    SUPPORTED_40000baseKR4_Full |
+			    SUPPORTED_40000baseCR4_Full |
+			    SUPPORTED_40000baseSR4_Full |
+			    SUPPORTED_40000baseLR4_Full))
+			lport->link_supported_speeds |= FC_PORTSPEED_40GBIT;
+
+		lport->link_speed = eth2fc_speed(ecmd.base.speed);
 		return 0;
 	}
 	return -1;
@@ -587,7 +637,7 @@ static int fcoe_transport_show(char *buffer, const struct kernel_param *kp)
 
 static int __init fcoe_transport_init(void)
 {
-	register_netdevice_notifier(&libfcoe_notifier);
+	register_netdevice_notifier_rh(&libfcoe_notifier);
 	return 0;
 }
 
@@ -595,7 +645,7 @@ static int fcoe_transport_exit(void)
 {
 	struct fcoe_transport *ft;
 
-	unregister_netdevice_notifier(&libfcoe_notifier);
+	unregister_netdevice_notifier_rh(&libfcoe_notifier);
 	mutex_lock(&ft_mutex);
 	list_for_each_entry(ft, &fcoe_transports, list)
 		printk(KERN_ERR "FCoE transport %s is still attached!\n",
@@ -704,7 +754,7 @@ static struct net_device *fcoe_if_to_netdev(const char *buffer)
 static int libfcoe_device_notification(struct notifier_block *notifier,
 				    ulong event, void *ptr)
 {
-	struct net_device *netdev = ptr;
+	struct net_device *netdev = netdev_notifier_info_to_dev(ptr);
 
 	switch (event) {
 	case NETDEV_UNREGISTER:

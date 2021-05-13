@@ -17,6 +17,7 @@
 #include <linux/kernel.h>
 #include <linux/skbuff.h>
 
+struct crypto_instance;
 struct module;
 struct rtattr;
 struct seq_file;
@@ -29,6 +30,7 @@ struct crypto_type {
 	void (*show)(struct seq_file *m, struct crypto_alg *alg);
 	int (*report)(struct sk_buff *skb, struct crypto_alg *alg);
 	struct crypto_alg *(*lookup)(const char *name, u32 type, u32 mask);
+	void (*free)(struct crypto_instance *inst);
 
 	unsigned int type;
 	unsigned int maskclear;
@@ -100,9 +102,12 @@ struct blkcipher_walk {
 	void *page;
 	u8 *buffer;
 	u8 *iv;
+	unsigned int ivsize;
 
 	int flags;
-	unsigned int blocksize;
+	unsigned int walk_blocksize;
+	unsigned int cipher_blocksize;
+	unsigned int alignmask;
 };
 
 struct ablkcipher_walk {
@@ -134,13 +139,15 @@ struct crypto_template *crypto_lookup_template(const char *name);
 
 int crypto_register_instance(struct crypto_template *tmpl,
 			     struct crypto_instance *inst);
-int crypto_unregister_instance(struct crypto_alg *alg);
+int crypto_unregister_instance(struct crypto_instance *inst);
 
 int crypto_init_spawn(struct crypto_spawn *spawn, struct crypto_alg *alg,
 		      struct crypto_instance *inst, u32 mask);
 int crypto_init_spawn2(struct crypto_spawn *spawn, struct crypto_alg *alg,
 		       struct crypto_instance *inst,
 		       const struct crypto_type *frontend);
+int crypto_grab_spawn(struct crypto_spawn *spawn, const char *name,
+		      u32 type, u32 mask);
 
 void crypto_drop_spawn(struct crypto_spawn *spawn);
 struct crypto_tfm *crypto_spawn_tfm(struct crypto_spawn *spawn, u32 type,
@@ -386,5 +393,21 @@ static inline int crypto_requires_sync(u32 type, u32 mask)
 	return (type ^ CRYPTO_ALG_ASYNC) & mask & CRYPTO_ALG_ASYNC;
 }
 
-#endif	/* _CRYPTO_ALGAPI_H */
+noinline unsigned long __crypto_memneq(const void *a, const void *b, size_t size);
 
+/**
+ * crypto_memneq - Compare two areas of memory without leaking
+ *		   timing information.
+ *
+ * @a: One area of memory
+ * @b: Another area of memory
+ * @size: The size of the area.
+ *
+ * Returns 0 when data is equal, 1 otherwise.
+ */
+static inline int crypto_memneq(const void *a, const void *b, size_t size)
+{
+	return __crypto_memneq(a, b, size) != 0UL ? 1 : 0;
+}
+
+#endif	/* _CRYPTO_ALGAPI_H */

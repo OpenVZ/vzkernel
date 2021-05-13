@@ -35,6 +35,7 @@
 #include <linux/elf-fdpic.h>
 #include <linux/elfcore.h>
 #include <linux/coredump.h>
+#include <linux/dax.h>
 
 #include <asm/uaccess.h>
 #include <asm/param.h>
@@ -317,8 +318,8 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 		goto error;
 
 	/* there's now no turning back... the old userspace image is dead,
-	 * defunct, deceased, etc. after this point we have to exit via
-	 * error_kill */
+	 * defunct, deceased, etc.
+	 */
 	set_personality(PER_LINUX_FDPIC);
 	if (elf_read_implies_exec(&exec_params.hdr, executable_stack))
 		current->personality |= READ_IMPLIES_EXEC;
@@ -343,24 +344,22 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 
 	retval = setup_arg_pages(bprm, current->mm->start_stack,
 				 executable_stack);
-	if (retval < 0) {
-		send_sig(SIGKILL, current, 0);
-		goto error_kill;
-	}
+	if (retval < 0)
+		goto error;
 #endif
 
 	/* load the executable and interpreter into memory */
 	retval = elf_fdpic_map_file(&exec_params, bprm->file, current->mm,
 				    "executable");
 	if (retval < 0)
-		goto error_kill;
+		goto error;
 
 	if (interpreter_name) {
 		retval = elf_fdpic_map_file(&interp_params, interpreter,
 					    current->mm, "interpreter");
 		if (retval < 0) {
 			printk(KERN_ERR "Unable to load interpreter\n");
-			goto error_kill;
+			goto error;
 		}
 
 		allow_write_access(interpreter);
@@ -397,7 +396,7 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 	if (IS_ERR_VALUE(current->mm->start_brk)) {
 		retval = current->mm->start_brk;
 		current->mm->start_brk = 0;
-		goto error_kill;
+		goto error;
 	}
 
 	current->mm->brk = current->mm->start_brk;
@@ -410,7 +409,7 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 	install_exec_creds(bprm);
 	if (create_elf_fdpic_tables(bprm, current->mm,
 				    &exec_params, &interp_params) < 0)
-		goto error_kill;
+		goto error;
 
 	kdebug("- start_code  %lx", current->mm->start_code);
 	kdebug("- end_code    %lx", current->mm->end_code);
@@ -449,12 +448,6 @@ error:
 	kfree(interp_params.phdrs);
 	kfree(interp_params.loadmap);
 	return retval;
-
-	/* unrecoverable error - kill the process */
-error_kill:
-	send_sig(SIGSEGV, current, 0);
-	goto error;
-
 }
 
 /*****************************************************************************/
@@ -1212,6 +1205,20 @@ static int maydump(struct vm_area_struct *vma, unsigned long mm_flags)
 	if (!(vma->vm_flags & VM_READ)) {
 		kdcore("%08lx: %08lx: no (!read)", vma->vm_start, vma->vm_flags);
 		return 0;
+	}
+
+	/* support for DAX */
+	if (vma_is_dax(vma)) {
+		if (vma->vm_flags & VM_SHARED) {
+			dump_ok = test_bit(MMF_DUMP_DAX_SHARED, &mm_flags);
+			kdcore("%08lx: %08lx: %s (DAX shared)", vma->vm_start,
+			       vma->vm_flags, dump_ok ? "yes" : "no");
+		} else {
+			dump_ok = test_bit(MMF_DUMP_DAX_PRIVATE, &mm_flags);
+			kdcore("%08lx: %08lx: %s (DAX private)", vma->vm_start,
+			       vma->vm_flags, dump_ok ? "yes" : "no");
+		}
+		return dump_ok;
 	}
 
 	/* By default, dump shared memory if mapped from an anonymous file. */

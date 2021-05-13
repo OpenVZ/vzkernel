@@ -137,6 +137,7 @@ static struct scsi_host_template arcmsr_scsi_host_template = {
 	.cmd_per_lun		= ARCMSR_MAX_CMD_PERLUN,
 	.use_clustering		= ENABLE_CLUSTERING,
 	.shost_attrs		= arcmsr_host_attrs,
+	.no_write_same		= 1,
 };
 static struct pci_device_id arcmsr_device_id_table[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_ARECA, PCI_DEVICE_ID_ARECA_1110)},
@@ -669,14 +670,13 @@ static int arcmsr_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	arcmsr_iop_init(acb);
 	error = scsi_add_host(host, &pdev->dev);
 	if(error){
-		goto RAID_controller_stop;
+		goto free_ccb_pool;
 	}
 	error = request_irq(pdev->irq, arcmsr_do_interrupt, IRQF_SHARED, "arcmsr", acb);
 	if(error){
 		goto scsi_host_remove;
 	}
 	host->irq = pdev->irq;
-    	scsi_scan_host(host);
 	INIT_WORK(&acb->arcmsr_do_message_isr_bh, arcmsr_message_isr_bh_fn);
 	atomic_set(&acb->rq_map_token, 16);
 	atomic_set(&acb->ante_token_value, 16);
@@ -688,11 +688,15 @@ static int arcmsr_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	add_timer(&acb->eternal_timer);
 	if(arcmsr_alloc_sysfs_attr(acb))
 		goto out_free_sysfs;
+	scsi_scan_host(host);
 	return 0;
 out_free_sysfs:
+	del_timer_sync(&acb->eternal_timer);
+	flush_work(&acb->arcmsr_do_message_isr_bh);
+	free_irq(pdev->irq, acb);
 scsi_host_remove:
 	scsi_remove_host(host);
-RAID_controller_stop:
+free_ccb_pool:
 	arcmsr_stop_adapter_bgrb(acb);
 	arcmsr_flush_adapter_cache(acb);
 	arcmsr_free_ccb_pool(acb);

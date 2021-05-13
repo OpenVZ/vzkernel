@@ -56,6 +56,11 @@ config ACPI_PROCFS
 
 	  Say N to delete /proc/acpi/ files that have moved to /sys/
 
+config ACPI_LPIT
+	bool
+	depends on X86_64
+	default y
+
 config ACPI_PROCFS_POWER
 	bool "Deprecated power /proc/acpi directories"
 	depends on PROC_FS
@@ -180,11 +185,19 @@ config ACPI_DOCK
 	  This driver supports ACPI-controlled docking stations and removable
 	  drive bays such as the IBM Ultrabay and the Dell Module Bay.
 
-config ACPI_I2C
-	def_tristate I2C
-	depends on I2C
+config ACPI_CPPC_LIB
+	bool
+	depends on ACPI_PROCESSOR
+	depends on !ACPI_CPU_FREQ_PSS
+	select MAILBOX
+	select PCC
 	help
-	  ACPI I2C enumeration support.
+	  If this option is enabled, this file implements common functionality
+	  to parse CPPC tables as described in the ACPI 5.1+ spec. The
+	  routines implemented are meant to be used by other
+	  drivers to control CPU performance using CPPC semantics.
+	  If your platform does not support CPPC in firmware,
+	  leave this option disabled.
 
 config ACPI_PROCESSOR
 	tristate "Processor"
@@ -274,17 +287,6 @@ config ACPI_INITRD_TABLE_OVERRIDE
 	  via initrd. No functional change if no ACPI tables are passed via
 	  initrd, therefore it's safe to say Y.
 	  See Documentation/acpi/initrd_table_override.txt for details
-
-config ACPI_BLACKLIST_YEAR
-	int "Disable ACPI for systems before Jan 1st this year" if X86_32
-	default 0
-	help
-	  Enter a 4-digit year, e.g., 2001, to disable ACPI by default
-	  on platforms with DMI BIOS date before January 1st that year.
-	  "acpi=force" can be used to override this mechanism.
-
-	  Enter 0 to disable this mechanism and allow ACPI to
-	  run by default no matter what the year.  (default)
 
 config ACPI_DEBUG
 	bool "Debug Statements"
@@ -394,6 +396,39 @@ config ACPI_BGRT
 	  data from the firmware boot splash. It will appear under
 	  /sys/firmware/acpi/bgrt/ .
 
+source "drivers/acpi/nfit/Kconfig"
+
 source "drivers/acpi/apei/Kconfig"
+source "drivers/acpi/dptf/Kconfig"
+
+config ACPI_WATCHDOG
+	bool
+
+config ACPI_EXTLOG
+	tristate "Extended Error Log support"
+	depends on X86_MCE && X86_LOCAL_APIC
+	select EFI
+	select UEFI_CPER
+	select RAS
+	default n
+	help
+	  Certain usages such as Predictive Failure Analysis (PFA) require
+	  more information about the error than what can be described in
+	  processor machine check banks. Most server processors log
+	  additional information about the error in processor uncore
+	  registers. Since the addresses and layout of these registers vary
+	  widely from one processor to another, system software cannot
+	  readily make use of them. To complicate matters further, some of
+	  the additional error information cannot be constructed without
+	  detailed knowledge about platform topology.
+
+	  Enhanced MCA Logging allows firmware to provide additional error
+	  information to system software, synchronous with MCE or CMCI. This
+	  driver adds support for that functionality with corresponding
+	  tracepoint which carries that information to userspace.
+
+config ACPI_ADXL
+	bool
+
 
 endif	# ACPI

@@ -1,22 +1,25 @@
 #ifndef __NET_FRAG_H__
 #define __NET_FRAG_H__
 
-#include <linux/percpu_counter.h>
+#include <linux/percpu_counter.h> /* Only needed for RH KABI */
 
 struct netns_frags {
 	int			nqueues;
 	struct list_head	lru_list;
 	spinlock_t		lru_lock;
 
-	/* The percpu_counter "mem" need to be cacheline aligned.
-	 *  mem.count must not share cacheline with other writers
+	/* RHEL notes: this struct is frozen by KABI as it is embedded
+	 * into other netns structs.  Fortunately the cacheline
+	 * alignment contains enough padding.
 	 */
-	struct percpu_counter   mem ____cacheline_aligned_in_smp;
+	RH_KABI_DEPRECATE(struct percpu_counter, mem ____cacheline_aligned_in_smp)
 
 	/* sysctls */
 	int			timeout;
 	int			high_thresh;
 	int			low_thresh;
+
+	RH_KABI_EXTEND(atomic_t	mem)
 };
 
 struct inet_frag_queue {
@@ -25,8 +28,10 @@ struct inet_frag_queue {
 	struct list_head	lru_list;   /* lru list member */
 	struct hlist_node	list;
 	atomic_t		refcnt;
-	struct sk_buff		*fragments; /* list of received fragments */
+	struct sk_buff		*fragments;  /* Used in IPv6. */
+	struct rb_root		rb_fragments; /* Used in IPv4. */
 	struct sk_buff		*fragments_tail;
+	struct sk_buff		*last_run_head; /* the head of the last "run". see ip_fragment.c */
 	ktime_t			stamp;
 	int			len;        /* total length of orig datagram */
 	int			meat;
@@ -64,6 +69,10 @@ struct inet_frags {
 	rwlock_t		lock ____cacheline_aligned_in_smp;
 	int			secret_interval;
 	struct timer_list	secret_timer;
+
+	/* The first call to hashfn is responsible to initialize
+	 * rnd. This is best done with net_get_random_once.
+	 */
 	u32			rnd;
 	int			qsize;
 
@@ -98,44 +107,34 @@ static inline void inet_frag_put(struct inet_frag_queue *q, struct inet_frags *f
 		inet_frag_destroy(q, f, NULL);
 }
 
-/* Memory Tracking Functions. */
+/* Free all skbs in the queue; return the sum of their truesizes. */
+unsigned int inet_frag_rbtree_purge(struct rb_root *root);
 
-/* The default percpu_counter batch size is not big enough to scale to
- * fragmentation mem acct sizes.
- * The mem size of a 64K fragment is approx:
- *  (44 fragments * 2944 truesize) + frag_queue struct(200) = 129736 bytes
- */
-static unsigned int frag_percpu_counter_batch = 130000;
+/* Memory Tracking Functions. */
 
 static inline int frag_mem_limit(struct netns_frags *nf)
 {
-	return percpu_counter_read(&nf->mem);
+	return atomic_read(&nf->mem);
 }
 
 static inline void sub_frag_mem_limit(struct inet_frag_queue *q, int i)
 {
-	__percpu_counter_add(&q->net->mem, -i, frag_percpu_counter_batch);
+	atomic_sub(i, &q->net->mem);
 }
 
 static inline void add_frag_mem_limit(struct inet_frag_queue *q, int i)
 {
-	__percpu_counter_add(&q->net->mem, i, frag_percpu_counter_batch);
+	atomic_add(i, &q->net->mem);
 }
 
 static inline void init_frag_mem_limit(struct netns_frags *nf)
 {
-	percpu_counter_init(&nf->mem, 0);
+	atomic_set(&nf->mem, 0);
 }
 
 static inline int sum_frag_mem_limit(struct netns_frags *nf)
 {
-	int res;
-
-	local_bh_disable();
-	res = percpu_counter_sum_positive(&nf->mem);
-	local_bh_enable();
-
-	return res;
+	return atomic_read(&nf->mem);
 }
 
 static inline void inet_frag_lru_move(struct inet_frag_queue *q)

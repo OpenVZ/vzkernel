@@ -62,14 +62,14 @@ static ssize_t wiimote_hid_send(struct hid_device *hdev, __u8 *buffer,
 	__u8 *buf;
 	ssize_t ret;
 
-	if (!hdev->hid_output_raw_report)
+	if (!hdev->ll_driver->output_report)
 		return -ENODEV;
 
 	buf = kmemdup(buffer, count, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	ret = hdev->hid_output_raw_report(hdev, buf, count, HID_OUTPUT_REPORT);
+	ret = hid_hw_output_report(hdev, buf, count);
 
 	kfree(buf);
 	return ret;
@@ -398,8 +398,7 @@ static int wiimote_battery_get_property(struct power_supply *psy,
 						enum power_supply_property psp,
 						union power_supply_propval *val)
 {
-	struct wiimote_data *wdata = container_of(psy,
-						struct wiimote_data, battery);
+	struct wiimote_data *wdata = power_supply_get_drvdata(psy);
 	int ret = 0, state;
 	unsigned long flags;
 
@@ -1182,8 +1181,8 @@ static void wiimote_destroy(struct wiimote_data *wdata)
 	wiiext_deinit(wdata);
 	wiimote_leds_destroy(wdata);
 
-	power_supply_unregister(&wdata->battery);
-	kfree(wdata->battery.name);
+	power_supply_unregister(wdata->battery);
+	kfree(wdata->battery_desc.name);
 	input_unregister_device(wdata->accel);
 	input_unregister_device(wdata->ir);
 	input_unregister_device(wdata->input);
@@ -1197,6 +1196,7 @@ static int wiimote_hid_probe(struct hid_device *hdev,
 				const struct hid_device_id *id)
 {
 	struct wiimote_data *wdata;
+	struct power_supply_config psy_cfg = {};
 	int ret;
 
 	hdev->quirks |= HID_QUIRK_NO_INIT_REPORTS;
@@ -1206,6 +1206,8 @@ static int wiimote_hid_probe(struct hid_device *hdev,
 		hid_err(hdev, "Can't alloc device\n");
 		return -ENOMEM;
 	}
+
+	psy_cfg.drv_data = wdata;
 
 	ret = hid_parse(hdev);
 	if (ret) {
@@ -1237,25 +1239,26 @@ static int wiimote_hid_probe(struct hid_device *hdev,
 		goto err_input;
 	}
 
-	wdata->battery.properties = wiimote_battery_props;
-	wdata->battery.num_properties = ARRAY_SIZE(wiimote_battery_props);
-	wdata->battery.get_property = wiimote_battery_get_property;
-	wdata->battery.type = POWER_SUPPLY_TYPE_BATTERY;
-	wdata->battery.use_for_apm = 0;
-	wdata->battery.name = kasprintf(GFP_KERNEL, "wiimote_battery_%s",
+	wdata->battery_desc.properties = wiimote_battery_props;
+	wdata->battery_desc.num_properties = ARRAY_SIZE(wiimote_battery_props);
+	wdata->battery_desc.get_property = wiimote_battery_get_property;
+	wdata->battery_desc.type = POWER_SUPPLY_TYPE_BATTERY;
+	wdata->battery_desc.use_for_apm = 0;
+	wdata->battery_desc.name = kasprintf(GFP_KERNEL, "wiimote_battery_%s",
 					wdata->hdev->uniq);
-	if (!wdata->battery.name) {
+	if (!wdata->battery_desc.name) {
 		ret = -ENOMEM;
 		goto err_battery_name;
 	}
 
-	ret = power_supply_register(&wdata->hdev->dev, &wdata->battery);
-	if (ret) {
+	wdata->battery = power_supply_register(&wdata->hdev->dev, &wdata->battery_desc, &psy_cfg);
+	if (IS_ERR(wdata->battery)) {
+		ret = PTR_ERR(wdata->battery);
 		hid_err(hdev, "Cannot register battery device\n");
 		goto err_battery;
 	}
 
-	power_supply_powers(&wdata->battery, &hdev->dev);
+	power_supply_powers(wdata->battery, &hdev->dev);
 
 	ret = wiimote_leds_create(wdata);
 	if (ret)
@@ -1283,7 +1286,7 @@ err_free:
 	return ret;
 
 err_battery:
-	kfree(wdata->battery.name);
+	kfree(wdata->battery_desc.name);
 err_battery_name:
 	input_unregister_device(wdata->input);
 	wdata->input = NULL;

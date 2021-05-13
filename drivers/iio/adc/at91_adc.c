@@ -84,7 +84,7 @@ static irqreturn_t at91_adc_trigger_handler(int irq, void *p)
 		*timestamp = pf->timestamp;
 	}
 
-	iio_push_to_buffers(idev, (u8 *)st->buffer);
+	iio_push_to_buffers(idev, st->buffer);
 
 	iio_trigger_notify_done(idev->trig);
 
@@ -107,7 +107,7 @@ static irqreturn_t at91_adc_eoc_trigger(int irq, void *private)
 
 	if (iio_buffer_enabled(idev)) {
 		disable_irq_nosync(irq);
-		iio_trigger_poll(idev->trig, iio_get_time_ns());
+		iio_trigger_poll(idev->trig);
 	} else {
 		st->last_value = at91_adc_readl(st, AT91_ADC_LCDR);
 		st->done = true;
