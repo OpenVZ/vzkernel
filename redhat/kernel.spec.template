@@ -2385,18 +2385,6 @@ find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/
 popd
 %endif
 
-# We have to do the headers checksum calculation after the tools install because
-# these might end up installing their own set of headers on top of kernel's
-%if %{with_headers}
-# compute a content hash to export as Provides: kernel-headers-checksum
-HEADERS_CHKSUM=$(export LC_ALL=C; find $RPM_BUILD_ROOT/usr/include -type f -name "*.h" \
-			! -path $RPM_BUILD_ROOT/usr/include/linux/version.h | \
-		 sort | xargs cat | sha1sum - | cut -f 1 -d ' ');
-# export the checksum via usr/include/linux/version.h, so the dynamic
-# find-provides can grab the hash to update it accordingly
-echo "#define KERNEL_HEADERS_CHECKSUM \"$HEADERS_CHKSUM\"" >> $RPM_BUILD_ROOT/usr/include/linux/version.h
-%endif
-
 ###
 ### clean
 ###
