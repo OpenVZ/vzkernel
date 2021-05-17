@@ -79,23 +79,23 @@ static struct dm_ploop_endio_hook *bio_to_endio_hook(struct bio *bio)
 }
 
 static void __ploop_init_end_io(struct ploop *ploop,
-				struct dm_ploop_endio_hook *h)
+				struct dm_ploop_endio_hook *pio)
 {
-	h->action = PLOOP_END_IO_NONE;
-	h->ref_index = PLOOP_REF_INDEX_INVALID;
-	h->piwb = NULL;
-	INIT_LIST_HEAD(&h->list);
-	h->endio_bio_list = NULL;
+	pio->action = PLOOP_END_IO_NONE;
+	pio->ref_index = PLOOP_REF_INDEX_INVALID;
+	pio->piwb = NULL;
+	INIT_LIST_HEAD(&pio->list);
+	pio->endio_bio_list = NULL;
 	/* FIXME: assign real cluster? */
-	h->cluster = UINT_MAX;
-	RB_CLEAR_NODE(&h->node);
+	pio->cluster = UINT_MAX;
+	RB_CLEAR_NODE(&pio->node);
 }
 
 static void ploop_init_end_io(struct ploop *ploop, struct bio *bio)
 {
-	struct dm_ploop_endio_hook *h = bio_to_endio_hook(bio);
+	struct dm_ploop_endio_hook *pio = bio_to_endio_hook(bio);
 
-	__ploop_init_end_io(ploop, h);
+	__ploop_init_end_io(ploop, pio);
 }
 
 /* Get cluster related to bio sectors */
