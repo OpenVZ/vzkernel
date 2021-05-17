@@ -982,9 +982,8 @@ static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd
 		kunmap_atomic(bat_entries);
 	}
 
-	swap(ploop->origin_dev, cmd->flip_upper_deltas.origin_dev);
 	/* FIXME */
-	swap(ploop->deltas[level].file, cmd->flip_upper_deltas.file);
+	swap(ploop->deltas[level], ploop->deltas[level+1]);
 	write_unlock_irq(&ploop->bat_rwlock);
 	/* Device is suspended, but anyway... */
 	ploop_inflight_bios_ref_switch(ploop, false);
@@ -1186,12 +1185,10 @@ static int ploop_set_noresume(struct ploop *ploop, char *mode)
 	return 0;
 }
 
-static int ploop_flip_upper_deltas(struct ploop *ploop, char *new_dev,
-				   char *new_ro_fd)
+static int ploop_flip_upper_deltas(struct ploop *ploop)
 {
 	struct dm_target *ti = ploop->ti;
 	struct ploop_cmd cmd = { {0} };
-	int new_fd, ret;
 
 	cmd.type = PLOOP_CMD_FLIP_UPPER_DELTAS;
 	cmd.ploop = ploop;
@@ -1204,22 +1201,12 @@ static int ploop_flip_upper_deltas(struct ploop *ploop, char *new_dev,
 		return -ENOENT;
 	if (ploop->deltas[ploop->nr_deltas - 2].is_raw)
 		return -EBADSLT;
-	if (kstrtou32(new_ro_fd, 10, &new_fd) < 0 ||
-	    !(cmd.flip_upper_deltas.file = fget(new_fd)))
-		return -EBADF;
-	ret = dm_get_device(ti, new_dev, dm_table_get_mode(ti->table),
-			    &cmd.flip_upper_deltas.origin_dev);
-	if (ret)
-		goto fput;
 
 	init_completion(&cmd.comp);
 	ploop_queue_deferred_cmd(ploop, &cmd);
 	wait_for_completion(&cmd.comp);
-	ret = cmd.retval;
-	dm_put_device(ploop->ti, cmd.flip_upper_deltas.origin_dev);
-fput:
-	fput(cmd.flip_upper_deltas.file);
-	return ret;
+
+	return cmd.retval;
 }
 
 static void process_set_push_backup(struct ploop *ploop, struct ploop_cmd *cmd)
@@ -1643,9 +1630,9 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 			goto unlock;
 		ret = ploop_set_noresume(ploop, argv[1]);
 	} else if (!strcmp(argv[0], "flip_upper_deltas")) {
-		if (argc != 3)
+		if (argc != 1)
 			goto unlock;
-		ret = ploop_flip_upper_deltas(ploop, argv[1], argv[2]);
+		ret = ploop_flip_upper_deltas(ploop);
 	} else if (!strcmp(argv[0], "push_backup_start")) {
 		if (argc != 4 || kstrtou64(argv[2], 10, &val) < 0 ||
 				 kstrtos32(argv[3], 10, &ival) < 0)

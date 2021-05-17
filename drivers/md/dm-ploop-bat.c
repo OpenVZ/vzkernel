@@ -313,7 +313,6 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 {
 	unsigned int bytes, delta_nr_be, offset_clusters, bat_clusters, cluster_log;
 	struct ploop_pvd_header *d_hdr, *hdr;
-	u64 size, delta_size;
 	struct md_page *md;
 	int ret = -EPROTO;
 
@@ -329,15 +328,13 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 	    d_hdr->m_Type != hdr->m_Type)
 		goto out;
 
-	delta_size = le64_to_cpu(d_hdr->m_SizeInSectors_v2);
 	delta_nr_be = le32_to_cpu(d_hdr->m_Size);
-	size = hdr->m_SizeInSectors_v2;
 	cluster_log = ploop->cluster_log;
 	offset_clusters = le32_to_cpu(d_hdr->m_FirstBlockOffset) >> cluster_log;
 	bytes = (PLOOP_MAP_OFFSET + delta_nr_be) * sizeof(map_index_t);
 	bat_clusters = DIV_ROUND_UP(bytes, 1 << (cluster_log + 9));
 
-	if (delta_size > size || delta_nr_be > ploop->nr_bat_entries ||
+	if (delta_nr_be > ploop->nr_bat_entries ||
 	    bat_clusters != offset_clusters)
 		goto out;
 

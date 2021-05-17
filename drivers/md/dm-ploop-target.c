@@ -159,11 +159,6 @@ static void ploop_destroy(struct ploop *ploop)
 		ploop_flush_workqueue(ploop);
 		destroy_workqueue(ploop->wq);
 	}
-	if (ploop->origin_dev) {
-		WARN_ON(blkdev_issue_flush(ploop->origin_dev->bdev, GFP_NOIO, NULL));
-		dm_put_device(ploop->ti, ploop->origin_dev);
-	}
-
 	for (i = 0; i < 2; i++)
 		percpu_ref_exit(&ploop->inflight_bios_ref[i]);
 	/* Nobody uses it after destroy_workqueue() */
@@ -197,41 +192,30 @@ static struct file * get_delta_file(int fd)
 
 static int check_top_delta(struct ploop *ploop, struct file *file)
 {
-	u32 nr, *bat_entries;
-	struct md_page *md0;
+	struct page *page = NULL;
+	u32 i, nr, *bat_entries;
 	int ret;
 
 	/* Prealloc a page to read hdr */
-	ret = prealloc_md_pages(&ploop->bat_entries, 0, 1);
-	if (ret)
+	ret = -ENOMEM;
+	page = alloc_page(GFP_KERNEL);
+	if (!page)
 		goto out;
 
-	ret = -ENXIO;
-	md0 = md_page_find(ploop, 0);
-	if (!md0)
-		goto out;
-
-	ret = rw_page_sync(READ, file, 0, md0->page);
+	ret = rw_page_sync(READ, file, 0, page);
 	if (ret < 0)
 		goto out;
 
-	bat_entries = kmap(md0->page);
-	nr = PAGE_SIZE / sizeof(u32) - PLOOP_MAP_OFFSET;
-	ret = convert_bat_entries(bat_entries + PLOOP_MAP_OFFSET, nr);
-	kunmap(md0->page);
-	if (ret) {
-		pr_err("Can't read BAT\n");
-		goto out;
-	}
-
-	ret = ploop_setup_metadata(ploop, md0->page);
+	ret = ploop_setup_metadata(ploop, page);
 	if (ret)
 		goto out;
-	/* Alloc rest of pages */
-	ret = prealloc_md_pages(&ploop->bat_entries, 1, ploop->nr_bat_entries);
+
+	ret = prealloc_md_pages(&ploop->bat_entries, 0, ploop->nr_bat_entries);
 	if (ret)
 		goto out;
 out:
+	if (page)
+		put_page(page);
 	return ret;
 }
 
@@ -361,18 +345,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto err;
 	}
 
-	/*
-	 * We do not add FMODE_EXCL, because further open_table_device()
-	 * unconditionally adds it. See call stack.
-	 */
-	ret = dm_get_device(ti, argv[1], dm_table_get_mode(ti->table),
-			    &ploop->origin_dev);
-	if (ret) {
-		ti->error = "Error opening origin device";
-		goto err;
-	}
-
-	ret = ploop_add_deltas_stack(ploop, &argv[2], argc - 2);
+	ret = ploop_add_deltas_stack(ploop, &argv[1], argc - 1);
 	if (ret)
 		goto err;
 
@@ -398,35 +371,11 @@ static void ploop_io_hints(struct dm_target *ti, struct queue_limits *limits)
 	struct ploop *ploop = ti->private;
 	unsigned int cluster_log = ploop->cluster_log;
 
-	/* TODO: take into account the origin_dev */
 	limits->max_discard_sectors = 1 << cluster_log;
 	limits->max_hw_discard_sectors = 1 << cluster_log;
 	limits->discard_granularity = 1 << (cluster_log + SECTOR_SHIFT);
 	limits->discard_alignment = 0;
 	limits->discard_misaligned = 0;
-}
-
-static sector_t get_dev_size(struct dm_dev *dev)
-{
-	return i_size_read(dev->bdev->bd_inode) >> SECTOR_SHIFT;
-}
-
-static int ploop_iterate_devices(struct dm_target *ti,
-				 iterate_devices_callout_fn fn, void *data)
-{
-	struct ploop *ploop = ti->private;
-	sector_t size;
-
-	size = get_dev_size(ploop->origin_dev);
-
-	return fn(ti, ploop->origin_dev, 0, size, data);
-}
-
-static void ploop_postsuspend(struct dm_target *ti)
-{
-	struct ploop *ploop = ti->private;
-
-	blkdev_issue_flush(ploop->origin_dev->bdev, GFP_NOIO, NULL);
 }
 
 static void ploop_status(struct dm_target *ti, status_type_t type,
@@ -480,8 +429,6 @@ static struct target_type ploop_target = {
 	.end_io = ploop_endio,
 	.message = ploop_message,
 	.io_hints = ploop_io_hints,
-	.iterate_devices = ploop_iterate_devices,
-	.postsuspend = ploop_postsuspend,
 	.preresume = ploop_preresume,
 	.status = ploop_status,
 };
