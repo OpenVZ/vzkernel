@@ -98,6 +98,7 @@ static void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 	pio->ploop = ploop;
 	pio->bi_op = bi_op;
 	pio->action = PLOOP_END_IO_NONE;
+	pio->is_data_alloc = false;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
 	pio->bi_status = BLK_STS_OK;
 	pio->piwb = NULL;
@@ -870,12 +871,13 @@ unmap:
 	return ret;
 }
 
-
-static int ploop_data_pio_end(struct pio *pio)
+static bool ploop_data_pio_end(struct pio *pio)
 {
 	struct ploop_index_wb *piwb = pio->piwb;
 	unsigned long flags;
 	bool completed;
+
+	dec_nr_inflight(piwb->ploop, pio);
 
 	spin_lock_irqsave(&piwb->lock, flags);
 	completed = piwb->completed;
@@ -885,13 +887,9 @@ static int ploop_data_pio_end(struct pio *pio)
 		pio->bi_status = piwb->bi_status;
 	spin_unlock_irqrestore(&piwb->lock, flags);
 
-	dec_nr_inflight(piwb->ploop, pio);
-
-	if (!completed)
-		return DM_ENDIO_INCOMPLETE;
-
 	put_piwb(piwb);
-	return DM_ENDIO_DONE;
+
+	return completed;
 }
 
 static bool ploop_attach_end_action(struct pio *h, struct ploop_index_wb *piwb)
@@ -905,7 +903,7 @@ static bool ploop_attach_end_action(struct pio *h, struct ploop_index_wb *piwb)
 	if (!atomic_inc_not_zero(&piwb->count))
 		return false;
 
-	h->action = PLOOP_END_IO_DATA_BIO;
+	h->is_data_alloc = true;
 	h->piwb = piwb;
 
 	return true;
@@ -933,8 +931,16 @@ static void ploop_read_aio_complete(struct kiocb *iocb, long ret, long ret2)
 
 static void data_rw_complete(struct pio *pio)
 {
+	bool completed;
+
 	if (pio->ret != pio->bi_iter.bi_size)
                 pio->bi_status = BLK_STS_IOERR;
+
+	if (pio->is_data_alloc) {
+		completed = ploop_data_pio_end(pio);
+		if (!completed)
+			return;
+	}
 
 	pio_endio(pio);
 }
@@ -1768,9 +1774,6 @@ static int ploop_endio(struct ploop *ploop, struct pio *pio)
 	 * processing, and that we are going to call bi_end_io
 	 * directly later again.
 	 */
-	if (pio->action == PLOOP_END_IO_DATA_BIO)
-		ret = ploop_data_pio_end(pio);
-
 	if (pio->action == PLOOP_END_IO_DISCARD_INDEX_BIO)
 		ret = ploop_discard_index_pio_end(ploop, pio);
 
