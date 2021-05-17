@@ -500,7 +500,6 @@ enotsupp:
 	read_unlock_irq(&ploop->bat_rwlock);
 	atomic_inc(&ploop->nr_discard_bios);
 
-	remap_to_origin(ploop, bio);
 	remap_to_cluster(ploop, h, dst_cluster);
 
 	pos = to_bytes(h->bi_iter.bi_sector);
@@ -1326,7 +1325,6 @@ static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct pio *pi
 	iov_iter_bvec(&iter, rw, bvec, nr_segs, pio->bi_iter.bi_size);
 	iter.iov_offset = pio->bi_iter.bi_bvec_done;
 
-	remap_to_origin(ploop, bio);
 	remap_to_cluster(ploop, pio, clu_pos);
 	pos = to_bytes(pio->bi_iter.bi_sector);
 
@@ -1659,6 +1657,8 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 	unsigned long flags;
 
 	ploop_init_end_io(ploop, bio);
+
+	remap_to_origin(ploop, bio);
 
 	pio->bi_iter = bio->bi_iter;
 	pio->bi_io_vec = bio->bi_io_vec;
