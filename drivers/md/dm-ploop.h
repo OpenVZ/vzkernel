@@ -484,13 +484,13 @@ static inline void init_bat_entries_iter(struct ploop *ploop, unsigned int page_
 		*end = ((ploop->nr_bat_entries + PLOOP_MAP_OFFSET) % count) - 1;
 }
 
-extern void __track_bio(struct ploop *ploop, struct bio *bio);
+extern void __track_pio(struct ploop *ploop, struct pio *pio);
 
-static inline void track_bio(struct ploop *ploop, struct bio *bio)
+static inline void track_pio(struct ploop *ploop, struct pio *pio)
 {
 	/* See comment in process_tracking_start() about visibility */
 	if (unlikely(ploop->tracking_bitmap))
-		__track_bio(ploop, bio);
+		__track_pio(ploop, pio);
 }
 
 extern struct pio *find_endio_hook_range(struct ploop *ploop, struct rb_root *root,
