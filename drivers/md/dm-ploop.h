@@ -112,6 +112,7 @@ struct ploop_cmd {
 
 #define PLOOP_BIOS_HTABLE_BITS	8
 #define PLOOP_BIOS_HTABLE_SIZE	(1 << PLOOP_BIOS_HTABLE_BITS)
+#define CLU_OFF(ploop, pos) (pos & (to_bytes(1 << ploop->cluster_log) - 1))
 
 enum piwb_type {
 	PIWB_TYPE_ALLOC = 0,	/* Allocation of new clusters */
@@ -327,6 +328,11 @@ static inline bool whole_cluster(struct ploop *ploop, struct bio *bio)
 static inline u8 top_level(struct ploop *ploop)
 {
 	return ploop->nr_deltas - 1;
+}
+
+static inline struct ploop_delta *top_delta(struct ploop *ploop)
+{
+	return &ploop->deltas[top_level(ploop)];
 }
 
 static inline void ploop_hole_set_bit(unsigned long nr, struct ploop *ploop)
