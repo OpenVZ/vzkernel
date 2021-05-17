@@ -240,8 +240,9 @@ struct pio;
 typedef void (*ploop_endio_t)(struct pio *, void *, blk_status_t);
 
 struct pio {
-	struct list_head list;
+	struct ploop *ploop;
 
+	struct list_head list;
 	struct rb_node node;
 	/* List of pios, which will be queued from this pio end */
 	struct list_head endio_list;
