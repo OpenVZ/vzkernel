@@ -1629,16 +1629,22 @@ void do_ploop_fsync_work(struct work_struct *ws)
 {
 	struct ploop *ploop = container_of(ws, struct ploop, fsync_worker);
 	LIST_HEAD(flush_pios);
+	struct file *file;
 	struct pio *pio;
+	int ret;
 
 	spin_lock_irq(&ploop->deferred_lock);
 	list_splice_init(&ploop->flush_pios, &flush_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
 
-	/* FIXME: issue flush */
+	file = top_delta(ploop)->file;
+	ret = vfs_fsync(file, 0);
 
-	while ((pio = pio_list_pop(&flush_pios)) != NULL)
+	while ((pio = pio_list_pop(&flush_pios)) != NULL) {
+		if (unlikely(ret))
+			pio->bi_status = errno_to_blk_status(ret);
 		pio_endio(pio);
+	}
 }
 
 /*
