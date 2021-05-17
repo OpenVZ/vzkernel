@@ -229,6 +229,9 @@ struct ploop {
 	spinlock_t pb_lock;
 };
 
+struct pio;
+typedef void (*ploop_endio_t)(struct pio *, void *, blk_status_t);
+
 struct pio {
 	struct list_head list;
 
@@ -240,6 +243,9 @@ struct pio {
 	struct bio_vec		*bi_io_vec;
 	unsigned int		bi_opf;
 	blk_status_t bi_status;
+
+	ploop_endio_t endio_cb;
+	void *endio_cb_data;
 
 	unsigned int cluster;
 
