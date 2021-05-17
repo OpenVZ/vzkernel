@@ -1597,6 +1597,23 @@ void do_ploop_work(struct work_struct *ws)
 	check_services_timeout(ploop);
 }
 
+void do_ploop_fsync_work(struct work_struct *ws)
+{
+	struct ploop *ploop = container_of(ws, struct ploop, fsync_worker);
+	struct bio_list flush_bios = BIO_EMPTY_LIST;
+	struct bio *bio;
+
+	spin_lock_irq(&ploop->deferred_lock);
+	bio_list_merge(&flush_bios, &ploop->flush_bios);
+	bio_list_init(&ploop->flush_bios);
+	spin_unlock_irq(&ploop->deferred_lock);
+
+	/* FIXME: issue flush */
+
+	while ((bio = bio_list_pop(&flush_bios)) != NULL)
+		bio_endio(bio);
+}
+
 /*
  * ploop_map() tries to map bio to origins or delays it.
  * It never modifies ploop->bat_entries and other cached
@@ -1606,6 +1623,7 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 {
 	struct ploop *ploop = ti->private;
 	unsigned int cluster;
+	unsigned long flags;
 
 	ploop_init_end_io(ploop, bio);
 
@@ -1619,9 +1637,15 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 		return DM_MAPIO_SUBMITTED;
 	}
 
-	remap_to_origin(ploop, bio);
+	if (WARN_ON_ONCE(!op_is_flush(bio->bi_opf)))
+		return DM_MAPIO_KILL;
 
-	return DM_MAPIO_REMAPPED;
+	spin_lock_irqsave(&ploop->deferred_lock, flags);
+	bio_list_add(&ploop->flush_bios, bio);
+	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+	queue_work(ploop->wq, &ploop->fsync_worker);
+
+	return DM_MAPIO_SUBMITTED;
 }
 
 int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
