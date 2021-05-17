@@ -89,7 +89,7 @@ static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop
 	piwb->type = PIWB_TYPE_ALLOC;
 }
 
-static void __ploop_init_end_io(struct ploop *ploop, struct pio *pio)
+static void ploop_init_end_io(struct ploop *ploop, struct pio *pio)
 {
 	pio->action = PLOOP_END_IO_NONE;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
@@ -100,13 +100,6 @@ static void __ploop_init_end_io(struct ploop *ploop, struct pio *pio)
 	/* FIXME: assign real cluster? */
 	pio->cluster = UINT_MAX;
 	RB_CLEAR_NODE(&pio->node);
-}
-
-static void ploop_init_end_io(struct ploop *ploop, struct bio *bio)
-{
-	struct pio *pio = bio_to_endio_hook(bio);
-
-	__ploop_init_end_io(ploop, pio);
 }
 
 /* Get cluster related to pio sectors */
@@ -1084,7 +1077,7 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	bio->bi_end_io = ploop_cow_endio;
 	bio->bi_private = cow;
 
-	__ploop_init_end_io(ploop, &cow->hook);
+	ploop_init_end_io(ploop, &cow->hook);
 	add_cluster_lk(ploop, &cow->hook, cluster);
 
 	/* Stage #0: read secondary delta full cluster */
@@ -1643,7 +1636,7 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 	unsigned int cluster;
 	unsigned long flags;
 
-	ploop_init_end_io(ploop, bio);
+	ploop_init_end_io(ploop, pio);
 
 	remap_to_origin(ploop, bio);
 
