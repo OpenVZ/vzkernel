@@ -202,8 +202,7 @@ static void queue_discard_index_wb(struct ploop *ploop, struct pio *pio)
 	queue_work(ploop->wq, &ploop->worker);
 }
 
-/* This 1)defers looking suitable discard bios and 2)ends the rest of them. */
-static int ploop_map_discard(struct ploop *ploop, struct pio *pio)
+static int endio_if_unsupported_discard(struct ploop *ploop, struct pio *pio)
 {
 	bool supported = false;
 	unsigned int cluster;
@@ -220,14 +219,12 @@ static int ploop_map_discard(struct ploop *ploop, struct pio *pio)
 		read_unlock_irqrestore(&ploop->bat_rwlock, flags);
 	}
 
-	if (supported) {
-		defer_pios(ploop, pio, NULL);
-	} else {
+	if (!supported) {
 		pio->bi_status = BLK_STS_NOTSUPP;
 		pio_endio(pio);
 	}
 
-	return DM_MAPIO_SUBMITTED;
+	return !supported;
 }
 
 /* Zero @count bytes of @qio->bi_io_vec since @from byte */
@@ -1670,8 +1667,9 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 	if (pio->bi_iter.bi_size) {
 		if (ploop_pio_cluster(ploop, pio, &cluster) < 0)
 			return DM_MAPIO_KILL;
-		if (op_is_discard(pio->bi_opf))
-			return ploop_map_discard(ploop, pio);
+		if (op_is_discard(pio->bi_opf) &&
+		    endio_if_unsupported_discard(ploop, pio))
+			return DM_MAPIO_SUBMITTED;
 
 		defer_pios(ploop, pio, NULL);
 		return DM_MAPIO_SUBMITTED;
