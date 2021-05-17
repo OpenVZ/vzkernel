@@ -189,9 +189,8 @@ void __track_bio(struct ploop *ploop, struct bio *bio)
 	track_dst_cluster(ploop, dst_cluster);
 }
 
-static void queue_discard_index_wb(struct ploop *ploop, struct bio *bio)
+static void queue_discard_index_wb(struct ploop *ploop, struct pio *pio)
 {
-	struct pio *pio = bio_to_endio_hook(bio);
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
@@ -514,7 +513,7 @@ static int ploop_discard_bio_end(struct ploop *ploop, struct bio *bio)
 
 	dec_nr_inflight(ploop, bio);
 	if (bio->bi_status == BLK_STS_OK)
-		queue_discard_index_wb(ploop, bio);
+		queue_discard_index_wb(ploop, h);
 	else
 		h->action = PLOOP_END_IO_DISCARD_INDEX_BIO;
 	return DM_ENDIO_INCOMPLETE;
@@ -1429,26 +1428,24 @@ static void process_deferred_pios(struct ploop *ploop, struct list_head *pios,
 		process_one_deferred_bio(ploop, pio, piwb);
 }
 
-static int process_one_discard_pio(struct ploop *ploop, struct pio *h,
+static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 				   struct ploop_index_wb *piwb)
 {
 	unsigned int page_nr, cluster;
 	bool bat_update_prepared;
 	map_index_t *to;
-	struct bio *bio;
 
 	WARN_ON(ploop->nr_deltas != 1);
 
-	bio = dm_bio_from_per_bio_data(h, sizeof(*h));
-	cluster = h->cluster;
+	cluster = pio->cluster;
 	page_nr = bat_clu_to_page_nr(cluster);
 	bat_update_prepared = false;
 
 	if (piwb->page_nr == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
 		if (ploop_prepare_bat_update(ploop, page_nr, piwb) < 0) {
-			h->bi_status = BLK_STS_RESOURCE;
-			pio_endio(h);
+			pio->bi_status = BLK_STS_RESOURCE;
+			pio_endio(pio);
 			goto out;
 		}
 		piwb->type = PIWB_TYPE_DISCARD;
@@ -1456,24 +1453,24 @@ static int process_one_discard_pio(struct ploop *ploop, struct pio *h,
 	}
 
 	if (piwb->page_nr != page_nr || piwb->type != PIWB_TYPE_DISCARD) {
-		queue_discard_index_wb(ploop, bio);
+		queue_discard_index_wb(ploop, pio);
 		goto out;
 	}
 
-	h->action = PLOOP_END_IO_DISCARD_INDEX_BIO;
+	pio->action = PLOOP_END_IO_DISCARD_INDEX_BIO;
 
 	/* Cluster index related to the page[page_nr] start */
 	cluster -= piwb->page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 
 	to = kmap_atomic(piwb->bat_page);
 	if (WARN_ON_ONCE(!to[cluster])) {
-		h->bi_status = BLK_STS_IOERR;
-		pio_endio(h);
+		pio->bi_status = BLK_STS_IOERR;
+		pio_endio(pio);
 		if (bat_update_prepared)
 			ploop_reset_bat_update(piwb);
 	} else {
 		to[cluster] = 0;
-		list_add_tail(&h->list, &piwb->ready_data_pios);
+		list_add_tail(&pio->list, &piwb->ready_data_pios);
 	}
 	kunmap_atomic(to);
 out:
