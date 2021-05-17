@@ -73,11 +73,6 @@ static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop
 	piwb->type = PIWB_TYPE_ALLOC;
 }
 
-static struct pio *bio_to_endio_hook(struct bio *bio)
-{
-	return dm_per_bio_data(bio, sizeof(struct pio));
-}
-
 static void __ploop_init_end_io(struct ploop *ploop, struct pio *pio)
 {
 	pio->action = PLOOP_END_IO_NONE;
