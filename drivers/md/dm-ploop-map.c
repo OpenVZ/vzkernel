@@ -220,31 +220,6 @@ static void queue_discard_index_wb(struct ploop *ploop, struct pio *pio)
 	queue_work(ploop->wq, &ploop->worker);
 }
 
-static int endio_if_unsupported_discard(struct ploop *ploop, struct pio *pio)
-{
-	bool supported = false;
-	unsigned int cluster;
-	unsigned long flags;
-
-	/* Only whole cluster in no-snapshots case can be discarded. */
-	if (whole_cluster(ploop, pio)) {
-		cluster = pio->bi_iter.bi_sector >> ploop->cluster_log;
-		read_lock_irqsave(&ploop->bat_rwlock, flags);
-		/* Early checks to not wake up work for nought. */
-		if (cluster_is_in_top_delta(ploop, cluster) &&
-		    ploop->nr_deltas == 1)
-			supported = true;
-		read_unlock_irqrestore(&ploop->bat_rwlock, flags);
-	}
-
-	if (!supported) {
-		pio->bi_status = BLK_STS_NOTSUPP;
-		pio_endio(pio);
-	}
-
-	return !supported;
-}
-
 /* Zero @count bytes of @qio->bi_io_vec since @from byte */
 static void zero_fill_pio(struct pio *pio)
 {
@@ -486,12 +461,14 @@ static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 	loff_t pos;
 	int ret;
 
-	if (!cluster_is_in_top_delta(ploop, cluster) || ploop->nr_deltas != 1) {
-enotsupp:
-		pio->bi_status = BLK_STS_NOTSUPP;
+	if (!cluster_is_in_top_delta(ploop, cluster)) {
 		pio_endio(pio);
 		return;
 	}
+
+	/* We can't end with EOPNOTSUPP, since blk-mq prints error */
+	if (ploop->nr_deltas != 1)
+		goto punch_hole;
 
 	if (!ploop->force_link_inflight_bios) {
 		/*
@@ -507,7 +484,8 @@ enotsupp:
 			pr_err_ratelimited("ploop: discard ignored by err=%d\n",
 					ret);
 			ploop->force_link_inflight_bios = false;
-			goto enotsupp;
+			pio->bi_status = BLK_STS_IOERR;
+			pio_endio(pio);
 		}
 	}
 
@@ -525,14 +503,15 @@ enotsupp:
 
 	add_cluster_lk(ploop, pio, cluster);
 	atomic_inc(&ploop->nr_discard_bios);
+	pio->wants_discard_index_cleanup = true;
 
+punch_hole:
 	remap_to_cluster(ploop, pio, dst_cluster);
-
 	pos = to_bytes(pio->bi_iter.bi_sector);
 	ret = punch_hole(top_delta(ploop)->file, pos, pio->bi_iter.bi_size);
-	if (ret) {
-		pio->bi_status = errno_to_blk_status(ret);
-		pio->wants_discard_index_cleanup = true;
+	if (ret || ploop->nr_deltas != 1) {
+		if (ret)
+			pio->bi_status = errno_to_blk_status(ret);
 		pio_endio(pio);
 		return;
 	}
@@ -1464,8 +1443,6 @@ static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 		goto out;
 	}
 
-	pio->wants_discard_index_cleanup = true;
-
 	/* Cluster index related to the page[page_nr] start */
 	cluster -= piwb->page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 
@@ -1675,9 +1652,6 @@ static noinline void submit_pio(struct ploop *ploop, struct pio *pio)
 	if (pio->bi_iter.bi_size) {
 		if (ploop_pio_cluster(ploop, pio, &cluster) < 0)
 			goto kill;
-		if (op_is_discard(pio->bi_op) &&
-		    endio_if_unsupported_discard(ploop, pio))
-			goto out;
 
 		defer_pios(ploop, pio, NULL);
 		goto out;
