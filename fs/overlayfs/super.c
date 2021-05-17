@@ -358,7 +358,7 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 {
 	struct super_block *sb = dentry->d_sb;
 	struct ovl_fs *ofs = sb->s_fs_info;
-	struct ovl_entry *oe = OVL_E(dentry);
+	struct ovl_entry *oe = OVL_E(sb->s_root);
 
 	if (ovl_dyn_path_opts) {
 		print_paths_option(m, "lowerdir", oe->lowerpaths, oe->numlower);
