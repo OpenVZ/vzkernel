@@ -542,6 +542,7 @@ BuildRequires: zlib-devel binutils-devel newt-devel perl(ExtUtils::Embed) bison 
 BuildRequires: audit-libs-devel
 BuildRequires: java-devel
 BuildRequires: libbpf-devel
+BuildRequires: libbabeltrace-devel
 %ifnarch %{arm} s390x
 BuildRequires: numactl-devel
 %endif
