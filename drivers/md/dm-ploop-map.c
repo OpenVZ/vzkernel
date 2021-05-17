@@ -508,11 +508,9 @@ static int ploop_discard_bio_end(struct ploop *ploop, struct bio *bio)
 	return DM_ENDIO_INCOMPLETE;
 }
 
-static int ploop_discard_index_bio_end(struct ploop *ploop, struct bio *bio)
+static int ploop_discard_index_bio_end(struct ploop *ploop, struct pio *pio)
 {
-	struct pio *h = bio_to_endio_hook(bio);
-
-	del_cluster_lk(ploop, h);
+	del_cluster_lk(ploop, pio);
 
 	WRITE_ONCE(ploop->pending_discard_cleanup, jiffies);
 	/* Pairs with barrier in do_discard_cleanup() */
@@ -1666,11 +1664,11 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 
 int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
 {
-	struct pio *h = bio_to_endio_hook(bio);
+	struct pio *pio = bio_to_endio_hook(bio);
 	struct ploop *ploop = ti->private;
 	int ret = DM_ENDIO_DONE;
 
-	if (h->ref_index != PLOOP_REF_INDEX_INVALID) {
+	if (pio->ref_index != PLOOP_REF_INDEX_INVALID) {
 		/*
 		 * This function may be called twice for discard
 		 * and for data bios. Check for ref_index to not
@@ -1689,18 +1687,18 @@ int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
 	 * also will be called again then!
 	 * See dm.c::clone_endio() for the details.
 	 */
-	if (h->action == PLOOP_END_IO_DATA_BIO)
+	if (pio->action == PLOOP_END_IO_DATA_BIO)
 		ret = ploop_data_bio_end(bio);
 
-	if (h->action == PLOOP_END_IO_DISCARD_BIO)
+	if (pio->action == PLOOP_END_IO_DISCARD_BIO)
 		ret = ploop_discard_bio_end(ploop, bio);
 
-	if (h->action == PLOOP_END_IO_DISCARD_INDEX_BIO)
-		ret = ploop_discard_index_bio_end(ploop, bio);
+	if (pio->action == PLOOP_END_IO_DISCARD_INDEX_BIO)
+		ret = ploop_discard_index_bio_end(ploop, pio);
 
 	if (ret == DM_ENDIO_DONE) {
-		maybe_unlink_completed_pio(ploop, h);
-		dec_nr_inflight(ploop, h);
+		maybe_unlink_completed_pio(ploop, pio);
+		dec_nr_inflight(ploop, pio);
 	}
 
 	return ret;
