@@ -12,6 +12,7 @@
 #include <linux/init.h>
 #include <linux/vmalloc.h>
 #include <linux/uio.h>
+#include <uapi/linux/falloc.h>
 #include "dm-ploop.h"
 
 /*
@@ -55,6 +56,22 @@
 		else								\
 			read_unlock_irqrestore(&ploop->bat_rwlock, flags);	\
 	} while (0)
+
+static unsigned int bio_nr_segs(struct bio *bio)
+{
+	struct bvec_iter bi = {
+		.bi_size = bio->bi_iter.bi_size,
+		.bi_bvec_done = bio->bi_iter.bi_bvec_done,
+		.bi_idx = bio->bi_iter.bi_idx,
+	};
+        unsigned int nr_segs = 0;
+	struct bio_vec bv;
+
+	for_each_bvec(bv, bio->bi_io_vec, bi, bi)
+                nr_segs++;
+
+        return nr_segs;
+}
 
 static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop)
 {
@@ -417,12 +434,19 @@ static bool bio_endio_if_all_zeros(struct bio *bio)
 	return true;
 }
 
+static int punch_hole(struct file *file, loff_t pos, loff_t len)
+{
+	return vfs_fallocate(file, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,
+			     pos, len);
+}
+
 static void handle_discard_bio(struct ploop *ploop, struct bio *bio,
 		     unsigned int cluster, unsigned int dst_cluster)
 {
 	struct pio *h = bio_to_endio_hook(bio);
 	struct pio *inflight_h;
 	unsigned long flags;
+	loff_t pos;
 	int ret;
 
 	if (!cluster_is_in_top_delta(ploop, cluster) || ploop->nr_deltas != 1) {
@@ -470,9 +494,14 @@ enotsupp:
 	read_unlock_irq(&ploop->bat_rwlock);
 	atomic_inc(&ploop->nr_discard_bios);
 
-	remap_to_cluster(ploop, bio, dst_cluster);
 	remap_to_origin(ploop, bio);
-	generic_make_request(bio);
+	remap_to_cluster(ploop, bio, dst_cluster);
+
+	pos = to_bytes(bio->bi_iter.bi_sector);
+	ret = punch_hole(top_delta(ploop)->file, pos, bio->bi_iter.bi_size);
+	if (ret)
+		bio->bi_status = errno_to_blk_status(ret);
+	bio_endio(bio);
 }
 
 static int ploop_discard_bio_end(struct ploop *ploop, struct bio *bio)
@@ -1286,6 +1315,41 @@ error:
 	return false;
 }
 
+static void data_rw_complete(struct pio *pio)
+{
+	struct bio *bio = pio->data;
+
+	if (pio->ret != bio->bi_iter.bi_size)
+                bio->bi_status = BLK_STS_IOERR;
+
+	bio_endio(bio);
+}
+
+static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct bio *bio)
+{
+	struct pio *pio = bio_to_endio_hook(bio);
+	unsigned int rw, nr_segs;
+	struct bio_vec *bvec;
+	struct iov_iter iter;
+	loff_t pos;
+
+	pio->complete = data_rw_complete;
+	pio->data = bio;
+
+	rw = (op_is_write(bio->bi_opf) ? WRITE : READ);
+	nr_segs = bio_nr_segs(bio);
+	bvec = __bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);
+
+	iov_iter_bvec(&iter, rw, bvec, nr_segs, bio->bi_iter.bi_size);
+	iter.iov_offset = bio->bi_iter.bi_bvec_done;
+
+	remap_to_origin(ploop, bio);
+	remap_to_cluster(ploop, bio, clu_pos);
+	pos = to_bytes(bio->bi_iter.bi_sector);
+
+	call_rw_iter(top_delta(ploop)->file, pos, rw, &iter, bio);
+}
+
 static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 				    struct ploop_index_wb *piwb)
 {
@@ -1350,9 +1414,7 @@ queue:
 
 	maybe_link_submitting_bio(ploop, bio, cluster);
 
-	remap_to_cluster(ploop, bio, dst_cluster);
-	remap_to_origin(ploop, bio);
-	generic_make_request(bio);
+	submit_rw_mapped(ploop, dst_cluster, bio);
 out:
 	return 0;
 }
