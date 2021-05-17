@@ -211,7 +211,7 @@ struct ploop {
 	spinlock_t deferred_lock;
 	struct list_head deferred_pios;
 	struct bio_list flush_bios;
-	struct bio_list discard_bios;
+	struct list_head discard_pios;
 
 	struct rw_semaphore ctl_rwsem;
 	struct ploop_cmd *deferred_cmd;
