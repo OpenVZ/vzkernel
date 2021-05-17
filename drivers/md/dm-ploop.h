@@ -546,6 +546,7 @@ extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
 extern void unlink_postponed_backup_endio(struct ploop *ploop,
 					  struct list_head *pio_list,
 					  struct pio *h);
+extern void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio);
 extern int rw_page_sync(unsigned rw, struct file *file,
 			u64 index, struct page *page);
 extern void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio);
