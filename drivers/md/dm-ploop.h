@@ -329,15 +329,17 @@ static inline void remap_to_cluster_bio(struct ploop *ploop, struct bio *bio,
 	bio->bi_iter.bi_sector |= (cluster << ploop->cluster_log);
 }
 
-static inline bool whole_cluster(struct ploop *ploop, struct bio *bio)
+static inline bool whole_cluster(struct ploop *ploop, struct pio *pio)
 {
-	if (bio_sectors(bio) != (1 << ploop->cluster_log))
+	sector_t end_sector = bvec_iter_end_sector(pio->bi_iter);
+
+	if (pio->bi_iter.bi_size != to_bytes(1 << ploop->cluster_log))
 		return false;
 	/*
 	 * There is no sacral meaning in bio_end_sector(),
 	 * it's just a suitable and existing primitive.
 	 */
-	return !(bio_end_sector(bio) & ((1 << ploop->cluster_log) - 1));
+	return !(end_sector & ((1 << ploop->cluster_log) - 1));
 }
 
 #define BAT_LEVEL_MAX		(U8_MAX - 1)
