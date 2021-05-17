@@ -231,7 +231,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 {
 	struct bio *bio = cmd->resize.bio;
 	unsigned int new_dst, cluster, dst_cluster;
-	bool is_locked, defer_bio_count = false;
+	bool is_locked;
 	int ret = 0;
 
 	dst_cluster = cmd->resize.dst_cluster;
@@ -254,9 +254,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 		goto not_occupied;
 	}
 
-	/* Redirect bios to kwork and wait inflights, which may use @cluster */
-	force_defer_bio_count_inc(ploop);
-	defer_bio_count = true;
+	/* Wait inflights, which may use @cluster */
 	ret = ploop_inflight_bios_ref_switch(ploop, true);
 	if (ret < 0)
 		goto out;
@@ -300,9 +298,6 @@ not_occupied:
 	/* Zero new BAT entries on disk. */
 	ret = ploop_write_zero_cluster_sync(ploop, bio, dst_cluster);
 out:
-	if (defer_bio_count)
-		force_defer_bio_count_dec(ploop);
-
 	return ret;
 }
 
@@ -712,7 +707,6 @@ static void process_notify_delta_merged(struct ploop *ploop,
 	struct file *file;
 	int ret;
 
-	force_defer_bio_count_inc(ploop);
 	ret = ploop_inflight_bios_ref_switch(ploop, true);
 	if (ret) {
 		cmd->retval = ret;
@@ -761,7 +755,6 @@ static void process_notify_delta_merged(struct ploop *ploop,
 	fput(file);
 	cmd->retval = 0;
 out:
-	force_defer_bio_count_dec(ploop);
 	complete(&cmd->comp); /* Last touch of cmd memory */
 }
 
@@ -773,7 +766,6 @@ static void process_update_delta_index(struct ploop *ploop,
 	unsigned int cluster, dst_cluster, n;
 	int ret;
 
-	force_defer_bio_count_inc(ploop);
 	ret = ploop_inflight_bios_ref_switch(ploop, true);
 	if (ret)
 		goto out;
@@ -801,7 +793,6 @@ static void process_update_delta_index(struct ploop *ploop,
 unlock:
 	write_unlock_irq(&ploop->bat_rwlock);
 out:
-	force_defer_bio_count_dec(ploop);
 	cmd->retval = ret;
 	complete(&cmd->comp); /* Last touch of cmd memory */
 }
