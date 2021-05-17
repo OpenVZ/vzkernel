@@ -99,8 +99,10 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 	pio->bi_op = bi_op;
 	pio->wants_discard_index_cleanup = false;
 	pio->is_data_alloc = false;
+	pio->free_on_endio = false;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
 	pio->bi_status = BLK_STS_OK;
+	atomic_set(&pio->remaining, 1);
 	pio->piwb = NULL;
 	INIT_LIST_HEAD(&pio->list);
 	INIT_LIST_HEAD(&pio->endio_list);
@@ -110,30 +112,26 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 }
 
 /* Get cluster related to pio sectors */
-static int ploop_pio_cluster(struct ploop *ploop, struct pio *pio,
-			     unsigned int *ret_cluster)
+static int ploop_pio_valid(struct ploop *ploop, struct pio *pio)
 {
 	sector_t sector = pio->bi_iter.bi_sector;
-	unsigned int cluster, end_cluster;
+	unsigned int end_cluster;
 	loff_t end_byte;
 
-	cluster = sector >> ploop->cluster_log;
-	end_byte = ((sector << 9) + pio->bi_iter.bi_size - 1);
-	end_cluster = end_byte >> (ploop->cluster_log + 9);
+	end_byte = to_bytes(sector) + pio->bi_iter.bi_size - 1;
+	end_cluster = to_sector(end_byte) >> ploop->cluster_log;
 
-	if (unlikely(cluster >= ploop->nr_bat_entries) ||
-		     cluster != end_cluster) {
+	if (unlikely(end_cluster >= ploop->nr_bat_entries)) {
 		/*
 		 * This mustn't happen, since we set max_io_len
 		 * via dm_set_target_max_io_len().
 		 */
-		WARN_ONCE(1, "sec=%llu, size=%u, clu=%u, end=%u, nr=%u\n",
-			  sector, pio->bi_iter.bi_size, cluster,
+		WARN_ONCE(1, "sec=%llu, size=%u, end_clu=%u, nr=%u\n",
+			  sector, pio->bi_iter.bi_size,
 			  end_cluster, ploop->nr_bat_entries);
 		return -EINVAL;
 	}
 
-	*ret_cluster = cluster;
 	return 0;
 }
 
@@ -150,10 +148,23 @@ static void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
 	blk_mq_complete_request(rq);
 }
 
-void pio_endio(struct pio *pio)
+static void do_pio_endio(struct pio *pio)
 {
 	ploop_endio_t endio_cb = pio->endio_cb;
 	void *endio_cb_data = pio->endio_cb_data;
+	bool free_on_endio = pio->free_on_endio;
+
+        if (!atomic_dec_and_test(&pio->remaining))
+                return;
+
+	endio_cb(pio, endio_cb_data, pio->bi_status);
+
+	if (free_on_endio)
+		kfree(pio);
+}
+
+void pio_endio(struct pio *pio)
+{
 	struct ploop *ploop = pio->ploop;
 
 	if (pio->ref_index != PLOOP_REF_INDEX_INVALID)
@@ -161,7 +172,96 @@ void pio_endio(struct pio *pio)
 
 	handle_cleanup(ploop, pio);
 
-	endio_cb(pio, endio_cb_data, pio->bi_status);
+	do_pio_endio(pio);
+}
+
+static void pio_chain_endio(struct pio *pio, void *parent_ptr,
+			    blk_status_t bi_status)
+{
+        struct pio *parent = parent_ptr;
+
+        if (unlikely(bi_status))
+                parent->bi_status = bi_status;
+
+        do_pio_endio(parent);
+}
+
+static void pio_chain(struct pio *pio, struct pio *parent)
+{
+	BUG_ON(pio->endio_cb_data || pio->endio_cb);
+
+	pio->endio_cb_data = parent;
+	pio->endio_cb = pio_chain_endio;
+	atomic_inc(&parent->remaining);
+}
+
+/* Clone of bio_advance_iter() */
+static void pio_advance(struct pio *pio, unsigned int bytes)
+{
+	struct bvec_iter *iter = &pio->bi_iter;
+
+	iter->bi_sector += bytes >> 9;
+
+	if (op_is_discard(pio->bi_op))
+		iter->bi_size -= bytes;
+	else
+		bvec_iter_advance(pio->bi_io_vec, iter, bytes);
+}
+
+static struct pio * split_and_chain_pio(struct ploop *ploop,
+		struct pio *pio, u32 len)
+{
+	struct pio *split;
+
+	split = kmalloc(sizeof(*split), GFP_NOIO);
+	if (!split)
+		return NULL;
+
+	init_pio(ploop, pio->bi_op, split);
+	split->free_on_endio = true;
+	split->bi_io_vec = pio->bi_io_vec;
+	split->bi_iter = pio->bi_iter;
+	split->bi_iter.bi_size = len;
+	split->endio_cb = NULL;
+	split->endio_cb_data = NULL;
+	pio_chain(split, pio);
+	if (len)
+		pio_advance(pio, len);
+	return split;
+}
+
+static int split_pio_to_list(struct ploop *ploop, struct pio *pio,
+			     struct list_head *list)
+{
+	u32 clu_size = to_bytes(1 << ploop->cluster_log);
+	struct pio *split;
+
+	while (1) {
+		loff_t start = to_bytes(pio->bi_iter.bi_sector);
+		loff_t end = start + pio->bi_iter.bi_size;
+		unsigned int len;
+
+		WARN_ON_ONCE(start == end);
+
+		if (start / clu_size == (end - 1) / clu_size)
+			break;
+		end = round_up(start + 1, clu_size);
+		len = end - start;
+
+		split = split_and_chain_pio(ploop, pio, len);
+		if (!split)
+			goto err;
+
+		list_add_tail(&split->list, list);
+	}
+
+	return 0;
+err:
+	while ((pio = pio_list_pop(list)) != NULL) {
+		pio->bi_status = BLK_STS_RESOURCE;
+		pio_endio(pio);
+	}
+	return -ENOMEM;
 }
 
 void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list)
@@ -1646,14 +1746,22 @@ out:
 
 static noinline void submit_pio(struct ploop *ploop, struct pio *pio)
 {
-	unsigned int cluster;
 	unsigned long flags;
+	LIST_HEAD(list);
+	int ret;
 
 	if (pio->bi_iter.bi_size) {
-		if (ploop_pio_cluster(ploop, pio, &cluster) < 0)
+		if (ploop_pio_valid(ploop, pio) < 0)
 			goto kill;
 
-		defer_pios(ploop, pio, NULL);
+		ret = split_pio_to_list(ploop, pio, &list);
+		if (ret) {
+			pio->bi_status = BLK_STS_RESOURCE;
+			goto endio;
+		}
+		list_add(&pio->list, &list);
+
+		defer_pios(ploop, NULL, &list);
 		goto out;
 	}
 
@@ -1667,7 +1775,8 @@ static noinline void submit_pio(struct ploop *ploop, struct pio *pio)
 out:
 	return;
 kill:
-	pio->bi_status = BLK_STS_RESOURCE;
+	pio->bi_status = BLK_STS_IOERR;
+endio:
 	pio_endio(pio);
 }
 

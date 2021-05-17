@@ -257,6 +257,7 @@ struct pio {
 	unsigned int		bi_op;
 	unsigned int		bi_vcnt;
 	blk_status_t bi_status;
+	atomic_t remaining;
 
 	ploop_endio_t endio_cb;
 	void *endio_cb_data;
@@ -265,6 +266,7 @@ struct pio {
 
 	bool is_data_alloc:1;
 	bool wants_discard_index_cleanup:1;
+	bool free_on_endio:1;
 	/*
 	 * 0 and 1 are related to inflight_bios_ref[],
 	 * 2 means index is not assigned.
