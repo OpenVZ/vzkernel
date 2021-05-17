@@ -297,11 +297,9 @@ static void dec_nr_inflight_raw(struct ploop *ploop, struct pio *h)
 	}
 }
 
-static void dec_nr_inflight(struct ploop *ploop, struct bio *bio)
+static void dec_nr_inflight(struct ploop *ploop, struct pio *pio)
 {
-	struct pio *h = bio_to_endio_hook(bio);
-
-	dec_nr_inflight_raw(ploop, h);
+	dec_nr_inflight_raw(ploop, pio);
 }
 
 static void link_endio_hook(struct ploop *ploop, struct pio *new, struct rb_root *root,
@@ -510,7 +508,7 @@ static int ploop_discard_bio_end(struct ploop *ploop, struct bio *bio)
 {
 	struct pio *h = bio_to_endio_hook(bio);
 
-	dec_nr_inflight(ploop, bio);
+	dec_nr_inflight(ploop, h);
 	if (bio->bi_status == BLK_STS_OK)
 		queue_discard_index_wb(ploop, h);
 	else
@@ -870,7 +868,7 @@ static int ploop_data_bio_end(struct bio *bio)
 		bio->bi_status = piwb->bi_status;
 	spin_unlock_irqrestore(&piwb->lock, flags);
 
-	dec_nr_inflight(piwb->ploop, bio);
+	dec_nr_inflight(piwb->ploop, pio);
 
 	if (!completed)
 		return DM_ENDIO_INCOMPLETE;
@@ -1711,7 +1709,7 @@ int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
 
 	if (ret == DM_ENDIO_DONE) {
 		maybe_unlink_completed_bio(ploop, bio);
-		dec_nr_inflight(ploop, bio);
+		dec_nr_inflight(ploop, h);
 	}
 
 	return ret;
