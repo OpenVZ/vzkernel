@@ -80,7 +80,7 @@ static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop
 	spin_lock_init(&piwb->lock);
 	piwb->bat_page = NULL;
 	piwb->bi_status = 0;
-	bio_list_init(&piwb->ready_data_bios);
+	INIT_LIST_HEAD(&piwb->ready_data_pios);
 	bio_list_init(&piwb->cow_list);
 	/* For ploop_bat_write_complete() */
 	atomic_set(&piwb->count, 1);
@@ -682,6 +682,7 @@ static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 	struct bio *data_bio, *cluster_bio;
 	struct ploop *ploop = piwb->ploop;
 	struct ploop_cow *cow;
+	struct pio *data_pio;
 	unsigned long flags;
 
 	if (!bi_status) {
@@ -705,7 +706,8 @@ static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 	 * End pending data bios. Unlocked, as nobody can
 	 * add a new element after piwc->completed is true.
 	 */
-	while ((data_bio = bio_list_pop(&piwb->ready_data_bios))) {
+	while ((data_pio = pio_list_pop(&piwb->ready_data_pios)) != NULL) {
+		data_bio = dm_bio_from_per_bio_data(data_pio, sizeof(*data_pio));
 		if (bi_status)
 			data_bio->bi_status = bi_status;
 		if (data_bio->bi_end_io)
@@ -855,15 +857,15 @@ unmap:
 
 static int ploop_data_bio_end(struct bio *bio)
 {
-	struct pio *h = bio_to_endio_hook(bio);
-	struct ploop_index_wb *piwb = h->piwb;
+	struct pio *pio = bio_to_endio_hook(bio);
+	struct ploop_index_wb *piwb = pio->piwb;
 	unsigned long flags;
 	bool completed;
 
 	spin_lock_irqsave(&piwb->lock, flags);
 	completed = piwb->completed;
 	if (!completed)
-		bio_list_add(&piwb->ready_data_bios, bio);
+		list_add_tail(&pio->list, &piwb->ready_data_pios);
 	else if (!bio->bi_status)
 		bio->bi_status = piwb->bi_status;
 	spin_unlock_irqrestore(&piwb->lock, flags);
@@ -1478,7 +1480,7 @@ static int process_one_discard_bio(struct ploop *ploop, struct bio *bio,
 			ploop_reset_bat_update(piwb);
 	} else {
 		to[cluster] = 0;
-		bio_list_add(&piwb->ready_data_bios, bio);
+		list_add_tail(&h->list, &piwb->ready_data_pios);
 	}
 	kunmap_atomic(to);
 out:
