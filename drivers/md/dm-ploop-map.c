@@ -390,18 +390,17 @@ static void maybe_link_submitting_pio(struct ploop *ploop, struct pio *h,
 	link_endio_hook(ploop, h, &ploop->inflight_bios_rbtree, cluster, false);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 }
-static void maybe_unlink_completed_bio(struct ploop *ploop, struct bio *bio)
+static void maybe_unlink_completed_pio(struct ploop *ploop, struct pio *pio)
 {
-	struct pio *h = bio_to_endio_hook(bio);
 	LIST_HEAD(pio_list);
 	unsigned long flags;
 	bool queue = false;
 
-	if (likely(RB_EMPTY_NODE(&h->node)))
+	if (likely(RB_EMPTY_NODE(&pio->node)))
 		return;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	unlink_endio_hook(ploop, &ploop->inflight_bios_rbtree, h, &pio_list);
+	unlink_endio_hook(ploop, &ploop->inflight_bios_rbtree, pio, &pio_list);
 	if (!list_empty(&pio_list)) {
 		list_splice_tail(&pio_list, &ploop->deferred_pios);
 		queue = true;
@@ -1708,7 +1707,7 @@ int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
 		ret = ploop_discard_index_bio_end(ploop, bio);
 
 	if (ret == DM_ENDIO_DONE) {
-		maybe_unlink_completed_bio(ploop, bio);
+		maybe_unlink_completed_pio(ploop, h);
 		dec_nr_inflight(ploop, h);
 	}
 
