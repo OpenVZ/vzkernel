@@ -279,7 +279,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	if (ret)
 		goto err;
 
-	ti->per_io_data_size = sizeof(struct dm_ploop_endio_hook);
+	ti->per_io_data_size = sizeof(struct pio);
 	ti->num_flush_bios = 1;
 	ti->flush_supported = true;
 	ti->num_discard_bios = 1;

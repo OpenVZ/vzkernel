@@ -1383,9 +1383,9 @@ static int ploop_push_backup_get_uuid(struct ploop *ploop, char *result,
 static int ploop_push_backup_read(struct ploop *ploop, char *uuid,
 				char *result, unsigned int maxlen)
 {
-	struct dm_ploop_endio_hook *h, *orig_h;
 	struct push_backup *pb = ploop->pb;
 	unsigned int left, right, sz = 0;
+	struct pio *h, *orig_h;
 	struct rb_node *node;
 	int ret = 1;
 
@@ -1409,7 +1409,7 @@ again:
 
 	left = right = h->cluster;
 	while ((node = rb_prev(&h->node)) != NULL) {
-		h = rb_entry(node, struct dm_ploop_endio_hook, node);
+		h = rb_entry(node, struct pio, node);
 		if (h->cluster + 1 != left || list_empty(&h->list))
 			break;
 		list_del_init(&h->list);
@@ -1418,7 +1418,7 @@ again:
 
 	h = orig_h;
 	while ((node = rb_next(&h->node)) != NULL) {
-		h = rb_entry(node, struct dm_ploop_endio_hook, node);
+		h = rb_entry(node, struct pio, node);
 		if (h->cluster - 1 != right || list_empty(&h->list))
 			break;
 		list_del_init(&h->list);
@@ -1436,7 +1436,7 @@ static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
 	unsigned int i, nr_bat_entries = ploop->nr_bat_entries;
 	struct bio_list bio_list = BIO_EMPTY_LIST;
 	struct push_backup *pb = ploop->pb;
-	struct dm_ploop_endio_hook *h;
+	struct pio *h;
 	bool has_more = false;
 
 	if (!pb)
