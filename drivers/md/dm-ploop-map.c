@@ -57,17 +57,17 @@
 			read_unlock_irqrestore(&ploop->bat_rwlock, flags);	\
 	} while (0)
 
-static unsigned int bio_nr_segs(struct bio *bio)
+static unsigned int pio_nr_segs(struct pio *pio)
 {
 	struct bvec_iter bi = {
-		.bi_size = bio->bi_iter.bi_size,
-		.bi_bvec_done = bio->bi_iter.bi_bvec_done,
-		.bi_idx = bio->bi_iter.bi_idx,
+		.bi_size = pio->bi_iter.bi_size,
+		.bi_bvec_done = pio->bi_iter.bi_bvec_done,
+		.bi_idx = pio->bi_iter.bi_idx,
 	};
         unsigned int nr_segs = 0;
 	struct bio_vec bv;
 
-	for_each_bvec(bv, bio->bi_io_vec, bi, bi)
+	for_each_bvec(bv, pio->bi_io_vec, bi, bi)
                 nr_segs++;
 
         return nr_segs;
@@ -93,6 +93,7 @@ static void __ploop_init_end_io(struct ploop *ploop, struct pio *pio)
 {
 	pio->action = PLOOP_END_IO_NONE;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
+	pio->bi_status = BLK_STS_OK;
 	pio->piwb = NULL;
 	INIT_LIST_HEAD(&pio->list);
 	INIT_LIST_HEAD(&pio->endio_list);
@@ -134,6 +135,14 @@ static int ploop_bio_cluster(struct ploop *ploop, struct bio *bio,
 
 	*ret_cluster = cluster;
 	return 0;
+}
+
+void pio_endio(struct pio *pio)
+{
+	struct bio *bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
+
+	bio->bi_status = pio->bi_status;
+	bio_endio(bio);
 }
 
 void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list)
@@ -214,8 +223,8 @@ static int ploop_map_discard(struct ploop *ploop, struct bio *bio)
 	if (supported) {
 		defer_pios(ploop, pio, NULL);
 	} else {
-		bio->bi_status = BLK_STS_NOTSUPP;
-		bio_endio(bio);
+		pio->bi_status = BLK_STS_NOTSUPP;
+		pio_endio(pio);
 	}
 
 	return DM_MAPIO_SUBMITTED;
@@ -412,17 +421,17 @@ static void maybe_unlink_completed_bio(struct ploop *ploop, struct bio *bio)
 		queue_work(ploop->wq, &ploop->worker);
 }
 
-static bool bio_endio_if_all_zeros(struct bio *bio)
+static bool bio_endio_if_all_zeros(struct pio *pio)
 {
 	struct bvec_iter bi = {
-		.bi_size = bio->bi_iter.bi_size,
-		.bi_bvec_done = bio->bi_iter.bi_bvec_done,
-		.bi_idx = bio->bi_iter.bi_idx,
+		.bi_size = pio->bi_iter.bi_size,
+		.bi_bvec_done = pio->bi_iter.bi_bvec_done,
+		.bi_idx = pio->bi_iter.bi_idx,
 	};
 	struct bio_vec bv;
 	void *data, *ret;
 
-	for_each_bvec(bv, bio->bi_io_vec, bi, bi) {
+	for_each_bvec(bv, pio->bi_io_vec, bi, bi) {
 		if (!bv.bv_len)
 			continue;
 		data = kmap(bv.bv_page);
@@ -432,8 +441,7 @@ static bool bio_endio_if_all_zeros(struct bio *bio)
 			return false;
 	}
 
-	bio->bi_status = BLK_STS_OK;
-	bio_endio(bio);
+	pio_endio(pio);
 	return true;
 }
 
@@ -454,8 +462,8 @@ static void handle_discard_bio(struct ploop *ploop, struct bio *bio,
 
 	if (!cluster_is_in_top_delta(ploop, cluster) || ploop->nr_deltas != 1) {
 enotsupp:
-		bio->bi_status = BLK_STS_NOTSUPP;
-		bio_endio(bio);
+		h->bi_status = BLK_STS_NOTSUPP;
+		pio_endio(h);
 		return;
 	}
 
@@ -503,8 +511,8 @@ enotsupp:
 	pos = to_bytes(bio->bi_iter.bi_sector);
 	ret = punch_hole(top_delta(ploop)->file, pos, bio->bi_iter.bi_size);
 	if (ret)
-		bio->bi_status = errno_to_blk_status(ret);
-	bio_endio(bio);
+		h->bi_status = errno_to_blk_status(ret);
+	pio_endio(h);
 }
 
 static int ploop_discard_bio_end(struct ploop *ploop, struct bio *bio)
@@ -880,10 +888,8 @@ static int ploop_data_bio_end(struct bio *bio)
 	return DM_ENDIO_DONE;
 }
 
-static bool ploop_attach_end_action(struct bio *bio, struct ploop_index_wb *piwb)
+static bool ploop_attach_end_action(struct pio *h, struct ploop_index_wb *piwb)
 {
-	struct pio *h = bio_to_endio_hook(bio);
-
 	if (WARN_ON_ONCE(h->action != PLOOP_END_IO_NONE)) {
 		h->action = PLOOP_END_IO_NONE;
 		return false;
@@ -974,12 +980,14 @@ static void submit_delta_read(struct ploop *ploop, unsigned int level,
 }
 
 static void initiate_delta_read(struct ploop *ploop, unsigned int level,
-				unsigned int dst_cluster, struct bio *bio)
+				unsigned int dst_cluster, struct pio *pio)
 {
+	struct bio *bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
+
 	if (dst_cluster == BAT_ENTRY_NONE) {
 		/* No one delta contains dst_cluster. */
 		zero_fill_bio(bio);
-		bio_endio(bio);
+		pio_endio(pio);
 		return;
 	}
 
@@ -1103,27 +1111,26 @@ err:
 
 static void queue_or_fail(struct ploop *ploop, int err, void *data)
 {
-	struct bio *bio = data;
+	struct pio *pio = data;
 
 	/* FIXME: do we use BLK_STS_AGAIN? */
 	if (err && err != BLK_STS_AGAIN) {
-		bio->bi_status = errno_to_blk_status(err);
-		bio_endio(bio);
+		pio->bi_status = errno_to_blk_status(err);
+		pio_endio(pio);
 	} else {
-		struct pio *pio = bio_to_endio_hook(bio);
 		defer_pios(ploop, pio, NULL);
 	}
 }
 
 static void initiate_cluster_cow(struct ploop *ploop, unsigned int level,
-		unsigned int cluster, unsigned int dst_cluster, struct bio *bio)
+		unsigned int cluster, unsigned int dst_cluster, struct pio *pio)
 {
 	if (!submit_cluster_cow(ploop, level, cluster, dst_cluster,
-				queue_or_fail, bio))
+				queue_or_fail, pio))
 		return;
 
-	bio->bi_status = BLK_STS_RESOURCE;
-	bio_endio(bio);
+	pio->bi_status = BLK_STS_RESOURCE;
+	pio_endio(pio);
 }
 
 static void submit_cluster_write(struct ploop_cow *cow)
@@ -1253,9 +1260,8 @@ static bool locate_new_cluster_and_attach_bio(struct ploop *ploop,
 					      struct ploop_index_wb *piwb,
 					      unsigned int cluster,
 					      unsigned int *dst_cluster,
-					      struct bio *bio)
+					      struct pio *pio)
 {
-	struct pio *pio = bio_to_endio_hook(bio);
 	bool bat_update_prepared = false;
 	bool attached = false;
 	unsigned int page_nr;
@@ -1265,7 +1271,7 @@ static bool locate_new_cluster_and_attach_bio(struct ploop *ploop,
 	if (piwb->page_nr == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
 		if (ploop_prepare_bat_update(ploop, page_nr, piwb) < 0) {
-			bio->bi_status = BLK_STS_RESOURCE;
+			pio->bi_status = BLK_STS_RESOURCE;
 			goto error;
 		}
 		bat_update_prepared = true;
@@ -1278,14 +1284,14 @@ static bool locate_new_cluster_and_attach_bio(struct ploop *ploop,
 	}
 
 	if (ploop_alloc_cluster(ploop, piwb, cluster, dst_cluster)) {
-		bio->bi_status = BLK_STS_IOERR;
+		pio->bi_status = BLK_STS_IOERR;
 		goto error;
 	}
 
-	attached = ploop_attach_end_action(bio, piwb);
+	attached = ploop_attach_end_action(pio, piwb);
 	if (!attached) {
 		/*
-		 * Could not prepare data bio to be submitted before index wb
+		 * Could not prepare data pio to be submitted before index wb
 		 * batch? Delay submitting. Good thing, that cluster allocation
 		 * has already made, and it goes in the batch.
 		 */
@@ -1297,33 +1303,32 @@ error:
 	/* Uninit piwb */
 	if (bat_update_prepared)
 		ploop_reset_bat_update(piwb);
-	bio_endio(bio);
+	pio_endio(pio);
 	return false;
 }
 
 static void data_rw_complete(struct pio *pio)
 {
-	struct bio *bio = pio->data;
+	struct bio *bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
 
 	if (pio->ret != bio->bi_iter.bi_size)
-                bio->bi_status = BLK_STS_IOERR;
+                pio->bi_status = BLK_STS_IOERR;
 
-	bio_endio(bio);
+	pio_endio(pio);
 }
 
-static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct bio *bio)
+static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct pio *pio)
 {
-	struct pio *pio = bio_to_endio_hook(bio);
+	struct bio *bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
 	unsigned int rw, nr_segs;
 	struct bio_vec *bvec;
 	struct iov_iter iter;
 	loff_t pos;
 
 	pio->complete = data_rw_complete;
-	pio->data = bio;
 
 	rw = (op_is_write(bio->bi_opf) ? WRITE : READ);
-	nr_segs = bio_nr_segs(bio);
+	nr_segs = pio_nr_segs(pio);
 	bvec = __bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);
 
 	iov_iter_bvec(&iter, rw, bvec, nr_segs, bio->bi_iter.bi_size);
@@ -1340,6 +1345,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 				    struct ploop_index_wb *piwb)
 {
 	sector_t sector = bio->bi_iter.bi_sector;
+	struct pio *pio = bio_to_endio_hook(bio);
 	unsigned int cluster, dst_cluster;
 	u8 level;
 	bool ret;
@@ -1371,7 +1377,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 		 * Simple read from secondary delta. May fail.
 		 * (Also handles the case dst_cluster == BAT_ENTRY_NONE).
 		 */
-		initiate_delta_read(ploop, level, dst_cluster, bio);
+		initiate_delta_read(ploop, level, dst_cluster, pio);
 		goto out;
 	} else if (dst_cluster != BAT_ENTRY_NONE) {
 		/*
@@ -1380,16 +1386,16 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 		 * a lot of other corner cases, but we don't do that as
 		 * snapshots are used and COW occurs very rare.
 		 */
-		initiate_cluster_cow(ploop, level, cluster, dst_cluster, bio);
+		initiate_cluster_cow(ploop, level, cluster, dst_cluster, pio);
 		goto out;
 	}
 
-	if (unlikely(bio_endio_if_all_zeros(bio)))
+	if (unlikely(bio_endio_if_all_zeros(pio)))
 		goto out;
 
 	/* Cluster exists nowhere. Allocate it and setup bio as outrunning */
 	ret = locate_new_cluster_and_attach_bio(ploop, piwb, cluster,
-						&dst_cluster, bio);
+						&dst_cluster, pio);
 	if (!ret)
 		goto out;
 queue:
@@ -1400,7 +1406,7 @@ queue:
 
 	maybe_link_submitting_bio(ploop, bio, cluster);
 
-	submit_rw_mapped(ploop, dst_cluster, bio);
+	submit_rw_mapped(ploop, dst_cluster, pio);
 out:
 	return 0;
 }
@@ -1456,8 +1462,8 @@ static int process_one_discard_pio(struct ploop *ploop, struct pio *h,
 	if (piwb->page_nr == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
 		if (ploop_prepare_bat_update(ploop, page_nr, piwb) < 0) {
-			bio->bi_status = BLK_STS_RESOURCE;
-			bio_endio(bio);
+			h->bi_status = BLK_STS_RESOURCE;
+			pio_endio(h);
 			goto out;
 		}
 		piwb->type = PIWB_TYPE_DISCARD;
@@ -1476,7 +1482,8 @@ static int process_one_discard_pio(struct ploop *ploop, struct pio *h,
 
 	to = kmap_atomic(piwb->bat_page);
 	if (WARN_ON_ONCE(!to[cluster])) {
-		bio_io_error(bio);
+		h->bi_status = BLK_STS_IOERR;
+		pio_endio(h);
 		if (bat_update_prepared)
 			ploop_reset_bat_update(piwb);
 	} else {
@@ -1635,7 +1642,6 @@ void do_ploop_fsync_work(struct work_struct *ws)
 {
 	struct ploop *ploop = container_of(ws, struct ploop, fsync_worker);
 	LIST_HEAD(flush_pios);
-	struct bio *bio;
 	struct pio *pio;
 
 	spin_lock_irq(&ploop->deferred_lock);
@@ -1644,10 +1650,8 @@ void do_ploop_fsync_work(struct work_struct *ws)
 
 	/* FIXME: issue flush */
 
-	while ((pio = pio_list_pop(&flush_pios)) != NULL) {
-		bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
-		bio_endio(bio);
-	}
+	while ((pio = pio_list_pop(&flush_pios)) != NULL)
+		pio_endio(pio);
 }
 
 /*
@@ -1663,6 +1667,9 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 	unsigned long flags;
 
 	ploop_init_end_io(ploop, bio);
+
+	pio->bi_iter = bio->bi_iter;
+	pio->bi_io_vec = bio->bi_io_vec;
 
 	if (bio_sectors(bio)) {
 		if (ploop_bio_cluster(ploop, bio, &cluster) < 0)
