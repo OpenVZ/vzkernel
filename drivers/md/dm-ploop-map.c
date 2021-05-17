@@ -156,6 +156,9 @@ void track_dst_cluster(struct ploop *ploop, u32 dst_cluster)
 {
 	unsigned long flags;
 
+	if (!ploop->tracking_bitmap)
+		return;
+
 	read_lock_irqsave(&ploop->bat_rwlock, flags);
 	if (ploop->tracking_bitmap && !WARN_ON(dst_cluster >= ploop->tb_nr))
 		set_bit(dst_cluster, ploop->tracking_bitmap);
@@ -170,14 +173,12 @@ void track_dst_cluster(struct ploop *ploop, u32 dst_cluster)
  * Thus, userspace mustn't do maintaince operations in parallel
  * with tracking.
  */
-void __track_bio(struct ploop *ploop, struct bio *bio)
+void __track_pio(struct ploop *ploop, struct pio *pio)
 {
-	unsigned int dst_cluster = bio->bi_iter.bi_sector >> ploop->cluster_log;
+	unsigned int dst_cluster = pio->bi_iter.bi_sector >> ploop->cluster_log;
 
-	if (!op_is_write(bio->bi_opf) || !bio_sectors(bio))
+	if (!op_is_write(pio->bi_opf) || !bvec_iter_sectors((pio)->bi_iter))
 		return;
-
-	WARN_ON_ONCE(bio->bi_disk != ploop->origin_dev->bdev->bd_disk);
 
 	track_dst_cluster(ploop, dst_cluster);
 }
@@ -977,9 +978,10 @@ static void ploop_cow_endio(struct bio *cluster_bio)
 {
 	struct ploop_cow *cow = cluster_bio->bi_private;
 	struct ploop *ploop = cow->ploop;
+	unsigned int dst_cluster = cluster_bio->bi_iter.bi_sector >> ploop->cluster_log;
 	unsigned long flags;
 
-	track_bio(ploop, cluster_bio);
+	track_dst_cluster(ploop, dst_cluster);
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	bio_list_add(&ploop->delta_cow_action_list, cluster_bio);
@@ -1674,7 +1676,7 @@ int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
 		 * and for data bios. Check for ref_index to not
 		 * track @bio twice.
 		 */
-		track_bio(ploop, bio);
+		track_pio(ploop, pio);
 	}
 	/*
 	 * This function is called from the very beginning
