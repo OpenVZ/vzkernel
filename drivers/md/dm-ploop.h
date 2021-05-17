@@ -236,6 +236,11 @@ struct ploop {
 	spinlock_t pb_lock;
 };
 
+struct ploop_rq {
+	struct request *rq;
+	struct bio_vec *bvec;
+};
+
 struct pio;
 typedef void (*ploop_endio_t)(struct pio *, void *, blk_status_t);
 
@@ -331,6 +336,19 @@ static inline bool whole_cluster(struct ploop *ploop, struct pio *pio)
 	 * it's just a suitable and existing primitive.
 	 */
 	return !(end_sector & ((1 << ploop->cluster_log) - 1));
+}
+
+static inline ssize_t ploop_per_io_data_size(void)
+{
+	return sizeof(struct ploop_rq) + sizeof(struct pio);
+}
+static inline struct ploop_rq *map_info_to_prq(union map_info *info)
+{
+	return (void *)info->ptr;
+}
+static inline struct pio *map_info_to_pio(union map_info *info)
+{
+	return (void *)info->ptr + sizeof(struct ploop_rq);
 }
 
 #define BAT_LEVEL_MAX		(U8_MAX - 1)
@@ -524,7 +542,8 @@ extern void do_ploop_work(struct work_struct *ws);
 extern void do_ploop_fsync_work(struct work_struct *ws);
 extern void process_deferred_cmd(struct ploop *ploop,
 			struct ploop_index_wb *piwb);
-extern int ploop_map(struct dm_target *ti, struct bio *bio);
+extern int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
+		    union map_info *map_context, struct request **clone);
 extern int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable);
 extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
 extern void unlink_postponed_backup_endio(struct ploop *ploop,
