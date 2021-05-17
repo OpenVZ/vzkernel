@@ -49,9 +49,8 @@ static void ploop_aio_complete(struct kiocb *iocb, long ret, long ret2)
 }
 
 void call_rw_iter(struct file *file, loff_t pos, unsigned rw,
-		  struct iov_iter *iter, struct bio *bio)
+		  struct iov_iter *iter, struct pio *pio)
 {
-	struct pio *pio = bio_to_endio_hook(bio);
 	struct kiocb *iocb = &pio->iocb;
 	int ret;
 

@@ -1297,7 +1297,6 @@ static void data_rw_complete(struct pio *pio)
 
 static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct pio *pio)
 {
-	struct bio *bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
 	unsigned int rw, nr_segs;
 	struct bio_vec *bvec;
 	struct iov_iter iter;
@@ -1315,7 +1314,7 @@ static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct pio *pi
 	remap_to_cluster(ploop, pio, clu_pos);
 	pos = to_bytes(pio->bi_iter.bi_sector);
 
-	call_rw_iter(top_delta(ploop)->file, pos, rw, &iter, bio);
+	call_rw_iter(top_delta(ploop)->file, pos, rw, &iter, pio);
 }
 
 static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,

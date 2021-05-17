@@ -563,5 +563,5 @@ extern int ploop_setup_metadata(struct ploop *ploop, struct page *page);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 				     void **d_hdr);
 extern void call_rw_iter(struct file *file, loff_t pos, unsigned rw,
-			 struct iov_iter *iter, struct bio *bio);
+			 struct iov_iter *iter, struct pio *pio);
 #endif /* __DM_PLOOP_H */
