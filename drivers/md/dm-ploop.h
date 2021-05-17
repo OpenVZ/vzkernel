@@ -315,8 +315,15 @@ static inline void remap_to_origin(struct ploop *ploop, struct bio *bio)
 	bio_set_dev(bio, ploop->origin_dev->bdev);
 }
 
-static inline void remap_to_cluster(struct ploop *ploop, struct bio *bio,
+static inline void remap_to_cluster(struct ploop *ploop, struct pio *pio,
 				    unsigned int cluster)
+{
+	pio->bi_iter.bi_sector &= ((1 << ploop->cluster_log) - 1);
+	pio->bi_iter.bi_sector |= (cluster << ploop->cluster_log);
+}
+
+static inline void remap_to_cluster_bio(struct ploop *ploop, struct bio *bio,
+					unsigned int cluster)
 {
 	bio->bi_iter.bi_sector &= ((1 << ploop->cluster_log) - 1);
 	bio->bi_iter.bi_sector |= (cluster << ploop->cluster_log);

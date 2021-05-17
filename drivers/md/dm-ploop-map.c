@@ -501,9 +501,9 @@ enotsupp:
 	atomic_inc(&ploop->nr_discard_bios);
 
 	remap_to_origin(ploop, bio);
-	remap_to_cluster(ploop, bio, dst_cluster);
+	remap_to_cluster(ploop, h, dst_cluster);
 
-	pos = to_bytes(bio->bi_iter.bi_sector);
+	pos = to_bytes(h->bi_iter.bi_sector);
 	ret = punch_hole(top_delta(ploop)->file, pos, h->bi_iter.bi_size);
 	if (ret)
 		h->bi_status = errno_to_blk_status(ret);
@@ -947,7 +947,7 @@ static void submit_delta_read(struct ploop *ploop, unsigned int level,
 	atomic_set(&piocb->count, 2);
 	piocb->bio = bio;
 
-	remap_to_cluster(ploop, bio, dst_cluster);
+	remap_to_cluster_bio(ploop, bio, dst_cluster);
 
 	bvec = __bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);
 	offset = bio->bi_iter.bi_bvec_done;
@@ -1327,8 +1327,8 @@ static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct pio *pi
 	iter.iov_offset = pio->bi_iter.bi_bvec_done;
 
 	remap_to_origin(ploop, bio);
-	remap_to_cluster(ploop, bio, clu_pos);
-	pos = to_bytes(bio->bi_iter.bi_sector);
+	remap_to_cluster(ploop, pio, clu_pos);
+	pos = to_bytes(pio->bi_iter.bi_sector);
 
 	call_rw_iter(top_delta(ploop)->file, pos, rw, &iter, bio);
 }
