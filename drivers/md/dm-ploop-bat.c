@@ -286,6 +286,9 @@ int ploop_setup_metadata(struct ploop *ploop, struct page *page)
 	if (le32_to_cpu(m_hdr->m_Sectors) != 1 << cluster_log)
 		goto out;
 
+	memcpy(ploop->m_Sig, m_hdr->m_Sig, sizeof(ploop->m_Sig));
+	ploop->m_Type = le32_to_cpu(m_hdr->m_Type);
+	ploop->m_Sectors = le32_to_cpu(m_hdr->m_Sectors);
 	ploop->nr_bat_entries = le32_to_cpu(m_hdr->m_Size);
 
 	/* Header and BAT-occupied clusters at start of file */
@@ -312,20 +315,14 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 		       unsigned int *nr_pages, unsigned int *last_page_len)
 {
 	unsigned int bytes, delta_nr_be, offset_clusters, bat_clusters, cluster_log;
-	struct ploop_pvd_header *d_hdr, *hdr;
-	struct md_page *md;
+	struct ploop_pvd_header *d_hdr;
 	int ret = -EPROTO;
 
-	md = md_page_find(ploop, 0);
-	if (!md)
-		return -ENXIO;
-
-	hdr = kmap(md->page);
 	d_hdr = kmap(page);
 
-	if (memcmp(d_hdr->m_Sig, hdr->m_Sig, sizeof(d_hdr->m_Sig)) ||
-	    d_hdr->m_Sectors != hdr->m_Sectors ||
-	    d_hdr->m_Type != hdr->m_Type)
+	if (memcmp(d_hdr->m_Sig, ploop->m_Sig, sizeof(d_hdr->m_Sig)) ||
+	    d_hdr->m_Sectors != ploop->m_Sectors ||
+	    d_hdr->m_Type != ploop->m_Type)
 		goto out;
 
 	delta_nr_be = le32_to_cpu(d_hdr->m_Size);
@@ -343,7 +340,6 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 	*last_page_len = bytes ? : PAGE_SIZE;
 	ret = 0;
 out:
-	kunmap(md->page);
 	kunmap(page);
 	return ret;
 }
@@ -461,8 +457,15 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
-		init_bat_entries_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
+
+		if (is_top_level && md->id == 0) {
+			/* bat_entries before PLOOP_MAP_OFFSET is hdr */
+			memcpy(bat_entries, hdr, sizeof(struct ploop_pvd_header));
+		}
+
+		init_bat_entries_iter(ploop, md->id, &i, &end);
+
 		for (; i <= end; i++) {
 			clu = page_clu_idx_to_bat_clu(md->id, i);
 			if (clu >= size_in_clus) {
