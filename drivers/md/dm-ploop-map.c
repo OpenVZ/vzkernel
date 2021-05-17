@@ -1634,18 +1634,20 @@ void do_ploop_work(struct work_struct *ws)
 void do_ploop_fsync_work(struct work_struct *ws)
 {
 	struct ploop *ploop = container_of(ws, struct ploop, fsync_worker);
-	struct bio_list flush_bios = BIO_EMPTY_LIST;
+	LIST_HEAD(flush_pios);
 	struct bio *bio;
+	struct pio *pio;
 
 	spin_lock_irq(&ploop->deferred_lock);
-	bio_list_merge(&flush_bios, &ploop->flush_bios);
-	bio_list_init(&ploop->flush_bios);
+	list_splice_init(&ploop->flush_pios, &flush_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	/* FIXME: issue flush */
 
-	while ((bio = bio_list_pop(&flush_bios)) != NULL)
+	while ((pio = pio_list_pop(&flush_pios)) != NULL) {
+		bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
 		bio_endio(bio);
+	}
 }
 
 /*
@@ -1676,7 +1678,7 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 		return DM_MAPIO_KILL;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	bio_list_add(&ploop->flush_bios, bio);
+	list_add_tail(&pio->list, &ploop->flush_pios);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 	queue_work(ploop->wq, &ploop->fsync_worker);
 
