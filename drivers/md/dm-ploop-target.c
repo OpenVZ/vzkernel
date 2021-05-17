@@ -214,6 +214,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	spin_lock_init(&ploop->pb_lock);
 
 	bio_list_init(&ploop->deferred_bios);
+	bio_list_init(&ploop->flush_bios);
 	bio_list_init(&ploop->discard_bios);
 	INIT_LIST_HEAD(&ploop->cluster_lk_list);
 	bio_list_init(&ploop->delta_cow_action_list);
@@ -223,6 +224,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ploop->inflight_bios_rbtree = RB_ROOT;
 
 	INIT_WORK(&ploop->worker, do_ploop_work);
+	INIT_WORK(&ploop->fsync_worker, do_ploop_fsync_work);
 	init_completion(&ploop->inflight_bios_ref_comp);
 
 	for (i = 0; i < 2; i++) {

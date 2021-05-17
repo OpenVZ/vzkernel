@@ -201,6 +201,7 @@ struct ploop {
 
 	struct workqueue_struct *wq;
 	struct work_struct worker;
+	struct work_struct fsync_worker;
 
 	struct completion inflight_bios_ref_comp;
 	struct percpu_ref inflight_bios_ref[2];
@@ -209,6 +210,7 @@ struct ploop {
 
 	spinlock_t deferred_lock;
 	struct bio_list deferred_bios;
+	struct bio_list flush_bios;
 	struct bio_list discard_bios;
 
 	struct rw_semaphore ctl_rwsem;
@@ -481,6 +483,7 @@ extern bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
 extern void defer_bios(struct ploop *ploop, struct bio *bio, struct bio_list *bio_list);
 extern void do_ploop_work(struct work_struct *ws);
+extern void do_ploop_fsync_work(struct work_struct *ws);
 extern void process_deferred_cmd(struct ploop *ploop,
 			struct ploop_index_wb *piwb);
 extern int ploop_map(struct dm_target *ti, struct bio *bio);
