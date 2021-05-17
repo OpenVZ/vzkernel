@@ -384,10 +384,9 @@ static void del_cluster_lk(struct ploop *ploop, struct pio *h)
 
 }
 
-static void maybe_link_submitting_bio(struct ploop *ploop, struct bio *bio,
+static void maybe_link_submitting_bio(struct ploop *ploop, struct pio *h,
 				      unsigned int cluster)
 {
-	struct pio *h = bio_to_endio_hook(bio);
 	unsigned long flags;
 
 	if (!ploop->force_link_inflight_bios)
@@ -1339,8 +1338,8 @@ static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct pio *pi
 static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 				    struct ploop_index_wb *piwb)
 {
-	sector_t sector = bio->bi_iter.bi_sector;
 	struct pio *pio = bio_to_endio_hook(bio);
+	sector_t sector = pio->bi_iter.bi_sector;
 	unsigned int cluster, dst_cluster;
 	u8 level;
 	bool ret;
@@ -1359,7 +1358,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 	if (postpone_if_required_for_backup(ploop, pio, cluster))
 		goto out;
 
-	if (op_is_discard(bio->bi_opf)) {
+	if (op_is_discard(pio->bi_opf)) {
 		handle_discard_bio(ploop, bio, cluster, dst_cluster);
 		goto out;
 	}
@@ -1367,7 +1366,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 	if (cluster_is_in_top_delta(ploop, cluster)) {
 		/* Already mapped */
 		goto queue;
-	} else if (!op_is_write(bio->bi_opf)) {
+	} else if (!op_is_write(pio->bi_opf)) {
 		/*
 		 * Simple read from secondary delta. May fail.
 		 * (Also handles the case dst_cluster == BAT_ENTRY_NONE).
@@ -1388,7 +1387,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 	if (unlikely(bio_endio_if_all_zeros(pio)))
 		goto out;
 
-	/* Cluster exists nowhere. Allocate it and setup bio as outrunning */
+	/* Cluster exists nowhere. Allocate it and setup pio as outrunning */
 	ret = locate_new_cluster_and_attach_bio(ploop, piwb, cluster,
 						&dst_cluster, pio);
 	if (!ret)
@@ -1399,7 +1398,7 @@ queue:
 	inc_nr_inflight(ploop, bio);
 	read_unlock_irq(&ploop->bat_rwlock);
 
-	maybe_link_submitting_bio(ploop, bio, cluster);
+	maybe_link_submitting_bio(ploop, pio, cluster);
 
 	submit_rw_mapped(ploop, dst_cluster, pio);
 out:
