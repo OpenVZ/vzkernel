@@ -230,6 +230,26 @@ static int ploop_map_discard(struct ploop *ploop, struct pio *pio)
 	return DM_MAPIO_SUBMITTED;
 }
 
+/* Zero @count bytes of @qio->bi_io_vec since @from byte */
+static void zero_fill_pio(struct pio *pio)
+{
+	struct bvec_iter bi = {
+		.bi_size = pio->bi_iter.bi_size,
+		.bi_bvec_done = pio->bi_iter.bi_bvec_done,
+		.bi_idx = pio->bi_iter.bi_idx,
+	};
+	struct bio_vec bv;
+	void *data;
+
+	for_each_bvec(bv, pio->bi_io_vec, bi, bi) {
+		if (!bv.bv_len)
+			continue;
+		data = kmap(bv.bv_page);
+		memset(data + bv.bv_offset, 0, bv.bv_len);
+		kunmap(bv.bv_page);
+	}
+}
+
 struct pio *find_endio_hook_range(struct ploop *ploop, struct rb_root *root,
 				  unsigned int left, unsigned int right)
 {
@@ -995,9 +1015,8 @@ static void initiate_delta_read(struct ploop *ploop, unsigned int level,
 				unsigned int dst_cluster, struct pio *pio)
 {
 	if (dst_cluster == BAT_ENTRY_NONE) {
-		struct bio *bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
 		/* No one delta contains dst_cluster. */
-		zero_fill_bio(bio);
+		zero_fill_pio(pio);
 		pio_endio(pio);
 		return;
 	}
