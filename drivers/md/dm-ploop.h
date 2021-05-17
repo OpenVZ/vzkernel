@@ -182,7 +182,6 @@ struct ploop {
 	unsigned int tb_nr; /* tracking_bitmap size in bits */
 	unsigned int tb_cursor;
 
-	int force_defer_bio_count; /* Protected by bat_rwlock */
 	bool force_link_inflight_bios;
 	/*
 	 * Hash table to link non-exclusive submitted bios.
@@ -451,24 +450,6 @@ static inline void init_bat_entries_iter(struct ploop *ploop, unsigned int page_
 	*end = count - 1;
 	if (page_id == last_page)
 		*end = ((ploop->nr_bat_entries + PLOOP_MAP_OFFSET) % count) - 1;
-}
-
-static inline void force_defer_bio_count_inc(struct ploop *ploop)
-{
-	unsigned long flags;
-
-	write_lock_irqsave(&ploop->bat_rwlock, flags);
-	WARN_ON_ONCE(ploop->force_defer_bio_count++ < 0);
-	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
-}
-
-static inline void force_defer_bio_count_dec(struct ploop *ploop)
-{
-	unsigned long flags;
-
-	write_lock_irqsave(&ploop->bat_rwlock, flags);
-	WARN_ON_ONCE(--ploop->force_defer_bio_count < 0);
-	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
 }
 
 extern void __track_bio(struct ploop *ploop, struct bio *bio);

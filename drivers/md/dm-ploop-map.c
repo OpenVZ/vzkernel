@@ -447,22 +447,18 @@ enotsupp:
 
 	if (!ploop->force_link_inflight_bios) {
 		/*
-		 * Switch ploop to mode, when requests are handled
-		 * from kwork only, and force all not exclusive
-		 * inflight bios to link into inflight_bios_rbtree.
-		 * Note, that this does not wait completion of
-		 * two-stages requests (currently, these may be only
-		 * cow, which take cluster lk, so we are safe with
-		 * them).
+		 * Force all not exclusive inflight bios to link into
+		 * inflight_bios_rbtree. Note, that this does not wait
+		 * completion of two-stages requests (currently, these
+		 * may be only cow, which take cluster lk, so we are
+		 * safe with them).
 		 */
 		ploop->force_link_inflight_bios = true;
-		force_defer_bio_count_inc(ploop);
 		ret = ploop_inflight_bios_ref_switch(ploop, true);
 		if (ret) {
 			pr_err_ratelimited("ploop: discard ignored by err=%d\n",
 					ret);
 			ploop->force_link_inflight_bios = false;
-			force_defer_bio_count_dec(ploop);
 			goto enotsupp;
 		}
 	}
@@ -1463,10 +1459,8 @@ static void do_discard_cleanup(struct ploop *ploop)
 		smp_rmb();
 		cleanup_jiffies = READ_ONCE(ploop->pending_discard_cleanup);
 
-		if (time_after(jiffies, cleanup_jiffies + CLEANUP_DELAY * HZ)) {
+		if (time_after(jiffies, cleanup_jiffies + CLEANUP_DELAY * HZ))
 			ploop->force_link_inflight_bios = false;
-			force_defer_bio_count_dec(ploop);
-		}
 	}
 }
 
@@ -1603,20 +1597,6 @@ void do_ploop_work(struct work_struct *ws)
 	check_services_timeout(ploop);
 }
 
-static bool should_defer_bio(struct ploop *ploop, struct bio *bio,
-			     unsigned int cluster)
-{
-	struct push_backup *pb = ploop->pb;
-
-	lockdep_assert_held(&ploop->bat_rwlock);
-
-	if (ploop->force_defer_bio_count)
-		return true;
-	if (pb && pb->alive && op_is_write(bio->bi_opf))
-		return test_bit(cluster, pb->ppb_map);
-	return false;
-}
-
 /*
  * ploop_map() tries to map bio to origins or delays it.
  * It never modifies ploop->bat_entries and other cached
@@ -1625,43 +1605,18 @@ static bool should_defer_bio(struct ploop *ploop, struct bio *bio,
 int ploop_map(struct dm_target *ti, struct bio *bio)
 {
 	struct ploop *ploop = ti->private;
-	unsigned int cluster, dst_cluster;
-	unsigned long flags;
-	bool in_top_delta;
+	unsigned int cluster;
 
 	ploop_init_end_io(ploop, bio);
 
 	if (bio_sectors(bio)) {
-		if (op_is_discard(bio->bi_opf))
-			return ploop_map_discard(ploop, bio);
 		if (ploop_bio_cluster(ploop, bio, &cluster) < 0)
 			return DM_MAPIO_KILL;
+		if (op_is_discard(bio->bi_opf))
+			return ploop_map_discard(ploop, bio);
 
-		/* map it */
-		read_lock_irqsave(&ploop->bat_rwlock, flags);
-		dst_cluster = ploop_bat_entries(ploop, cluster, NULL);
-		in_top_delta = cluster_is_in_top_delta(ploop, cluster);
-		if (unlikely(should_defer_bio(ploop, bio, cluster))) {
-			/* defer all bios */
-			in_top_delta = false;
-			dst_cluster = 0;
-		}
-		if (in_top_delta)
-			inc_nr_inflight(ploop, bio);
-		read_unlock_irqrestore(&ploop->bat_rwlock, flags);
-
-		if (!in_top_delta) {
-			if (op_is_write(bio->bi_opf) || dst_cluster != BAT_ENTRY_NONE) {
-				defer_bios(ploop, bio, NULL);
-			} else {
-				zero_fill_bio(bio);
-				bio_endio(bio);
-			}
-
-			return DM_MAPIO_SUBMITTED;
-		}
-
-		remap_to_cluster(ploop, bio, dst_cluster);
+		defer_bios(ploop, bio, NULL);
+		return DM_MAPIO_SUBMITTED;
 	}
 
 	remap_to_origin(ploop, bio);
