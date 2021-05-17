@@ -497,19 +497,17 @@ enotsupp:
 	pio_endio(pio);
 }
 
-static int ploop_discard_bio_end(struct ploop *ploop, struct bio *bio)
+static int ploop_discard_pio_end(struct ploop *ploop, struct pio *pio)
 {
-	struct pio *h = bio_to_endio_hook(bio);
-
-	dec_nr_inflight(ploop, h);
-	if (bio->bi_status == BLK_STS_OK)
-		queue_discard_index_wb(ploop, h);
+	dec_nr_inflight(ploop, pio);
+	if (pio->bi_status == BLK_STS_OK)
+		queue_discard_index_wb(ploop, pio);
 	else
-		h->action = PLOOP_END_IO_DISCARD_INDEX_BIO;
+		pio->action = PLOOP_END_IO_DISCARD_INDEX_BIO;
 	return DM_ENDIO_INCOMPLETE;
 }
 
-static int ploop_discard_index_bio_end(struct ploop *ploop, struct pio *pio)
+static int ploop_discard_index_pio_end(struct ploop *ploop, struct pio *pio)
 {
 	del_cluster_lk(ploop, pio);
 
@@ -844,9 +842,8 @@ unmap:
 }
 
 
-static int ploop_data_bio_end(struct bio *bio)
+static int ploop_data_pio_end(struct pio *pio)
 {
-	struct pio *pio = bio_to_endio_hook(bio);
 	struct ploop_index_wb *piwb = pio->piwb;
 	unsigned long flags;
 	bool completed;
@@ -855,8 +852,8 @@ static int ploop_data_bio_end(struct bio *bio)
 	completed = piwb->completed;
 	if (!completed)
 		list_add_tail(&pio->list, &piwb->ready_data_pios);
-	else if (!bio->bi_status)
-		bio->bi_status = piwb->bi_status;
+	else if (!pio->bi_status)
+		pio->bi_status = piwb->bi_status;
 	spin_unlock_irqrestore(&piwb->lock, flags);
 
 	dec_nr_inflight(piwb->ploop, pio);
@@ -1232,7 +1229,7 @@ static void process_delta_wb(struct ploop *ploop, struct ploop_index_wb *piwb)
  * on disk.
  * Original bio->bi_end_io mustn't be called before index wb is completed.
  * We handle this in ploop_attach_end_action() by specific callback
- * for ploop_data_bio_end().
+ * for ploop_data_pio_end().
  * Note: cluster newer becomes locked here, since index update is called
  * synchronously. Keep in mind this in case you make it async.
  */
@@ -1471,7 +1468,7 @@ static void do_discard_cleanup(struct ploop *ploop)
 
 	if (ploop->force_link_inflight_bios &&
 	    !atomic_read(&ploop->nr_discard_bios)) {
-		/* Pairs with barrier in ploop_discard_index_bio_end() */
+		/* Pairs with barrier in ploop_discard_index_pio_end() */
 		smp_rmb();
 		cleanup_jiffies = READ_ONCE(ploop->pending_discard_cleanup);
 
@@ -1674,7 +1671,7 @@ int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
 		/*
 		 * This function may be called twice for discard
 		 * and for data bios. Check for ref_index to not
-		 * track @bio twice.
+		 * track @pio twice.
 		 */
 		track_pio(ploop, pio);
 	}
@@ -1690,13 +1687,13 @@ int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
 	 * See dm.c::clone_endio() for the details.
 	 */
 	if (pio->action == PLOOP_END_IO_DATA_BIO)
-		ret = ploop_data_bio_end(bio);
+		ret = ploop_data_pio_end(pio);
 
 	if (pio->action == PLOOP_END_IO_DISCARD_BIO)
-		ret = ploop_discard_bio_end(ploop, bio);
+		ret = ploop_discard_pio_end(ploop, pio);
 
 	if (pio->action == PLOOP_END_IO_DISCARD_INDEX_BIO)
-		ret = ploop_discard_index_bio_end(ploop, pio);
+		ret = ploop_discard_index_pio_end(ploop, pio);
 
 	if (ret == DM_ENDIO_DONE) {
 		maybe_unlink_completed_pio(ploop, pio);
