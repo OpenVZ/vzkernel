@@ -254,7 +254,7 @@ struct pio {
 
 	struct bvec_iter	bi_iter;
 	struct bio_vec		*bi_io_vec;
-	unsigned int		bi_opf;
+	unsigned int		bi_op;
 	unsigned int		bi_vcnt;
 	blk_status_t bi_status;
 

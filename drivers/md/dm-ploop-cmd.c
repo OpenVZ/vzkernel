@@ -199,7 +199,7 @@ static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
 	pio_prepare_offsets(ploop, pio, dst_cluster);
 
 	pio->bi_status = BLK_STS_OK;
-	pio->bi_opf = REQ_OP_READ;
+	pio->bi_op = REQ_OP_READ;
 	pio->endio_cb = wake_completion;
 	pio->endio_cb_data = &completion;
 
@@ -226,7 +226,7 @@ static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 	pio_prepare_offsets(ploop, pio, dst_cluster);
 
 	pio->bi_status = BLK_STS_OK;
-	pio->bi_opf = REQ_OP_WRITE;
+	pio->bi_op = REQ_OP_WRITE;
 	pio->endio_cb = wake_completion;
 	pio->endio_cb_data = &completion;
 

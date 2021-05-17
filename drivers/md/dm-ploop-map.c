@@ -96,7 +96,7 @@ static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop
 static void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 {
 	pio->ploop = ploop;
-	pio->bi_opf = bi_op;
+	pio->bi_op = bi_op;
 	pio->action = PLOOP_END_IO_NONE;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
 	pio->bi_status = BLK_STS_OK;
@@ -201,7 +201,7 @@ void __track_pio(struct ploop *ploop, struct pio *pio)
 {
 	unsigned int dst_cluster = pio->bi_iter.bi_sector >> ploop->cluster_log;
 
-	if (!op_is_write(pio->bi_opf) || !bvec_iter_sectors((pio)->bi_iter))
+	if (!op_is_write(pio->bi_op) || !bvec_iter_sectors((pio)->bi_iter))
 		return;
 
 	track_dst_cluster(ploop, dst_cluster);
@@ -958,7 +958,7 @@ void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio)
 
 	pio->complete = data_rw_complete;
 
-	rw = (op_is_write(pio->bi_opf) ? WRITE : READ);
+	rw = (op_is_write(pio->bi_op) ? WRITE : READ);
 	nr_segs = pio_nr_segs(pio);
 	bvec = __bvec_iter_bvec(pio->bi_io_vec, pio->bi_iter);
 
@@ -1076,7 +1076,7 @@ static bool postpone_if_required_for_backup(struct ploop *ploop,
 
 	if (likely(!pb || !pb->alive))
 		return false;
-	if (!op_is_write(pio->bi_opf))
+	if (!op_is_write(pio->bi_op))
 		return false;
 	if (!test_bit(cluster, pb->ppb_map))
 		return false;
@@ -1136,7 +1136,7 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	cow->data = data;
 
 	pio_prepare_offsets(ploop, pio, cluster);
-	pio->bi_opf = REQ_OP_READ;
+	pio->bi_op = REQ_OP_READ;
 	pio->endio_cb = ploop_cow_endio;
 	pio->endio_cb_data = cow;
 
@@ -1187,7 +1187,7 @@ static void submit_cluster_write(struct ploop_cow *cow)
 	cow->dst_cluster = dst_cluster;
 
 	pio_prepare_offsets(ploop, pio, dst_cluster);
-	pio->bi_opf = REQ_OP_WRITE;
+	pio->bi_op = REQ_OP_WRITE;
 
 	BUG_ON(irqs_disabled());
 	read_lock_irq(&ploop->bat_rwlock);
@@ -1370,7 +1370,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 	if (postpone_if_required_for_backup(ploop, pio, cluster))
 		goto out;
 
-	if (op_is_discard(pio->bi_opf)) {
+	if (op_is_discard(pio->bi_op)) {
 		handle_discard_pio(ploop, pio, cluster, dst_cluster);
 		goto out;
 	}
@@ -1378,7 +1378,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 	if (cluster_is_in_top_delta(ploop, cluster)) {
 		/* Already mapped */
 		goto queue;
-	} else if (!op_is_write(pio->bi_opf)) {
+	} else if (!op_is_write(pio->bi_op)) {
 		/*
 		 * Simple read from secondary delta. May fail.
 		 * (Also handles the case dst_cluster == BAT_ENTRY_NONE).
@@ -1697,7 +1697,7 @@ static noinline void submit_pio(struct ploop *ploop, struct pio *pio)
 	if (pio->bi_iter.bi_size) {
 		if (ploop_pio_cluster(ploop, pio, &cluster) < 0)
 			goto kill;
-		if (op_is_discard(pio->bi_opf) &&
+		if (op_is_discard(pio->bi_op) &&
 		    endio_if_unsupported_discard(ploop, pio))
 			goto out;
 
@@ -1705,7 +1705,7 @@ static noinline void submit_pio(struct ploop *ploop, struct pio *pio)
 		goto out;
 	}
 
-	if (WARN_ON_ONCE(pio->bi_opf != REQ_OP_FLUSH))
+	if (WARN_ON_ONCE(pio->bi_op != REQ_OP_FLUSH))
 		goto kill;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
