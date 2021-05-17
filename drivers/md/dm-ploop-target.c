@@ -74,8 +74,8 @@ void call_rw_iter(struct file *file, loff_t pos, unsigned rw,
 		iocb->ki_complete(iocb, ret, 0);
 }
 
-static int rw_page_sync(unsigned rw, struct file *file,
-			u64 index, struct page *page)
+int rw_page_sync(unsigned rw, struct file *file,
+		 u64 index, struct page *page)
 {
 	struct bio_vec *bvec, bvec_on_stack;
 	struct iov_iter iter;

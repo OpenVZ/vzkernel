@@ -79,7 +79,6 @@ static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop
 	init_completion(&piwb->comp);
 	spin_lock_init(&piwb->lock);
 	piwb->bat_page = NULL;
-	piwb->bat_bio = NULL;
 	piwb->bi_status = 0;
 	bio_list_init(&piwb->ready_data_bios);
 	bio_list_init(&piwb->cow_list);
@@ -151,6 +150,16 @@ void defer_bios(struct ploop *ploop, struct bio *bio, struct bio_list *bl)
 	queue_work(ploop->wq, &ploop->worker);
 }
 
+void track_dst_cluster(struct ploop *ploop, u32 dst_cluster)
+{
+	unsigned long flags;
+
+	read_lock_irqsave(&ploop->bat_rwlock, flags);
+	if (ploop->tracking_bitmap && !WARN_ON(dst_cluster >= ploop->tb_nr))
+		set_bit(dst_cluster, ploop->tracking_bitmap);
+	read_unlock_irqrestore(&ploop->bat_rwlock, flags);
+}
+
 /*
  * Userspace calls dm_suspend() to get changed blocks finally.
  * dm_suspend() waits for dm's inflight bios, so this function
@@ -162,17 +171,13 @@ void defer_bios(struct ploop *ploop, struct bio *bio, struct bio_list *bl)
 void __track_bio(struct ploop *ploop, struct bio *bio)
 {
 	unsigned int dst_cluster = bio->bi_iter.bi_sector >> ploop->cluster_log;
-	unsigned long flags;
 
 	if (!op_is_write(bio->bi_opf) || !bio_sectors(bio))
 		return;
 
 	WARN_ON_ONCE(bio->bi_disk != ploop->origin_dev->bdev->bd_disk);
 
-	read_lock_irqsave(&ploop->bat_rwlock, flags);
-	if (ploop->tracking_bitmap && !WARN_ON(dst_cluster >= ploop->tb_nr))
-		set_bit(dst_cluster, ploop->tracking_bitmap);
-	read_unlock_irqrestore(&ploop->bat_rwlock, flags);
+	track_dst_cluster(ploop, dst_cluster);
 }
 
 static void queue_discard_index_wb(struct ploop *ploop, struct bio *bio)
@@ -674,17 +679,15 @@ static void put_piwb(struct ploop_index_wb *piwb)
 }
 
 /* This handler is called after BAT is updated. */
-static void ploop_bat_write_complete(struct bio *bio)
+static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
+				     blk_status_t bi_status)
 {
-	struct ploop_index_wb *piwb = bio->bi_private;
 	struct bio *data_bio, *cluster_bio;
 	struct ploop *ploop = piwb->ploop;
 	struct ploop_cow *cow;
 	unsigned long flags;
 
-	track_bio(ploop, bio);
-
-	if (!bio->bi_status) {
+	if (!bi_status) {
 		/*
 		 * Success: now update local BAT copy. We could do this
 		 * from our delayed work, but we want to publish new
@@ -698,7 +701,7 @@ static void ploop_bat_write_complete(struct bio *bio)
 
 	spin_lock_irqsave(&piwb->lock, flags);
 	piwb->completed = true;
-	piwb->bi_status = bio->bi_status;
+	piwb->bi_status = bi_status;
 	spin_unlock_irqrestore(&piwb->lock, flags);
 
 	/*
@@ -706,15 +709,15 @@ static void ploop_bat_write_complete(struct bio *bio)
 	 * add a new element after piwc->completed is true.
 	 */
 	while ((data_bio = bio_list_pop(&piwb->ready_data_bios))) {
-		if (bio->bi_status)
-			data_bio->bi_status = bio->bi_status;
+		if (bi_status)
+			data_bio->bi_status = bi_status;
 		if (data_bio->bi_end_io)
 			data_bio->bi_end_io(data_bio);
 	}
 
 	while ((cluster_bio = bio_list_pop(&piwb->cow_list))) {
 		cow = cluster_bio->bi_private;
-		complete_cow(cow, bio->bi_status);
+		complete_cow(cow, bi_status);
 	}
 
 	/*
@@ -731,19 +734,11 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
 	bool is_last_page = true;
 	struct md_page *md;
 	struct page *page;
-	struct bio *bio;
 	map_index_t *to;
-	sector_t sector;
 
 	piwb->bat_page = page = alloc_page(GFP_NOIO);
 	if (!page)
 		return -ENOMEM;
-	piwb->bat_bio = bio = bio_alloc(GFP_NOIO, 1);
-	if (!bio) {
-		put_page(page);
-		piwb->bat_page = NULL;
-		return -ENOMEM;
-	}
 
 	md = md_page_find(ploop, page_nr);
 	BUG_ON(!md);
@@ -781,16 +776,6 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
 
 	kunmap_atomic(to);
 	kunmap_atomic(bat_entries);
-
-	sector = (page_nr * PAGE_SIZE) >> SECTOR_SHIFT;
-	bio->bi_iter.bi_sector = sector;
-	remap_to_origin(ploop, bio);
-
-	bio->bi_private = piwb;
-	bio->bi_end_io = ploop_bat_write_complete;
-	bio_set_op_attrs(bio, REQ_OP_WRITE, REQ_SYNC | REQ_FUA | REQ_PREFLUSH);
-	bio_add_page(bio, page, PAGE_SIZE, 0);
-
 	return 0;
 }
 
@@ -799,7 +784,6 @@ void ploop_reset_bat_update(struct ploop_index_wb *piwb)
 	struct ploop *ploop = piwb->ploop;
 
 	put_page(piwb->bat_page);
-	bio_put(piwb->bat_bio);
 	ploop_index_wb_init(piwb, ploop);
 }
 
@@ -1422,21 +1406,22 @@ out:
 void ploop_submit_index_wb_sync(struct ploop *ploop,
 				struct ploop_index_wb *piwb)
 {
-	struct block_device *bdev = ploop->origin_dev->bdev;
+	blk_status_t status = BLK_STS_OK;
+	u32 dst_cluster;
+	int ret;
 
 	/* track_bio() will be called in ploop_bat_write_complete() */
-	submit_bio(piwb->bat_bio);
-	wait_for_completion(&piwb->comp);
 
-	if (!blk_queue_fua(bdev_get_queue(bdev))) {
-		/*
-		 * Error here does not mean that cluster write is failed,
-		 * since ploop_map() could submit more bios in parallel.
-		 * But it's not possible to differ them. Should we block
-		 * ploop_map() during we do this?
-		 */
-		WARN_ON(blkdev_issue_flush(bdev, GFP_NOIO, NULL));
-	}
+	ret = rw_page_sync(WRITE, top_delta(ploop)->file,
+			   piwb->page_nr, piwb->bat_page);
+	if (ret)
+		status = errno_to_blk_status(ret);
+
+	dst_cluster = ((u64)piwb->page_nr << PAGE_SHIFT) / to_bytes(1 << ploop->cluster_log);
+	track_dst_cluster(ploop, dst_cluster);
+
+	ploop_bat_write_complete(piwb, status);
+	wait_for_completion(&piwb->comp);
 }
 
 static void process_deferred_bios(struct ploop *ploop, struct bio_list *bios,

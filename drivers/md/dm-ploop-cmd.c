@@ -220,6 +220,11 @@ void bio_prepare_offsets(struct ploop *ploop, struct bio *bio,
 	bio->bi_iter.bi_size = 1 << (cluster_log + 9);
 }
 
+static int rw_pages_sync(int rw, struct file *file, u64 page_id, void *data)
+{
+	return 0;
+}
+
 static int ploop_read_cluster_sync(struct ploop *ploop, struct ploop_bvec *pvec,
 				   unsigned int dst_cluster)
 {
