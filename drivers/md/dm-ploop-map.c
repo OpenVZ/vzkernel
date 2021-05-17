@@ -269,11 +269,9 @@ static void inc_nr_inflight_raw(struct ploop *ploop, struct pio *h)
 	}
 }
 
-static void inc_nr_inflight(struct ploop *ploop, struct bio *bio)
+static void inc_nr_inflight(struct ploop *ploop, struct pio *pio)
 {
-	struct pio *h = bio_to_endio_hook(bio);
-
-	inc_nr_inflight_raw(ploop, h);
+	inc_nr_inflight_raw(ploop, pio);
 }
 
 /*
@@ -491,7 +489,7 @@ enotsupp:
 	add_cluster_lk(ploop, h, cluster);
 
 	read_lock_irq(&ploop->bat_rwlock);
-	inc_nr_inflight(ploop, bio);
+	inc_nr_inflight(ploop, h);
 	read_unlock_irq(&ploop->bat_rwlock);
 	atomic_inc(&ploop->nr_discard_bios);
 
@@ -1388,7 +1386,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 queue:
 	/* To improve: read lock may be avoided */
 	read_lock_irq(&ploop->bat_rwlock);
-	inc_nr_inflight(ploop, bio);
+	inc_nr_inflight(ploop, pio);
 	read_unlock_irq(&ploop->bat_rwlock);
 
 	maybe_link_submitting_bio(ploop, pio, cluster);
