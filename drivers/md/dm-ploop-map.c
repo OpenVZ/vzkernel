@@ -130,12 +130,20 @@ static int ploop_pio_cluster(struct ploop *ploop, struct pio *pio,
 	return 0;
 }
 
+static void call_bio_endio(struct pio *pio, void *data, blk_status_t bi_status)
+{
+	struct bio *bio = data;
+
+	bio->bi_status = bi_status;
+	bio_endio(bio);
+}
+
 void pio_endio(struct pio *pio)
 {
-	struct bio *bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
+	ploop_endio_t endio_cb = pio->endio_cb;
+	void *endio_cb_data = pio->endio_cb_data;
 
-	bio->bi_status = pio->bi_status;
-	bio_endio(bio);
+	endio_cb(pio, endio_cb_data, pio->bi_status);
 }
 
 void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list)
@@ -1639,6 +1647,8 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 	pio->bi_iter = bio->bi_iter;
 	pio->bi_io_vec = bio->bi_io_vec;
 	pio->bi_opf = bio->bi_opf;
+	pio->endio_cb = call_bio_endio;
+	pio->endio_cb_data = bio;
 
 	if (pio->bi_iter.bi_size) {
 		if (ploop_pio_cluster(ploop, pio, &cluster) < 0)
