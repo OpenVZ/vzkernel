@@ -446,10 +446,9 @@ static int punch_hole(struct file *file, loff_t pos, loff_t len)
 			     pos, len);
 }
 
-static void handle_discard_bio(struct ploop *ploop, struct bio *bio,
+static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 		     unsigned int cluster, unsigned int dst_cluster)
 {
-	struct pio *h = bio_to_endio_hook(bio);
 	struct pio *inflight_h;
 	unsigned long flags;
 	loff_t pos;
@@ -457,8 +456,8 @@ static void handle_discard_bio(struct ploop *ploop, struct bio *bio,
 
 	if (!cluster_is_in_top_delta(ploop, cluster) || ploop->nr_deltas != 1) {
 enotsupp:
-		h->bi_status = BLK_STS_NOTSUPP;
-		pio_endio(h);
+		pio->bi_status = BLK_STS_NOTSUPP;
+		pio_endio(pio);
 		return;
 	}
 
@@ -483,30 +482,30 @@ enotsupp:
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	inflight_h = find_inflight_bio(ploop, cluster);
 	if (inflight_h)
-		add_endio_pio(inflight_h, h);
+		add_endio_pio(inflight_h, pio);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
 	if (inflight_h) {
-		/* @bio will be requeued on inflight_h's bio end */
+		/* @pio will be requeued on inflight_h's pio end */
 		pr_err_once("ploop: delayed discard: device is used as raw?\n");
 		return;
 	}
 
-	h->action = PLOOP_END_IO_DISCARD_BIO;
-	add_cluster_lk(ploop, h, cluster);
+	pio->action = PLOOP_END_IO_DISCARD_BIO;
+	add_cluster_lk(ploop, pio, cluster);
 
 	read_lock_irq(&ploop->bat_rwlock);
-	inc_nr_inflight(ploop, h);
+	inc_nr_inflight(ploop, pio);
 	read_unlock_irq(&ploop->bat_rwlock);
 	atomic_inc(&ploop->nr_discard_bios);
 
-	remap_to_cluster(ploop, h, dst_cluster);
+	remap_to_cluster(ploop, pio, dst_cluster);
 
-	pos = to_bytes(h->bi_iter.bi_sector);
-	ret = punch_hole(top_delta(ploop)->file, pos, h->bi_iter.bi_size);
+	pos = to_bytes(pio->bi_iter.bi_sector);
+	ret = punch_hole(top_delta(ploop)->file, pos, pio->bi_iter.bi_size);
 	if (ret)
-		h->bi_status = errno_to_blk_status(ret);
-	pio_endio(h);
+		pio->bi_status = errno_to_blk_status(ret);
+	pio_endio(pio);
 }
 
 static int ploop_discard_bio_end(struct ploop *ploop, struct bio *bio)
@@ -1331,10 +1330,9 @@ static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct pio *pi
 	call_rw_iter(top_delta(ploop)->file, pos, rw, &iter, bio);
 }
 
-static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
+static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 				    struct ploop_index_wb *piwb)
 {
-	struct pio *pio = bio_to_endio_hook(bio);
 	sector_t sector = pio->bi_iter.bi_sector;
 	unsigned int cluster, dst_cluster;
 	u8 level;
@@ -1355,7 +1353,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 		goto out;
 
 	if (op_is_discard(pio->bi_opf)) {
-		handle_discard_bio(ploop, bio, cluster, dst_cluster);
+		handle_discard_pio(ploop, pio, cluster, dst_cluster);
 		goto out;
 	}
 
@@ -1425,13 +1423,10 @@ void ploop_submit_index_wb_sync(struct ploop *ploop,
 static void process_deferred_pios(struct ploop *ploop, struct list_head *pios,
 				  struct ploop_index_wb *piwb)
 {
-	struct bio *bio;
 	struct pio *pio;
 
-	while ((pio = pio_list_pop(pios)) != NULL) {
-		bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
-		process_one_deferred_bio(ploop, bio, piwb);
-	}
+	while ((pio = pio_list_pop(pios)) != NULL)
+		process_one_deferred_bio(ploop, pio, piwb);
 }
 
 static int process_one_discard_pio(struct ploop *ploop, struct pio *h,
