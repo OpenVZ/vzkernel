@@ -126,7 +126,7 @@ struct ploop_index_wb {
 	enum piwb_type type;
 	spinlock_t lock;
 	struct page *bat_page;
-	struct bio_list ready_data_bios;
+	struct list_head ready_data_pios;
 	struct bio_list cow_list;
 	atomic_t count;
 	bool completed;
