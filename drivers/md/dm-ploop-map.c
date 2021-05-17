@@ -41,7 +41,7 @@
  */
 
 extern void dm_request_set_error(struct request *rq, blk_status_t error);
-static int ploop_endio(struct ploop *ploop, struct pio *pio);
+static void ploop_endio(struct ploop *ploop, struct pio *pio);
 
 #define DM_MSG_PREFIX "ploop"
 
@@ -141,18 +141,15 @@ static void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
 {
         struct ploop_rq *prq = prq_ptr;
         struct request *rq = prq->rq;
-	int ret;
 
-	ret = ploop_endio(pio->ploop, pio);
+	ploop_endio(pio->ploop, pio);
 
 	if (bi_status)
 		dm_request_set_error(rq, bi_status);
 
-	if (ret == DM_ENDIO_DONE) {
-	        if (prq->bvec)
-			kfree(prq->bvec);
-	        blk_mq_complete_request(rq);
-	}
+	if (prq->bvec)
+		kfree(prq->bvec);
+	blk_mq_complete_request(rq);
 }
 
 void pio_endio(struct pio *pio)
@@ -539,7 +536,7 @@ enotsupp:
 	queue_discard_index_wb(ploop, pio);
 }
 
-static int ploop_discard_index_pio_end(struct ploop *ploop, struct pio *pio)
+static void ploop_discard_index_pio_end(struct ploop *ploop, struct pio *pio)
 {
 	del_cluster_lk(ploop, pio);
 
@@ -547,7 +544,6 @@ static int ploop_discard_index_pio_end(struct ploop *ploop, struct pio *pio)
 	/* Pairs with barrier in do_discard_cleanup() */
 	smp_mb__before_atomic();
 	atomic_dec(&ploop->nr_discard_bios);
-	return DM_ENDIO_DONE;
 }
 
 static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
@@ -1753,10 +1749,8 @@ skip_bvec:
 	return DM_MAPIO_SUBMITTED;
 }
 
-static int ploop_endio(struct ploop *ploop, struct pio *pio)
+static void ploop_endio(struct ploop *ploop, struct pio *pio)
 {
-	int ret = DM_ENDIO_DONE;
-
 	if (pio->ref_index != PLOOP_REF_INDEX_INVALID) {
 		/*
 		 * This function may be called twice for discard
@@ -1775,14 +1769,10 @@ static int ploop_endio(struct ploop *ploop, struct pio *pio)
 	 * directly later again.
 	 */
 	if (pio->action == PLOOP_END_IO_DISCARD_INDEX_BIO)
-		ret = ploop_discard_index_pio_end(ploop, pio);
+		ploop_discard_index_pio_end(ploop, pio);
 
-	if (ret == DM_ENDIO_DONE) {
-		maybe_unlink_completed_pio(ploop, pio);
-		dec_nr_inflight(ploop, pio);
-	}
-
-	return ret;
+	maybe_unlink_completed_pio(ploop, pio);
+	dec_nr_inflight(ploop, pio);
 }
 
 /*
