@@ -127,7 +127,7 @@ struct ploop_index_wb {
 	spinlock_t lock;
 	struct page *bat_page;
 	struct list_head ready_data_pios;
-	struct bio_list cow_list;
+	struct list_head cow_list;
 	atomic_t count;
 	bool completed;
 	int bi_status;
@@ -223,7 +223,7 @@ struct ploop {
 	struct list_head cluster_lk_list;
 
 	/* List of COW requests requiring action. */
-	struct bio_list delta_cow_action_list;
+	struct list_head delta_cow_action_list;
 
 	/* Resume is prohibited */
 	bool noresume;
@@ -249,6 +249,7 @@ struct pio {
 	struct bvec_iter	bi_iter;
 	struct bio_vec		*bi_io_vec;
 	unsigned int		bi_opf;
+	unsigned int		bi_vcnt;
 	blk_status_t bi_status;
 
 	ploop_endio_t endio_cb;
@@ -279,14 +280,14 @@ struct pio {
 
 struct ploop_iocb {
 	struct kiocb iocb;
-	struct bio *bio;
+	struct pio *pio;
 	atomic_t count;
 };
 
 /* Delta COW private */
 struct ploop_cow {
 	struct ploop *ploop;
-	struct bio *cluster_bio;
+	struct pio *cluster_pio;
 	unsigned int dst_cluster;
 
 	struct pio hook;
@@ -326,13 +327,6 @@ static inline void remap_to_cluster(struct ploop *ploop, struct pio *pio,
 {
 	pio->bi_iter.bi_sector &= ((1 << ploop->cluster_log) - 1);
 	pio->bi_iter.bi_sector |= (cluster << ploop->cluster_log);
-}
-
-static inline void remap_to_cluster_bio(struct ploop *ploop, struct bio *bio,
-					unsigned int cluster)
-{
-	bio->bi_iter.bi_sector &= ((1 << ploop->cluster_log) - 1);
-	bio->bi_iter.bi_sector |= (cluster << ploop->cluster_log);
 }
 
 static inline bool whole_cluster(struct ploop *ploop, struct pio *pio)
@@ -559,9 +553,9 @@ extern int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 			      unsigned int cluster, unsigned int dst_cluster,
 			      void (*end_fn)(struct ploop *, int, void *), void *data);
 
-extern struct bio * alloc_bio_with_pages(struct ploop *ploop);
-extern void free_bio_with_pages(struct ploop *ploop, struct bio *bio);
-extern void bio_prepare_offsets(struct ploop *, struct bio *, unsigned int);
+extern struct pio * alloc_pio_with_pages(struct ploop *ploop);
+extern void free_pio_with_pages(struct ploop *ploop, struct pio *pio);
+extern void pio_prepare_offsets(struct ploop *, struct pio *, unsigned int);
 extern void ploop_free_pb(struct push_backup *pb);
 extern void cleanup_backup(struct ploop *ploop);
 

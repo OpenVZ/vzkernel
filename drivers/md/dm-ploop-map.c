@@ -81,7 +81,7 @@ static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop
 	piwb->bat_page = NULL;
 	piwb->bi_status = 0;
 	INIT_LIST_HEAD(&piwb->ready_data_pios);
-	bio_list_init(&piwb->cow_list);
+	INIT_LIST_HEAD(&piwb->cow_list);
 	/* For ploop_bat_write_complete() */
 	atomic_set(&piwb->count, 1);
 	piwb->completed = false;
@@ -529,12 +529,12 @@ static int ploop_discard_index_pio_end(struct ploop *ploop, struct pio *pio)
 static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 {
 	unsigned int dst_cluster = cow->dst_cluster;
-	struct bio *cluster_bio = cow->cluster_bio;
+	struct pio *cluster_pio = cow->cluster_pio;
 	struct ploop *ploop = cow->ploop;
 	unsigned long flags;
 	struct pio *h;
 
-	WARN_ON_ONCE(cluster_bio->bi_next);
+	WARN_ON_ONCE(!list_empty(&cluster_pio->list));
 	h = &cow->hook;
 
 	del_cluster_lk(ploop, h);
@@ -549,7 +549,7 @@ static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 		cow->end_fn(ploop, blk_status_to_errno(bi_status), cow->data);
 
 	queue_work(ploop->wq, &ploop->worker);
-	free_bio_with_pages(ploop, cow->cluster_bio);
+	free_pio_with_pages(ploop, cow->cluster_pio);
 	kmem_cache_free(cow_cache, cow);
 }
 
@@ -675,7 +675,7 @@ static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 				     blk_status_t bi_status)
 {
 	struct ploop *ploop = piwb->ploop;
-	struct bio *cluster_bio;
+	struct pio *cluster_pio;
 	struct ploop_cow *cow;
 	struct pio *data_pio;
 	unsigned long flags;
@@ -707,8 +707,8 @@ static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 		pio_endio(data_pio);
 	}
 
-	while ((cluster_bio = bio_list_pop(&piwb->cow_list))) {
-		cow = cluster_bio->bi_private;
+	while ((cluster_pio = pio_list_pop(&piwb->cow_list))) {
+		cow = cluster_pio->endio_cb_data;
 		complete_cow(cow, bi_status);
 	}
 
@@ -890,33 +890,62 @@ static bool ploop_attach_end_action(struct pio *h, struct ploop_index_wb *piwb)
 
 static void ploop_read_aio_do_completion(struct ploop_iocb *piocb)
 {
-	struct bio *bio = piocb->bio;
+	struct pio *pio = piocb->pio;
 
 	if (!atomic_dec_and_test(&piocb->count))
 		return;
-	bio_endio(bio);
+	pio_endio(pio);
 	kmem_cache_free(piocb_cache, piocb);
 }
 
 static void ploop_read_aio_complete(struct kiocb *iocb, long ret, long ret2)
 {
         struct ploop_iocb *piocb = container_of(iocb, struct ploop_iocb, iocb);
-	struct bio *bio = piocb->bio;
+	struct pio *pio = piocb->pio;
 
-	if (ret != bio->bi_iter.bi_size)
-		bio->bi_status = BLK_STS_IOERR;
-	else
-		bio->bi_status = BLK_STS_OK;
+	if (ret != pio->bi_iter.bi_size)
+		pio->bi_status = BLK_STS_IOERR;
         ploop_read_aio_do_completion(piocb);
 }
+
+static void data_rw_complete(struct pio *pio)
+{
+	if (pio->ret != pio->bi_iter.bi_size)
+                pio->bi_status = BLK_STS_IOERR;
+
+	pio_endio(pio);
+}
+
+static void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio)
+{
+	unsigned int rw, nr_segs;
+	struct bio_vec *bvec;
+	struct iov_iter iter;
+	loff_t pos;
+
+	pio->complete = data_rw_complete;
+
+	rw = (op_is_write(pio->bi_opf) ? WRITE : READ);
+	nr_segs = pio_nr_segs(pio);
+	bvec = __bvec_iter_bvec(pio->bi_io_vec, pio->bi_iter);
+
+	iov_iter_bvec(&iter, rw, bvec, nr_segs, pio->bi_iter.bi_size);
+	iter.iov_offset = pio->bi_iter.bi_bvec_done;
+
+	remap_to_cluster(ploop, pio, dst_clu);
+	pos = to_bytes(pio->bi_iter.bi_sector);
+
+	call_rw_iter(top_delta(ploop)->file, pos, rw, &iter, pio);
+}
+
 /*
  * Read cluster or its part from secondary delta.
- * @bio is dm's or plain (w/o pio container and ploop_endio()).
+ * @pio is dm's or plain (w/o bio container and ploop_endio()).
  * Note, that nr inflight is not incremented here, so delegate this to caller
  * (if you need).
  */
 static void submit_delta_read(struct ploop *ploop, unsigned int level,
-			    unsigned int dst_cluster, struct bio *bio)
+			    unsigned int dst_cluster, struct pio *pio)
 {
 	unsigned int flags, offset;
 	struct ploop_iocb *piocb;
@@ -928,22 +957,22 @@ static void submit_delta_read(struct ploop *ploop, unsigned int level,
 
 	piocb = kmem_cache_zalloc(piocb_cache, GFP_NOIO);
 	if (!piocb) {
-		bio->bi_status = BLK_STS_RESOURCE;
-		bio_endio(bio);
+		pio->bi_status = BLK_STS_RESOURCE;
+		pio_endio(pio);
 		return;
 	}
 	atomic_set(&piocb->count, 2);
-	piocb->bio = bio;
+	piocb->pio = pio;
 
-	remap_to_cluster_bio(ploop, bio, dst_cluster);
+	remap_to_cluster(ploop, pio, dst_cluster);
 
-	bvec = __bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);
-	offset = bio->bi_iter.bi_bvec_done;
+	bvec = __bvec_iter_bvec(pio->bi_io_vec, pio->bi_iter);
+	offset = pio->bi_iter.bi_bvec_done;
 
-	iov_iter_bvec(&iter, READ, bvec, 1, bio->bi_iter.bi_size);
+	iov_iter_bvec(&iter, READ, bvec, 1, pio->bi_iter.bi_size);
 	iter.iov_offset = offset;
 
-	pos = (bio->bi_iter.bi_sector << SECTOR_SHIFT);
+	pos = (pio->bi_iter.bi_sector << SECTOR_SHIFT);
 	file = ploop->deltas[level].file;
 
 	piocb->iocb.ki_pos = pos;
@@ -965,29 +994,27 @@ static void submit_delta_read(struct ploop *ploop, unsigned int level,
 static void initiate_delta_read(struct ploop *ploop, unsigned int level,
 				unsigned int dst_cluster, struct pio *pio)
 {
-	struct bio *bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
-
 	if (dst_cluster == BAT_ENTRY_NONE) {
+		struct bio *bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
 		/* No one delta contains dst_cluster. */
 		zero_fill_bio(bio);
 		pio_endio(pio);
 		return;
 	}
 
-	submit_delta_read(ploop, level, dst_cluster, bio);
+	submit_delta_read(ploop, level, dst_cluster, pio);
 }
 
-static void ploop_cow_endio(struct bio *cluster_bio)
+static void ploop_cow_endio(struct pio *cluster_pio, void *data, blk_status_t bi_status)
 {
-	struct ploop_cow *cow = cluster_bio->bi_private;
+	struct ploop_cow *cow = data;
 	struct ploop *ploop = cow->ploop;
-	unsigned int dst_cluster = cluster_bio->bi_iter.bi_sector >> ploop->cluster_log;
 	unsigned long flags;
 
-	track_dst_cluster(ploop, dst_cluster);
+	track_pio(ploop, cluster_pio);
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	bio_list_add(&ploop->delta_cow_action_list, cluster_bio);
+	list_add_tail(&cluster_pio->list, &ploop->delta_cow_action_list);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
 	dec_nr_inflight_raw(ploop, &cow->hook);
@@ -1057,13 +1084,14 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 		       unsigned int cluster, unsigned int dst_cluster,
 		       void (*end_fn)(struct ploop *, int, void *), void *data)
 {
-	struct bio *bio = NULL;
+	struct pio *pio = NULL;
 	struct ploop_cow *cow;
 
 	/* Prepare new delta read */
-	bio = alloc_bio_with_pages(ploop);
-	if (!bio)
+	pio = alloc_pio_with_pages(ploop);
+	if (!pio)
 		goto err;
+	ploop_init_end_io(ploop, pio);
 
 	cow = kmem_cache_alloc(cow_cache, GFP_NOIO);
 	if (!cow)
@@ -1071,24 +1099,24 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 
 	cow->ploop = ploop;
 	cow->dst_cluster = BAT_ENTRY_NONE;
-	cow->cluster_bio = bio;
+	cow->cluster_pio = pio;
 	cow->end_fn = end_fn;
 	cow->data = data;
 
-	bio_prepare_offsets(ploop, bio, cluster);
-	bio_set_op_attrs(bio, REQ_OP_READ, 0);
-	bio->bi_end_io = ploop_cow_endio;
-	bio->bi_private = cow;
+	pio_prepare_offsets(ploop, pio, cluster);
+	pio->bi_opf = REQ_OP_READ;
+	pio->endio_cb = ploop_cow_endio;
+	pio->endio_cb_data = cow;
 
 	ploop_init_end_io(ploop, &cow->hook);
 	add_cluster_lk(ploop, &cow->hook, cluster);
 
 	/* Stage #0: read secondary delta full cluster */
-	submit_delta_read(ploop, level, dst_cluster, bio);
+	submit_delta_read(ploop, level, dst_cluster, pio);
 	return 0;
 err:
-	if (bio)
-		free_bio_with_pages(ploop, bio);
+	if (pio)
+		free_pio_with_pages(ploop, pio);
 	return -ENOMEM;
 }
 
@@ -1118,7 +1146,7 @@ static void initiate_cluster_cow(struct ploop *ploop, unsigned int level,
 
 static void submit_cluster_write(struct ploop_cow *cow)
 {
-	struct bio *bio = cow->cluster_bio;
+	struct pio *pio = cow->cluster_pio;
 	struct ploop *ploop = cow->ploop;
 	unsigned int dst_cluster;
 
@@ -1126,19 +1154,17 @@ static void submit_cluster_write(struct ploop_cow *cow)
 		goto error;
 	cow->dst_cluster = dst_cluster;
 
-	bio_reset(bio);
-	bio_prepare_offsets(ploop, bio, dst_cluster);
-	bio_set_op_attrs(bio, REQ_OP_WRITE, 0);
-	remap_to_origin(ploop, bio);
+	pio_prepare_offsets(ploop, pio, dst_cluster);
+	pio->bi_opf = REQ_OP_WRITE;
 
 	BUG_ON(irqs_disabled());
 	read_lock_irq(&ploop->bat_rwlock);
 	inc_nr_inflight_raw(ploop, &cow->hook);
 	read_unlock_irq(&ploop->bat_rwlock);
-	bio->bi_end_io = ploop_cow_endio;
-	bio->bi_private = cow;
+	pio->endio_cb = ploop_cow_endio;
+	pio->endio_cb_data = cow;
 
-	submit_bio(bio);
+	submit_rw_mapped(ploop, dst_cluster, pio);
 	return;
 error:
 	complete_cow(cow, BLK_STS_IOERR);
@@ -1164,7 +1190,8 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 	if (piwb->page_nr != page_nr || piwb->type != PIWB_TYPE_ALLOC) {
 		/* Another BAT page wb is in process */
 		spin_lock_irq(&ploop->deferred_lock);
-		bio_list_add(&ploop->delta_cow_action_list, cow->cluster_bio);
+		list_add_tail(&cow->cluster_pio->list,
+			      &ploop->delta_cow_action_list);
 		spin_unlock_irq(&ploop->deferred_lock);
 		queue_work(ploop->wq, &ploop->worker);
 		goto out;
@@ -1180,7 +1207,7 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 	/* Prevent double clearing of holes_bitmap bit on complete_cow() */
 	cow->dst_cluster = BAT_ENTRY_NONE;
 	spin_lock_irq(&ploop->deferred_lock);
-	bio_list_add(&piwb->cow_list, cow->cluster_bio);
+	list_add_tail(&cow->cluster_pio->list, &piwb->cow_list);
 	spin_unlock_irq(&ploop->deferred_lock);
 out:
 	return;
@@ -1190,20 +1217,19 @@ err_resource:
 
 static void process_delta_wb(struct ploop *ploop, struct ploop_index_wb *piwb)
 {
-	struct bio_list cow_list = BIO_EMPTY_LIST;
-	struct bio *cluster_bio;
+	struct pio *cluster_pio;
 	struct ploop_cow *cow;
+	LIST_HEAD(cow_list);
 
-	if (bio_list_empty(&ploop->delta_cow_action_list))
+	if (list_empty(&ploop->delta_cow_action_list))
 		return;
-	bio_list_merge(&cow_list, &ploop->delta_cow_action_list);
-	bio_list_init(&ploop->delta_cow_action_list);
+	list_splice_tail_init(&ploop->delta_cow_action_list, &cow_list);
 	spin_unlock_irq(&ploop->deferred_lock);
 
-	while ((cluster_bio = bio_list_pop(&cow_list)) != NULL) {
-		cow = cluster_bio->bi_private;
-		if (unlikely(cluster_bio->bi_status != BLK_STS_OK)) {
-			complete_cow(cow, cluster_bio->bi_status);
+	while ((cluster_pio = pio_list_pop(&cow_list)) != NULL) {
+		cow = cluster_pio->endio_cb_data;
+		if (unlikely(cluster_pio->bi_status != BLK_STS_OK)) {
+			complete_cow(cow, cluster_pio->bi_status);
 			continue;
 		}
 
@@ -1288,36 +1314,6 @@ error:
 		ploop_reset_bat_update(piwb);
 	pio_endio(pio);
 	return false;
-}
-
-static void data_rw_complete(struct pio *pio)
-{
-	if (pio->ret != pio->bi_iter.bi_size)
-                pio->bi_status = BLK_STS_IOERR;
-
-	pio_endio(pio);
-}
-
-static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct pio *pio)
-{
-	unsigned int rw, nr_segs;
-	struct bio_vec *bvec;
-	struct iov_iter iter;
-	loff_t pos;
-
-	pio->complete = data_rw_complete;
-
-	rw = (op_is_write(pio->bi_opf) ? WRITE : READ);
-	nr_segs = pio_nr_segs(pio);
-	bvec = __bvec_iter_bvec(pio->bi_io_vec, pio->bi_iter);
-
-	iov_iter_bvec(&iter, rw, bvec, nr_segs, pio->bi_iter.bi_size);
-	iter.iov_offset = pio->bi_iter.bi_bvec_done;
-
-	remap_to_cluster(ploop, pio, clu_pos);
-	pos = to_bytes(pio->bi_iter.bi_sector);
-
-	call_rw_iter(top_delta(ploop)->file, pos, rw, &iter, pio);
 }
 
 static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,

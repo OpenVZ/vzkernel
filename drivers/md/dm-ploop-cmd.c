@@ -204,20 +204,20 @@ static unsigned int ploop_find_bat_entry(struct ploop *ploop,
 	return cluster;
 }
 
-void bio_prepare_offsets(struct ploop *ploop, struct bio *bio,
+void pio_prepare_offsets(struct ploop *ploop, struct pio *pio,
 			 unsigned int cluster)
 {
 	unsigned int cluster_log = ploop->cluster_log;
 	int i, nr_pages = nr_pages_in_cluster(ploop);
 
-	bio->bi_vcnt = nr_pages;
+	pio->bi_vcnt = nr_pages;
 
 	for (i = 0; i < nr_pages; i++) {
-		bio->bi_io_vec[i].bv_offset = 0;
-		bio->bi_io_vec[i].bv_len = PAGE_SIZE;
+		pio->bi_io_vec[i].bv_offset = 0;
+		pio->bi_io_vec[i].bv_len = PAGE_SIZE;
 	}
-	bio->bi_iter.bi_sector = cluster << cluster_log;
-	bio->bi_iter.bi_size = 1 << (cluster_log + 9);
+	pio->bi_iter.bi_sector = cluster << cluster_log;
+	pio->bi_iter.bi_size = 1 << (cluster_log + 9);
 }
 
 static int rw_pages_sync(int rw, struct file *file, u64 page_id, void *data)
@@ -452,41 +452,41 @@ out:
 	complete(&cmd->comp); /* Last touch of cmd memory */
 }
 
-struct bio *alloc_bio_with_pages(struct ploop *ploop)
+struct pio *alloc_pio_with_pages(struct ploop *ploop)
 {
 	unsigned int cluster_log = ploop->cluster_log;
 	int i, nr_pages = nr_pages_in_cluster(ploop);
-	struct bio *bio;
+	struct pio *pio;
+	u32 size;
 
-	if (nr_pages <= BIO_MAX_PAGES)
-		bio = bio_alloc(GFP_NOIO, nr_pages);
-	else
-		bio = bio_kmalloc(GFP_NOIO, nr_pages);
-	if (!bio)
+	size = sizeof(*pio) + sizeof(*pio->bi_io_vec) * nr_pages;
+	pio = kmalloc(size, GFP_NOIO);
+	if (!pio)
 		return NULL;
+	pio->bi_io_vec = (void *)(pio + 1);
 
 	for (i = 0; i < nr_pages; i++) {
-		bio->bi_io_vec[i].bv_page = alloc_page(GFP_NOIO);
-		if (!bio->bi_io_vec[i].bv_page)
+		pio->bi_io_vec[i].bv_page = alloc_page(GFP_NOIO);
+		if (!pio->bi_io_vec[i].bv_page)
 			goto err;
-		bio->bi_io_vec[i].bv_offset = 0;
-		bio->bi_io_vec[i].bv_len = PAGE_SIZE;
+		pio->bi_io_vec[i].bv_offset = 0;
+		pio->bi_io_vec[i].bv_len = PAGE_SIZE;
 	}
 
-	bio->bi_vcnt = nr_pages;
-	bio->bi_iter.bi_size = 1 << (cluster_log + 9);
+	pio->bi_vcnt = nr_pages;
+	pio->bi_iter.bi_size = 1 << (cluster_log + 9);
 
-	return bio;
+	return pio;
 err:
 	while (i-- > 0)
-		put_page(bio->bi_io_vec[i].bv_page);
-	bio_put(bio);
+		put_page(pio->bi_io_vec[i].bv_page);
+	kfree(pio);
 	return NULL;
 }
 
-void free_bio_with_pages(struct ploop *ploop, struct bio *bio)
+void free_pio_with_pages(struct ploop *ploop, struct pio *pio)
 {
-	int i, nr_pages = bio->bi_vcnt;
+	int i, nr_pages = pio->bi_vcnt;
 	struct page *page;
 
 	/*
@@ -496,11 +496,11 @@ void free_bio_with_pages(struct ploop *ploop, struct bio *bio)
 	WARN_ON_ONCE(nr_pages != nr_pages_in_cluster(ploop));
 
 	for (i = 0; i < nr_pages; i++) {
-		page = bio->bi_io_vec[i].bv_page;
+		page = pio->bi_io_vec[i].bv_page;
 		put_page(page);
 	}
 
-	bio_put(bio);
+	kfree(pio);
 }
 
 /* @new_size is in sectors */
@@ -1523,7 +1523,7 @@ static bool ploop_has_pending_activity(struct ploop *ploop)
 	has = ploop->deferred_cmd;
 	has |= !list_empty(&ploop->deferred_pios);
 	has |= !list_empty(&ploop->discard_pios);
-	has |= !bio_list_empty(&ploop->delta_cow_action_list);
+	has |= !list_empty(&ploop->delta_cow_action_list);
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	return has;
