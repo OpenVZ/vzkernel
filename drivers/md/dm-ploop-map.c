@@ -182,10 +182,11 @@ void __track_bio(struct ploop *ploop, struct bio *bio)
 
 static void queue_discard_index_wb(struct ploop *ploop, struct bio *bio)
 {
+	struct pio *pio = bio_to_endio_hook(bio);
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	bio_list_add(&ploop->discard_bios, bio);
+	list_add_tail(&pio->list, &ploop->discard_pios);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
 	queue_work(ploop->wq, &ploop->worker);
@@ -1437,17 +1438,17 @@ static void process_deferred_pios(struct ploop *ploop, struct list_head *pios,
 	}
 }
 
-static int process_one_discard_bio(struct ploop *ploop, struct bio *bio,
+static int process_one_discard_pio(struct ploop *ploop, struct pio *h,
 				   struct ploop_index_wb *piwb)
 {
 	unsigned int page_nr, cluster;
 	bool bat_update_prepared;
 	map_index_t *to;
-	struct pio *h;
+	struct bio *bio;
 
 	WARN_ON(ploop->nr_deltas != 1);
 
-	h = bio_to_endio_hook(bio);
+	bio = dm_bio_from_per_bio_data(h, sizeof(*h));
 	cluster = h->cluster;
 	page_nr = bat_clu_to_page_nr(cluster);
 	bat_update_prepared = false;
@@ -1509,20 +1510,20 @@ static void do_discard_cleanup(struct ploop *ploop)
  * Also this switches the device back in !force_link_inflight_bios mode
  * after cleanup timeout has expired.
  */
-static void process_discard_bios(struct ploop *ploop, struct bio_list *bios,
+static void process_discard_pios(struct ploop *ploop, struct list_head *pios,
 				 struct ploop_index_wb *piwb)
 {
 	struct bio *bio;
 	struct pio *h;
 
-	while ((bio = bio_list_pop(bios))) {
-		h = bio_to_endio_hook(bio);
+	while ((h = pio_list_pop(pios)) != NULL) {
 
 		if (WARN_ON_ONCE(h->action != PLOOP_END_IO_DISCARD_BIO)) {
+			bio = dm_bio_from_per_bio_data(h, sizeof(*h));
 			bio_io_error(bio);
 			continue;
 		}
-		process_one_discard_bio(ploop, bio, piwb);
+		process_one_discard_pio(ploop, h, piwb);
 	}
 }
 
@@ -1594,9 +1595,9 @@ static void check_services_timeout(struct ploop *ploop)
 void do_ploop_work(struct work_struct *ws)
 {
 	struct ploop *ploop = container_of(ws, struct ploop, worker);
-	struct bio_list discard_bios = BIO_EMPTY_LIST;
 	struct ploop_index_wb piwb;
 	LIST_HEAD(deferred_pios);
+	LIST_HEAD(discard_pios);
 
 	/*
 	 * In piwb we collect inquires of indexes updates, which are
@@ -1615,12 +1616,11 @@ void do_ploop_work(struct work_struct *ws)
 	process_delta_wb(ploop, &piwb);
 
 	list_splice_init(&ploop->deferred_pios, &deferred_pios);
-	bio_list_merge(&discard_bios, &ploop->discard_bios);
-	bio_list_init(&ploop->discard_bios);
+	list_splice_init(&ploop->discard_pios, &discard_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	process_deferred_pios(ploop, &deferred_pios, &piwb);
-	process_discard_bios(ploop, &discard_bios, &piwb);
+	process_discard_pios(ploop, &discard_pios, &piwb);
 
 	if (piwb.page_nr != PAGE_NR_NONE) {
 		/* Index wb was prepared -- submit and wait it */

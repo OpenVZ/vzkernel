@@ -1522,7 +1522,7 @@ static bool ploop_has_pending_activity(struct ploop *ploop)
 	spin_lock_irq(&ploop->deferred_lock);
 	has = ploop->deferred_cmd;
 	has |= !list_empty(&ploop->deferred_pios);
-	has |= !bio_list_empty(&ploop->discard_bios);
+	has |= !list_empty(&ploop->discard_pios);
 	has |= !bio_list_empty(&ploop->delta_cow_action_list);
 	spin_unlock_irq(&ploop->deferred_lock);
 
