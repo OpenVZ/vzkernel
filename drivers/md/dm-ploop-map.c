@@ -41,7 +41,7 @@
  */
 
 extern void dm_request_set_error(struct request *rq, blk_status_t error);
-static void ploop_endio(struct ploop *ploop, struct pio *pio);
+static void handle_cleanup(struct ploop *ploop, struct pio *pio);
 
 #define DM_MSG_PREFIX "ploop"
 
@@ -142,8 +142,6 @@ static void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
         struct ploop_rq *prq = prq_ptr;
         struct request *rq = prq->rq;
 
-	ploop_endio(pio->ploop, pio);
-
 	if (bi_status)
 		dm_request_set_error(rq, bi_status);
 
@@ -156,6 +154,12 @@ void pio_endio(struct pio *pio)
 {
 	ploop_endio_t endio_cb = pio->endio_cb;
 	void *endio_cb_data = pio->endio_cb_data;
+	struct ploop *ploop = pio->ploop;
+
+	if (pio->ref_index != PLOOP_REF_INDEX_INVALID)
+		track_pio(ploop, pio);
+
+	handle_cleanup(ploop, pio);
 
 	endio_cb(pio, endio_cb_data, pio->bi_status);
 }
@@ -960,7 +964,6 @@ void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio)
 
 /*
  * Read cluster or its part from secondary delta.
- * @pio is dm's or plain (w/o bio container and ploop_endio()).
  * Note, that nr inflight is not incremented here, so delegate this to caller
  * (if you need).
  */
@@ -1741,16 +1744,8 @@ skip_bvec:
 	return DM_MAPIO_SUBMITTED;
 }
 
-static void ploop_endio(struct ploop *ploop, struct pio *pio)
+static void handle_cleanup(struct ploop *ploop, struct pio *pio)
 {
-	if (pio->ref_index != PLOOP_REF_INDEX_INVALID) {
-		/*
-		 * This function may be called twice for discard
-		 * and for data bios. Check for ref_index to not
-		 * track @pio twice.
-		 */
-		track_pio(ploop, pio);
-	}
 	/*
 	 * This function is called from the very beginning
 	 * of call_bio_endio().
