@@ -89,7 +89,7 @@ static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop
 	piwb->type = PIWB_TYPE_ALLOC;
 }
 
-static void ploop_init_end_io(struct ploop *ploop, struct pio *pio)
+static void init_pio(struct ploop *ploop, struct pio *pio)
 {
 	pio->action = PLOOP_END_IO_NONE;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
@@ -1107,7 +1107,7 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	pio = alloc_pio_with_pages(ploop);
 	if (!pio)
 		goto err;
-	ploop_init_end_io(ploop, pio);
+	init_pio(ploop, pio);
 
 	cow = kmem_cache_alloc(cow_cache, GFP_NOIO);
 	if (!cow)
@@ -1124,7 +1124,7 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	pio->endio_cb = ploop_cow_endio;
 	pio->endio_cb_data = cow;
 
-	ploop_init_end_io(ploop, &cow->hook);
+	init_pio(ploop, &cow->hook);
 	add_cluster_lk(ploop, &cow->hook, cluster);
 
 	/* Stage #0: read secondary delta full cluster */
@@ -1656,7 +1656,7 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 	unsigned int cluster;
 	unsigned long flags;
 
-	ploop_init_end_io(ploop, pio);
+	init_pio(ploop, pio);
 
 	pio->bi_iter = bio->bi_iter;
 	pio->bi_io_vec = bio->bi_io_vec;
