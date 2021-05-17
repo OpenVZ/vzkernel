@@ -258,6 +258,12 @@ struct pio {
 	unsigned int ref_index:2;
 
 	struct ploop_index_wb *piwb;
+
+	struct kiocb iocb;
+	atomic_t aio_ref;
+	int ret; /* iocb result */
+	void (*complete)(struct pio *me);
+	void *data;
 };
 
 struct ploop_iocb {
@@ -474,6 +480,12 @@ static inline struct pio *find_endio_hook(struct ploop *ploop, struct rb_root *r
 
 extern int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
 			     unsigned int new_nr_bat_entries);
+
+static inline struct pio *bio_to_endio_hook(struct bio *bio)
+{
+	return dm_per_bio_data(bio, sizeof(struct pio));
+}
+
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);
 extern void free_md_page(struct md_page *md);
 extern void free_md_pages_tree(struct rb_root *root);
@@ -515,5 +527,6 @@ extern int ploop_read_cluster_sync(struct ploop *, struct bio *, unsigned int);
 extern int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop, u8 nr_deltas);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 				     void **d_hdr);
-
+extern void call_rw_iter(struct file *file, loff_t pos, unsigned rw,
+			 struct iov_iter *iter, struct bio *bio);
 #endif /* __DM_PLOOP_H */

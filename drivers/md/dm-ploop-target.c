@@ -17,6 +17,7 @@
 #include <linux/file.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <linux/uio.h>
 #include "dm-ploop.h"
 
 #define DM_MSG_PREFIX "ploop"
@@ -28,6 +29,81 @@ MODULE_PARM_DESC(ignore_signature_disk_in_use,
 
 struct kmem_cache *piocb_cache;
 struct kmem_cache *cow_cache;
+
+static void ploop_aio_do_completion(struct pio *pio)
+{
+	if (!atomic_dec_and_test(&pio->aio_ref))
+		return;
+	pio->complete(pio);
+}
+
+static void ploop_aio_complete(struct kiocb *iocb, long ret, long ret2)
+{
+	struct pio *pio;
+
+	pio = container_of(iocb, struct pio, iocb);
+
+	WARN_ON_ONCE(ret > INT_MAX);
+	pio->ret = (int)ret;
+	ploop_aio_do_completion(pio);
+}
+
+void call_rw_iter(struct file *file, loff_t pos, unsigned rw,
+		  struct iov_iter *iter, struct bio *bio)
+{
+	struct pio *pio = bio_to_endio_hook(bio);
+	struct kiocb *iocb = &pio->iocb;
+	int ret;
+
+	iocb->ki_pos = pos;
+	iocb->ki_filp = file;
+	iocb->ki_complete = ploop_aio_complete;
+	iocb->ki_flags = IOCB_DIRECT;
+	iocb->ki_ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0);
+
+	atomic_set(&pio->aio_ref, 2);
+
+	if (rw == WRITE)
+		ret = call_write_iter(file, iocb, iter);
+	else
+		ret = call_read_iter(file, iocb, iter);
+
+	ploop_aio_do_completion(pio);
+
+	if (ret != -EIOCBQUEUED)
+		iocb->ki_complete(iocb, ret, 0);
+}
+
+static int rw_page_sync(unsigned rw, struct file *file,
+			u64 index, struct page *page)
+{
+	struct bio_vec *bvec, bvec_on_stack;
+	struct iov_iter iter;
+	ssize_t ret;
+	loff_t pos;
+
+	BUG_ON(rw != READ && rw != WRITE);
+
+	bvec = &bvec_on_stack;
+	bvec->bv_page = page;
+	bvec->bv_len = PAGE_SIZE;
+	bvec->bv_offset = 0;
+
+	iov_iter_bvec(&iter, rw, bvec, 1, PAGE_SIZE);
+	pos = index << PAGE_SHIFT;
+
+	if (rw == READ)
+		ret = vfs_iter_read(file, &iter, &pos, 0);
+	else
+		ret = vfs_iter_write(file, &iter, &pos, 0);
+
+	if (ret == PAGE_SIZE)
+		ret = 0;
+	else if (ret >= 0)
+		ret = -ENODATA;
+
+	return ret;
+}
 
 static void inflight_bios_ref_exit0(struct percpu_ref *ref)
 {
