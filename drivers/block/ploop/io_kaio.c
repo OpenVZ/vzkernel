@@ -35,6 +35,7 @@ int ploop_kaio_upgrade(struct address_space * mapping);
 
 static int __kaio_truncate(struct ploop_io * io, struct file * file, u64 pos);
 static int kaio_truncate(struct ploop_io * io, struct file * file, __u32 a_h);
+static int kaio_file_expand(struct ploop_io *io, struct file *file, u64 pos);
 
 static void __kaio_queue_fsync_req(struct ploop_request * preq, int prio)
 {
@@ -546,8 +547,8 @@ static int kaio_fsync_thread(void * data)
 				preq->prealloc_size = isize;
 				goto ready;
 			}
-			err = __kaio_truncate(io, io->files.file,
-					      preq->prealloc_size);
+			err = kaio_file_expand(io, io->files.file,
+					       preq->prealloc_size);
 			if (err)
 				PLOOP_REQ_SET_ERROR(preq, -EIO);
 		} else {
@@ -929,7 +930,7 @@ static int kaio_alloc_sync(struct ploop_io * io, loff_t pos, loff_t len)
 		size = io->prealloced_size;
 
 	if (size > i_size_read(io->files.inode))
-		err = __kaio_truncate(io, io->files.file, size);
+		err = kaio_file_expand(io, io->files.file, size);
 
 	if (!err) {
 		WARN_ON(io->alloc_head > a_h);
@@ -1170,6 +1171,32 @@ static int kaio_truncate(struct ploop_io * io, struct file * file,
 {
 	return __kaio_truncate(io, file,
 			       (u64)alloc_head << (io->plo->cluster_log + 9));
+}
+
+static int kaio_file_allocate(struct ploop_io *io, struct file *file, u64 pos)
+{
+	u64 isize;
+	int ret;
+
+	if (file->f_mapping != io->files.mapping)
+		return -EINVAL;
+
+	isize = i_size_read(io->files.inode);
+	WARN_ON_ONCE(pos < isize);
+
+	ret = file->f_op->fallocate(file, 0, isize, pos - isize);
+	if (ret)
+		return ret;
+
+	return vfs_fsync(file, 0);
+}
+
+static int kaio_file_expand(struct ploop_io *io, struct file *file, u64 pos)
+{
+	if (file_inode(file)->i_sb->s_magic == FUSE_SUPER_MAGIC)
+		return __kaio_truncate(io, file, pos);
+
+	return kaio_file_allocate(io, file, pos);
 }
 
 static void kaio_unplug(struct ploop_io * io)
