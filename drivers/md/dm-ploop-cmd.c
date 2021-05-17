@@ -1474,8 +1474,8 @@ static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
 			     unsigned int cluster, unsigned int nr)
 {
 	unsigned int i, nr_bat_entries = ploop->nr_bat_entries;
-	struct bio_list bio_list = BIO_EMPTY_LIST;
 	struct push_backup *pb = ploop->pb;
+	LIST_HEAD(pio_list);
 	struct pio *h;
 	bool has_more = false;
 
@@ -1496,7 +1496,7 @@ static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
 					  cluster + nr - 1);
 		if (!h)
 			break;
-		unlink_postponed_backup_endio(ploop, &bio_list, h);
+		unlink_postponed_backup_endio(ploop, &pio_list, h);
 	}
 
 	has_more = !RB_EMPTY_ROOT(&pb->rb_root);
@@ -1506,8 +1506,8 @@ static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
 		pb->deadline_jiffies = S64_MAX;
 	spin_unlock_irq(&ploop->pb_lock);
 
-	if (!bio_list_empty(&bio_list)) {
-		defer_bios(ploop, NULL, &bio_list);
+	if (!list_empty(&pio_list)) {
+		defer_pios(ploop, NULL, &pio_list);
 		if (has_more)
 			mod_timer(&pb->deadline_timer, pb->timeout_in_jiffies + 1);
 	}
@@ -1521,7 +1521,7 @@ static bool ploop_has_pending_activity(struct ploop *ploop)
 
 	spin_lock_irq(&ploop->deferred_lock);
 	has = ploop->deferred_cmd;
-	has |= !bio_list_empty(&ploop->deferred_bios);
+	has |= !list_empty(&ploop->deferred_pios);
 	has |= !bio_list_empty(&ploop->discard_bios);
 	has |= !bio_list_empty(&ploop->delta_cow_action_list);
 	spin_unlock_irq(&ploop->deferred_lock);

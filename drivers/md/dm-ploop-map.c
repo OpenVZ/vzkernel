@@ -136,15 +136,15 @@ static int ploop_bio_cluster(struct ploop *ploop, struct bio *bio,
 	return 0;
 }
 
-void defer_bios(struct ploop *ploop, struct bio *bio, struct bio_list *bl)
+void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	if (bio)
-		bio_list_add(&ploop->deferred_bios, bio);
-	if (bl)
-		bio_list_merge(&ploop->deferred_bios, bl);
+	if (pio)
+		list_add_tail(&pio->list, &ploop->deferred_pios);
+	if (pio_list)
+		list_splice_tail_init(pio_list, &ploop->deferred_pios);
 
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 	queue_work(ploop->wq, &ploop->worker);
@@ -194,6 +194,7 @@ static void queue_discard_index_wb(struct ploop *ploop, struct bio *bio)
 /* This 1)defers looking suitable discard bios and 2)ends the rest of them. */
 static int ploop_map_discard(struct ploop *ploop, struct bio *bio)
 {
+	struct pio *pio = bio_to_endio_hook(bio);
 	bool supported = false;
 	unsigned int cluster;
 	unsigned long flags;
@@ -210,7 +211,7 @@ static int ploop_map_discard(struct ploop *ploop, struct bio *bio)
 	}
 
 	if (supported) {
-		defer_bios(ploop, bio, NULL);
+		defer_pios(ploop, pio, NULL);
 	} else {
 		bio->bi_status = BLK_STS_NOTSUPP;
 		bio_endio(bio);
@@ -338,19 +339,14 @@ static void link_endio_hook(struct ploop *ploop, struct pio *new, struct rb_root
  * to deferred_list.
  */
 static void unlink_endio_hook(struct ploop *ploop, struct rb_root *root,
-			      struct pio *h, struct bio_list *bio_list)
+			      struct pio *h, struct list_head *pio_list)
 {
-	struct bio *bio;
-	struct pio *pio;
-
 	BUG_ON(RB_EMPTY_NODE(&h->node));
 
 	rb_erase(&h->node, root);
 	RB_CLEAR_NODE(&h->node);
-	while ((pio = pio_list_pop(&h->endio_list)) != NULL) {
-		bio = dm_bio_from_per_bio_data(pio, sizeof(struct pio));
-		bio_list_add(bio_list, bio);
-	}
+
+	list_splice_tail_init(&h->endio_list, pio_list);
 }
 
 static void add_cluster_lk(struct ploop *ploop, struct pio *h, u32 cluster)
@@ -363,14 +359,14 @@ static void add_cluster_lk(struct ploop *ploop, struct pio *h, u32 cluster)
 }
 static void del_cluster_lk(struct ploop *ploop, struct pio *h)
 {
-	struct bio_list bio_list = BIO_EMPTY_LIST;
+	LIST_HEAD(pio_list);
 	unsigned long flags;
 	bool queue = false;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	unlink_endio_hook(ploop, &ploop->exclusive_bios_rbtree, h, &bio_list);
-	if (!bio_list_empty(&bio_list)) {
-		bio_list_merge(&ploop->deferred_bios, &bio_list);
+	unlink_endio_hook(ploop, &ploop->exclusive_bios_rbtree, h, &pio_list);
+	if (!list_empty(&pio_list)) {
+		list_splice_tail(&pio_list, &ploop->deferred_pios);
 		queue = true;
 	}
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
@@ -395,8 +391,8 @@ static void maybe_link_submitting_bio(struct ploop *ploop, struct bio *bio,
 }
 static void maybe_unlink_completed_bio(struct ploop *ploop, struct bio *bio)
 {
-	struct bio_list bio_list = BIO_EMPTY_LIST;
 	struct pio *h = bio_to_endio_hook(bio);
+	LIST_HEAD(pio_list);
 	unsigned long flags;
 	bool queue = false;
 
@@ -404,9 +400,9 @@ static void maybe_unlink_completed_bio(struct ploop *ploop, struct bio *bio)
 		return;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	unlink_endio_hook(ploop, &ploop->inflight_bios_rbtree, h, &bio_list);
-	if (!bio_list_empty(&bio_list)) {
-		bio_list_merge(&ploop->deferred_bios, &bio_list);
+	unlink_endio_hook(ploop, &ploop->inflight_bios_rbtree, h, &pio_list);
+	if (!list_empty(&pio_list)) {
+		list_splice_tail(&pio_list, &ploop->deferred_pios);
 		queue = true;
 	}
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
@@ -1111,7 +1107,8 @@ static void queue_or_fail(struct ploop *ploop, int err, void *data)
 		bio->bi_status = errno_to_blk_status(err);
 		bio_endio(bio);
 	} else {
-		defer_bios(ploop, bio, NULL);
+		struct pio *pio = bio_to_endio_hook(bio);
+		defer_pios(ploop, pio, NULL);
 	}
 }
 
@@ -1255,6 +1252,7 @@ static bool locate_new_cluster_and_attach_bio(struct ploop *ploop,
 					      unsigned int *dst_cluster,
 					      struct bio *bio)
 {
+	struct pio *pio = bio_to_endio_hook(bio);
 	bool bat_update_prepared = false;
 	bool attached = false;
 	unsigned int page_nr;
@@ -1272,7 +1270,7 @@ static bool locate_new_cluster_and_attach_bio(struct ploop *ploop,
 
 	if (piwb->page_nr != page_nr || piwb->type != PIWB_TYPE_ALLOC) {
 		/* Another BAT page wb is in process */
-		defer_bios(ploop, bio, NULL);
+		defer_pios(ploop, pio, NULL);
 		goto out;
 	}
 
@@ -1288,7 +1286,7 @@ static bool locate_new_cluster_and_attach_bio(struct ploop *ploop,
 		 * batch? Delay submitting. Good thing, that cluster allocation
 		 * has already made, and it goes in the batch.
 		 */
-		defer_bios(ploop, bio, NULL);
+		defer_pios(ploop, pio, NULL);
 	}
 out:
 	return attached;
@@ -1425,13 +1423,16 @@ void ploop_submit_index_wb_sync(struct ploop *ploop,
 	wait_for_completion(&piwb->comp);
 }
 
-static void process_deferred_bios(struct ploop *ploop, struct bio_list *bios,
+static void process_deferred_pios(struct ploop *ploop, struct list_head *pios,
 				  struct ploop_index_wb *piwb)
 {
 	struct bio *bio;
+	struct pio *pio;
 
-	while ((bio = bio_list_pop(bios)))
+	while ((pio = pio_list_pop(pios)) != NULL) {
+		bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
 		process_one_deferred_bio(ploop, bio, piwb);
+	}
 }
 
 static int process_one_discard_bio(struct ploop *ploop, struct bio *bio,
@@ -1525,28 +1526,26 @@ static void process_discard_bios(struct ploop *ploop, struct bio_list *bios,
 
 /* Remove from tree bio and endio bio chain */
 void unlink_postponed_backup_endio(struct ploop *ploop,
-				   struct bio_list *bio_list, struct pio *h)
+				   struct list_head *pio_list, struct pio *h)
 {
 	struct push_backup *pb = ploop->pb;
-	struct bio *bio;
 
-	/* Remove from tree and queue attached bios */
-	unlink_endio_hook(ploop, &pb->rb_root, h, bio_list);
+	/* Remove from tree and queue attached pios */
+	unlink_endio_hook(ploop, &pb->rb_root, h, pio_list);
 
 	/* Unlink from pb->pending */
 	list_del_init(&h->list);
 
 	/* Queue relared bio itself */
-	bio = dm_bio_from_per_bio_data(h, sizeof(*h));
-	bio_list_add(bio_list, bio);
+	list_add_tail(&h->list, pio_list);
 }
 
 void cleanup_backup(struct ploop *ploop)
 {
-	struct bio_list bio_list = BIO_EMPTY_LIST;
 	struct push_backup *pb = ploop->pb;
 	struct pio *h;
 	struct rb_node *node;
+	LIST_HEAD(pio_list);
 
 	spin_lock_irq(&ploop->pb_lock);
 	/* Take bat_rwlock for visability in ploop_map() */
@@ -1556,12 +1555,12 @@ void cleanup_backup(struct ploop *ploop)
 
 	while ((node = pb->rb_root.rb_node) != NULL) {
 		h = rb_entry(node, struct pio, node);
-		unlink_postponed_backup_endio(ploop, &bio_list, h);
+		unlink_postponed_backup_endio(ploop, &pio_list, h);
 	}
 	spin_unlock_irq(&ploop->pb_lock);
 
-	if (!bio_list_empty(&bio_list))
-		defer_bios(ploop, NULL, &bio_list);
+	if (!list_empty(&pio_list))
+		defer_pios(ploop, NULL, &pio_list);
 
 	del_timer_sync(&pb->deadline_timer);
 }
@@ -1593,9 +1592,9 @@ static void check_services_timeout(struct ploop *ploop)
 void do_ploop_work(struct work_struct *ws)
 {
 	struct ploop *ploop = container_of(ws, struct ploop, worker);
-	struct bio_list deferred_bios = BIO_EMPTY_LIST;
 	struct bio_list discard_bios = BIO_EMPTY_LIST;
 	struct ploop_index_wb piwb;
+	LIST_HEAD(deferred_pios);
 
 	/*
 	 * In piwb we collect inquires of indexes updates, which are
@@ -1613,13 +1612,12 @@ void do_ploop_work(struct work_struct *ws)
 	process_deferred_cmd(ploop, &piwb);
 	process_delta_wb(ploop, &piwb);
 
-	bio_list_merge(&deferred_bios, &ploop->deferred_bios);
+	list_splice_init(&ploop->deferred_pios, &deferred_pios);
 	bio_list_merge(&discard_bios, &ploop->discard_bios);
-	bio_list_init(&ploop->deferred_bios);
 	bio_list_init(&ploop->discard_bios);
 	spin_unlock_irq(&ploop->deferred_lock);
 
-	process_deferred_bios(ploop, &deferred_bios, &piwb);
+	process_deferred_pios(ploop, &deferred_pios, &piwb);
 	process_discard_bios(ploop, &discard_bios, &piwb);
 
 	if (piwb.page_nr != PAGE_NR_NONE) {
@@ -1655,6 +1653,7 @@ void do_ploop_fsync_work(struct work_struct *ws)
  */
 int ploop_map(struct dm_target *ti, struct bio *bio)
 {
+	struct pio *pio = bio_to_endio_hook(bio);
 	struct ploop *ploop = ti->private;
 	unsigned int cluster;
 	unsigned long flags;
@@ -1667,7 +1666,7 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 		if (op_is_discard(bio->bi_opf))
 			return ploop_map_discard(ploop, bio);
 
-		defer_bios(ploop, bio, NULL);
+		defer_pios(ploop, pio, NULL);
 		return DM_MAPIO_SUBMITTED;
 	}
 

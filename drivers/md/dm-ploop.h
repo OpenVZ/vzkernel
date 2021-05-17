@@ -209,7 +209,7 @@ struct ploop {
 	unsigned int inflight_bios_ref_index:1;
 
 	spinlock_t deferred_lock;
-	struct bio_list deferred_bios;
+	struct list_head deferred_pios;
 	struct bio_list flush_bios;
 	struct bio_list discard_bios;
 
@@ -242,6 +242,9 @@ struct pio {
 	struct rb_node node;
 	/* List of pios, which will be queued from this pio end */
 	struct list_head endio_list;
+
+	struct bvec_iter	bi_iter;
+	struct bio_vec		*bi_io_vec;
 
 	unsigned int cluster;
 
@@ -514,7 +517,7 @@ extern bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
 extern int convert_bat_entries(u32 *bat_entries, u32 count);
 
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
-extern void defer_bios(struct ploop *ploop, struct bio *bio, struct bio_list *bio_list);
+extern void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list);
 extern void do_ploop_work(struct work_struct *ws);
 extern void do_ploop_fsync_work(struct work_struct *ws);
 extern void process_deferred_cmd(struct ploop *ploop,
@@ -524,7 +527,7 @@ extern int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
 extern int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable);
 extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
 extern void unlink_postponed_backup_endio(struct ploop *ploop,
-					  struct bio_list *bio_list,
+					  struct list_head *pio_list,
 					  struct pio *h);
 extern int rw_page_sync(unsigned rw, struct file *file,
 			u64 index, struct page *page);
