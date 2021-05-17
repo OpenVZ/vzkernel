@@ -238,6 +238,7 @@ struct pio {
 
 	struct bvec_iter	bi_iter;
 	struct bio_vec		*bi_io_vec;
+	blk_status_t bi_status;
 
 	unsigned int cluster;
 
