@@ -94,10 +94,6 @@ struct ploop_cmd {
 			unsigned int tb_nr;
 		} tracking_start;
 		struct {
-			struct dm_dev *origin_dev;
-			struct file *file;
-		} flip_upper_deltas;
-		struct {
 			struct push_backup *pb;
 		} set_push_backup;
 	};
@@ -164,7 +160,6 @@ struct md_page {
 struct ploop {
 	struct dm_target *ti;
 
-	struct dm_dev *origin_dev;
 	struct rb_root bat_entries;
 	struct ploop_delta *deltas;
 	u8 nr_deltas;
@@ -310,11 +305,6 @@ extern struct kmem_cache *cow_cache;
 static inline bool ploop_is_ro(struct ploop *ploop)
 {
 	return (dm_table_get_mode(ploop->ti->table) & FMODE_WRITE) == 0;
-}
-
-static inline void remap_to_origin(struct ploop *ploop, struct bio *bio)
-{
-	bio_set_dev(bio, ploop->origin_dev->bdev);
 }
 
 static inline void remap_to_cluster(struct ploop *ploop, struct pio *pio,

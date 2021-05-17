@@ -1655,8 +1655,6 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 
 	ploop_init_end_io(ploop, pio);
 
-	remap_to_origin(ploop, bio);
-
 	pio->bi_iter = bio->bi_iter;
 	pio->bi_io_vec = bio->bi_io_vec;
 	pio->bi_opf = bio->bi_opf;
