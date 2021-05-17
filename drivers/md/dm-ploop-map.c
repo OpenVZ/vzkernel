@@ -12,6 +12,7 @@
 #include <linux/init.h>
 #include <linux/vmalloc.h>
 #include <linux/uio.h>
+#include <linux/blk-mq.h>
 #include <uapi/linux/falloc.h>
 #include "dm-ploop.h"
 
@@ -92,9 +93,10 @@ static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop
 	piwb->type = PIWB_TYPE_ALLOC;
 }
 
-static void init_pio(struct ploop *ploop, struct pio *pio)
+static void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 {
 	pio->ploop = ploop;
+	pio->bi_opf = bi_op;
 	pio->action = PLOOP_END_IO_NONE;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
 	pio->bi_status = BLK_STS_OK;
@@ -134,17 +136,22 @@ static int ploop_pio_cluster(struct ploop *ploop, struct pio *pio,
 	return 0;
 }
 
-static void call_bio_endio(struct pio *pio, void *data, blk_status_t bi_status)
+static void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
 {
-	struct bio *bio = data;
+        struct ploop_rq *prq = prq_ptr;
+        struct request *rq = prq->rq;
 	int ret;
 
 	ret = ploop_endio(pio->ploop, pio);
 
 	if (bi_status)
-		bio->bi_status = bi_status;
-	if (ret == DM_ENDIO_DONE)
-		bio_endio(bio);
+		dm_request_set_error(rq, bi_status);
+
+	if (ret == DM_ENDIO_DONE) {
+	        if (prq->bvec)
+			kfree(prq->bvec);
+	        blk_mq_complete_request(rq);
+	}
 }
 
 void pio_endio(struct pio *pio)
@@ -1116,7 +1123,7 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	pio = alloc_pio_with_pages(ploop);
 	if (!pio)
 		goto err;
-	init_pio(ploop, pio);
+	init_pio(ploop, REQ_OP_READ, pio);
 
 	cow = kmem_cache_alloc(cow_cache, GFP_NOIO);
 	if (!cow)
@@ -1133,7 +1140,7 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	pio->endio_cb = ploop_cow_endio;
 	pio->endio_cb_data = cow;
 
-	init_pio(ploop, &cow->hook);
+	init_pio(ploop, REQ_OP_WRITE, &cow->hook);
 	add_cluster_lk(ploop, &cow->hook, cluster);
 
 	/* Stage #0: read secondary delta full cluster */
@@ -1653,45 +1660,107 @@ void do_ploop_fsync_work(struct work_struct *ws)
 	}
 }
 
-/*
- * ploop_map() tries to map bio to origins or delays it.
- * It never modifies ploop->bat_entries and other cached
- * metadata: this should be made in do_ploop_work() only.
- */
-int ploop_map(struct dm_target *ti, struct bio *bio)
+static void init_prq(struct ploop_rq *prq, struct request *rq)
 {
-	struct pio *pio = bio_to_endio_hook(bio);
-	struct ploop *ploop = ti->private;
+	prq->rq = rq;
+	prq->bvec = NULL;
+}
+
+static noinline struct bio_vec *create_bvec_from_rq(struct request *rq)
+{
+	struct bio_vec bv, *bvec, *tmp;
+	struct req_iterator rq_iter;
+	unsigned int nr_bvec = 0;
+
+	rq_for_each_bvec(bv, rq, rq_iter)
+		nr_bvec++;
+
+	bvec = kmalloc_array(nr_bvec, sizeof(struct bio_vec),
+			     GFP_NOIO);
+	if (!bvec)
+		goto out;
+
+	tmp = bvec;
+	rq_for_each_bvec(bv, rq, rq_iter) {
+		*tmp = bv;
+		tmp++;
+	}
+out:
+	return bvec;
+}
+
+static noinline void submit_pio(struct ploop *ploop, struct pio *pio)
+{
 	unsigned int cluster;
 	unsigned long flags;
 
-	init_pio(ploop, pio);
-
-	pio->bi_iter = bio->bi_iter;
-	pio->bi_io_vec = bio->bi_io_vec;
-	pio->bi_opf = bio->bi_opf;
-	pio->endio_cb = call_bio_endio;
-	pio->endio_cb_data = bio;
-
 	if (pio->bi_iter.bi_size) {
 		if (ploop_pio_cluster(ploop, pio, &cluster) < 0)
-			return DM_MAPIO_KILL;
+			goto kill;
 		if (op_is_discard(pio->bi_opf) &&
 		    endio_if_unsupported_discard(ploop, pio))
-			return DM_MAPIO_SUBMITTED;
+			goto out;
 
 		defer_pios(ploop, pio, NULL);
-		return DM_MAPIO_SUBMITTED;
+		goto out;
 	}
 
-	if (WARN_ON_ONCE(!op_is_flush(pio->bi_opf)))
-		return DM_MAPIO_KILL;
+	if (WARN_ON_ONCE(pio->bi_opf != REQ_OP_FLUSH))
+		goto kill;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	list_add_tail(&pio->list, &ploop->flush_pios);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 	queue_work(ploop->wq, &ploop->fsync_worker);
+out:
+	return;
+kill:
+	pio->bi_status = BLK_STS_RESOURCE;
+	pio_endio(pio);
+}
 
+int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
+		    union map_info *info, struct request **clone)
+{
+	struct ploop *ploop = ti->private;
+	struct bio_vec *bvec = NULL;
+	struct ploop_rq *prq;
+	struct pio *pio;
+
+	prq = map_info_to_prq(info);
+	init_prq(prq, rq);
+
+	pio = map_info_to_pio(info); /* Embedded pio */
+	init_pio(ploop, req_op(rq), pio);
+
+	if (rq->bio != rq->biotail) {
+		if (req_op(rq) == REQ_OP_DISCARD)
+			goto skip_bvec;
+		/*
+		 * Transform a set of bvec arrays related to bios
+		 * into a single bvec array (which we can iterate).
+		 */
+		bvec = create_bvec_from_rq(rq);
+		if (!bvec)
+			return DM_MAPIO_KILL;
+		prq->bvec = bvec;
+skip_bvec:
+		pio->bi_iter.bi_sector = blk_rq_pos(rq);
+		pio->bi_iter.bi_size = blk_rq_bytes(rq);
+		pio->bi_iter.bi_idx = 0;
+		pio->bi_iter.bi_bvec_done = 0;
+        } else if (rq->bio) {
+                /* Single bio already provides bvec array */
+		bvec = rq->bio->bi_io_vec;
+
+		pio->bi_iter = rq->bio->bi_iter;
+        } /* else FLUSH */
+
+        pio->bi_io_vec = bvec;
+        pio->endio_cb = prq_endio;
+        pio->endio_cb_data = prq;
+
+	submit_pio(ploop, pio);
 	return DM_MAPIO_SUBMITTED;
 }
 
