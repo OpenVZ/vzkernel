@@ -936,7 +936,7 @@ static void data_rw_complete(struct pio *pio)
 	pio_endio(pio);
 }
 
-static void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio)
+void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio)
 {
 	unsigned int rw, nr_segs;
 	struct bio_vec *bvec;

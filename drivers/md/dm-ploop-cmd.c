@@ -14,44 +14,6 @@
 
 #define DM_MSG_PREFIX "ploop"
 
-static void free_pvec_with_pages(struct ploop_bvec *pvec)
-{
-        if (pvec) {
-                while (pvec->nr_pages-- > 0)
-                        put_page(pvec->bvec[pvec->nr_pages].bv_page);
-                kfree(pvec);
-        }
-}
-
-static struct ploop_bvec *alloc_pvec_with_pages(ushort nr_pages)
-{
-        struct ploop_bvec *pvec;
-        struct bio_vec *bvec;
-	u32 size;
-        int i;
-
-	size = sizeof(struct ploop_bvec) + nr_pages * sizeof(struct bio_vec);
-        pvec = kzalloc(size, GFP_NOIO);
-        if (!pvec)
-                return NULL;
-	pvec->nr_pages = nr_pages;
-
-        bvec = pvec->bvec;
-        for (i = 0; i < nr_pages; i++) {
-                bvec[i].bv_page = alloc_page(GFP_NOIO);
-                if (!bvec[i].bv_page)
-                        goto err;
-                bvec[i].bv_len = PAGE_SIZE;
-                bvec[i].bv_offset = 0;
-        }
-
-        return pvec;
-err:
-        pvec->nr_pages = i;
-        free_pvec_with_pages(pvec);
-        return NULL;
-}
-
 static void ploop_queue_deferred_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 {
 	unsigned long flags;
@@ -210,6 +172,8 @@ void pio_prepare_offsets(struct ploop *ploop, struct pio *pio,
 	unsigned int cluster_log = ploop->cluster_log;
 	int i, nr_pages = nr_pages_in_cluster(ploop);
 
+	pio->bi_iter.bi_idx = 0;
+	pio->bi_iter.bi_bvec_done = 0;
 	pio->bi_vcnt = nr_pages;
 
 	for (i = 0; i < nr_pages; i++) {
@@ -220,60 +184,84 @@ void pio_prepare_offsets(struct ploop *ploop, struct pio *pio,
 	pio->bi_iter.bi_size = 1 << (cluster_log + 9);
 }
 
-static int rw_pages_sync(int rw, struct file *file, u64 page_id, void *data)
+static void wake_completion(struct pio *pio, void *data, blk_status_t status)
 {
+	struct completion *completion = data;
+
+	complete(completion);
+}
+
+static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
+				   unsigned int dst_cluster)
+{
+	DECLARE_COMPLETION(completion);
+
+	pio_prepare_offsets(ploop, pio, dst_cluster);
+
+	pio->bi_status = BLK_STS_OK;
+	pio->bi_opf = REQ_OP_READ;
+	pio->endio_cb = wake_completion;
+	pio->endio_cb_data = &completion;
+
+	submit_rw_mapped(ploop, dst_cluster, pio);
+	wait_for_completion(&completion);
+
+	if (pio->bi_status)
+		return blk_status_to_errno(pio->bi_status);
+
 	return 0;
 }
 
-static int ploop_read_cluster_sync(struct ploop *ploop, struct ploop_bvec *pvec,
-				   unsigned int dst_cluster)
-{
-	u64 page_id = to_bytes((u64)dst_cluster << ploop->cluster_log) >> PAGE_SHIFT;
-
-	return rw_pages_sync(READ, top_delta(ploop)->file, page_id, pvec);
-}
-
-static int ploop_write_cluster_sync(struct ploop *ploop, struct ploop_bvec *pvec,
+static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 				    unsigned int dst_cluster)
 {
-	u64 page_id = to_bytes((u64)dst_cluster << ploop->cluster_log) >> PAGE_SHIFT;
 	struct file *file = top_delta(ploop)->file;
+	DECLARE_COMPLETION(completion);
 	int ret;
 
 	ret = vfs_fsync(file, 0);
 	if (ret)
 		return ret;
 
-	ret = rw_pages_sync(WRITE, file, page_id, pvec);
-	if (ret)
-		return ret;
+	pio_prepare_offsets(ploop, pio, dst_cluster);
+
+	pio->bi_status = BLK_STS_OK;
+	pio->bi_opf = REQ_OP_WRITE;
+	pio->endio_cb = wake_completion;
+	pio->endio_cb_data = &completion;
+
+	submit_rw_mapped(ploop, dst_cluster, pio);
+	wait_for_completion(&completion);
+
+	if (pio->bi_status)
+		return blk_status_to_errno(pio->bi_status);
 
 	/* track_bio(ploop, bio); */
 	return vfs_fsync(file, 0);
 }
 
 static int ploop_write_zero_cluster_sync(struct ploop *ploop,
-					 struct ploop_bvec *pvec,
+					 struct pio *pio,
 					 unsigned int cluster)
 {
 	void *data;
 	int i;
 
-	for (i = 0; i < pvec->nr_pages; i++) {
-		data = kmap_atomic(pvec->bvec[i].bv_page);
+	for (i = 0; i < pio->bi_vcnt; i++) {
+		data = kmap_atomic(pio->bi_io_vec[i].bv_page);
 		memset(data, 0, PAGE_SIZE);
 		kunmap_atomic(data);
 	}
 
-	return ploop_write_cluster_sync(ploop, pvec, cluster);
+	return ploop_write_cluster_sync(ploop, pio, cluster);
 }
 
 static int ploop_grow_relocate_cluster(struct ploop *ploop,
 				       struct ploop_index_wb *piwb,
 				       struct ploop_cmd *cmd)
 {
-	struct ploop_bvec *pvec = cmd->resize.pvec;
 	unsigned int new_dst, cluster, dst_cluster;
+	struct pio *pio = cmd->resize.pio;
 	bool is_locked;
 	int ret = 0;
 
@@ -303,7 +291,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 		goto out;
 
 	/* Read full cluster sync */
-	ret = ploop_read_cluster_sync(ploop, pvec, dst_cluster);
+	ret = ploop_read_cluster_sync(ploop, pio, dst_cluster);
 	if (ret < 0)
 		goto out;
 
@@ -313,7 +301,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 		goto out;
 
 	/* Write cluster to new destination */
-	ret = ploop_write_cluster_sync(ploop, pvec, new_dst);
+	ret = ploop_write_cluster_sync(ploop, pio, new_dst);
 	if (ret) {
 		ploop_reset_bat_update(piwb);
 		goto out;
@@ -339,7 +327,7 @@ not_occupied:
 	cmd->resize.dst_cluster++;
 
 	/* Zero new BAT entries on disk. */
-	ret = ploop_write_zero_cluster_sync(ploop, pvec, dst_cluster);
+	ret = ploop_write_zero_cluster_sync(ploop, pio, dst_cluster);
 out:
 	return ret;
 }
@@ -563,8 +551,8 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 	old_size = DIV_ROUND_UP(ploop->hb_nr, 8);
 	memset(cmd.resize.holes_bitmap + old_size, 0xff, size - old_size);
 
-	cmd.resize.pvec = alloc_pvec_with_pages(to_bytes(1 << cluster_log));
-	if (!cmd.resize.pvec)
+	cmd.resize.pio = alloc_pio_with_pages(ploop);
+	if (!cmd.resize.pio)
 		goto err;
 
 	cmd.resize.cluster = UINT_MAX;
@@ -585,8 +573,8 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 
 	ret = cmd.retval;
 err:
-	if (cmd.resize.pvec)
-		free_pvec_with_pages(cmd.resize.pvec);
+	if (cmd.resize.pio)
+		free_pio_with_pages(ploop, cmd.resize.pio);
 	kvfree(cmd.resize.holes_bitmap);
 	free_md_pages_tree(&cmd.resize.md_pages_root);
 	return ret;

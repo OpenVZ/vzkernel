@@ -72,7 +72,7 @@ struct ploop_cmd {
 			unsigned int end_dst_cluster;
 			unsigned int nr_old_bat_clu;
 			unsigned int cluster, dst_cluster;
-			struct ploop_bvec *pvec;
+			struct pio *pio;
 		} resize;
 		struct {
 #define NR_MERGE_BIOS			64
@@ -294,11 +294,6 @@ struct ploop_cow {
 
 	void (*end_fn)(struct ploop *, int, void *);
 	void *data; /* Second argument of end_fn */
-};
-
-struct ploop_bvec {
-	unsigned int nr_pages;
-	struct bio_vec bvec[0];
 };
 
 extern bool ignore_signature_disk_in_use;
@@ -542,6 +537,7 @@ extern void unlink_postponed_backup_endio(struct ploop *ploop,
 					  struct pio *h);
 extern int rw_page_sync(unsigned rw, struct file *file,
 			u64 index, struct page *page);
+extern void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio);
 
 extern int ploop_prepare_reloc_index_wb(struct ploop *, struct ploop_index_wb *,
 					unsigned int, unsigned int *);
