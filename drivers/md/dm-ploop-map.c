@@ -91,6 +91,7 @@ static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop
 
 static void init_pio(struct ploop *ploop, struct pio *pio)
 {
+	pio->ploop = ploop;
 	pio->action = PLOOP_END_IO_NONE;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
 	pio->bi_status = BLK_STS_OK;
