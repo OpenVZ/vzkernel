@@ -317,7 +317,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	spin_lock_init(&ploop->deferred_lock);
 	spin_lock_init(&ploop->pb_lock);
 
-	bio_list_init(&ploop->deferred_bios);
+	INIT_LIST_HEAD(&ploop->deferred_pios);
 	bio_list_init(&ploop->flush_bios);
 	bio_list_init(&ploop->discard_bios);
 	INIT_LIST_HEAD(&ploop->cluster_lk_list);
