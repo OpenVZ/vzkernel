@@ -109,16 +109,16 @@ static void ploop_init_end_io(struct ploop *ploop, struct bio *bio)
 	__ploop_init_end_io(ploop, pio);
 }
 
-/* Get cluster related to bio sectors */
-static int ploop_bio_cluster(struct ploop *ploop, struct bio *bio,
+/* Get cluster related to pio sectors */
+static int ploop_pio_cluster(struct ploop *ploop, struct pio *pio,
 			     unsigned int *ret_cluster)
 {
-	sector_t sector = bio->bi_iter.bi_sector;
+	sector_t sector = pio->bi_iter.bi_sector;
 	unsigned int cluster, end_cluster;
 	loff_t end_byte;
 
 	cluster = sector >> ploop->cluster_log;
-	end_byte = ((sector << 9) + bio->bi_iter.bi_size - 1);
+	end_byte = ((sector << 9) + pio->bi_iter.bi_size - 1);
 	end_cluster = end_byte >> (ploop->cluster_log + 9);
 
 	if (unlikely(cluster >= ploop->nr_bat_entries) ||
@@ -128,7 +128,7 @@ static int ploop_bio_cluster(struct ploop *ploop, struct bio *bio,
 		 * via dm_set_target_max_io_len().
 		 */
 		WARN_ONCE(1, "sec=%llu, size=%u, clu=%u, end=%u, nr=%u\n",
-			  sector, bio->bi_iter.bi_size, cluster,
+			  sector, pio->bi_iter.bi_size, cluster,
 			  end_cluster, ploop->nr_bat_entries);
 		return -EINVAL;
 	}
@@ -211,7 +211,7 @@ static int ploop_map_discard(struct ploop *ploop, struct bio *bio)
 
 	/* Only whole cluster in no-snapshots case can be discarded. */
 	if (whole_cluster(ploop, bio)) {
-		cluster = bio->bi_iter.bi_sector >> ploop->cluster_log;
+		cluster = pio->bi_iter.bi_sector >> ploop->cluster_log;
 		read_lock_irqsave(&ploop->bat_rwlock, flags);
 		/* Early checks to not wake up work for nought. */
 		if (cluster_is_in_top_delta(ploop, cluster) &&
@@ -509,7 +509,7 @@ enotsupp:
 	remap_to_cluster(ploop, bio, dst_cluster);
 
 	pos = to_bytes(bio->bi_iter.bi_sector);
-	ret = punch_hole(top_delta(ploop)->file, pos, bio->bi_iter.bi_size);
+	ret = punch_hole(top_delta(ploop)->file, pos, h->bi_iter.bi_size);
 	if (ret)
 		h->bi_status = errno_to_blk_status(ret);
 	pio_endio(h);
@@ -1309,9 +1309,7 @@ error:
 
 static void data_rw_complete(struct pio *pio)
 {
-	struct bio *bio = dm_bio_from_per_bio_data(pio, sizeof(*pio));
-
-	if (pio->ret != bio->bi_iter.bi_size)
+	if (pio->ret != pio->bi_iter.bi_size)
                 pio->bi_status = BLK_STS_IOERR;
 
 	pio_endio(pio);
@@ -1327,12 +1325,12 @@ static void submit_rw_mapped(struct ploop *ploop, loff_t clu_pos, struct pio *pi
 
 	pio->complete = data_rw_complete;
 
-	rw = (op_is_write(bio->bi_opf) ? WRITE : READ);
+	rw = (op_is_write(pio->bi_opf) ? WRITE : READ);
 	nr_segs = pio_nr_segs(pio);
-	bvec = __bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);
+	bvec = __bvec_iter_bvec(pio->bi_io_vec, pio->bi_iter);
 
-	iov_iter_bvec(&iter, rw, bvec, nr_segs, bio->bi_iter.bi_size);
-	iter.iov_offset = bio->bi_iter.bi_bvec_done;
+	iov_iter_bvec(&iter, rw, bvec, nr_segs, pio->bi_iter.bi_size);
+	iter.iov_offset = pio->bi_iter.bi_bvec_done;
 
 	remap_to_origin(ploop, bio);
 	remap_to_cluster(ploop, bio, clu_pos);
@@ -1670,18 +1668,19 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 
 	pio->bi_iter = bio->bi_iter;
 	pio->bi_io_vec = bio->bi_io_vec;
+	pio->bi_opf = bio->bi_opf;
 
-	if (bio_sectors(bio)) {
-		if (ploop_bio_cluster(ploop, bio, &cluster) < 0)
+	if (pio->bi_iter.bi_size) {
+		if (ploop_pio_cluster(ploop, pio, &cluster) < 0)
 			return DM_MAPIO_KILL;
-		if (op_is_discard(bio->bi_opf))
+		if (op_is_discard(pio->bi_opf))
 			return ploop_map_discard(ploop, bio);
 
 		defer_pios(ploop, pio, NULL);
 		return DM_MAPIO_SUBMITTED;
 	}
 
-	if (WARN_ON_ONCE(!op_is_flush(bio->bi_opf)))
+	if (WARN_ON_ONCE(!op_is_flush(pio->bi_opf)))
 		return DM_MAPIO_KILL;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
