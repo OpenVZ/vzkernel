@@ -165,6 +165,11 @@ struct ploop {
 	u8 nr_deltas;
 	unsigned int nr_bat_entries;
 	unsigned int cluster_log; /* In sectors */
+
+	u8 m_Sig[16]; /* Signature */
+	u32 m_Type; /* Disk type */
+	u32 m_Sectors; /* Sectors per clu */
+
 	/*
 	 * Absolute values from start of file. BAT-related clusters
 	 * are also included, and their bits must be zeroed.

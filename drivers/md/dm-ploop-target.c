@@ -193,7 +193,6 @@ static struct file * get_delta_file(int fd)
 static int check_top_delta(struct ploop *ploop, struct file *file)
 {
 	struct page *page = NULL;
-	u32 i, nr, *bat_entries;
 	int ret;
 
 	/* Prealloc a page to read hdr */
