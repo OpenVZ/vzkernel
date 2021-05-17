@@ -93,7 +93,7 @@ static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop
 	piwb->type = PIWB_TYPE_ALLOC;
 }
 
-static void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
+void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 {
 	pio->ploop = ploop;
 	pio->bi_op = bi_op;
@@ -1173,8 +1173,8 @@ static void submit_cluster_write(struct ploop_cow *cow)
 		goto error;
 	cow->dst_cluster = dst_cluster;
 
+	init_pio(ploop, REQ_OP_WRITE, pio);
 	pio_prepare_offsets(ploop, pio, dst_cluster);
-	pio->bi_op = REQ_OP_WRITE;
 
 	BUG_ON(irqs_disabled());
 	read_lock_irq(&ploop->bat_rwlock);
