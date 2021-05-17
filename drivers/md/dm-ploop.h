@@ -240,8 +240,8 @@ struct pio {
 	struct list_head list;
 
 	struct rb_node node;
-	/* List of bios, which will be queued from this bio end */
-	struct bio *endio_bio_list;
+	/* List of pios, which will be queued from this pio end */
+	struct list_head endio_list;
 
 	unsigned int cluster;
 
@@ -494,6 +494,16 @@ extern int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
 static inline struct pio *bio_to_endio_hook(struct bio *bio)
 {
 	return dm_per_bio_data(bio, sizeof(struct pio));
+}
+
+static inline struct pio *pio_list_pop(struct list_head *pio_list)
+{
+	struct pio *pio;
+
+	pio = list_first_entry_or_null(pio_list, struct pio, list);
+	if (pio)
+		list_del_init(&pio->list);
+	return pio;
 }
 
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);

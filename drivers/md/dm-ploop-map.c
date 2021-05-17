@@ -95,7 +95,7 @@ static void __ploop_init_end_io(struct ploop *ploop, struct pio *pio)
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
 	pio->piwb = NULL;
 	INIT_LIST_HEAD(&pio->list);
-	pio->endio_bio_list = NULL;
+	INIT_LIST_HEAD(&pio->endio_list);
 	/* FIXME: assign real cluster? */
 	pio->cluster = UINT_MAX;
 	RB_CLEAR_NODE(&pio->node);
@@ -252,8 +252,9 @@ struct pio *find_lk_of_cluster(struct ploop *ploop, unsigned int cluster)
 
 static void add_endio_bio(struct pio *h, struct bio *later_bio)
 {
-	later_bio->bi_next = h->endio_bio_list;
-	h->endio_bio_list = later_bio;
+	struct pio *lpio = bio_to_endio_hook(later_bio);
+
+	list_add_tail(&lpio->list, &h->endio_list);
 }
 
 static void inc_nr_inflight_raw(struct ploop *ploop, struct pio *h)
@@ -333,22 +334,22 @@ static void link_endio_hook(struct ploop *ploop, struct pio *new, struct rb_root
 
 /*
  * Removes endio hook of completed bio either from inflight_bios_rbtree
- * or from exclusive_bios_rbtree. BIOs from endio_bio_list are requeued
+ * or from exclusive_bios_rbtree. BIOs from endio_list are requeued
  * to deferred_list.
  */
 static void unlink_endio_hook(struct ploop *ploop, struct rb_root *root,
 			      struct pio *h, struct bio_list *bio_list)
 {
-	struct bio *iter;
+	struct bio *bio;
+	struct pio *pio;
 
 	BUG_ON(RB_EMPTY_NODE(&h->node));
 
 	rb_erase(&h->node, root);
 	RB_CLEAR_NODE(&h->node);
-	while ((iter = h->endio_bio_list) != NULL) {
-		h->endio_bio_list = iter->bi_next;
-		iter->bi_next = NULL;
-		bio_list_add(bio_list, iter);
+	while ((pio = pio_list_pop(&h->endio_list)) != NULL) {
+		bio = dm_bio_from_per_bio_data(pio, sizeof(struct pio));
+		bio_list_add(bio_list, bio);
 	}
 }
 
