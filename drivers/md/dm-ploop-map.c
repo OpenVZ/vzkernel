@@ -674,8 +674,8 @@ static void put_piwb(struct ploop_index_wb *piwb)
 static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 				     blk_status_t bi_status)
 {
-	struct bio *data_bio, *cluster_bio;
 	struct ploop *ploop = piwb->ploop;
+	struct bio *cluster_bio;
 	struct ploop_cow *cow;
 	struct pio *data_pio;
 	unsigned long flags;
@@ -702,11 +702,9 @@ static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 	 * add a new element after piwc->completed is true.
 	 */
 	while ((data_pio = pio_list_pop(&piwb->ready_data_pios)) != NULL) {
-		data_bio = dm_bio_from_per_bio_data(data_pio, sizeof(*data_pio));
 		if (bi_status)
-			data_bio->bi_status = bi_status;
-		if (data_bio->bi_end_io)
-			data_bio->bi_end_io(data_bio);
+			data_pio->bi_status = bi_status;
+		pio_endio(data_pio);
 	}
 
 	while ((cluster_bio = bio_list_pop(&piwb->cow_list))) {
