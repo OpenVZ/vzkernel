@@ -264,9 +264,9 @@ struct pio {
 	unsigned int cluster;
 
 #define PLOOP_END_IO_NONE		0
-#define PLOOP_END_IO_DATA_BIO		1
 #define PLOOP_END_IO_DISCARD_INDEX_BIO	3
 	unsigned int action:2;
+	bool is_data_alloc:1;
 	/*
 	 * 0 and 1 are related to inflight_bios_ref[],
 	 * 2 means index is not assigned.
