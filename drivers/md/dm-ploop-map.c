@@ -97,7 +97,7 @@ static void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 {
 	pio->ploop = ploop;
 	pio->bi_op = bi_op;
-	pio->action = PLOOP_END_IO_NONE;
+	pio->wants_discard_index_cleanup = false;
 	pio->is_data_alloc = false;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
 	pio->bi_status = BLK_STS_OK;
@@ -528,7 +528,7 @@ enotsupp:
 	ret = punch_hole(top_delta(ploop)->file, pos, pio->bi_iter.bi_size);
 	if (ret) {
 		pio->bi_status = errno_to_blk_status(ret);
-		pio->action = PLOOP_END_IO_DISCARD_INDEX_BIO;
+		pio->wants_discard_index_cleanup = true;
 		pio_endio(pio);
 		return;
 	}
@@ -890,11 +890,6 @@ static bool ploop_data_pio_end(struct pio *pio)
 
 static bool ploop_attach_end_action(struct pio *h, struct ploop_index_wb *piwb)
 {
-	if (WARN_ON_ONCE(h->action != PLOOP_END_IO_NONE)) {
-		h->action = PLOOP_END_IO_NONE;
-		return false;
-	}
-
 	/* Currently this can't fail. */
 	if (!atomic_inc_not_zero(&piwb->count))
 		return false;
@@ -1468,7 +1463,7 @@ static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 		goto out;
 	}
 
-	pio->action = PLOOP_END_IO_DISCARD_INDEX_BIO;
+	pio->wants_discard_index_cleanup = true;
 
 	/* Cluster index related to the page[page_nr] start */
 	cluster -= piwb->page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
@@ -1504,10 +1499,7 @@ static void do_discard_cleanup(struct ploop *ploop)
 }
 
 /*
- * This processes discard bios waiting index writeback after REQ_DISCARD
- * to backing device has finished (PLOOP_END_IO_DISCARD_INDEX_BIO stage).
- *
- * Also this switches the device back in !force_link_inflight_bios mode
+ * This switches the device back in !force_link_inflight_bios mode
  * after cleanup timeout has expired.
  */
 static void process_discard_pios(struct ploop *ploop, struct list_head *pios,
@@ -1768,7 +1760,7 @@ static void ploop_endio(struct ploop *ploop, struct pio *pio)
 	 * processing, and that we are going to call bi_end_io
 	 * directly later again.
 	 */
-	if (pio->action == PLOOP_END_IO_DISCARD_INDEX_BIO)
+	if (pio->wants_discard_index_cleanup)
 		ploop_discard_index_pio_end(ploop, pio);
 
 	maybe_unlink_completed_pio(ploop, pio);
