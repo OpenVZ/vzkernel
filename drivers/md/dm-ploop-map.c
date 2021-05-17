@@ -1502,17 +1502,16 @@ static void do_discard_cleanup(struct ploop *ploop)
 static void process_discard_pios(struct ploop *ploop, struct list_head *pios,
 				 struct ploop_index_wb *piwb)
 {
-	struct bio *bio;
-	struct pio *h;
+	struct pio *pio;
 
-	while ((h = pio_list_pop(pios)) != NULL) {
+	while ((pio = pio_list_pop(pios)) != NULL) {
 
-		if (WARN_ON_ONCE(h->action != PLOOP_END_IO_DISCARD_BIO)) {
-			bio = dm_bio_from_per_bio_data(h, sizeof(*h));
-			bio_io_error(bio);
+		if (WARN_ON_ONCE(pio->action != PLOOP_END_IO_DISCARD_BIO)) {
+			pio->bi_status = BLK_STS_IOERR;
+			pio_endio(pio);
 			continue;
 		}
-		process_one_discard_pio(ploop, h, piwb);
+		process_one_discard_pio(ploop, pio, piwb);
 	}
 }
 
