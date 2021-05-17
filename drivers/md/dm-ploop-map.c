@@ -382,7 +382,7 @@ static void del_cluster_lk(struct ploop *ploop, struct pio *h)
 
 }
 
-static void maybe_link_submitting_bio(struct ploop *ploop, struct pio *h,
+static void maybe_link_submitting_pio(struct ploop *ploop, struct pio *h,
 				      unsigned int cluster)
 {
 	unsigned long flags;
@@ -416,7 +416,7 @@ static void maybe_unlink_completed_bio(struct ploop *ploop, struct bio *bio)
 		queue_work(ploop->wq, &ploop->worker);
 }
 
-static bool bio_endio_if_all_zeros(struct pio *pio)
+static bool pio_endio_if_all_zeros(struct pio *pio)
 {
 	struct bvec_iter bi = {
 		.bi_size = pio->bi_iter.bi_size,
@@ -1248,7 +1248,7 @@ static void process_delta_wb(struct ploop *ploop, struct ploop_index_wb *piwb)
  * Note: cluster newer becomes locked here, since index update is called
  * synchronously. Keep in mind this in case you make it async.
  */
-static bool locate_new_cluster_and_attach_bio(struct ploop *ploop,
+static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 					      struct ploop_index_wb *piwb,
 					      unsigned int cluster,
 					      unsigned int *dst_cluster,
@@ -1378,11 +1378,11 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 		goto out;
 	}
 
-	if (unlikely(bio_endio_if_all_zeros(pio)))
+	if (unlikely(pio_endio_if_all_zeros(pio)))
 		goto out;
 
 	/* Cluster exists nowhere. Allocate it and setup pio as outrunning */
-	ret = locate_new_cluster_and_attach_bio(ploop, piwb, cluster,
+	ret = locate_new_cluster_and_attach_pio(ploop, piwb, cluster,
 						&dst_cluster, pio);
 	if (!ret)
 		goto out;
@@ -1392,7 +1392,7 @@ queue:
 	inc_nr_inflight(ploop, pio);
 	read_unlock_irq(&ploop->bat_rwlock);
 
-	maybe_link_submitting_bio(ploop, pio, cluster);
+	maybe_link_submitting_pio(ploop, pio, cluster);
 
 	submit_rw_mapped(ploop, dst_cluster, pio);
 out:
