@@ -326,7 +326,7 @@ static inline bool whole_cluster(struct ploop *ploop, struct bio *bio)
 #define BAT_LEVEL_MAX		(U8_MAX - 1)
 static inline u8 top_level(struct ploop *ploop)
 {
-	return ploop->nr_deltas;
+	return ploop->nr_deltas - 1;
 }
 
 static inline void ploop_hole_set_bit(unsigned long nr, struct ploop *ploop)
@@ -491,6 +491,7 @@ extern void free_md_page(struct md_page *md);
 extern void free_md_pages_tree(struct rb_root *root);
 extern bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
 				 u8 level, unsigned int dst_cluster);
+extern int convert_bat_entries(u32 *bat_entries, u32 count);
 
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
 extern void defer_bios(struct ploop *ploop, struct bio *bio, struct bio_list *bio_list);
@@ -524,7 +525,7 @@ extern void cleanup_backup(struct ploop *ploop);
 
 extern int ploop_read_cluster_sync(struct ploop *, struct bio *, unsigned int);
 
-extern int ploop_read_metadata(struct dm_target *ti, struct ploop *ploop, u8 nr_deltas);
+extern int ploop_setup_metadata(struct ploop *ploop, struct page *page);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 				     void **d_hdr);
 extern void call_rw_iter(struct file *file, loff_t pos, unsigned rw,

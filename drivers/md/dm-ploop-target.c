@@ -181,25 +181,6 @@ static void ploop_destroy(struct ploop *ploop)
 	kfree(ploop);
 }
 
-static int ploop_check_origin_dev(struct dm_target *ti, struct ploop *ploop, u8 nr_deltas)
-{
-	struct block_device *bdev = ploop->origin_dev->bdev;
-	int r;
-
-	if (bdev->bd_block_size < PAGE_SIZE) {
-		ti->error = "Origin dev has too small block size";
-		return -EINVAL;
-	}
-
-	r = ploop_read_metadata(ti, ploop, nr_deltas);
-	if (r) {
-		ti->error = "Can't read ploop header";
-		return r;
-	}
-
-	return 0;
-}
-
 static struct file * get_delta_file(int fd)
 {
 	struct file *file;
@@ -215,17 +196,57 @@ static struct file * get_delta_file(int fd)
 	return file;
 }
 
+static int check_top_delta(struct ploop *ploop, struct file *file)
+{
+	u32 nr, *bat_entries;
+	struct md_page *md0;
+	int ret;
+
+	/* Prealloc a page to read hdr */
+	ret = prealloc_md_pages(&ploop->bat_entries, 0, 1);
+	if (ret)
+		goto out;
+
+	ret = -ENXIO;
+	md0 = md_page_find(ploop, 0);
+	if (!md0)
+		goto out;
+
+	ret = rw_page_sync(READ, file, 0, md0->page);
+	if (ret < 0)
+		goto out;
+
+	bat_entries = kmap(md0->page);
+	nr = PAGE_SIZE / sizeof(u32) - PLOOP_MAP_OFFSET;
+	ret = convert_bat_entries(bat_entries + PLOOP_MAP_OFFSET, nr);
+	kunmap(md0->page);
+	if (ret) {
+		pr_err("Can't read BAT\n");
+		goto out;
+	}
+
+	ret = ploop_setup_metadata(ploop, md0->page);
+	if (ret)
+		goto out;
+	/* Alloc rest of pages */
+	ret = prealloc_md_pages(&ploop->bat_entries, 1, ploop->nr_bat_entries);
+	if (ret)
+		goto out;
+out:
+	return ret;
+}
+
 static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 {
 	struct ploop_delta *deltas;
-	int i, delta_fd, ret = 0;
+	int i, delta_fd, ret;
 	struct file *file;
 	const char *arg;
 	bool is_raw;
 
-	if (!argc)
-		goto out;
 	ret = -EINVAL;
+	if (argc < 1)
+		goto out;
 	if (argc > BAT_LEVEL_MAX - 1)
 		goto out;
 
@@ -255,16 +276,23 @@ static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 			goto out;
 		}
 
-		ret = ploop_add_delta(ploop, i, file, is_raw);
-		if (ret < 0) {
-			fput(file);
-			goto out;
+		if (i == argc - 1) { /* Top delta */
+			ret = check_top_delta(ploop, file);
+			if (ret)
+				goto err_fput;
 		}
+
+		ret = ploop_add_delta(ploop, i, file, is_raw);
+		if (ret < 0)
+			goto err_fput;
 	}
 
 	ret = 0;
 out:
 	return ret;
+err_fput:
+	fput(file);
+	goto out;
 }
 /*
  * <data dev>
@@ -342,12 +370,6 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 			    &ploop->origin_dev);
 	if (ret) {
 		ti->error = "Error opening origin device";
-		goto err;
-	}
-
-	ret = ploop_check_origin_dev(ti, ploop, argc - 2);
-	if (ret) {
-		/* ploop_check_origin_dev() assigns ti->error */
 		goto err;
 	}
 
@@ -430,7 +452,7 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 	if (p == stat)
 		p += sprintf(p, "o");
 	BUG_ON(p - stat >= sizeof(stat));
-	DMEMIT("%s %u v2 %u %s", ploop->origin_dev->name, ploop->nr_deltas,
+	DMEMIT("%u v2 %u %s", ploop->nr_deltas,
 		1 << ploop->cluster_log, stat);
 	read_unlock_irq(&ploop->bat_rwlock);
 }
