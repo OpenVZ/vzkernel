@@ -1033,8 +1033,6 @@ static void ploop_cow_endio(struct pio *cluster_pio, void *data, blk_status_t bi
 	struct ploop *ploop = cow->ploop;
 	unsigned long flags;
 
-	track_pio(ploop, cluster_pio);
-
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	list_add_tail(&cluster_pio->list, &ploop->delta_cow_action_list);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
