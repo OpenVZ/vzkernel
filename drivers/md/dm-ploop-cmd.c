@@ -588,7 +588,7 @@ static bool iter_delta_clusters(struct ploop *ploop, struct ploop_cmd *cmd)
 		/* FIXME: Optimize this. ploop_bat_entries() is overkill */
 		dst_cluster = ploop_bat_entries(ploop, *cluster, &level);
 		if (dst_cluster == BAT_ENTRY_NONE ||
-		    level != ploop->nr_deltas - 1)
+		    level != ploop->nr_deltas - 2)
 			continue;
 
 		spin_lock_irq(&ploop->deferred_lock);
@@ -660,7 +660,10 @@ out:
 			goto complete;
 		}
 		write_lock_irq(&ploop->bat_rwlock);
-		file = ploop->deltas[--ploop->nr_deltas].file;
+		level = ploop->nr_deltas - 2;
+		file = ploop->deltas[level].file;
+		ploop->deltas[level] = ploop->deltas[level + 1];
+		ploop->nr_deltas--;
 		write_unlock_irq(&ploop->bat_rwlock);
 		fput(file);
 	}
@@ -677,7 +680,7 @@ static int ploop_merge_latest_snapshot(struct ploop *ploop)
 		return -EBUSY;
 	if (ploop_is_ro(ploop))
 		return -EROFS;
-	if (!ploop->nr_deltas)
+	if (ploop->nr_deltas < 2)
 		return -ENOENT;
 again:
 	memset(&cmd, 0, sizeof(cmd));
@@ -838,11 +841,13 @@ static int ploop_notify_merged(struct ploop *ploop, u8 level, bool forward)
 {
 	if (ploop->maintaince)
 		return -EBUSY;
-	if (level >= ploop->nr_deltas)
+	if (level >= top_level(ploop))
 		return -ENOENT;
 	if (level == 0 && !forward)
 		return -EINVAL;
-	if (level == ploop->nr_deltas - 1 && forward)
+	if (level == top_level(ploop) - 1 && forward)
+		return -EINVAL;
+	if (ploop->nr_deltas < 3)
 		return -EINVAL;
 	/*
 	 * Userspace notifies us, it has copied clusters of
@@ -903,7 +908,7 @@ static int ploop_update_delta_index(struct ploop *ploop, unsigned int level,
 
 	if (ploop->maintaince)
 		return -EBUSY;
-	if (level >= ploop->nr_deltas)
+	if (level >= top_level(ploop))
 		return -ENOENT;
 
 	cmd.update_delta_index.level = level;
@@ -921,7 +926,7 @@ static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd
 {
 	unsigned int i, size, end, bat_clusters, hb_nr, *bat_entries;
 	void *holes_bitmap = ploop->holes_bitmap;
-	u8 level = ploop->nr_deltas - 1;
+	u8 level = top_level(ploop) - 1;
 	struct rb_node *node;
 	struct md_page *md;
 
@@ -1172,9 +1177,9 @@ static int ploop_flip_upper_deltas(struct ploop *ploop, char *new_dev,
 		return -EBUSY;
 	if (ploop_is_ro(ploop))
 		return -EROFS;
-	if (!ploop->nr_deltas)
+	if (ploop->nr_deltas < 2)
 		return -ENOENT;
-	if (ploop->deltas[ploop->nr_deltas - 1].is_raw)
+	if (ploop->deltas[ploop->nr_deltas - 2].is_raw)
 		return -EBADSLT;
 	if (kstrtou32(new_ro_fd, 10, &new_fd) < 0 ||
 	    !(cmd.flip_upper_deltas.file = fget(new_fd)))

@@ -182,7 +182,7 @@ static int ploop_map_discard(struct ploop *ploop, struct bio *bio)
 		read_lock_irqsave(&ploop->bat_rwlock, flags);
 		/* Early checks to not wake up work for nought. */
 		if (cluster_is_in_top_delta(ploop, cluster) &&
-		    !ploop->nr_deltas)
+		    ploop->nr_deltas == 1)
 			supported = true;
 		read_unlock_irqrestore(&ploop->bat_rwlock, flags);
 	}
@@ -425,7 +425,7 @@ static void handle_discard_bio(struct ploop *ploop, struct bio *bio,
 	unsigned long flags;
 	int ret;
 
-	if (!cluster_is_in_top_delta(ploop, cluster) || ploop->nr_deltas) {
+	if (!cluster_is_in_top_delta(ploop, cluster) || ploop->nr_deltas != 1) {
 enotsupp:
 		bio->bi_status = BLK_STS_NOTSUPP;
 		bio_endio(bio);
@@ -557,7 +557,7 @@ static void piwb_discard_completed(struct ploop *ploop, bool success,
 		return;
 
 	if (cluster_is_in_top_delta(ploop, cluster)) {
-		WARN_ON_ONCE(ploop->nr_deltas);
+		WARN_ON_ONCE(ploop->nr_deltas != 1);
 		if (success)
 			ploop_release_cluster(ploop, cluster);
 	}
@@ -1394,7 +1394,7 @@ static int process_one_discard_bio(struct ploop *ploop, struct bio *bio,
 	map_index_t *to;
 	struct pio *h;
 
-	WARN_ON(ploop->nr_deltas);
+	WARN_ON(ploop->nr_deltas != 1);
 
 	h = bio_to_endio_hook(bio);
 	cluster = h->cluster;
