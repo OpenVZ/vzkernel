@@ -236,7 +236,7 @@ struct ploop {
 	spinlock_t pb_lock;
 };
 
-struct dm_ploop_endio_hook {
+struct pio {
 	struct list_head list;
 
 	struct rb_node node;
@@ -272,7 +272,7 @@ struct ploop_cow {
 	struct bio *cluster_bio;
 	unsigned int dst_cluster;
 
-	struct dm_ploop_endio_hook hook;
+	struct pio hook;
 
 	void (*end_fn)(struct ploop *, int, void *);
 	void *data; /* Second argument of end_fn */
@@ -463,11 +463,11 @@ static inline void track_bio(struct ploop *ploop, struct bio *bio)
 		__track_bio(ploop, bio);
 }
 
-extern struct dm_ploop_endio_hook *find_endio_hook_range(struct ploop *ploop,
-			struct rb_root *root, unsigned int l, unsigned int r);
+extern struct pio *find_endio_hook_range(struct ploop *ploop, struct rb_root *root,
+					 unsigned int l, unsigned int r);
 
-static inline struct dm_ploop_endio_hook *find_endio_hook(struct ploop *ploop,
-				   struct rb_root *root, unsigned int cluster)
+static inline struct pio *find_endio_hook(struct ploop *ploop, struct rb_root *root,
+					  unsigned int cluster)
 {
 	return find_endio_hook_range(ploop, root, cluster, cluster);
 }
@@ -489,11 +489,10 @@ extern void process_deferred_cmd(struct ploop *ploop,
 extern int ploop_map(struct dm_target *ti, struct bio *bio);
 extern int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err);
 extern int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable);
-extern struct dm_ploop_endio_hook *find_lk_of_cluster(struct ploop *ploop,
-						      unsigned int cluster);
+extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
 extern void unlink_postponed_backup_endio(struct ploop *ploop,
 					  struct bio_list *bio_list,
-					  struct dm_ploop_endio_hook *h);
+					  struct pio *h);
 
 extern int ploop_prepare_reloc_index_wb(struct ploop *, struct ploop_index_wb *,
 					unsigned int, unsigned int *);
