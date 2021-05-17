@@ -261,11 +261,9 @@ struct pio *find_lk_of_cluster(struct ploop *ploop, unsigned int cluster)
 	return find_endio_hook(ploop, &ploop->exclusive_bios_rbtree, cluster);
 }
 
-static void add_endio_bio(struct pio *h, struct bio *later_bio)
+static void add_endio_pio(struct pio *head, struct pio *pio)
 {
-	struct pio *lpio = bio_to_endio_hook(later_bio);
-
-	list_add_tail(&lpio->list, &h->endio_list);
+	list_add_tail(&pio->list, &head->endio_list);
 }
 
 static void inc_nr_inflight_raw(struct ploop *ploop, struct pio *h)
@@ -488,7 +486,7 @@ enotsupp:
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	inflight_h = find_inflight_bio(ploop, cluster);
 	if (inflight_h)
-		add_endio_bio(inflight_h, bio);
+		add_endio_pio(inflight_h, h);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
 	if (inflight_h) {
@@ -1010,7 +1008,7 @@ static void ploop_cow_endio(struct bio *cluster_bio)
 	queue_work(ploop->wq, &ploop->worker);
 }
 
-static bool postpone_if_cluster_locked(struct ploop *ploop, struct bio *bio,
+static bool postpone_if_cluster_locked(struct ploop *ploop, struct pio *pio,
 				       unsigned int cluster)
 {
 	struct pio *e_h; /* Exclusively locked */
@@ -1018,14 +1016,14 @@ static bool postpone_if_cluster_locked(struct ploop *ploop, struct bio *bio,
 	spin_lock_irq(&ploop->deferred_lock);
 	e_h = find_lk_of_cluster(ploop, cluster);
 	if (e_h)
-		add_endio_bio(e_h, bio);
+		add_endio_pio(e_h, pio);
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	return e_h != NULL;
 }
 
 static bool postpone_if_required_for_backup(struct ploop *ploop,
-			  struct bio *bio, unsigned int cluster)
+			  struct pio *pio, unsigned int cluster)
 {
 	struct push_backup *pb = ploop->pb;
 	bool first, queue_timer = false;
@@ -1033,7 +1031,7 @@ static bool postpone_if_required_for_backup(struct ploop *ploop,
 
 	if (likely(!pb || !pb->alive))
 		return false;
-	if (!op_is_write(bio->bi_opf))
+	if (!op_is_write(pio->bi_opf))
 		return false;
 	if (!test_bit(cluster, pb->ppb_map))
 		return false;
@@ -1045,7 +1043,7 @@ static bool postpone_if_required_for_backup(struct ploop *ploop,
 
 	h = find_endio_hook(ploop, &pb->rb_root, cluster);
 	if (h) {
-		add_endio_bio(h, bio);
+		add_endio_pio(h, pio);
 		spin_unlock_irq(&ploop->pb_lock);
 		return true;
 	}
@@ -1055,10 +1053,9 @@ static bool postpone_if_required_for_backup(struct ploop *ploop,
 		queue_timer = true;
 	}
 
-	h = bio_to_endio_hook(bio);
-	link_endio_hook(ploop, h, &pb->rb_root, cluster, true);
+	link_endio_hook(ploop, pio, &pb->rb_root, cluster, true);
 	first = list_empty(&pb->pending);
-	list_add_tail(&h->list, &pb->pending);
+	list_add_tail(&pio->list, &pb->pending);
 	spin_unlock_irq(&ploop->pb_lock);
 
 	if (first)
@@ -1357,9 +1354,9 @@ static int process_one_deferred_bio(struct ploop *ploop, struct bio *bio,
 	cluster = sector >> ploop->cluster_log;
 	dst_cluster = ploop_bat_entries(ploop, cluster, &level);
 
-	if (postpone_if_cluster_locked(ploop, bio, cluster))
+	if (postpone_if_cluster_locked(ploop, pio, cluster))
 		goto out;
-	if (postpone_if_required_for_backup(ploop, bio, cluster))
+	if (postpone_if_required_for_backup(ploop, pio, cluster))
 		goto out;
 
 	if (op_is_discard(bio->bi_opf)) {
