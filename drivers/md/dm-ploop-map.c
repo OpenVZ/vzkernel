@@ -521,31 +521,21 @@ enotsupp:
 		return;
 	}
 
-	pio->action = PLOOP_END_IO_DISCARD_BIO;
 	add_cluster_lk(ploop, pio, cluster);
-
-	read_lock_irq(&ploop->bat_rwlock);
-	inc_nr_inflight(ploop, pio);
-	read_unlock_irq(&ploop->bat_rwlock);
 	atomic_inc(&ploop->nr_discard_bios);
 
 	remap_to_cluster(ploop, pio, dst_cluster);
 
 	pos = to_bytes(pio->bi_iter.bi_sector);
 	ret = punch_hole(top_delta(ploop)->file, pos, pio->bi_iter.bi_size);
-	if (ret)
+	if (ret) {
 		pio->bi_status = errno_to_blk_status(ret);
-	pio_endio(pio);
-}
-
-static int ploop_discard_pio_end(struct ploop *ploop, struct pio *pio)
-{
-	dec_nr_inflight(ploop, pio);
-	if (pio->bi_status == BLK_STS_OK)
-		queue_discard_index_wb(ploop, pio);
-	else
 		pio->action = PLOOP_END_IO_DISCARD_INDEX_BIO;
-	return DM_ENDIO_INCOMPLETE;
+		pio_endio(pio);
+		return;
+	}
+
+	queue_discard_index_wb(ploop, pio);
 }
 
 static int ploop_discard_index_pio_end(struct ploop *ploop, struct pio *pio)
@@ -1523,15 +1513,8 @@ static void process_discard_pios(struct ploop *ploop, struct list_head *pios,
 {
 	struct pio *pio;
 
-	while ((pio = pio_list_pop(pios)) != NULL) {
-
-		if (WARN_ON_ONCE(pio->action != PLOOP_END_IO_DISCARD_BIO)) {
-			pio->bi_status = BLK_STS_IOERR;
-			pio_endio(pio);
-			continue;
-		}
+	while ((pio = pio_list_pop(pios)) != NULL)
 		process_one_discard_pio(ploop, pio, piwb);
-	}
 }
 
 /* Remove from tree bio and endio bio chain */
@@ -1787,9 +1770,6 @@ static int ploop_endio(struct ploop *ploop, struct pio *pio)
 	 */
 	if (pio->action == PLOOP_END_IO_DATA_BIO)
 		ret = ploop_data_pio_end(pio);
-
-	if (pio->action == PLOOP_END_IO_DISCARD_BIO)
-		ret = ploop_discard_pio_end(ploop, pio);
 
 	if (pio->action == PLOOP_END_IO_DISCARD_INDEX_BIO)
 		ret = ploop_discard_index_pio_end(ploop, pio);
