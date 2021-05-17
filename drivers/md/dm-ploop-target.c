@@ -192,8 +192,17 @@ static struct file * get_delta_file(int fd)
 
 static int check_top_delta(struct ploop *ploop, struct file *file)
 {
+	struct dm_target *ti = ploop->ti;
 	struct page *page = NULL;
+	fmode_t mode;
 	int ret;
+
+	mode = dm_table_get_mode(ti->table);
+	mode &= (FMODE_READ|FMODE_WRITE);
+
+	ret = -EACCES;
+        if (mode & ~(file->f_mode & (FMODE_READ|FMODE_WRITE)))
+		goto out;
 
 	/* Prealloc a page to read hdr */
 	ret = -ENOMEM;

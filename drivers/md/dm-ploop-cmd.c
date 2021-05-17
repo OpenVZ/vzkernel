@@ -1189,6 +1189,7 @@ static int ploop_flip_upper_deltas(struct ploop *ploop)
 {
 	struct dm_target *ti = ploop->ti;
 	struct ploop_cmd cmd = { {0} };
+	struct file *file;
 
 	cmd.type = PLOOP_CMD_FLIP_UPPER_DELTAS;
 	cmd.ploop = ploop;
@@ -1201,6 +1202,9 @@ static int ploop_flip_upper_deltas(struct ploop *ploop)
 		return -ENOENT;
 	if (ploop->deltas[ploop->nr_deltas - 2].is_raw)
 		return -EBADSLT;
+	file = ploop->deltas[ploop->nr_deltas - 2].file;
+        if (!(file->f_mode & FMODE_WRITE))
+		return -EACCES;
 
 	init_completion(&cmd.comp);
 	ploop_queue_deferred_cmd(ploop, &cmd);
