@@ -201,15 +201,14 @@ static void queue_discard_index_wb(struct ploop *ploop, struct pio *pio)
 }
 
 /* This 1)defers looking suitable discard bios and 2)ends the rest of them. */
-static int ploop_map_discard(struct ploop *ploop, struct bio *bio)
+static int ploop_map_discard(struct ploop *ploop, struct pio *pio)
 {
-	struct pio *pio = bio_to_endio_hook(bio);
 	bool supported = false;
 	unsigned int cluster;
 	unsigned long flags;
 
 	/* Only whole cluster in no-snapshots case can be discarded. */
-	if (whole_cluster(ploop, bio)) {
+	if (whole_cluster(ploop, pio)) {
 		cluster = pio->bi_iter.bi_sector >> ploop->cluster_log;
 		read_lock_irqsave(&ploop->bat_rwlock, flags);
 		/* Early checks to not wake up work for nought. */
@@ -1659,7 +1658,7 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 		if (ploop_pio_cluster(ploop, pio, &cluster) < 0)
 			return DM_MAPIO_KILL;
 		if (op_is_discard(pio->bi_opf))
-			return ploop_map_discard(ploop, bio);
+			return ploop_map_discard(ploop, pio);
 
 		defer_pios(ploop, pio, NULL);
 		return DM_MAPIO_SUBMITTED;
