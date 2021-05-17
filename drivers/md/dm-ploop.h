@@ -126,7 +126,6 @@ struct ploop_index_wb {
 	enum piwb_type type;
 	spinlock_t lock;
 	struct page *bat_page;
-	struct bio *bat_bio;
 	struct bio_list ready_data_bios;
 	struct bio_list cow_list;
 	atomic_t count;
@@ -517,6 +516,8 @@ extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
 extern void unlink_postponed_backup_endio(struct ploop *ploop,
 					  struct bio_list *bio_list,
 					  struct pio *h);
+extern int rw_page_sync(unsigned rw, struct file *file,
+			u64 index, struct page *page);
 
 extern int ploop_prepare_reloc_index_wb(struct ploop *, struct ploop_index_wb *,
 					unsigned int, unsigned int *);
