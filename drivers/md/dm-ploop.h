@@ -525,7 +525,6 @@ extern void do_ploop_fsync_work(struct work_struct *ws);
 extern void process_deferred_cmd(struct ploop *ploop,
 			struct ploop_index_wb *piwb);
 extern int ploop_map(struct dm_target *ti, struct bio *bio);
-extern int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err);
 extern int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable);
 extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
 extern void unlink_postponed_backup_endio(struct ploop *ploop,

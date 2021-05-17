@@ -39,6 +39,8 @@
  * become handled in ploop_map() as before.
  */
 
+static int ploop_endio(struct ploop *ploop, struct pio *pio);
+
 #define DM_MSG_PREFIX "ploop"
 
 #define ploop_bat_lock(ploop, exclusive, flags)					\
@@ -134,9 +136,14 @@ static int ploop_pio_cluster(struct ploop *ploop, struct pio *pio,
 static void call_bio_endio(struct pio *pio, void *data, blk_status_t bi_status)
 {
 	struct bio *bio = data;
+	int ret;
 
-	bio->bi_status = bi_status;
-	bio_endio(bio);
+	ret = ploop_endio(pio->ploop, pio);
+
+	if (bi_status)
+		bio->bi_status = bi_status;
+	if (ret == DM_ENDIO_DONE)
+		bio_endio(bio);
 }
 
 void pio_endio(struct pio *pio)
@@ -1687,10 +1694,8 @@ int ploop_map(struct dm_target *ti, struct bio *bio)
 	return DM_MAPIO_SUBMITTED;
 }
 
-int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
+static int ploop_endio(struct ploop *ploop, struct pio *pio)
 {
-	struct pio *pio = bio_to_endio_hook(bio);
-	struct ploop *ploop = ti->private;
 	int ret = DM_ENDIO_DONE;
 
 	if (pio->ref_index != PLOOP_REF_INDEX_INVALID) {
@@ -1703,14 +1708,12 @@ int ploop_endio(struct dm_target *ti, struct bio *bio, blk_status_t *err)
 	}
 	/*
 	 * This function is called from the very beginning
-	 * of bio->bi_end_io (which is dm.c::clone_endio()).
+	 * of call_bio_endio().
 	 *
 	 * DM_ENDIO_DONE return value means handling goes OK.
 	 * DM_ENDIO_INCOMPLETE tells the caller to stop end io
 	 * processing, and that we are going to call bi_end_io
-	 * directly later again. This function (ploop_endio)
-	 * also will be called again then!
-	 * See dm.c::clone_endio() for the details.
+	 * directly later again.
 	 */
 	if (pio->action == PLOOP_END_IO_DATA_BIO)
 		ret = ploop_data_pio_end(pio);

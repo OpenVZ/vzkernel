@@ -434,7 +434,6 @@ static struct target_type ploop_target = {
 	.ctr = ploop_ctr,
 	.dtr = ploop_dtr,
 	.map = ploop_map,
-	.end_io = ploop_endio,
 	.message = ploop_message,
 	.io_hints = ploop_io_hints,
 	.preresume = ploop_preresume,
