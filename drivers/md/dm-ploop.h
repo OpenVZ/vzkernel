@@ -265,7 +265,6 @@ struct pio {
 
 #define PLOOP_END_IO_NONE		0
 #define PLOOP_END_IO_DATA_BIO		1
-#define PLOOP_END_IO_DISCARD_BIO	2
 #define PLOOP_END_IO_DISCARD_INDEX_BIO	3
 	unsigned int action:2;
 	/*
