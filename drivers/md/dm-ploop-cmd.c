@@ -14,6 +14,44 @@
 
 #define DM_MSG_PREFIX "ploop"
 
+static void free_pvec_with_pages(struct ploop_bvec *pvec)
+{
+        if (pvec) {
+                while (pvec->nr_pages-- > 0)
+                        put_page(pvec->bvec[pvec->nr_pages].bv_page);
+                kfree(pvec);
+        }
+}
+
+static struct ploop_bvec *alloc_pvec_with_pages(ushort nr_pages)
+{
+        struct ploop_bvec *pvec;
+        struct bio_vec *bvec;
+	u32 size;
+        int i;
+
+	size = sizeof(struct ploop_bvec) + nr_pages * sizeof(struct bio_vec);
+        pvec = kzalloc(size, GFP_NOIO);
+        if (!pvec)
+                return NULL;
+	pvec->nr_pages = nr_pages;
+
+        bvec = pvec->bvec;
+        for (i = 0; i < nr_pages; i++) {
+                bvec[i].bv_page = alloc_page(GFP_NOIO);
+                if (!bvec[i].bv_page)
+                        goto err;
+                bvec[i].bv_len = PAGE_SIZE;
+                bvec[i].bv_offset = 0;
+        }
+
+        return pvec;
+err:
+        pvec->nr_pages = i;
+        free_pvec_with_pages(pvec);
+        return NULL;
+}
+
 static void ploop_queue_deferred_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 {
 	unsigned long flags;
@@ -182,61 +220,54 @@ void bio_prepare_offsets(struct ploop *ploop, struct bio *bio,
 	bio->bi_iter.bi_size = 1 << (cluster_log + 9);
 }
 
-int ploop_read_cluster_sync(struct ploop *ploop, struct bio *bio,
-			    unsigned int cluster)
+static int ploop_read_cluster_sync(struct ploop *ploop, struct ploop_bvec *pvec,
+				   unsigned int dst_cluster)
 {
-	bio_reset(bio);
-	bio_prepare_offsets(ploop, bio, cluster);
-	remap_to_origin(ploop, bio);
-	bio_set_op_attrs(bio, REQ_OP_READ, 0);
+	u64 page_id = to_bytes((u64)dst_cluster << ploop->cluster_log) >> PAGE_SHIFT;
 
-	return submit_bio_wait(bio);
+	return rw_pages_sync(READ, top_delta(ploop)->file, page_id, pvec);
 }
 
-static int ploop_write_cluster_sync(struct ploop *ploop, struct bio *bio,
-				   unsigned int cluster)
+static int ploop_write_cluster_sync(struct ploop *ploop, struct ploop_bvec *pvec,
+				    unsigned int dst_cluster)
 {
-	struct block_device *bdev = ploop->origin_dev->bdev;
+	u64 page_id = to_bytes((u64)dst_cluster << ploop->cluster_log) >> PAGE_SHIFT;
+	struct file *file = top_delta(ploop)->file;
 	int ret;
 
-	bio_reset(bio);
-	bio_prepare_offsets(ploop, bio, cluster);
-	remap_to_origin(ploop, bio);
-	bio_set_op_attrs(bio, REQ_OP_WRITE, REQ_FUA | REQ_PREFLUSH);
-
-	ret = submit_bio_wait(bio);
+	ret = vfs_fsync(file, 0);
 	if (ret)
 		return ret;
 
-	if (!blk_queue_fua(bdev_get_queue(bdev))) {
-		/*
-		 * Error here does not mean that cluster write is failed,
-		 * since ploop_map() could submit more bios in parallel.
-		 * But it's not possible to differ them. Should we block
-		 * ploop_map() during we do this?
-		 */
-		ret = blkdev_issue_flush(bdev, GFP_NOIO, NULL);
-	}
+	ret = rw_pages_sync(WRITE, file, page_id, pvec);
+	if (ret)
+		return ret;
 
-	return ret;
+	/* track_bio(ploop, bio); */
+	return vfs_fsync(file, 0);
 }
 
 static int ploop_write_zero_cluster_sync(struct ploop *ploop,
-					 struct bio *bio,
+					 struct ploop_bvec *pvec,
 					 unsigned int cluster)
 {
-	bio_reset(bio);
-	bio_prepare_offsets(ploop, bio, cluster);
-	zero_fill_bio(bio);
+	void *data;
+	int i;
 
-	return ploop_write_cluster_sync(ploop, bio, cluster);
+	for (i = 0; i < pvec->nr_pages; i++) {
+		data = kmap_atomic(pvec->bvec[i].bv_page);
+		memset(data, 0, PAGE_SIZE);
+		kunmap_atomic(data);
+	}
+
+	return ploop_write_cluster_sync(ploop, pvec, cluster);
 }
 
 static int ploop_grow_relocate_cluster(struct ploop *ploop,
 				       struct ploop_index_wb *piwb,
 				       struct ploop_cmd *cmd)
 {
-	struct bio *bio = cmd->resize.bio;
+	struct ploop_bvec *pvec = cmd->resize.pvec;
 	unsigned int new_dst, cluster, dst_cluster;
 	bool is_locked;
 	int ret = 0;
@@ -267,7 +298,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 		goto out;
 
 	/* Read full cluster sync */
-	ret = ploop_read_cluster_sync(ploop, bio, dst_cluster);
+	ret = ploop_read_cluster_sync(ploop, pvec, dst_cluster);
 	if (ret < 0)
 		goto out;
 
@@ -277,7 +308,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 		goto out;
 
 	/* Write cluster to new destination */
-	ret = ploop_write_cluster_sync(ploop, bio, new_dst);
+	ret = ploop_write_cluster_sync(ploop, pvec, new_dst);
 	if (ret) {
 		ploop_reset_bat_update(piwb);
 		goto out;
@@ -303,7 +334,7 @@ not_occupied:
 	cmd->resize.dst_cluster++;
 
 	/* Zero new BAT entries on disk. */
-	ret = ploop_write_zero_cluster_sync(ploop, bio, dst_cluster);
+	ret = ploop_write_zero_cluster_sync(ploop, pvec, dst_cluster);
 out:
 	return ret;
 }
@@ -527,10 +558,9 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 	old_size = DIV_ROUND_UP(ploop->hb_nr, 8);
 	memset(cmd.resize.holes_bitmap + old_size, 0xff, size - old_size);
 
-	cmd.resize.bio = alloc_bio_with_pages(ploop);
-	if (!cmd.resize.bio)
+	cmd.resize.pvec = alloc_pvec_with_pages(to_bytes(1 << cluster_log));
+	if (!cmd.resize.pvec)
 		goto err;
-	cmd.resize.bio->bi_status = 0;
 
 	cmd.resize.cluster = UINT_MAX;
 	cmd.resize.dst_cluster = nr_old_bat_clusters;
@@ -550,8 +580,8 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 
 	ret = cmd.retval;
 err:
-	if (cmd.resize.bio)
-		free_bio_with_pages(ploop, cmd.resize.bio);
+	if (cmd.resize.pvec)
+		free_pvec_with_pages(cmd.resize.pvec);
 	kvfree(cmd.resize.holes_bitmap);
 	free_md_pages_tree(&cmd.resize.md_pages_root);
 	return ret;
