@@ -191,6 +191,7 @@ static int kaio_kernel_submit(struct file *file, struct kaio_req *kreq,
 				    pos, count);
 			if (err == 0) {
 				kaio_complete_io_request(kreq->preq);
+				kfree(kreq);
 				/* Otherwise, caller decrements counter */
 			}
 			return err;
