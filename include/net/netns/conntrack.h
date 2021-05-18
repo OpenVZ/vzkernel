@@ -111,6 +111,7 @@ struct netns_ct {
 	struct delayed_work ecache_dwork;
 	bool ecache_dwork_pending;
 #endif
+	unsigned int		expect_max;
 #ifdef CONFIG_SYSCTL
 	struct ctl_table_header	*sysctl_header;
 	struct ctl_table_header	*acct_sysctl_header;
