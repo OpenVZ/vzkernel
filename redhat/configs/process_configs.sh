@@ -193,11 +193,11 @@ function commit_new_configs()
 		fi
 		echo -n "Checking for new configs in $cfg ... "
 
-		make ARCH="$arch" KCONFIG_CONFIG="$cfgorig" listnewconfig >& .listnewconfig
+		make ARCH="$arch" CROSS_COMPILE=scripts/dummy-tools/ KCONFIG_CONFIG="$cfgorig" listnewconfig >& .listnewconfig
 		grep -E 'CONFIG_' .listnewconfig > .newoptions
 		if test -s .newoptions
 		then
-			make ARCH="$arch" KCONFIG_CONFIG="$cfgorig" helpnewconfig >& .helpnewconfig
+			make ARCH="$arch" CROSS_COMPILE=scripts/dummy-tools/ KCONFIG_CONFIG="$cfgorig" helpnewconfig >& .helpnewconfig
 			parsenewconfigs
 		fi
 		rm .newoptions
@@ -227,7 +227,7 @@ function process_configs()
 		fi
 		echo -n "Processing $cfg ... "
 
-		make ARCH="$arch" KCONFIG_CONFIG="$cfgorig" listnewconfig >& .listnewconfig
+		make ARCH="$arch" CROSS_COMPILE=scripts/dummy-tools/ KCONFIG_CONFIG="$cfgorig" listnewconfig >& .listnewconfig
 		grep -E 'CONFIG_' .listnewconfig > .newoptions
 		if test -n "$NEWOPTIONS" && test -s .newoptions
 		then
@@ -252,7 +252,7 @@ function process_configs()
 
 		rm .listnewconfig
 
-		make ARCH="$arch" KCONFIG_CONFIG="$cfgorig" olddefconfig > /dev/null || exit 1
+		make ARCH="$arch" CROSS_COMPILE=scripts/dummy-tools/ KCONFIG_CONFIG="$cfgorig" olddefconfig > /dev/null || exit 1
 		echo "# $arch" > "$cfgtmp"
 		cat "$cfgorig" >> "$cfgtmp"
 		if test -n "$CHECKOPTIONS"
