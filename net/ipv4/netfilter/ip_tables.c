@@ -391,9 +391,12 @@ mark_source_chains(const struct xt_table_info *newinfo,
 				= (void *)ipt_get_target_c(e);
 			int visited = e->comefrom & (1 << hook);
 
-			if (e->comefrom & (1 << NF_INET_NUMHOOKS))
+			if (e->comefrom & (1 << NF_INET_NUMHOOKS)) {
+				ve_printk(VE_LOG, "iptables: loop hook %u pos "
+						  "%u %08X.\n",
+					  hook, pos, e->comefrom);
 				return 0;
-
+			}
 			e->comefrom |= ((1 << hook) | (1 << NF_INET_NUMHOOKS));
 
 			/* Unconditional return/END. */
@@ -1538,6 +1541,9 @@ compat_do_replace(struct net *net, void __user *user, unsigned int len)
 }
 
 static int
+do_ipt_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len);
+
+static int
 compat_do_ipt_set_ctl(struct sock *sk,	int cmd, void __user *user,
 		      unsigned int len)
 {
@@ -1556,7 +1562,7 @@ compat_do_ipt_set_ctl(struct sock *sk,	int cmd, void __user *user,
 		break;
 
 	default:
-		ret = -EINVAL;
+		ret = do_ipt_set_ctl(sk, cmd, user, len);
 	}
 
 	return ret;
