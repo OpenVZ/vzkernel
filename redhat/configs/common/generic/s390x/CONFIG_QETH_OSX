@@ -1,1 +1,1 @@
-CONFIG_QETH_OSX=y
+# CONFIG_QETH_OSX is not set
