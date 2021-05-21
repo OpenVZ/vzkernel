@@ -2177,7 +2177,7 @@ export BPFTOOL=$(pwd)/tools/bpf/bpftool/bpftool
 pushd tools/testing/selftests
 # We need to install here because we need to call make with ARCH set which
 # doesn't seem possible to do in the install section.
-%{make} %{?_smp_mflags} ARCH=$Arch V=1 TARGETS="bpf livepatch net net/forwarding net/mptcp netfilter tc-testing" INSTALL_PATH=%{buildroot}%{_libexecdir}/kselftests install
+%{make} %{?_smp_mflags} ARCH=$Arch V=1 TARGETS="bpf livepatch net net/forwarding net/mptcp netfilter tc-testing" SKIP_TARGETS="" INSTALL_PATH=%{buildroot}%{_libexecdir}/kselftests install
 
 # 'make install' for bpf is broken and upstream refuses to fix it.
 # Install the needed files manually.
@@ -2191,7 +2191,7 @@ for dir in bpf bpf/no_alu32 bpf/progs; do
 	find $dir -maxdepth 1 -type f \( -executable -o -name '*.py' -o -name settings -o \
 		-name 'btf_dump_test_case_*.c' -o \
 		-name '*.o' -exec sh -c 'readelf -h "{}" | grep -q "^  Machine:.*BPF"' \; \) -print0 | \
-	xargs -0 cp -t %{buildroot}%{_libexecdir}/kselftests/$dir
+	xargs -0 cp -t %{buildroot}%{_libexecdir}/kselftests/$dir || true
 done
 popd
 export -n BPFTOOL
@@ -2434,7 +2434,7 @@ install -m755 *.sh %{buildroot}%{_libexecdir}/ksamples/bpf
 # test_lwt_bpf.sh compiles test_lwt_bpf.c when run; this works only from the
 # kernel tree. Just remove it.
 rm %{buildroot}%{_libexecdir}/ksamples/bpf/test_lwt_bpf.sh
-install -m644 *_kern.o %{buildroot}%{_libexecdir}/ksamples/bpf
+install -m644 *_kern.o %{buildroot}%{_libexecdir}/ksamples/bpf || true
 install -m644 tcp_bpf.readme %{buildroot}%{_libexecdir}/ksamples/bpf
 popd
 # install pktgen samples
