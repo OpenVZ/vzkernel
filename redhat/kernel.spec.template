@@ -215,8 +215,6 @@ Summary: The Linux kernel
 # Kernel headers are being split out into a separate package
 %define with_headers 0
 %define with_cross_headers 0
-# no selftests for now
-%define with_selftests 0
 # no ipa_clone for now
 %define with_ipaclones 0
 # no whitelist
