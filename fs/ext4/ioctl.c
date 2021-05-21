@@ -775,11 +775,11 @@ static int ext4_open_balloon(struct super_block *sb, struct vfsmount *mnt)
 	path.mnt = mntget(mnt);
 	err = mnt_want_write(path.mnt);
 	if (err)
-		mode = FMODE_READ;
+		mode = O_RDONLY;
 	else
-		mode = FMODE_READ | FMODE_WRITE;
+		mode = O_RDWR;
 	filp = alloc_file(&path, mode, &ext4_file_operations);
-	if (mode & FMODE_WRITE)
+	if (filp->f_mode & FMODE_WRITE)
 		mnt_drop_write(path.mnt);
 	if (IS_ERR(filp)) {
 		err = PTR_ERR(filp);
