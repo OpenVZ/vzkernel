@@ -29,9 +29,9 @@ else
   PREBUILD:=
 endif
 
-DIST ?= .fc33
-ifeq ("$(shell ! echo $(DIST) | grep -q fc; echo $$?)", "1")
-  DISTRO := fedora
+DIST ?= $(shell $(RPMBUILD) --eval '%{?dist}')
+ifneq ($(findstring .fc,$(DIST)),)
+  DISTRO ?= fedora
 else
   DISTRO ?= rhel
 endif
