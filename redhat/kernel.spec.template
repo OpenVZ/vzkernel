@@ -274,6 +274,10 @@ Summary: The Linux kernel
 %define nopatches 1
 %endif
 
+%if %{with_release}
+%define debugbuildsenabled 1
+%endif
+
 %if !%{debugbuildsenabled}
 %define with_debug 0
 %endif
