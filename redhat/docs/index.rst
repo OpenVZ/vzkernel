@@ -21,62 +21,64 @@ Setup
 To start with you need to:
 
 1. Make a `GitLab account`_ if you do not already have one.
-2. `Fork the ARK tree`_. Wait patiently for this to complete.
-3. Setup `Koji`_ and `Mock`_ if necessary.
+2. `Fork the repository`_. Wait patiently for this to complete.
+3. Configure pull mirroring on your fork (see below).
+4. Set up `Koji`_ or `Mock`_ if desired.
 
-Once GitLab finishes forking the repository (this can take a while):
+Pull mirroring keeps your fork in sync and avoids the need to configure a
+separate remote in Git. Once GitLab finishes forking the repository:
 
-::
+* Go to your fork from your `personal GitLab projects`_.
+* In the sidebar, click 'Settings' and then 'Repository'.
+* Next to 'Mirroring repositories', click 'Expand'.
+* Enter the Git repository URL: https://gitlab.com/cki-project/kernel-ark.git
+* Ensure the 'Mirror direction' is 'Pull'.
+* Leave the 'Password' blank.
+* Leave the checkboxes blank (or select them if desired).
+* Click 'Mirror Repository'. The first update will take about 20 minutes.
 
-   # Setup mirroring of kernel-ark to your fork.  This helps keep your
-   # fork in sync with the kernel-ark project and avoids setting up a second
-   # remote tree to manage.
-   #
-   # Goto: https://gitlab.com/<your gitlab name>/kernel-ark/-/settings/repository
-   # Click on 'Mirroring repositories'
-   # Enter in Git Repository URL: https://gitlab.com/cki-project/kernel-ark.git
-   # Ensure 'Mirror direction' is 'Pull'
-   # Password is blank and checkboxes can be left blank (your choice)
-   # Click 'Mirror Repository'  (will take 20 minutes to establish)
-   #
-   # Cloning with these URLs requires that you have an SSH key registered with GitLab
-   # If you've not yet set up keys, you can clone with with:
-   # git clone https://gitlab.com/<your gitlab name>/kernel-ark.git && cd kernel-ark
-   git clone git@gitlab.com:<your gitlab name>/kernel-ark.git && cd kernel-ark
 
-   # Install build dependencies
-   sudo dnf install -y make gcc flex bison bzip2 rpm-build
-   # If you're on Fedora, you need to run:
-   # ln -s /usr/bin/python3 /usr/libexec/platform-python
+Building packages
+-----------------
+
+Install the dependencies for generating source RPM packages:
+
+.. code-block:: sh
+
+   sudo dnf install git make gcc flex bison bzip2 rpm-build
+
+Then clone the repository. To use SSH, `register your SSH key`_ in GitLab first.
+
+.. code-block:: sh
+
+   # Clone using SSH
+   git clone git@gitlab.com:${GITLAB_USER_NAME}/kernel-ark.git && cd kernel-ark
+   # Clone using HTTPS
+   git clone https://gitlab.com/${GITLAB_USER_NAME}/kernel-ark.git && cd kernel-ark
+
+The ``os-build`` branch is checked out automatically after cloning. This
+branch contains the configuration and build scripts, and it is regularly
+updated to work with Linus's master branch.
+
+With the ``os-build`` branch checked out, build a source RPM package:
+
+.. code-block:: sh
+
    make dist-srpm
-   sudo dnf builddep -y redhat/rpm/SPECS/kernel.spec
 
+You can now build the binary RPM packages however you would like:
 
-Building an SRPM
-----------------
+.. code-block:: sh
 
-The configuration and build scripts are in the ``os-build`` branch and
-are regularly updated to work with Linus's master branch.
+   # Build packages locally in Mock
+   mock redhat/rpm/SRPMS/kernel-*.src.rpm
+   # Build packages in Fedora's Koji
+   koji build --scratch rawhide redhat/rpm/SRPMS/kernel-*.src.rpm
+   koji build --scratch eln redhat/rpm/SRPMS/kernel-*.src.rpm
 
-::
-
-   git checkout os-build
-   git pull
-   make dist-srpm
-
-You can now build the SRPM however you like:
-
-::
-
-   # Build the SRPM locally
-   mock redhat/rpm/SRPMS/kernel*src.rpm
-   # Build the SRPM in Fedora's Koji
-   koji build --scratch rawhide redhat/rpm/SRPMS/kernel*src.rpm
-   koji build --scratch eln redhat/rpm/SRPMS/kernel*src.rpm
-
-Want to add a patch? Just git-cherry-pick it or apply it with git-am and
-re-run ``make dist-srpm``. Change configurations in ``redhat/configs/``
-(consult the repository layout for details on this).
+Want to add a patch? Just apply it with ``git cherry-pick`` or ``git am``, and
+re-run ``make dist-srpm``. To modify the kernel configuration, make changes in
+``redhat/configs/`` (consult the repository layout for details on this).
 
 
 Contributor Guide
@@ -99,7 +101,9 @@ Maintainer Guide
 
 
 .. _GitLab account: https://gitlab.com/users/sign_in#register-pane
-.. _Fork the ARK tree: https://gitlab.com/cki-project/kernel-ark/-/forks/new
+.. _personal GitLab projects: https://gitlab.com/?name=kernel-ark&personal=true
+.. _Fork the repository: https://gitlab.com/cki-project/kernel-ark/-/forks/new
+.. _register your SSH key: https://gitlab.com/-/profile/keys
 .. _Koji: https://fedoraproject.org/wiki/Using_the_Koji_build_system#Koji_Setup
 .. _Mock: https://fedoraproject.org/wiki/Using_Mock_to_test_package_builds#How_do_I_set_up_Mock.3F
 
