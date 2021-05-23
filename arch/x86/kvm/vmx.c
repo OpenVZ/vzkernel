@@ -12539,6 +12539,7 @@ static struct kvm_x86_ops vmx_x86_ops = {
 	.rdtscp_supported = vmx_rdtscp_supported,
 	.invpcid_supported = vmx_invpcid_supported,
 
+	.pku_supported = vmx_pku_supported,
 	.set_supported_cpuid = vmx_set_supported_cpuid,
 
 	.has_wbinvd_exit = cpu_has_vmx_wbinvd_exit,
