@@ -3783,6 +3783,18 @@ void mem_cgroup_get_nr_pages(struct mem_cgroup *memcg, int nid,
 	}
 }
 
+static unsigned long mem_page_state_recursive(struct mem_cgroup *memcg,
+					      int idx)
+{
+	struct mem_cgroup *iter;
+	unsigned long val = 0;
+
+	for_each_mem_cgroup_tree(iter, memcg)
+		val += memcg_page_state(iter, idx);
+
+	return val;
+}
+
 void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 {
 	int nid;
@@ -3791,12 +3803,12 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 	for_each_online_node(nid)
 		mem_cgroup_get_nr_pages(memcg, nid, mi->pages);
 
-	mi->slab_reclaimable = memcg_page_state(memcg, NR_SLAB_RECLAIMABLE);
-	mi->slab_unreclaimable = memcg_page_state(memcg, NR_SLAB_UNRECLAIMABLE);
-	mi->cached = memcg_page_state(memcg, MEMCG_CACHE);
-	mi->shmem = memcg_page_state(memcg, NR_SHMEM);
-	mi->dirty_pages = memcg_page_state(memcg, NR_FILE_DIRTY);
-	mi->writeback_pages = memcg_page_state(memcg, NR_WRITEBACK);
+	mi->slab_reclaimable = mem_page_state_recursive(memcg, NR_SLAB_RECLAIMABLE);
+	mi->slab_unreclaimable = mem_page_state_recursive(memcg, NR_SLAB_UNRECLAIMABLE);
+	mi->cached = mem_page_state_recursive(memcg, MEMCG_CACHE);
+	mi->shmem = mem_page_state_recursive(memcg, NR_SHMEM);
+	mi->dirty_pages = mem_page_state_recursive(memcg, NR_FILE_DIRTY);
+	mi->writeback_pages = mem_page_state_recursive(memcg, NR_WRITEBACK);
 
 	/* locked pages are accounted per zone */
 	/* mi->locked = 0; */

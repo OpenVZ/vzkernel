@@ -110,9 +110,7 @@ void si_meminfo_ve(struct sysinfo *si, struct ve_struct *ve)
 	/* bufferram, totalhigh and freehigh left 0 */
 }
 
-extern void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi);
-
-void fill_meminfo_ve(struct meminfo *mi, struct ve_struct *ve)
+static void fill_meminfo_ve(struct meminfo *mi, struct ve_struct *ve)
 {
 	struct cgroup_subsys_state *css;
 
