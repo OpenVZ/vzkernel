@@ -886,8 +886,8 @@ static void ploop_bat_page_zero_cluster(struct ploop *ploop,
 	kunmap_atomic(to);
 }
 
-static int find_and_clear_dst_cluster_bit(struct ploop *ploop,
-					  unsigned int *ret_dst_cluster)
+static int find_dst_cluster_bit(struct ploop *ploop,
+		      unsigned int *ret_dst_cluster)
 {
 	unsigned int dst_cluster;
 
@@ -897,21 +897,20 @@ static int find_and_clear_dst_cluster_bit(struct ploop *ploop,
 	dst_cluster = find_first_bit(ploop->holes_bitmap, ploop->hb_nr);
 	if (dst_cluster >= ploop->hb_nr)
 		return -EIO;
-	/*
-	 * Mark cluster as used. Find & clear bit is unlocked,
-	 * since currently this may be called only from deferred
-	 * kwork. Note, that set_bit may be made from many places.
-	 */
-	ploop_hole_clear_bit(dst_cluster, ploop);
-
 	*ret_dst_cluster = dst_cluster;
 	return 0;
 }
 
 static int allocate_cluster(struct ploop *ploop, unsigned int *dst_cluster)
 {
-	if (find_and_clear_dst_cluster_bit(ploop, dst_cluster) < 0)
+	if (find_dst_cluster_bit(ploop, dst_cluster) < 0)
 		return -EIO;
+	/*
+	 * Mark cluster as used. Find & clear bit is unlocked,
+	 * since currently this may be called only from deferred
+	 * kwork. Note, that set_bit may be made from many places.
+	 */
+	ploop_hole_clear_bit(*dst_cluster, ploop);
 	return 0;
 }
 
