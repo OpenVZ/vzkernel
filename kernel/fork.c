@@ -919,6 +919,10 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 	if (orig->cpus_ptr == &orig->cpus_mask)
 		tsk->cpus_ptr = &tsk->cpus_mask;
 
+#ifdef CONFIG_VE
+	memset(tsk->alloc_lat, 0, sizeof(tsk->alloc_lat));
+#endif
+
 	/*
 	 * One for the user space visible state that goes away when reaped.
 	 * One for the scheduler.

@@ -32,6 +32,7 @@
 #include <linux/posix-timers.h>
 #include <linux/rseq.h>
 #include <linux/rh_kabi.h>
+#include <linux/kstat.h>
 
 /* task_struct member predeclarations (sorted alphabetically): */
 struct audit_context;
@@ -1123,6 +1124,10 @@ struct task_struct {
 #endif
 
 	struct tlbflush_unmap_batch	tlb_ubc;
+
+#ifdef CONFIG_VE
+	struct kstat_lat_snap_struct alloc_lat[KSTAT_ALLOCSTAT_NR];
+#endif
 
 	RH_KABI_REPLACE(struct rcu_head rcu, union {
 		refcount_t		rcu_users;
