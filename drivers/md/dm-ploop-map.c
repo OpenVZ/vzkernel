@@ -1599,7 +1599,7 @@ void cleanup_backup(struct ploop *ploop)
 	LIST_HEAD(pio_list);
 
 	spin_lock_irq(&ploop->pb_lock);
-	/* Take bat_rwlock for visability in ploop_map() */
+	/* Take bat_rwlock for visability in kwork */
 	write_lock(&ploop->bat_rwlock);
 	pb->alive = false;
 	write_unlock(&ploop->bat_rwlock);
