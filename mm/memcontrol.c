@@ -3814,6 +3814,60 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 	/* mi->locked = 0; */
 }
 
+void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats)
+{
+	int cpu, i;
+	unsigned long limit = READ_ONCE(memcg->memory.max);
+	unsigned long memory = page_counter_read(&memcg->memory);
+	unsigned long *zone_stats = stats;
+	unsigned long *node_stats = stats +
+				    NR_VM_ZONE_STAT_ITEMS +
+				    NR_VM_NUMA_STAT_ITEMS;
+	unsigned long *vm_stats = node_stats +
+				  NR_VM_NODE_STAT_ITEMS +
+				  NR_VM_WRITEBACK_STAT_ITEMS;
+
+
+
+	zone_stats[NR_FREE_PAGES] = memory > limit ? 0 : limit- memory;
+
+	for (i = LRU_BASE; i < NR_LRU_LISTS; i++) {
+		struct mem_cgroup *iter;
+
+		for_each_mem_cgroup_tree(iter, memcg)
+			node_stats[NR_LRU_BASE + i] = mem_cgroup_nr_lru_pages(iter, BIT(i));
+	}
+
+	node_stats[NR_ANON_MAPPED] = node_stats[NR_ACTIVE_ANON] +
+		node_stats[NR_INACTIVE_ANON];
+	node_stats[NR_FILE_PAGES] = node_stats[NR_ACTIVE_FILE] +
+		node_stats[NR_INACTIVE_FILE];
+
+	node_stats[NR_SLAB_RECLAIMABLE] = mem_page_state_recursive(
+			memcg, NR_SLAB_RECLAIMABLE);
+	node_stats[NR_SLAB_UNRECLAIMABLE] = mem_page_state_recursive(
+			memcg, NR_SLAB_UNRECLAIMABLE);
+	node_stats[NR_FILE_MAPPED] = mem_page_state_recursive(
+			memcg, NR_FILE_MAPPED);
+	node_stats[NR_SHMEM] = mem_page_state_recursive(
+			memcg, NR_SHMEM);
+
+
+
+#ifdef CONFIG_VM_EVENT_COUNTERS
+	for_each_possible_cpu(cpu) {
+		vm_stats[PSWPIN] += per_cpu(
+			memcg->vmstats_local->events[PSWPIN], cpu);
+		vm_stats[PSWPOUT] += per_cpu(
+			memcg->vmstats_local->events[PSWPOUT], cpu);
+		vm_stats[PGFAULT] += per_cpu(
+			memcg->vmstats_local->events[PGFAULT], cpu);
+		vm_stats[PGMAJFAULT] += per_cpu(
+			memcg->vmstats_local->events[PGMAJFAULT], cpu);
+	}
+#endif
+}
+
 static int memcg_numa_stat_show(struct seq_file *m, void *v)
 {
 	struct numa_stat {
