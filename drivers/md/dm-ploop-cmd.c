@@ -1572,7 +1572,9 @@ void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 
 static bool msg_wants_down_read(const char *cmd)
 {
+	/* TODO: kill get_delta_name */
 	if (!strcmp(cmd, "get_delta_name") ||
+	    !strcmp(cmd, "get_img_name") ||
 	    !strcmp(cmd, "push_backup_get_uuid") ||
 	    !strcmp(cmd, "push_backup_read") ||
 	    !strcmp(cmd, "push_backup_write"))
@@ -1617,7 +1619,8 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 		if (argc != 2 || kstrtou64(argv[1], 10, &val) < 0)
 			goto unlock;
 		ret = ploop_notify_merged(ploop, val, forward);
-	} else if (!strcmp(argv[0], "get_delta_name")) {
+	} else if (!strcmp(argv[0], "get_delta_name") ||
+		   !strcmp(argv[0], "get_img_name")) {
 		if (argc != 2 || kstrtou64(argv[1], 10, &val) < 0)
 			goto unlock;
 		ret = ploop_get_delta_name_cmd(ploop, (u8)val, result, maxlen);
