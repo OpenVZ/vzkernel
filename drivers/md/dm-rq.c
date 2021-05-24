@@ -276,13 +276,14 @@ static void dm_softirq_done(struct request *rq)
  * Complete the clone and the original request with the error status
  * through softirq context.
  */
-static void dm_complete_request(struct request *rq, blk_status_t error)
+void dm_complete_request(struct request *rq, blk_status_t error)
 {
 	struct dm_rq_target_io *tio = tio_from_request(rq);
 
 	tio->error = error;
 	blk_mq_complete_request(rq);
 }
+EXPORT_SYMBOL_GPL(dm_complete_request);
 
 void dm_request_set_error(struct request *rq, blk_status_t error)
 {
