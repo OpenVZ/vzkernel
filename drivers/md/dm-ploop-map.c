@@ -376,19 +376,14 @@ static void add_endio_pio(struct pio *head, struct pio *pio)
 	list_add_tail(&pio->list, &head->endio_list);
 }
 
-static void inc_nr_inflight_raw(struct ploop *ploop, struct pio *h)
+static void inc_nr_inflight(struct ploop *ploop, struct pio *pio)
 {
 	unsigned char ref_index = ploop->inflight_bios_ref_index;
 
-	if (!WARN_ON_ONCE(h->ref_index != PLOOP_REF_INDEX_INVALID)) {
+	if (!WARN_ON_ONCE(pio->ref_index != PLOOP_REF_INDEX_INVALID)) {
 		percpu_ref_get(&ploop->inflight_bios_ref[ref_index]);
-		h->ref_index = ref_index;
+		pio->ref_index = ref_index;
 	}
-}
-
-static void inc_nr_inflight(struct ploop *ploop, struct pio *pio)
-{
-	inc_nr_inflight_raw(ploop, pio);
 }
 
 /*
@@ -401,17 +396,12 @@ static void inc_nr_inflight(struct ploop *ploop, struct pio *pio)
  * from ki_complete of requests submitted to delta files
  * (while increment occurs just right before the submitting).
  */
-static void dec_nr_inflight_raw(struct ploop *ploop, struct pio *h)
-{
-	if (h->ref_index != PLOOP_REF_INDEX_INVALID) {
-		percpu_ref_put(&ploop->inflight_bios_ref[h->ref_index]);
-		h->ref_index = PLOOP_REF_INDEX_INVALID;
-	}
-}
-
 static void dec_nr_inflight(struct ploop *ploop, struct pio *pio)
 {
-	dec_nr_inflight_raw(ploop, pio);
+	if (pio->ref_index != PLOOP_REF_INDEX_INVALID) {
+		percpu_ref_put(&ploop->inflight_bios_ref[pio->ref_index]);
+		pio->ref_index = PLOOP_REF_INDEX_INVALID;
+	}
 }
 
 static void link_endio_hook(struct ploop *ploop, struct pio *new, struct rb_root *root,
@@ -1116,7 +1106,7 @@ static void ploop_cow_endio(struct pio *cluster_pio, void *data, blk_status_t bi
 	list_add_tail(&cluster_pio->list, &ploop->delta_cow_action_list);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
-	dec_nr_inflight_raw(ploop, &cow->hook);
+	dec_nr_inflight(ploop, &cow->hook);
 	queue_work(ploop->wq, &ploop->worker);
 }
 
@@ -1254,7 +1244,7 @@ static void submit_cluster_write(struct ploop_cow *cow)
 
 	BUG_ON(irqs_disabled());
 	read_lock_irq(&ploop->bat_rwlock);
-	inc_nr_inflight_raw(ploop, &cow->hook);
+	inc_nr_inflight(ploop, &cow->hook);
 	read_unlock_irq(&ploop->bat_rwlock);
 	pio->endio_cb = ploop_cow_endio;
 	pio->endio_cb_data = cow;
