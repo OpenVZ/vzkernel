@@ -17,6 +17,8 @@ enum {
 	KSTAT_ALLOCSTAT_LOW_MP,
 	KSTAT_ALLOCSTAT_HIGH_MP,
 	KSTAT_ALLOCSTAT_NR,
+	KSTAT_SCHED = KSTAT_ALLOCSTAT_NR,
+	KSTAT_NR,
 };
 
 struct kstat_perf_snap_struct {
@@ -54,5 +56,8 @@ struct kstat_lat_pcpu_struct {
 	struct kstat_lat_snap_struct last;
 	u64 avg[3];
 };
+
+void update_maxlat(struct kstat_lat_snap_struct *alloc_lat,
+				u64 lat, unsigned long time);
 
 #endif
