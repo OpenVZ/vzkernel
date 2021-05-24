@@ -549,6 +549,8 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 	apply_delta_mappings(ploop, deltas, level, (void *)hdr, size_in_clus);
 
 	deltas[level].file = file;
+	deltas[level].file_size = file_size;
+	deltas[level].file_preallocated_area_start = file_size;
 	deltas[level].size_in_clus = size_in_clus;
 	deltas[level].is_raw = is_raw;
 	ret = 0;

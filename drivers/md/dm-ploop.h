@@ -41,6 +41,8 @@ struct ploop_pvd_header {
 
 struct ploop_delta {
 	struct file *file;
+	loff_t file_size;
+	loff_t file_preallocated_area_start;
 	u32 size_in_clus;
 	bool is_raw;
 };
