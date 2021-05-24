@@ -285,14 +285,6 @@ void dm_complete_request(struct request *rq, blk_status_t error)
 }
 EXPORT_SYMBOL_GPL(dm_complete_request);
 
-void dm_request_set_error(struct request *rq, blk_status_t error)
-{
-	struct dm_rq_target_io *tio = tio_from_request(rq);
-
-	tio->error = error;
-}
-EXPORT_SYMBOL_GPL(dm_request_set_error);
-
 /*
  * Complete the not-mapped clone and the original request with the error status
  * through softirq context.
