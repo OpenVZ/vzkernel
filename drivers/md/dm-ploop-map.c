@@ -43,7 +43,6 @@
  * become handled in ploop_map() as before.
  */
 
-extern void dm_request_set_error(struct request *rq, blk_status_t error);
 static void handle_cleanup(struct ploop *ploop, struct pio *pio);
 
 #define DM_MSG_PREFIX "ploop"
