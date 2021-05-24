@@ -464,6 +464,8 @@ static int synproxy_tg4_check(const struct xt_tgchk_param *par)
 	}
 
 	snet->hook_ref4++;
+	if (err == 0)
+		allow_conntrack_allocation(par->net);
 	return err;
 }
 
