@@ -272,7 +272,7 @@ static void vhost_net_clear_ubuf_info(struct vhost_net *n)
 	int i;
 
 	for (i = 0; i < VHOST_NET_VQ_MAX; ++i) {
-		kfree(n->vqs[i].ubuf_info);
+		kvfree(n->vqs[i].ubuf_info);
 		n->vqs[i].ubuf_info = NULL;
 	}
 }
@@ -287,7 +287,7 @@ static int vhost_net_set_ubuf_info(struct vhost_net *n)
 		if (!zcopy)
 			continue;
 		n->vqs[i].ubuf_info =
-			kmalloc_array(UIO_MAXIOV,
+			kvmalloc_array(UIO_MAXIOV,
 				      sizeof(*n->vqs[i].ubuf_info),
 				      GFP_KERNEL);
 		if  (!n->vqs[i].ubuf_info)
