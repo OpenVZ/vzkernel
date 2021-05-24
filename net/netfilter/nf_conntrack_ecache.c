@@ -24,6 +24,7 @@
 #include <linux/netdevice.h>
 #include <linux/slab.h>
 #include <linux/export.h>
+#include <linux/ve.h>
 
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_core.h>
@@ -369,7 +370,7 @@ static int nf_conntrack_event_init_sysctl(struct net *net)
 	table[0].data = &net->ct.sysctl_events;
 
 	/* Don't export sysctls to unprivileged users */
-	if (net->user_ns != &init_user_ns)
+	if (ve_net_hide_sysctl(net))
 		table[0].procname = NULL;
 
 	net->ct.event_sysctl_header =
