@@ -1013,6 +1013,7 @@ void memcg_neg_dentry_inc(struct dentry *dentry);
 void memcg_neg_dentry_dec(struct dentry *dentry);
 
 void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi);
+void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats);
 
 #else /* CONFIG_MEMCG */
 
@@ -1385,6 +1386,11 @@ void count_memcg_event_mm(struct mm_struct *mm, enum vm_event_item idx)
 }
 
 static void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
+{
+}
+
+static inline void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg,
+					  unsigned long *stats)
 {
 }
 
