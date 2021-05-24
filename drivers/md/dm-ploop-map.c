@@ -16,6 +16,8 @@
 #include <uapi/linux/falloc.h>
 #include "dm-ploop.h"
 
+#define PREALLOC_SIZE (128ULL * 1024 * 1024)
+
 /*
  * The idea of this driver is that the most part of time it does nothing:
  * ploop_map() just replaces bio->bi_iter.bi_sector with the cluster value
@@ -901,10 +903,76 @@ static int find_dst_cluster_bit(struct ploop *ploop,
 	return 0;
 }
 
+static int truncate_prealloc_safe(struct ploop_delta *delta, loff_t len, const char *func)
+{
+	struct file *file = delta->file;
+	loff_t new_len = len;
+	int ret;
+
+	if (new_len <= delta->file_size)
+		return 0;
+	new_len = ALIGN(new_len, PREALLOC_SIZE);
+
+	ret = vfs_truncate(&file->f_path, new_len);
+	if (ret) {
+		pr_err("ploop: %s->truncate(): %d\n", func, ret);
+		return ret;
+	}
+
+	ret = vfs_fsync(file, 0);
+	if (ret) {
+		pr_err("ploop: %s->fsync(): %d\n", func, ret);
+		return ret;
+	}
+
+	delta->file_size = new_len;
+	delta->file_preallocated_area_start = len;
+	return 0;
+}
+
 static int allocate_cluster(struct ploop *ploop, unsigned int *dst_cluster)
 {
+	struct ploop_delta *top = top_delta(ploop);
+	u32 cluster_log = ploop->cluster_log;
+	u32 clu_size = to_bytes(1 << cluster_log);
+	loff_t off, pos, end, old_size;
+	struct file *file = top->file;
+	int ret;
+
 	if (find_dst_cluster_bit(ploop, dst_cluster) < 0)
 		return -EIO;
+
+	pos = to_bytes(*dst_cluster << cluster_log);
+	end = pos + clu_size;
+	old_size = top->file_size;
+
+	if (pos < top->file_preallocated_area_start) {
+		/* Clu at @pos may contain dirty data */
+		off = min_t(loff_t, old_size, end);
+		ret = punch_hole(file, pos, off - pos);
+		if (ret) {
+			pr_err("ploop: punch hole: %d\n", ret);
+			return ret;
+		}
+	}
+
+	if (end > old_size) {
+		ret = truncate_prealloc_safe(top, end, __func__);
+		if (ret)
+			return ret;
+	} else if (pos < top->file_preallocated_area_start) {
+		/*
+		 * Flush punch_hole() modifications.
+		 * TODO: track recentry unused blocks
+		 * and punch holes in background.
+		 */
+		ret = vfs_fsync(file, 0);
+		if (ret)
+			return ret;
+	}
+
+	if (end > top->file_preallocated_area_start)
+		top->file_preallocated_area_start = end;
 	/*
 	 * Mark cluster as used. Find & clear bit is unlocked,
 	 * since currently this may be called only from deferred
@@ -922,6 +990,7 @@ static int ploop_alloc_cluster(struct ploop *ploop, struct ploop_index_wb *piwb,
 			       unsigned int cluster, unsigned int *dst_cluster)
 {
 	struct page *page = piwb->bat_page;
+	bool already_alloced = false;
 	map_index_t *to;
 	int ret = 0;
 
@@ -932,17 +1001,22 @@ static int ploop_alloc_cluster(struct ploop *ploop, struct ploop_index_wb *piwb,
 	if (to[cluster]) {
 		/* Already mapped by one of previous bios */
 		*dst_cluster = to[cluster];
-		goto unmap;
+		already_alloced = true;
 	}
+	kunmap_atomic(to);
+
+	if (already_alloced)
+		goto out;
 
 	if (allocate_cluster(ploop, dst_cluster) < 0) {
 		ret = -EIO;
-		goto unmap;
+		goto out;
 	}
 
+	to = kmap_atomic(page);
 	to[cluster] = *dst_cluster;
-unmap:
 	kunmap_atomic(to);
+out:
 	return ret;
 }
 
