@@ -30,10 +30,14 @@ masquerade_tg6(struct sk_buff *skb, const struct xt_action_param *par)
 static int masquerade_tg6_checkentry(const struct xt_tgchk_param *par)
 {
 	const struct nf_nat_range2 *range = par->targinfo;
+	int ret;
 
 	if (range->flags & NF_NAT_RANGE_MAP_IPS)
 		return -EINVAL;
-	return nf_ct_netns_get(par->net, par->family);
+	ret = nf_ct_netns_get(par->net, par->family);
+	if (ret == 0)
+		allow_conntrack_allocation(par->net);
+	return ret;
 }
 
 static void masquerade_tg6_destroy(const struct xt_tgdtor_param *par)
