@@ -106,6 +106,7 @@ struct ct_pcpu {
 
 struct netns_ct {
 	atomic_t		count;
+	unsigned int		max;
 	unsigned int		expect_count;
 #ifdef CONFIG_NF_CONNTRACK_EVENTS
 	struct delayed_work ecache_dwork;
@@ -113,6 +114,7 @@ struct netns_ct {
 #endif
 	unsigned int		expect_max;
 #ifdef CONFIG_SYSCTL
+	struct ctl_table_header	*netfilter_header;
 	struct ctl_table_header	*sysctl_header;
 	struct ctl_table_header	*acct_sysctl_header;
 	struct ctl_table_header	*tstamp_sysctl_header;

@@ -182,8 +182,6 @@ static void nf_conntrack_all_unlock(void)
 unsigned int nf_conntrack_htable_size __read_mostly;
 EXPORT_SYMBOL_GPL(nf_conntrack_htable_size);
 
-unsigned int nf_conntrack_max __read_mostly;
-EXPORT_SYMBOL_GPL(nf_conntrack_max);
 seqcount_t nf_conntrack_generation __read_mostly;
 static unsigned int nf_conntrack_hash_rnd __read_mostly;
 
@@ -1345,7 +1343,6 @@ static void gc_worker(struct work_struct *work)
 {
 	unsigned int min_interval = max(HZ / GC_MAX_BUCKETS_DIV, 1u);
 	unsigned int i, goal, buckets = 0, expired_count = 0;
-	unsigned int nf_conntrack_max95 = 0;
 	struct conntrack_gc_work *gc_work;
 	unsigned int ratio, scanned = 0;
 	unsigned long next_run;
@@ -1354,8 +1351,6 @@ static void gc_worker(struct work_struct *work)
 
 	goal = nf_conntrack_htable_size / GC_MAX_BUCKETS_DIV;
 	i = gc_work->last_bucket;
-	if (gc_work->early_drop)
-		nf_conntrack_max95 = nf_conntrack_max / 100u * 95u;
 
 	do {
 		struct nf_conntrack_tuple_hash *h;
@@ -1373,8 +1368,13 @@ static void gc_worker(struct work_struct *work)
 
 		hlist_nulls_for_each_entry_rcu(h, n, &ct_hash[i], hnnode) {
 			struct net *net;
+			unsigned int nf_conntrack_max95 = 0;
 
 			tmp = nf_ct_tuplehash_to_ctrack(h);
+			net = nf_ct_net(tmp);
+
+			if (gc_work->early_drop)
+				nf_conntrack_max95 = net->ct.max / 100u * 95u;
 
 			scanned++;
 			if (test_bit(IPS_OFFLOAD_BIT, &tmp->status)) {
@@ -1391,7 +1391,6 @@ static void gc_worker(struct work_struct *work)
 			if (nf_conntrack_max95 == 0 || gc_worker_skip_ct(tmp))
 				continue;
 
-			net = nf_ct_net(tmp);
 			if (atomic_read(&net->ct.count) < nf_conntrack_max95)
 				continue;
 
@@ -1471,13 +1470,14 @@ __nf_conntrack_alloc(struct net *net,
 		     const struct nf_conntrack_tuple *repl,
 		     gfp_t gfp, u32 hash)
 {
+	unsigned int ct_max = net->ct.max ? net->ct.max : init_net.ct.max;
 	struct nf_conn *ct;
 
 	/* We don't want any race condition at early drop stage */
 	atomic_inc(&net->ct.count);
 
-	if (nf_conntrack_max &&
-	    unlikely(atomic_read(&net->ct.count) > nf_conntrack_max)) {
+	if (ct_max &&
+	    unlikely(atomic_read(&net->ct.count) > ct_max)) {
 		if (!early_drop(net, hash)) {
 			if (!conntrack_gc_work.early_drop)
 				conntrack_gc_work.early_drop = true;
@@ -2635,7 +2635,7 @@ int nf_conntrack_init_start(void)
 	if (!nf_conntrack_hash)
 		return -ENOMEM;
 
-	nf_conntrack_max = max_factor * nf_conntrack_htable_size;
+	init_net.ct.max = max_factor * nf_conntrack_htable_size;
 
 	nf_conntrack_cachep = kmem_cache_create("nf_conntrack",
 						sizeof(struct nf_conn),
@@ -2735,6 +2735,7 @@ int nf_conntrack_init_net(struct net *net)
 
 	BUILD_BUG_ON(IP_CT_UNTRACKED == IP_CT_NUMBER);
 	atomic_set(&net->ct.count, 0);
+	net->ct.max = init_net.ct.max;
 
 	net->ct.pcpu_lists = alloc_percpu(struct ct_pcpu);
 	if (!net->ct.pcpu_lists)
