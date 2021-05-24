@@ -381,7 +381,7 @@ static void ploop_io_hints(struct dm_target *ti, struct queue_limits *limits)
 
 	limits->max_discard_sectors = 1 << cluster_log;
 	limits->max_hw_discard_sectors = 1 << cluster_log;
-	limits->discard_granularity = 1 << (cluster_log + SECTOR_SHIFT);
+	limits->discard_granularity = CLU_SIZE(ploop);
 	limits->discard_alignment = 0;
 	limits->discard_misaligned = 0;
 }

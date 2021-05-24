@@ -111,6 +111,9 @@ struct ploop_cmd {
 #define PLOOP_BIOS_HTABLE_BITS	8
 #define PLOOP_BIOS_HTABLE_SIZE	(1 << PLOOP_BIOS_HTABLE_BITS)
 #define CLU_OFF(ploop, pos) (pos & (to_bytes(1 << ploop->cluster_log) - 1))
+#define CLU_TO_POS(ploop, clu) to_bytes((loff_t)clu << ploop->cluster_log)
+#define POS_TO_CLU(ploop, pos) (to_sector(pos) >> ploop->cluster_log)
+#define CLU_SIZE(ploop) to_bytes((u32)1 << ploop->cluster_log)
 
 enum piwb_type {
 	PIWB_TYPE_ALLOC = 0,	/* Allocation of new clusters */
@@ -330,7 +333,7 @@ static inline bool whole_cluster(struct ploop *ploop, struct pio *pio)
 {
 	sector_t end_sector = bvec_iter_end_sector(pio->bi_iter);
 
-	if (pio->bi_iter.bi_size != to_bytes(1 << ploop->cluster_log))
+	if (pio->bi_iter.bi_size != CLU_SIZE(ploop))
 		return false;
 	/*
 	 * There is no sacral meaning in bio_end_sector(),
@@ -387,7 +390,7 @@ static inline unsigned int ploop_nr_bat_clusters(struct ploop *ploop,
 	unsigned long size, bat_clusters;
 
 	size = (PLOOP_MAP_OFFSET + nr_bat_entries) * sizeof(map_index_t);
-	bat_clusters = DIV_ROUND_UP(size, 1 << (ploop->cluster_log + 9));
+	bat_clusters = DIV_ROUND_UP(size, CLU_SIZE(ploop));
 
 	return bat_clusters;
 }
