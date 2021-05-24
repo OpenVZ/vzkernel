@@ -98,6 +98,8 @@ static int connlimit_mt_check(const struct xt_mtchk_param *par)
 	if (IS_ERR(info->data))
 		return PTR_ERR(info->data);
 
+	allow_conntrack_allocation(par->net);
+
 	return 0;
 }
 
