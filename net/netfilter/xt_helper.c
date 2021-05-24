@@ -66,6 +66,7 @@ static int helper_mt_check(const struct xt_mtchk_param *par)
 		return ret;
 	}
 	info->name[sizeof(info->name) - 1] = '\0';
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 

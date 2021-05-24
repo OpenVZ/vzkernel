@@ -169,6 +169,12 @@ static int socket_mt_enable_defrag(struct net *net, int family)
 	return 0;
 }
 
+static int socket_mt_v0_check(const struct xt_mtchk_param *par)
+{
+	allow_conntrack_allocation(par->net);
+	return 0;
+}
+
 static int socket_mt_v1_check(const struct xt_mtchk_param *par)
 {
 	const struct xt_socket_mtinfo1 *info = (struct xt_socket_mtinfo1 *) par->matchinfo;
@@ -183,6 +189,7 @@ static int socket_mt_v1_check(const struct xt_mtchk_param *par)
 				    info->flags & ~XT_SOCKET_FLAGS_V1);
 		return -EINVAL;
 	}
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
@@ -200,6 +207,7 @@ static int socket_mt_v2_check(const struct xt_mtchk_param *par)
 				    info->flags & ~XT_SOCKET_FLAGS_V2);
 		return -EINVAL;
 	}
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
@@ -217,6 +225,7 @@ static int socket_mt_v3_check(const struct xt_mtchk_param *par)
 				    info->flags & ~XT_SOCKET_FLAGS_V3);
 		return -EINVAL;
 	}
+	allow_conntrack_allocation(par->net);
 	return 0;
 }
 
@@ -226,6 +235,7 @@ static struct xt_match socket_mt_reg[] __read_mostly = {
 		.revision	= 0,
 		.family		= NFPROTO_IPV4,
 		.match		= socket_mt4_v0,
+		.checkentry	= socket_mt_v0_check,
 		.hooks		= (1 << NF_INET_PRE_ROUTING) |
 				  (1 << NF_INET_LOCAL_IN),
 		.me		= THIS_MODULE,
