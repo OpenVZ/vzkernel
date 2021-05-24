@@ -386,7 +386,8 @@ const char *ve_get_release_agent_path(struct ve_struct *ve,
 
 struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id)
 {
-	struct cgroup_subsys_state *css;
+	struct cgroup_subsys_state *css, *tmp;
+	struct cgroup *cgroup;
 	struct css_set *root_cset;
 	struct nsproxy *nsproxy;
 
@@ -397,6 +398,17 @@ struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id)
 	css = root_cset->subsys[subsys_id];
 	/* nsproxy->cgroup_ns must hold root_cset refcnt */
 	BUG_ON(!css_tryget(css));
+
+	cgroup = css->cgroup;
+	while (!test_bit(CGRP_VE_ROOT, &cgroup->flags) && cgroup_parent(cgroup))
+		cgroup = cgroup_parent(cgroup);
+
+	if (cgroup != css->cgroup) {
+		tmp = cgroup->subsys[subsys_id];
+		css_get(tmp);
+		css_put(css);
+		css = tmp;
+	}
 
 	rcu_read_unlock();
 	return css;
