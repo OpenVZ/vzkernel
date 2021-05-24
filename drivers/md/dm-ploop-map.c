@@ -908,6 +908,13 @@ static int find_and_clear_dst_cluster_bit(struct ploop *ploop,
 	return 0;
 }
 
+static int allocate_cluster(struct ploop *ploop, unsigned int *dst_cluster)
+{
+	if (find_and_clear_dst_cluster_bit(ploop, dst_cluster) < 0)
+		return -EIO;
+	return 0;
+}
+
 /*
  * This finds a free dst_cluster on origin device, and reflects this
  * in ploop->holes_bitmap and bat_page.
@@ -929,7 +936,7 @@ static int ploop_alloc_cluster(struct ploop *ploop, struct ploop_index_wb *piwb,
 		goto unmap;
 	}
 
-	if (find_and_clear_dst_cluster_bit(ploop, dst_cluster) < 0) {
+	if (allocate_cluster(ploop, dst_cluster) < 0) {
 		ret = -EIO;
 		goto unmap;
 	}
@@ -1235,7 +1242,7 @@ static void submit_cluster_write(struct ploop_cow *cow)
 	struct ploop *ploop = cow->ploop;
 	unsigned int dst_cluster;
 
-	if (find_and_clear_dst_cluster_bit(ploop, &dst_cluster) < 0)
+	if (allocate_cluster(ploop, &dst_cluster) < 0)
 		goto error;
 	cow->dst_cluster = dst_cluster;
 
