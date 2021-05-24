@@ -4556,9 +4556,11 @@ static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 {
 #ifdef CONFIG_VE
 	unsigned long flags;
+	u64 current_clock, delta;
 	int ind, cpu;
 
-	time = jiffies_to_usecs(jiffies - time) * 1000;
+	current_clock = sched_clock();
+	delta = current_clock - time;
 	if (!(gfp_mask & __GFP_RECLAIM))
 		ind = KSTAT_ALLOCSTAT_ATOMIC;
 	else
@@ -4569,12 +4571,12 @@ static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 
 	local_irq_save(flags);
 	cpu = smp_processor_id();
-	KSTAT_LAT_PCPU_ADD(&kstat_glob.alloc_lat[ind], time);
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.alloc_lat[ind], delta);
 
 	if (in_task()) {
-		current->alloc_lat[ind].totlat += time;
+		current->alloc_lat[ind].totlat += delta;
 		current->alloc_lat[ind].count++;
-		update_maxlat(&current->alloc_lat[ind], time, jiffies);
+		update_maxlat(&current->alloc_lat[ind], delta, current_clock);
 	}
 
 	if (!page)
@@ -4594,7 +4596,7 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_mask; /* The gfp_t that was actually used for allocation */
 	struct alloc_context ac = { };
-	cycles_t start;
+	u64 start;
 
 	gfp_mask &= gfp_allowed_mask;
 	alloc_mask = gfp_mask;
@@ -4606,7 +4608,7 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 
 	finalise_ac(gfp_mask, &ac);
 
-	start = jiffies;
+	start = sched_clock();
 	/* First allocation attempt */
 	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac);
 	if (likely(page))
