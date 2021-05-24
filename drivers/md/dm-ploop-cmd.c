@@ -355,7 +355,7 @@ static int ploop_grow_update_header(struct ploop *ploop,
 	hdr = kmap_atomic(piwb->bat_page);
 	/* TODO: head and cylinders */
 	nr_be = hdr->m_Size = cpu_to_le32(cmd->resize.nr_bat_entries);
-	sectors = hdr->m_SizeInSectors_v2 = cpu_to_le64(cmd->resize.new_size);
+	sectors = hdr->m_SizeInSectors_v2 = cpu_to_le64(cmd->resize.new_sectors);
 	offset = hdr->m_FirstBlockOffset = cpu_to_le32(first_block_off);
 	kunmap_atomic(hdr);
 
@@ -491,15 +491,15 @@ void free_pio_with_pages(struct ploop *ploop, struct pio *pio)
 }
 
 /* @new_size is in sectors */
-static int ploop_resize(struct ploop *ploop, u64 new_size)
+static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 {
+	unsigned int hb_nr, size, old_size, cluster_log = ploop->cluster_log;
 	unsigned int nr_bat_entries, nr_old_bat_clusters, nr_bat_clusters;
-	unsigned int hb_nr, size, cluster_log = ploop->cluster_log;
 	struct ploop_cmd cmd = { .resize.md_pages_root = RB_ROOT };
 	struct ploop_pvd_header *hdr;
+	sector_t old_sectors;
 	struct md_page *md0;
 	int ret = -ENOMEM;
-	u64 old_size;
 
 	if (ploop->maintaince)
 		return -EBUSY;
@@ -510,23 +510,23 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 	if (WARN_ON(!md0))
 		return -EIO;
 	hdr = kmap(md0->page);
-	old_size = le64_to_cpu(hdr->m_SizeInSectors_v2);
+	old_sectors = le64_to_cpu(hdr->m_SizeInSectors_v2);
 	kunmap(md0->page);
 
-	if (old_size == new_size)
+	if (old_sectors == new_sectors)
 		return 0;
-	if (old_size > new_size) {
+	if (old_sectors > new_sectors) {
 		DMWARN("online shrink is not supported");
 		return -EINVAL;
-	} else if ((new_size >> cluster_log) >= UINT_MAX - 2) {
+	} else if ((new_sectors >> cluster_log) >= UINT_MAX - 2) {
 		DMWARN("resize: too large size is requested");
 		return -EINVAL;
-	} else if (new_size & ((1 << cluster_log) - 1)) {
-		DMWARN("resize: new_size is not aligned");
+	} else if (new_sectors & ((1 << cluster_log) - 1)) {
+		DMWARN("resize: new_sectors is not aligned");
 		return -EINVAL;
 	}
 
-	nr_bat_entries = (new_size >> cluster_log);
+	nr_bat_entries = new_sectors >> cluster_log;
 
 	/* Memory for new md pages */
 	if (prealloc_md_pages(&cmd.resize.md_pages_root,
@@ -560,7 +560,7 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 	cmd.resize.nr_old_bat_clu = nr_old_bat_clusters;
 	cmd.resize.nr_bat_entries = nr_bat_entries;
 	cmd.resize.hb_nr = hb_nr;
-	cmd.resize.new_size = new_size;
+	cmd.resize.new_sectors = new_sectors;
 	cmd.resize.md0 = md0;
 	cmd.retval = 0;
 	cmd.type = PLOOP_CMD_RESIZE;
