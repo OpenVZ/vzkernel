@@ -169,7 +169,6 @@ static unsigned int ploop_find_bat_entry(struct ploop *ploop,
 void pio_prepare_offsets(struct ploop *ploop, struct pio *pio,
 			 unsigned int cluster)
 {
-	unsigned int cluster_log = ploop->cluster_log;
 	int i, nr_pages = nr_pages_in_cluster(ploop);
 
 	pio->bi_iter.bi_idx = 0;
@@ -180,7 +179,7 @@ void pio_prepare_offsets(struct ploop *ploop, struct pio *pio,
 		pio->bi_io_vec[i].bv_offset = 0;
 		pio->bi_io_vec[i].bv_len = PAGE_SIZE;
 	}
-	pio->bi_iter.bi_sector = cluster << cluster_log;
+	pio->bi_iter.bi_sector = CLU_TO_SEC(ploop, cluster);
 	pio->bi_iter.bi_size = CLU_SIZE(ploop);
 }
 
@@ -336,7 +335,7 @@ static int ploop_grow_update_header(struct ploop *ploop,
 				    struct ploop_index_wb *piwb,
 				    struct ploop_cmd *cmd)
 {
-	unsigned int size, first_block_off, cluster_log = ploop->cluster_log;
+	unsigned int size, first_block_off;
 	struct ploop_pvd_header *hdr;
 	u32 nr_be, offset, clus;
 	u64 sectors;
@@ -350,7 +349,7 @@ static int ploop_grow_update_header(struct ploop *ploop,
 	size = (PLOOP_MAP_OFFSET + cmd->resize.nr_bat_entries);
 	size *= sizeof(map_index_t);
 	clus = DIV_ROUND_UP(size, CLU_SIZE(ploop));
-	first_block_off = clus << cluster_log;
+	first_block_off = CLU_TO_SEC(ploop, clus);
 
 	hdr = kmap_atomic(piwb->bat_page);
 	/* TODO: head and cylinders */
@@ -493,9 +492,9 @@ void free_pio_with_pages(struct ploop *ploop, struct pio *pio)
 /* @new_size is in sectors */
 static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 {
-	unsigned int hb_nr, size, old_size, cluster_log = ploop->cluster_log;
 	unsigned int nr_bat_entries, nr_old_bat_clusters, nr_bat_clusters;
 	struct ploop_cmd cmd = { .resize.md_pages_root = RB_ROOT };
+	unsigned int hb_nr, size, old_size;
 	struct ploop_pvd_header *hdr;
 	sector_t old_sectors;
 	struct md_page *md0;
@@ -518,15 +517,15 @@ static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 	if (old_sectors > new_sectors) {
 		DMWARN("online shrink is not supported");
 		return -EINVAL;
-	} else if ((new_sectors >> cluster_log) >= UINT_MAX - 2) {
+	} else if (SEC_TO_CLU(ploop, new_sectors) >= UINT_MAX - 2) {
 		DMWARN("resize: too large size is requested");
 		return -EINVAL;
-	} else if (new_sectors & ((1 << cluster_log) - 1)) {
+	} else if (new_sectors & (CLU_TO_SEC(ploop, 1) - 1)) {
 		DMWARN("resize: new_sectors is not aligned");
 		return -EINVAL;
 	}
 
-	nr_bat_entries = new_sectors >> cluster_log;
+	nr_bat_entries = SEC_TO_CLU(ploop, new_sectors);
 
 	/* Memory for new md pages */
 	if (prealloc_md_pages(&cmd.resize.md_pages_root,

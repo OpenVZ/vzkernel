@@ -303,7 +303,7 @@ void track_dst_cluster(struct ploop *ploop, u32 dst_cluster)
  */
 void __track_pio(struct ploop *ploop, struct pio *pio)
 {
-	unsigned int dst_cluster = pio->bi_iter.bi_sector >> ploop->cluster_log;
+	unsigned int dst_cluster = SEC_TO_CLU(ploop, pio->bi_iter.bi_sector);
 
 	if (!op_is_write(pio->bi_op) || !bvec_iter_sectors((pio)->bi_iter))
 		return;
@@ -1494,7 +1494,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 	 * ploop_advance_local_after_bat_wb(), which we start
 	 * and wait synchronously from *this* kwork.
 	 */
-	cluster = sector >> ploop->cluster_log;
+	cluster = SEC_TO_CLU(ploop, sector);
 	dst_cluster = ploop_bat_entries(ploop, cluster, &level);
 
 	if (postpone_if_cluster_locked(ploop, pio, cluster))

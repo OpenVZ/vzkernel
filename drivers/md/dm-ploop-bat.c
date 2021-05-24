@@ -265,12 +265,11 @@ static int ploop_setup_holes_bitmap(struct ploop *ploop,
 
 int ploop_setup_metadata(struct ploop *ploop, struct page *page)
 {
-	unsigned int bat_clusters, offset_clusters, cluster_log;
+	unsigned int bat_clusters, offset_clusters;
 	struct ploop_pvd_header *m_hdr = NULL;
 	unsigned long size;
 	int ret;
 
-	cluster_log = ploop->cluster_log;
 	m_hdr = kmap(page);
 
 	ret = -ENOTSUPP;
@@ -283,7 +282,7 @@ int ploop_setup_metadata(struct ploop *ploop, struct page *page)
 		goto out;
 
 	ret = -EINVAL;
-	if (le32_to_cpu(m_hdr->m_Sectors) != 1 << cluster_log)
+	if (le32_to_cpu(m_hdr->m_Sectors) != CLU_TO_SEC(ploop, 1))
 		goto out;
 
 	memcpy(ploop->m_Sig, m_hdr->m_Sig, sizeof(ploop->m_Sig));
@@ -296,7 +295,7 @@ int ploop_setup_metadata(struct ploop *ploop, struct page *page)
 	bat_clusters = DIV_ROUND_UP(size, CLU_SIZE(ploop));
 
 	/* Clusters from start of file to first data block */
-	offset_clusters = le32_to_cpu(m_hdr->m_FirstBlockOffset) >> cluster_log;
+	offset_clusters = SEC_TO_CLU(ploop, le32_to_cpu(m_hdr->m_FirstBlockOffset));
 	if (bat_clusters != offset_clusters) {
 		pr_err("ploop: custom FirstBlockOffset\n");
 		goto out;
@@ -314,7 +313,7 @@ out:
 static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 		       unsigned int *nr_pages, unsigned int *last_page_len)
 {
-	unsigned int bytes, delta_nr_be, offset_clusters, bat_clusters, cluster_log;
+	unsigned int bytes, delta_nr_be, offset_clusters, bat_clusters;
 	struct ploop_pvd_header *d_hdr;
 	int ret = -EPROTO;
 
@@ -326,8 +325,7 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 		goto out;
 
 	delta_nr_be = le32_to_cpu(d_hdr->m_Size);
-	cluster_log = ploop->cluster_log;
-	offset_clusters = le32_to_cpu(d_hdr->m_FirstBlockOffset) >> cluster_log;
+	offset_clusters = SEC_TO_CLU(ploop, le32_to_cpu(d_hdr->m_FirstBlockOffset));
 	bytes = (PLOOP_MAP_OFFSET + delta_nr_be) * sizeof(map_index_t);
 	bat_clusters = DIV_ROUND_UP(bytes, CLU_SIZE(ploop));
 
