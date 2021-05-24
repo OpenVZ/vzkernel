@@ -55,7 +55,7 @@ struct ploop_cmd {
 	int retval;
 	union {
 		struct {
-			u64 new_size;
+			sector_t new_sectors;
 			/* Preallocated data */
 			struct rb_root md_pages_root;
 			struct md_page *md0;
