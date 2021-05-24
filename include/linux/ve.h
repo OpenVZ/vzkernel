@@ -214,7 +214,7 @@ extern struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp);
 
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
 
-extern int vz_security_family_check(struct net *net, int family);
+extern int vz_security_family_check(struct net *net, int family, int type);
 extern int vz_security_protocol_check(struct net *net, int protocol);
 
 int ve_net_hide_sysctl(struct net *net);
@@ -244,7 +244,7 @@ static inline struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
 }
 #define ve_uevent_seqnum uevent_seqnum
 
-static inline int vz_security_family_check(struct net *net, int family) { return 0; }
+static inline int vz_security_family_check(struct net *net, int family, int type) { return 0; }
 static inline int vz_security_protocol_check(struct net *net, int protocol) { return 0; }
 
 static inline void monotonic_abs_to_ve(clockid_t which_clock,
