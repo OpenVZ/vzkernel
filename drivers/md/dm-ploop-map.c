@@ -1183,29 +1183,24 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 		       unsigned int cluster, unsigned int dst_cluster,
 		       void (*end_fn)(struct ploop *, int, void *), void *data)
 {
+	struct ploop_cow *cow = NULL;
 	struct pio *pio = NULL;
-	struct ploop_cow *cow;
 
 	/* Prepare new delta read */
 	pio = alloc_pio_with_pages(ploop);
-	if (!pio)
+	cow = kmem_cache_alloc(cow_cache, GFP_NOIO);
+	if (!pio || !cow)
 		goto err;
 	init_pio(ploop, REQ_OP_READ, pio);
-
-	cow = kmem_cache_alloc(cow_cache, GFP_NOIO);
-	if (!cow)
-		goto err;
+	pio_prepare_offsets(ploop, pio, cluster);
+	pio->endio_cb = ploop_cow_endio;
+	pio->endio_cb_data = cow;
 
 	cow->ploop = ploop;
 	cow->dst_cluster = BAT_ENTRY_NONE;
 	cow->cluster_pio = pio;
 	cow->end_fn = end_fn;
 	cow->data = data;
-
-	pio_prepare_offsets(ploop, pio, cluster);
-	pio->bi_op = REQ_OP_READ;
-	pio->endio_cb = ploop_cow_endio;
-	pio->endio_cb_data = cow;
 
 	init_pio(ploop, REQ_OP_WRITE, &cow->hook);
 	add_cluster_lk(ploop, &cow->hook, cluster);
@@ -1216,6 +1211,7 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 err:
 	if (pio)
 		free_pio_with_pages(ploop, pio);
+	kfree(cow);
 	return -ENOMEM;
 }
 
