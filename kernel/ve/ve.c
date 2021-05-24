@@ -27,6 +27,10 @@
 #include <linux/kthread.h>
 #include <linux/nsproxy.h>
 #include <linux/fs_struct.h>
+#include <linux/task_work.h>
+#include <linux/ctype.h>
+#include <linux/tty.h>
+
 #include <uapi/linux/vzcalluser.h>
 #include <net/rtnetlink.h>
 
@@ -1571,6 +1575,99 @@ static int ve_aio_max_nr_write(struct cgroup_subsys_state *css,
 }
 #endif
 
+static ssize_t ve_write_ctty(struct kernfs_open_file *of, char *buf,
+			 size_t nbytes, loff_t off)
+{
+	struct task_struct *tsk_from, *tsk_to;
+	struct tty_struct *tty_from, *tty_to;
+	pid_t pid_from, pid_to;
+	unsigned long flags;
+	char *pids;
+	int ret;
+
+	/*
+	 * Buffer format is the following
+	 *
+	 * 	pid_from pid_to pid_to ...
+	 *
+	 * where pid_to are pids to propagate
+	 * current terminal into.
+	 */
+
+	pids = skip_spaces(buf);
+	if (sscanf(pids, "%d", &pid_from) != 1)
+		return -EINVAL;
+	pids = strchr(pids, ' ');
+	if (!pids)
+		return -EINVAL;
+	pids = skip_spaces(pids);
+
+	rcu_read_lock();
+	tsk_from = find_task_by_vpid(pid_from);
+	if (tsk_from)
+		get_task_struct(tsk_from);
+	rcu_read_unlock();
+
+	if (!tsk_from)
+		return -ESRCH;
+
+	spin_lock_irqsave(&tsk_from->sighand->siglock, flags);
+	tty_from = tty_kref_get(tsk_from->signal->tty);
+	spin_unlock_irqrestore(&tsk_from->sighand->siglock, flags);
+
+	if (!tty_from) {
+		ret = -ENOTTY;
+		goto out;
+	}
+
+	ret = 0;
+	while (pids && *pids) {
+		if (sscanf(pids, "%d", &pid_to) != 1) {
+			ret = -EINVAL;
+			goto out;
+		}
+		pids = strchr(pids, ' ');
+		if (pids)
+			pids = skip_spaces(pids);
+
+		rcu_read_lock();
+		tsk_to = find_task_by_vpid(pid_to);
+		if (tsk_to)
+			get_task_struct(tsk_to);
+		rcu_read_unlock();
+
+		if (!tsk_to) {
+			ret = -ESRCH;
+			goto out;
+		}
+
+		if (tsk_from->task_ve == tsk_to->task_ve) {
+			spin_lock_irqsave(&tsk_to->sighand->siglock, flags);
+			tty_to = tsk_to->signal->tty;
+			if (!tty_to)
+				tsk_to->signal->tty = tty_kref_get(tty_from);
+			else
+				ret = -EBUSY;
+			spin_unlock_irqrestore(&tsk_to->sighand->siglock, flags);
+		} else
+			ret = -EINVAL;
+
+		put_task_struct(tsk_to);
+
+		if (ret)
+			goto out;
+	}
+
+out:
+	tty_kref_put(tty_from);
+	put_task_struct(tsk_from);
+
+	if (!ret)
+		ret = nbytes;
+
+	return ret;
+}
+
 static struct cftype ve_cftypes[] = {
 
 	{
@@ -1643,6 +1740,11 @@ static struct cftype ve_cftypes[] = {
 		.write_u64		= ve_aio_max_nr_write,
 	},
 #endif
+	{
+		.name			= "ctty",
+		.flags			= CFTYPE_ONLY_ON_ROOT,
+		.write			= ve_write_ctty,
+	},
 	{ }
 };
 
