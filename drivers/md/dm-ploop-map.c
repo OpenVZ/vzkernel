@@ -15,6 +15,7 @@
 #include <linux/blk-mq.h>
 #include <uapi/linux/falloc.h>
 #include "dm-ploop.h"
+#include "dm-rq.h"
 
 #define PREALLOC_SIZE (128ULL * 1024 * 1024)
 
@@ -142,12 +143,10 @@ static void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
         struct ploop_rq *prq = prq_ptr;
         struct request *rq = prq->rq;
 
-	if (bi_status)
-		dm_request_set_error(rq, bi_status);
-
 	if (prq->bvec)
 		kfree(prq->bvec);
-	blk_mq_complete_request(rq);
+
+	dm_complete_request(rq, bi_status);
 }
 
 static void do_pio_endio(struct pio *pio)
