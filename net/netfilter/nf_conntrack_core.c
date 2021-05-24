@@ -1659,6 +1659,12 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	struct nf_conn *ct;
 	u32 hash;
 
+	if (!state->net->ct.can_alloc) {
+		/* No rules loaded */
+		return 0;
+	}
+	smp_rmb(); /* Pairs with wmb in allow_conntrack_allocation() */
+
 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
 			     dataoff, state->pf, protonum, state->net,
 			     &tuple)) {
