@@ -293,7 +293,7 @@ int ploop_setup_metadata(struct ploop *ploop, struct page *page)
 
 	/* Header and BAT-occupied clusters at start of file */
 	size = (PLOOP_MAP_OFFSET + ploop->nr_bat_entries) * sizeof(map_index_t);
-	bat_clusters = DIV_ROUND_UP(size, 1 << (cluster_log + 9));
+	bat_clusters = DIV_ROUND_UP(size, CLU_SIZE(ploop));
 
 	/* Clusters from start of file to first data block */
 	offset_clusters = le32_to_cpu(m_hdr->m_FirstBlockOffset) >> cluster_log;
@@ -329,7 +329,7 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 	cluster_log = ploop->cluster_log;
 	offset_clusters = le32_to_cpu(d_hdr->m_FirstBlockOffset) >> cluster_log;
 	bytes = (PLOOP_MAP_OFFSET + delta_nr_be) * sizeof(map_index_t);
-	bat_clusters = DIV_ROUND_UP(bytes, 1 << (cluster_log + 9));
+	bat_clusters = DIV_ROUND_UP(bytes, CLU_SIZE(ploop));
 
 	if (delta_nr_be > ploop->nr_bat_entries ||
 	    bat_clusters != offset_clusters)
@@ -508,9 +508,8 @@ static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
 				    loff_t *file_size)
 {
 	loff_t loff = i_size_read(file->f_mapping->host);
-	unsigned int cluster_log = ploop->cluster_log;
 
-	if (loff & ((1 << (cluster_log + SECTOR_SHIFT)) - 1))
+	if (loff & (CLU_SIZE(ploop) - 1))
 		return -EPROTO;
 	*file_size = loff;
 	return 0;
@@ -522,10 +521,10 @@ static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
  */
 int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw)
 {
-	u32 size_in_clus, cluster_log = ploop->cluster_log;
 	struct ploop_delta *deltas = ploop->deltas;
 	struct ploop_pvd_header *hdr = NULL;
 	loff_t file_size;
+	u32 size_in_clus;
 	int ret;
 
 	ret = ploop_check_delta_length(ploop, file, &file_size);
@@ -538,7 +537,7 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 			goto out;
 		size_in_clus = le32_to_cpu(hdr->m_Size);
 	} else {
-		size_in_clus = to_sector(file_size) >> cluster_log;
+		size_in_clus = POS_TO_CLU(ploop, file_size);
 	}
 
 	ret = -EBADSLT;

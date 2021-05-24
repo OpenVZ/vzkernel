@@ -181,7 +181,7 @@ void pio_prepare_offsets(struct ploop *ploop, struct pio *pio,
 		pio->bi_io_vec[i].bv_len = PAGE_SIZE;
 	}
 	pio->bi_iter.bi_sector = cluster << cluster_log;
-	pio->bi_iter.bi_size = 1 << (cluster_log + 9);
+	pio->bi_iter.bi_size = CLU_SIZE(ploop);
 }
 
 static void wake_completion(struct pio *pio, void *data, blk_status_t status)
@@ -338,7 +338,7 @@ static int ploop_grow_update_header(struct ploop *ploop,
 {
 	unsigned int size, first_block_off, cluster_log = ploop->cluster_log;
 	struct ploop_pvd_header *hdr;
-	u32 nr_be, offset;
+	u32 nr_be, offset, clus;
 	u64 sectors;
 	int ret;
 
@@ -349,8 +349,8 @@ static int ploop_grow_update_header(struct ploop *ploop,
 
 	size = (PLOOP_MAP_OFFSET + cmd->resize.nr_bat_entries);
 	size *= sizeof(map_index_t);
-	size = DIV_ROUND_UP(size, 1 << (cluster_log + 9));
-	first_block_off = size << cluster_log;
+	clus = DIV_ROUND_UP(size, CLU_SIZE(ploop));
+	first_block_off = clus << cluster_log;
 
 	hdr = kmap_atomic(piwb->bat_page);
 	/* TODO: head and cylinders */
@@ -442,7 +442,6 @@ out:
 
 struct pio *alloc_pio_with_pages(struct ploop *ploop)
 {
-	unsigned int cluster_log = ploop->cluster_log;
 	int i, nr_pages = nr_pages_in_cluster(ploop);
 	struct pio *pio;
 	u32 size;
@@ -462,7 +461,7 @@ struct pio *alloc_pio_with_pages(struct ploop *ploop)
 	}
 
 	pio->bi_vcnt = nr_pages;
-	pio->bi_iter.bi_size = 1 << (cluster_log + 9);
+	pio->bi_iter.bi_size = CLU_SIZE(ploop);
 
 	return pio;
 err:
@@ -535,7 +534,7 @@ static int ploop_resize(struct ploop *ploop, u64 new_size)
 		goto err;
 
 	size = (PLOOP_MAP_OFFSET + nr_bat_entries) * sizeof(map_index_t);
-	nr_bat_clusters = DIV_ROUND_UP(size, 1 << (cluster_log + 9));
+	nr_bat_clusters = DIV_ROUND_UP(size, CLU_SIZE(ploop));
 	hb_nr = nr_bat_clusters + nr_bat_entries;
 	size = round_up(DIV_ROUND_UP(hb_nr, 8), sizeof(unsigned long));
 
@@ -954,7 +953,7 @@ static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd
 	struct md_page *md;
 
 	size = (PLOOP_MAP_OFFSET + ploop->nr_bat_entries) * sizeof(map_index_t);
-        bat_clusters = DIV_ROUND_UP(size, 1 << (ploop->cluster_log + 9));
+        bat_clusters = DIV_ROUND_UP(size, CLU_SIZE(ploop));
 	hb_nr = ploop->hb_nr;
 
 	write_lock_irq(&ploop->bat_rwlock);

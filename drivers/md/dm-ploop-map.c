@@ -121,7 +121,7 @@ static int ploop_pio_valid(struct ploop *ploop, struct pio *pio)
 	loff_t end_byte;
 
 	end_byte = to_bytes(sector) + pio->bi_iter.bi_size - 1;
-	end_cluster = to_sector(end_byte) >> ploop->cluster_log;
+	end_cluster = POS_TO_CLU(ploop, end_byte);
 
 	if (unlikely(end_cluster >= ploop->nr_bat_entries)) {
 		/*
@@ -235,7 +235,7 @@ static struct pio * split_and_chain_pio(struct ploop *ploop,
 static int split_pio_to_list(struct ploop *ploop, struct pio *pio,
 			     struct list_head *list)
 {
-	u32 clu_size = to_bytes(1 << ploop->cluster_log);
+	u32 clu_size = CLU_SIZE(ploop);
 	struct pio *split;
 
 	while (1) {
@@ -933,8 +933,7 @@ static int truncate_prealloc_safe(struct ploop_delta *delta, loff_t len, const c
 static int allocate_cluster(struct ploop *ploop, unsigned int *dst_cluster)
 {
 	struct ploop_delta *top = top_delta(ploop);
-	u32 cluster_log = ploop->cluster_log;
-	u32 clu_size = to_bytes(1 << cluster_log);
+	u32 clu_size = CLU_SIZE(ploop);
 	loff_t off, pos, end, old_size;
 	struct file *file = top->file;
 	int ret;
@@ -942,7 +941,7 @@ static int allocate_cluster(struct ploop *ploop, unsigned int *dst_cluster)
 	if (find_dst_cluster_bit(ploop, dst_cluster) < 0)
 		return -EIO;
 
-	pos = to_bytes(*dst_cluster << cluster_log);
+	pos = CLU_TO_POS(ploop, *dst_cluster);
 	end = pos + clu_size;
 	old_size = top->file_size;
 
@@ -1564,7 +1563,7 @@ void ploop_submit_index_wb_sync(struct ploop *ploop,
 	if (ret)
 		status = errno_to_blk_status(ret);
 
-	dst_cluster = ((u64)piwb->page_nr << PAGE_SHIFT) / to_bytes(1 << ploop->cluster_log);
+	dst_cluster = ((u64)piwb->page_nr << PAGE_SHIFT) / CLU_SIZE(ploop);
 	track_dst_cluster(ploop, dst_cluster);
 
 	ploop_bat_write_complete(piwb, status);
