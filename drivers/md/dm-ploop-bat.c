@@ -505,14 +505,14 @@ unmap:
 }
 
 static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
-				    u32 *size_in_clus)
+				    loff_t *file_size)
 {
 	loff_t loff = i_size_read(file->f_mapping->host);
 	unsigned int cluster_log = ploop->cluster_log;
 
 	if (loff & ((1 << (cluster_log + SECTOR_SHIFT)) - 1))
 		return -EPROTO;
-	*size_in_clus = loff >> (cluster_log + SECTOR_SHIFT);
+	*file_size = loff;
 	return 0;
 }
 
@@ -522,12 +522,13 @@ static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
  */
 int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw)
 {
+	u32 size_in_clus, cluster_log = ploop->cluster_log;
 	struct ploop_delta *deltas = ploop->deltas;
 	struct ploop_pvd_header *hdr = NULL;
-	u32 size_in_clus;
+	loff_t file_size;
 	int ret;
 
-	ret = ploop_check_delta_length(ploop, file, &size_in_clus);
+	ret = ploop_check_delta_length(ploop, file, &file_size);
 	if (ret)
 		goto out;
 
@@ -536,6 +537,8 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 		if (ret)
 			goto out;
 		size_in_clus = le32_to_cpu(hdr->m_Size);
+	} else {
+		size_in_clus = to_sector(file_size) >> cluster_log;
 	}
 
 	ret = -EBADSLT;
