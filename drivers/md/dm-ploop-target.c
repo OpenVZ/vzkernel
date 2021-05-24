@@ -340,7 +340,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "could not parse cluster_log";
 		goto err;
 	}
-	ret = dm_set_target_max_io_len(ti, 1 << ploop->cluster_log);
+	ret = dm_set_target_max_io_len(ti, CLU_TO_SEC(ploop, 1));
 	if (ret) {
 		ti->error = "could not set max_io_len";
 		goto err;
@@ -377,10 +377,9 @@ static void ploop_dtr(struct dm_target *ti)
 static void ploop_io_hints(struct dm_target *ti, struct queue_limits *limits)
 {
 	struct ploop *ploop = ti->private;
-	unsigned int cluster_log = ploop->cluster_log;
 
-	limits->max_discard_sectors = 1 << cluster_log;
-	limits->max_hw_discard_sectors = 1 << cluster_log;
+	limits->max_discard_sectors = CLU_TO_SEC(ploop, 1);
+	limits->max_hw_discard_sectors = CLU_TO_SEC(ploop, 1);
 	limits->discard_granularity = CLU_SIZE(ploop);
 	limits->discard_alignment = 0;
 	limits->discard_misaligned = 0;
@@ -408,8 +407,7 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 	if (p == stat)
 		p += sprintf(p, "o");
 	BUG_ON(p - stat >= sizeof(stat));
-	DMEMIT("%u v2 %u %s", ploop->nr_deltas,
-		1 << ploop->cluster_log, stat);
+	DMEMIT("%u v2 %u %s", ploop->nr_deltas, (u32)CLU_TO_SEC(ploop, 1), stat);
 	read_unlock_irq(&ploop->bat_rwlock);
 }
 
