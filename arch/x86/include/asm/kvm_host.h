@@ -192,7 +192,6 @@ enum {
  * with the SVE bit in EPT PTEs.
  */
 #define SPTE_SPECIAL_MASK (1ULL << 62)
-#define SPTE_MMIO_MASK (3ULL << 52)
 
 /* apic attention bits */
 #define KVM_APIC_CHECK_VAPIC	0

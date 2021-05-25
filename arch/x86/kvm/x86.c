@@ -6281,9 +6281,6 @@ void kvm_after_handle_nmi(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_GPL(kvm_after_handle_nmi);
 
-#define ACC_WRITE_MASK   PT_WRITABLE_MASK
-#define ACC_USER_MASK    PT_USER_MASK
-
 static void kvm_set_mmio_spte_mask(void)
 {
 	u64 mask;
@@ -6308,7 +6305,7 @@ static void kvm_set_mmio_spte_mask(void)
 		mask &= ~1ull;
 #endif
 
-	kvm_mmu_set_mmio_spte_mask(mask, mask, ACC_WRITE_MASK | ACC_USER_MASK);
+	kvm_mmu_set_mmio_spte_mask(mask, mask);
 }
 
 #ifdef CONFIG_X86_64
