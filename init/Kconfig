@@ -1625,7 +1625,7 @@ config AIO
 	  this option saves about 7k.
 
 config IO_URING
-	bool "Enable IO uring support" if EXPERT
+	bool "Enable IO uring support"
 	select IO_WQ
 	default y
 	help
