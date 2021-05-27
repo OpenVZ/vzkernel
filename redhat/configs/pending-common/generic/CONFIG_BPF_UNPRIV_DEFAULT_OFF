@@ -1,0 +1,20 @@
+# CONFIG_BPF_UNPRIV_DEFAULT_OFF:
+# 
+# Disables unprivileged BPF by default by setting the corresponding
+# /proc/sys/kernel/unprivileged_bpf_disabled knob to 2. An admin can
+# still reenable it by setting it to 0 later on, or permanently
+# disable it by setting it to 1 (from which no other transition to
+# 0 is possible anymore).
+# 
+# Symbol: BPF_UNPRIV_DEFAULT_OFF [=n]
+# Type  : bool
+# Defined at kernel/bpf/Kconfig:65
+#   Prompt: Disable unprivileged BPF by default
+#   Depends on: BPF_SYSCALL [=y]
+#   Location:
+#     -> General setup
+#       -> BPF subsystem
+# 
+# 
+# 
+# CONFIG_BPF_UNPRIV_DEFAULT_OFF is not set
