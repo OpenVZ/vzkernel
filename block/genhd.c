@@ -1463,6 +1463,7 @@ static const struct device_type disk_type = {
  */
 static int diskstats_show(struct seq_file *seqf, void *v)
 {
+	struct ve_struct *ve = get_exec_env();
 	struct gendisk *gp = v;
 	struct disk_part_iter piter;
 	struct hd_struct *hd;
@@ -1479,6 +1480,11 @@ static int diskstats_show(struct seq_file *seqf, void *v)
 
 	disk_part_iter_init(&piter, gp, DISK_PITER_INCL_EMPTY_PART0);
 	while ((hd = disk_part_iter_next(&piter))) {
+		if (!ve_is_super(ve) &&
+			(devcgroup_device_permission(S_IFBLK, part_devt(hd),
+						     MAY_READ)))
+				continue;
+
 		inflight = part_in_flight(gp->queue, hd);
 		seq_printf(seqf, "%4d %7d %s "
 			   "%lu %lu %lu %u "
@@ -1518,7 +1524,7 @@ static const struct seq_operations diskstats_op = {
 
 static int __init proc_genhd_init(void)
 {
-	proc_create_seq("diskstats", 0, NULL, &diskstats_op);
+	proc_create_seq("diskstats", S_ISVTX, NULL, &diskstats_op);
 	proc_create_seq("partitions", S_ISVTX, NULL, &partitions_op);
 	return 0;
 }
