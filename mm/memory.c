@@ -78,6 +78,7 @@
 #include <asm/tlb.h>
 #include <asm/tlbflush.h>
 #include <asm/pgtable.h>
+#include <asm/tsc.h>
 
 #include "internal.h"
 
@@ -3019,6 +3020,8 @@ void unmap_mapping_range(struct address_space *mapping,
 }
 EXPORT_SYMBOL(unmap_mapping_range);
 
+#define CLKS2NSEC(c)	((c) * 1000000 / tsc_khz)
+
 /*
  * We enter with non-exclusive mmap_sem (to exclude vma changes,
  * but allow concurrent faults), and pte mapped but not yet locked.
@@ -3229,7 +3232,8 @@ unlock:
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 out:
 	local_irq_disable();
-	KSTAT_LAT_PCPU_ADD(&kstat_glob.swap_in, get_cycles() - start);
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.swap_in,
+			   CLKS2NSEC(get_cycles() - start));
 	local_irq_enable();
 
 	return ret;
@@ -3415,7 +3419,8 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
 		VM_BUG_ON_PAGE(!PageLocked(vmf->page), vmf->page);
 
 	local_irq_disable();
-	KSTAT_LAT_PCPU_ADD(&kstat_glob.page_in, get_cycles() - start);
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.page_in,
+			   CLKS2NSEC(get_cycles() - start));
 	local_irq_enable();
 
 	return ret;
