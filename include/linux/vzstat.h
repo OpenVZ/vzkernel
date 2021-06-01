@@ -86,7 +86,6 @@ extern void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p);
 #define KSTAT_PERF_LEAVE(name)
 #define KSTAT_LAT_PCPU_ADD(p, dur)
 #define KSTAT_LAT_PCPU_UPDATE(p)
-#define KSTAT_LAT_PCPU_UPDATE(p)
 #endif /* CONFIG_VE */
 
 
