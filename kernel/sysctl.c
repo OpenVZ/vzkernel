@@ -243,6 +243,11 @@ static int bpf_unpriv_handler(struct ctl_table *table, int write,
 	if (write && !ret) {
 		if (locked_state && unpriv_enable != 1)
 			return -EPERM;
+		if (!unpriv_enable) {
+			pr_warn("Unprivileged BPF has been enabled, "
+				"tainting the kernel");
+			add_taint(TAINT_UNPRIVILEGED_BPF, LOCKDEP_STILL_OK);
+		}
 		*(int *)table->data = unpriv_enable;
 	}
 	return ret;
