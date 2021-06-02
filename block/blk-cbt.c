@@ -376,7 +376,8 @@ static int copy_cbt_to_user(struct page **map, unsigned long size,
 static int blk_cbt_snap_create(struct request_queue *q, __u8 *uuid,
 			       struct blk_user_cbt_snap_create __user *arg)
 {
-	unsigned long npages, i, size;
+	unsigned long size;
+	long npages, i;
 	__u64 to_addr, to_size;
 	struct cbt_info *cbt;
 	struct page **map;
