@@ -1451,6 +1451,7 @@ static void check_disk_size_change(struct gendisk *disk,
 			       disk->disk_name, bdev_size, disk_size);
 		}
 		i_size_write(bdev->bd_inode, disk_size);
+		blk_cbt_update_size(bdev);
 		if (bdev_size > disk_size)
 			flush_disk(bdev, false);
 	}
