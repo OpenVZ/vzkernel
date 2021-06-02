@@ -1674,9 +1674,6 @@ static long writeback_sb_inodes(struct super_block *sb,
 			if (work->nr_pages <= 0)
 				break;
 		}
-
-		WARN_ON(wbc.pages_skipped > write_chunk - wbc.nr_to_write);
-		wrote -= wbc.pages_skipped;
 	}
 	return wrote;
 }
