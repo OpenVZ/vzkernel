@@ -23,6 +23,8 @@
 #include <linux/rhashtable.h>
 #include <linux/refcount.h>
 
+#include <linux/ve.h>
+
 #define BR_HASH_BITS 8
 #define BR_HASH_SIZE (1 << BR_HASH_BITS)
 
