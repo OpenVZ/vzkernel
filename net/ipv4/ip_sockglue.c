@@ -937,7 +937,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			err = -ENOBUFS;
 			break;
 		}
-		msf = memdup_user(optval, optlen);
+		msf = vmemdup_user(optval, optlen);
 		if (IS_ERR(msf)) {
 			err = PTR_ERR(msf);
 			break;
@@ -945,17 +945,17 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 		/* numsrc >= (1G-4) overflow in 32 bits */
 		if (msf->imsf_numsrc >= 0x3ffffffcU ||
 		    msf->imsf_numsrc > net->ipv4.sysctl_igmp_max_msf) {
-			kfree(msf);
+			kvfree(msf);
 			err = -ENOBUFS;
 			break;
 		}
 		if (IP_MSFILTER_SIZE(msf->imsf_numsrc) > optlen) {
-			kfree(msf);
+			kvfree(msf);
 			err = -EINVAL;
 			break;
 		}
 		err = ip_mc_msfilter(sk, msf, 0);
-		kfree(msf);
+		kvfree(msf);
 		break;
 	}
 	case IP_BLOCK_SOURCE:
@@ -1088,7 +1088,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			err = -ENOBUFS;
 			break;
 		}
-		gsf = memdup_user(optval, optlen);
+		gsf = vmemdup_user(optval, optlen);
 		if (IS_ERR(gsf)) {
 			err = PTR_ERR(gsf);
 			break;
@@ -1105,7 +1105,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			goto mc_msf_out;
 		}
 		msize = IP_MSFILTER_SIZE(gsf->gf_numsrc);
-		msf = kmalloc(msize, GFP_KERNEL);
+		msf = kvmalloc(msize, GFP_KERNEL);
 		if (!msf) {
 			err = -ENOBUFS;
 			goto mc_msf_out;
@@ -1128,13 +1128,13 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 				goto mc_msf_out;
 			msf->imsf_slist[i] = psin->sin_addr.s_addr;
 		}
-		kfree(gsf);
+		kvfree(gsf);
 		gsf = NULL;
 
 		err = ip_mc_msfilter(sk, msf, ifindex);
 mc_msf_out:
-		kfree(msf);
-		kfree(gsf);
+		kvfree(msf);
+		kvfree(gsf);
 		break;
 	}
 	case IP_MULTICAST_ALL:
