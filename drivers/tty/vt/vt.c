@@ -968,7 +968,7 @@ int vc_allocate(unsigned int currcons)	/* return 0 on success */
 	if (!*vc->vc_uni_pagedir_loc)
 		con_set_default_unimap(vc);
 
-	vc->vc_screenbuf = kzalloc(vc->vc_screenbuf_size, GFP_KERNEL);
+	vc->vc_screenbuf = kvzalloc(vc->vc_screenbuf_size, GFP_KERNEL);
 	if (!vc->vc_screenbuf)
 		goto err_free;
 
@@ -984,7 +984,7 @@ int vc_allocate(unsigned int currcons)	/* return 0 on success */
 	return 0;
 err_free:
 	visual_deinit(vc);
-	kfree(vc);
+	kvfree(vc);
 	vc_cons[currcons].d = NULL;
 	return -ENOMEM;
 }
@@ -1057,14 +1057,14 @@ static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
 
 	if (new_screen_size > (4 << 20))
 		return -EINVAL;
-	newscreen = kzalloc(new_screen_size, GFP_USER);
+	newscreen = kvzalloc(new_screen_size, GFP_USER);
 	if (!newscreen)
 		return -ENOMEM;
 
 	if (get_vc_uniscr(vc)) {
 		new_uniscr = vc_uniscr_alloc(new_cols, new_rows);
 		if (!new_uniscr) {
-			kfree(newscreen);
+			kvfree(newscreen);
 			return -ENOMEM;
 		}
 	}
@@ -1077,7 +1077,7 @@ static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
 
 	err = resize_screen(vc, new_cols, new_rows, user);
 	if (err) {
-		kfree(newscreen);
+		kvfree(newscreen);
 		kfree(new_uniscr);
 		return err;
 	}
@@ -1131,7 +1131,7 @@ static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
 	if (new_scr_end > new_origin)
 		scr_memsetw((void *)new_origin, vc->vc_video_erase_char,
 			    new_scr_end - new_origin);
-	kfree(vc->vc_screenbuf);
+	kvfree(vc->vc_screenbuf);
 	vc->vc_screenbuf = newscreen;
 	vc->vc_screenbuf_size = new_screen_size;
 	set_origin(vc);
@@ -1214,7 +1214,7 @@ struct vc_data *vc_deallocate(unsigned int currcons)
 		visual_deinit(vc);
 		put_pid(vc->vt_pid);
 		vc_uniscr_set(vc, NULL);
-		kfree(vc->vc_screenbuf);
+		kvfree(vc->vc_screenbuf);
 		vc_cons[currcons].d = NULL;
 	}
 	return vc;
