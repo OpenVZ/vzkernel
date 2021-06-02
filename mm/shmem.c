@@ -35,6 +35,7 @@
 #include <linux/uio.h>
 #include <linux/khugepaged.h>
 #include <linux/hugetlb.h>
+#include <linux/ve.h>
 
 #include <asm/tlbflush.h> /* for arch/microblaze update_mmu_cache() */
 
@@ -106,14 +107,31 @@ struct shmem_falloc {
 };
 
 #ifdef CONFIG_TMPFS
+static unsigned long tmpfs_ram_pages(void)
+{
+	struct ve_struct *ve = get_exec_env();
+	struct cgroup_subsys_state *css;
+	unsigned long ve_ram_pages;
+
+	if (ve_is_super(ve))
+		return totalram_pages;
+
+	css = ve_get_init_css(ve, memory_cgrp_id);
+	ve_ram_pages = min(totalram_pages,
+			mem_cgroup_total_pages(mem_cgroup_from_css(css)));
+	css_put(css);
+
+	return ve_ram_pages;
+}
+
 static unsigned long shmem_default_max_blocks(void)
 {
-	return totalram_pages / 2;
+	return tmpfs_ram_pages() / 2;
 }
 
 static unsigned long shmem_default_max_inodes(void)
 {
-	return min(totalram_pages - totalhigh_pages, totalram_pages / 2);
+	return min(totalram_pages - totalhigh_pages, tmpfs_ram_pages() / 2);
 }
 #endif
 
