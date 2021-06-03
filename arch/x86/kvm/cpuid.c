@@ -477,8 +477,7 @@ static inline int __do_cpuid_ent(struct kvm_cpuid_entry2 *entry, u32 function,
 			cpuid_mask(&entry->ebx, CPUID_7_0_EBX);
 			// TSC_ADJUST is emulated
 			entry->ebx |= F(TSC_ADJUST);
-			entry->ecx |= f_pku;
-			entry->ecx &= kvm_cpuid_7_0_ecx_x86_features;
+			entry->ecx &= kvm_cpuid_7_0_ecx_x86_features | f_pku;
 			cpuid_mask(&entry->ecx, CPUID_7_ECX);
 			/* PKU is not yet implemented for shadow paging. */
 			if (!tdp_enabled || !boot_cpu_has(X86_FEATURE_OSPKE))
