@@ -1044,7 +1044,7 @@ extern long interruptible_sleep_on_timeout(wait_queue_head_t *q,
  * Waitqueues which are removed from the waitqueue_head at wakeup time
  */
 void prepare_to_wait(wait_queue_head_t *q, wait_queue_t *wait, int state);
-void prepare_to_wait_exclusive(wait_queue_head_t *q, wait_queue_t *wait, int state);
+bool prepare_to_wait_exclusive(wait_queue_head_t *q, wait_queue_t *wait, int state);
 void finish_wait(wait_queue_head_t *q, wait_queue_t *wait);
 void abort_exclusive_wait(wait_queue_head_t *q, wait_queue_t *wait,
 			unsigned int mode, void *key);
