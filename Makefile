@@ -4,7 +4,7 @@ PATCHLEVEL = 18
 SUBLEVEL = 0
 EXTRAVERSION =
 NAME = Merciless Moray
-# VZVERSION = ovz.5.35
+# VZVERSION = ovz.5.36
 VZVERSION = ovz.custom
 
 ifeq ($(VZVERSION), ovz.custom)
