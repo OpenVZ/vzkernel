@@ -792,7 +792,6 @@ static int add_new_gdb(handle_t *handle, struct inode *inode,
 	struct ext4_super_block *es = EXT4_SB(sb)->s_es;
 	unsigned long gdb_num = group / EXT4_DESC_PER_BLOCK(sb);
 	ext4_fsblk_t gdblock = EXT4_SB(sb)->s_sbh->b_blocknr + 1 + gdb_num;
-	struct buffer_head **o_group_desc, **n_group_desc = NULL;
 	struct buffer_head *dind = NULL;
 	struct buffer_head *gdb_bh = NULL;
 	int gdbackups;
@@ -851,16 +850,6 @@ static int add_new_gdb(handle_t *handle, struct inode *inode,
 	if (unlikely(err))
 		goto errout;
 
-	n_group_desc = ext4_kvmalloc((gdb_num + 1) *
-				     sizeof(struct buffer_head *),
-				     GFP_NOFS);
-	if (!n_group_desc) {
-		err = -ENOMEM;
-		ext4_warning(sb, "not enough memory for %lu groups",
-			     gdb_num + 1);
-		goto errout;
-	}
-
 	/*
 	 * Finally, we have all of the possible failures behind us...
 	 *
@@ -888,15 +877,8 @@ static int add_new_gdb(handle_t *handle, struct inode *inode,
 	}
 	brelse(dind);
 
-	rcu_read_lock();
-	o_group_desc = rcu_dereference(EXT4_SB(sb)->s_group_desc);
-	memcpy(n_group_desc, o_group_desc,
-	       EXT4_SB(sb)->s_gdb_count * sizeof(struct buffer_head *));
-	rcu_read_unlock();
-	n_group_desc[gdb_num] = gdb_bh;
-	rcu_assign_pointer(EXT4_SB(sb)->s_group_desc, n_group_desc);
+	rcu_assign_pointer(EXT4_SB(sb)->s_group_desc[gdb_num], gdb_bh);
 	EXT4_SB(sb)->s_gdb_count++;
-	ext4_kvfree_array_rcu(o_group_desc);
 
 	le16_add_cpu(&es->s_reserved_gdt_blocks, -1);
 	err = ext4_handle_dirty_super(handle, sb);
@@ -904,7 +886,6 @@ static int add_new_gdb(handle_t *handle, struct inode *inode,
 		ext4_std_error(sb, err);
 	return err;
 errout:
-	kvfree(n_group_desc);
 	brelse(iloc.bh);
 	brelse(dind);
 	brelse(gdb_bh);
@@ -920,7 +901,6 @@ static int add_new_gdb_meta_bg(struct super_block *sb,
 			       handle_t *handle, ext4_group_t group) {
 	ext4_fsblk_t gdblock;
 	struct buffer_head *gdb_bh;
-	struct buffer_head **o_group_desc, **n_group_desc;
 	unsigned long gdb_num = group / EXT4_DESC_PER_BLOCK(sb);
 	int err;
 
@@ -929,35 +909,16 @@ static int add_new_gdb_meta_bg(struct super_block *sb,
 	gdb_bh = ext4_sb_bread(sb, gdblock, 0);
 	if (IS_ERR(gdb_bh))
 		return PTR_ERR(gdb_bh);
-	n_group_desc = ext4_kvmalloc((gdb_num + 1) *
-				     sizeof(struct buffer_head *),
-				     GFP_NOFS);
-	if (!n_group_desc) {
-		brelse(gdb_bh);
-		err = -ENOMEM;
-		ext4_warning(sb, "not enough memory for %lu groups",
-			     gdb_num + 1);
-		return err;
-	}
-
-	rcu_read_lock();
-	o_group_desc = rcu_dereference(EXT4_SB(sb)->s_group_desc);
-	memcpy(n_group_desc, o_group_desc,
-	       EXT4_SB(sb)->s_gdb_count * sizeof(struct buffer_head *));
-	rcu_read_unlock();
-	n_group_desc[gdb_num] = gdb_bh;
 
 	BUFFER_TRACE(gdb_bh, "get_write_access");
 	err = ext4_journal_get_write_access(handle, gdb_bh);
 	if (err) {
-		kvfree(n_group_desc);
 		brelse(gdb_bh);
 		return err;
 	}
 
-	rcu_assign_pointer(EXT4_SB(sb)->s_group_desc, n_group_desc);
+	rcu_assign_pointer(EXT4_SB(sb)->s_group_desc[gdb_num], gdb_bh);
 	EXT4_SB(sb)->s_gdb_count++;
-	ext4_kvfree_array_rcu(o_group_desc);
 	return err;
 }
 
@@ -1677,6 +1638,10 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	if (err)
 		goto out;
 
+	err = ext4_alloc_group_desc_bh_array(sb, input->group + 1);
+	if (err)
+		goto out;
+
 	err = ext4_mb_alloc_groupinfo(sb, input->group + 1);
 	if (err)
 		goto out;
@@ -2046,6 +2011,10 @@ retry:
 		goto out;
 
 	err = ext4_alloc_flex_bg_array(sb, n_group + 1);
+	if (err)
+		goto out;
+
+	err = ext4_alloc_group_desc_bh_array(sb, n_group + 1);
 	if (err)
 		goto out;
 
