@@ -1245,6 +1245,8 @@ static blk_status_t scsi_setup_cmnd(struct scsi_device *sdev,
 static blk_status_t
 scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 {
+	static DEFINE_RATELIMIT_STATE(ratelimit, 5 * HZ, 10);
+
 	switch (sdev->sdev_state) {
 	case SDEV_OFFLINE:
 	case SDEV_TRANSPORT_OFFLINE:
@@ -1255,8 +1257,9 @@ scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 		 */
 		if (!sdev->offline_already) {
 			sdev->offline_already = true;
-			sdev_printk(KERN_ERR, sdev,
-				    "rejecting I/O to offline device\n");
+			if (__ratelimit(&ratelimit))
+				sdev_printk(KERN_ERR, sdev,
+					"rejecting I/O to offline device\n");
 		}
 		return BLK_STS_IOERR;
 	case SDEV_DEL:
@@ -1264,8 +1267,9 @@ scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 		 * If the device is fully deleted, we refuse to
 		 * process any commands as well.
 		 */
-		sdev_printk(KERN_ERR, sdev,
-			    "rejecting I/O to dead device\n");
+		if (__ratelimit(&ratelimit))
+			sdev_printk(KERN_ERR, sdev,
+				"rejecting I/O to dead device\n");
 		return BLK_STS_IOERR;
 	case SDEV_BLOCK:
 	case SDEV_CREATED_BLOCK:
