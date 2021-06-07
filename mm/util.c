@@ -723,6 +723,9 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 			-(s64)vm_committed_as_batch * num_online_cpus(),
 			"memory commitment underflow");
 
+	if (ve_enough_memory(pages))
+		return -ENOMEM;
+
 	vm_acct_memory(pages);
 
 	/*
