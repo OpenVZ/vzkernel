@@ -461,14 +461,6 @@ Summary: The Linux kernel
 %define with_configchecks 0
 %endif
 
-# Setting the compiler to clang enables some different config options
-# than what is expected, so disable this check for now.
-# TODO: What's the best way to fix this?  Do wee need a different set of
-# configs for clang?
-%if %{with toolchain_clang}
-%define with_configchecks 0
-%endif
-
 # To temporarily exclude an architecture from being built, add it to
 # %%nobuildarches. Do _NOT_ use the ExclusiveArch: line, because if we
 # don't build kernel-headers then the new build system will no longer let
