@@ -79,17 +79,22 @@ prepare_to_wait(wait_queue_head_t *q, wait_queue_t *wait, int state)
 }
 EXPORT_SYMBOL(prepare_to_wait);
 
-void
+/* Returns true if we are the first waiter in the queue, false otherwise. */
+bool
 prepare_to_wait_exclusive(wait_queue_head_t *q, wait_queue_t *wait, int state)
 {
 	unsigned long flags;
+	bool was_empty = false;
 
 	wait->flags |= WQ_FLAG_EXCLUSIVE;
 	spin_lock_irqsave(&q->lock, flags);
-	if (list_empty(&wait->task_list))
+	if (list_empty(&wait->task_list)) {
+		was_empty = !waitqueue_active(q);
 		__add_wait_queue_tail(q, wait);
+	}
 	set_current_state(state);
 	spin_unlock_irqrestore(&q->lock, flags);
+	return was_empty;
 }
 EXPORT_SYMBOL(prepare_to_wait_exclusive);
 
