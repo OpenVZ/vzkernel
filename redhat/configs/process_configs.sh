@@ -31,6 +31,16 @@ die()
 	exit 1
 }
 
+get_cross_compile()
+{
+	arch=$1
+	if [[ "$CC_IS_CLANG" -eq 1 ]]; then
+		echo "$arch"
+	else
+		echo "scripts/dummy-tools/"
+	fi
+}
+
 # stupid function to find top of tree to do kernel make configs
 switch_to_toplevel()
 {
@@ -193,11 +203,11 @@ function commit_new_configs()
 		fi
 		echo -n "Checking for new configs in $cfg ... "
 
-		make ARCH="$arch" CROSS_COMPILE=scripts/dummy-tools/ KCONFIG_CONFIG="$cfgorig" listnewconfig >& .listnewconfig
+		make ${MAKEOPTS} ARCH="$arch" CROSS_COMPILE=$(get_cross_compile $arch) KCONFIG_CONFIG="$cfgorig" listnewconfig >& .listnewconfig
 		grep -E 'CONFIG_' .listnewconfig > .newoptions
 		if test -s .newoptions
 		then
-			make ARCH="$arch" CROSS_COMPILE=scripts/dummy-tools/ KCONFIG_CONFIG="$cfgorig" helpnewconfig >& .helpnewconfig
+			make ${MAKEOPTS} ARCH="$arch" CROSS_COMPILE=$(get_cross_compile $arch) KCONFIG_CONFIG="$cfgorig" helpnewconfig >& .helpnewconfig
 			parsenewconfigs
 		fi
 		rm .newoptions
@@ -227,7 +237,7 @@ function process_configs()
 		fi
 		echo -n "Processing $cfg ... "
 
-		make ARCH="$arch" CROSS_COMPILE=scripts/dummy-tools/ KCONFIG_CONFIG="$cfgorig" listnewconfig >& .listnewconfig
+		make ${MAKEOPTS} ARCH="$arch" CROSS_COMPILE=$(get_cross_compile $arch) KCONFIG_CONFIG="$cfgorig" listnewconfig >& .listnewconfig
 		grep -E 'CONFIG_' .listnewconfig > .newoptions
 		if test -n "$NEWOPTIONS" && test -s .newoptions
 		then
@@ -252,7 +262,7 @@ function process_configs()
 
 		rm .listnewconfig
 
-		make ARCH="$arch" CROSS_COMPILE=scripts/dummy-tools/ KCONFIG_CONFIG="$cfgorig" olddefconfig > /dev/null || exit 1
+		make ${MAKEOPTS} ARCH="$arch" CROSS_COMPILE=$(get_cross_compile $arch) KCONFIG_CONFIG="$cfgorig" olddefconfig > /dev/null || exit 1
 		echo "# $arch" > "$cfgtmp"
 		cat "$cfgorig" >> "$cfgtmp"
 		if test -n "$CHECKOPTIONS"
@@ -280,6 +290,8 @@ CONTINUEONERROR=""
 NEWOPTIONS=""
 TESTRUN=""
 CHECKWARNINGS=""
+MAKEOPTS=""
+CC_IS_CLANG=0
 
 RETURNCODE=0
 
@@ -313,6 +325,13 @@ do
 			;;
 		-z)
 			COMMITNEWCONFIGS="x"
+			;;
+		-m)
+			shift
+			if [ "$1" = "CC=clang" -o "$1" = "LLVM=1" ]; then
+				CC_IS_CLANG=1
+			fi
+			MAKEOPTS="$MAKEOPTS $1"
 			;;
 		*)
 			break;;

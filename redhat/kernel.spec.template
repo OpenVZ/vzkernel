@@ -13,6 +13,13 @@
 %global toolchain clang
 %endif
 
+# Compile the kernel with LTO (only supported when building with clang).
+%bcond_with clang_lto
+
+%if %{with clang_lto} && %{without toolchain_clang}
+{error:clang_lto requires --with toolchain_clang}
+%endif
+
 # Cross compile on copr for arm
 # See https://bugzilla.redhat.com/1879599
 %if 0%{?_with_cross_arm:1}
@@ -234,7 +241,11 @@ Summary: The Linux kernel
 %endif
 
 %if %{with toolchain_clang}
-%global make_opts %{make_opts} HOSTCC=clang CC=clang
+%global clang_make_opts HOSTCC=clang CC=clang
+%if %{with clang_lto}
+%global clang_make_opts %{clang_make_opts} LD=ld.lld HOSTLD=ld.lld AR=llvm-ar NM=llvm-nm HOSTAR=llvm-ar HOSTNM=llvm-nm LLVM_IAS=1
+%endif
+%global make_opts %{make_opts} %{clang_make_opts}
 # clang does not support the -fdump-ipa-clones option
 %global with_ipaclones 0
 %endif
@@ -647,6 +658,11 @@ BuildRequires: asciidoc
 
 %if %{with toolchain_clang}
 BuildRequires: clang
+%endif
+
+%if %{with clang_lto}
+BuildRequires: llvm
+BuildRequires: lld
 %endif
 
 # Because this is the kernel, it's hard to get a single upstream URL
@@ -1417,6 +1433,13 @@ do
 done
 %endif
 
+%if %{with clang_lto}
+for i in *aarch64*.config *x86_64*.config; do
+  sed -i 's/# CONFIG_LTO_CLANG_THIN is not set/CONFIG_LTO_CLANG_THIN=y/' $i
+  sed -i 's/CONFIG_LTO_NONE=y/# CONFIG_LTO_NONE is not set/' $i
+done
+%endif
+
 # Add DUP and kpatch certificates to system trusted keys for RHEL
 %if 0%{?rhel}
 %if %{signkernel}%{signmodules}
@@ -1437,6 +1460,11 @@ cp %{SOURCE52} .
 OPTS=""
 %if %{with_configchecks}
 	OPTS="$OPTS -w -n -c"
+%endif
+%if %{with clang_lto}
+for opt in %{clang_make_opts}; do
+  OPTS="$OPTS -m $opt"
+done
 %endif
 ./process_configs.sh $OPTS kernel %{rpmversion}
 
