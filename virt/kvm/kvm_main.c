@@ -845,6 +845,12 @@ void kvm_get_kvm(struct kvm *kvm)
 }
 EXPORT_SYMBOL_GPL(kvm_get_kvm);
 
+int kvm_try_get_kvm(struct kvm *kvm)
+{
+	return refcount_inc_not_zero(&kvm->users_count);
+}
+EXPORT_SYMBOL_GPL(kvm_try_get_kvm);
+
 void kvm_put_kvm(struct kvm *kvm)
 {
 	if (refcount_dec_and_test(&kvm->users_count))
