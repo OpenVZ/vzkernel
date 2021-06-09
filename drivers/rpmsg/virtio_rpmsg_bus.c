@@ -943,11 +943,12 @@ static void rpmsg_ns_cb(struct rpmsg_channel *rpdev, void *data, int len,
 static int rpmsg_probe(struct virtio_device *vdev)
 {
 	vq_callback_t *vq_cbs[] = { rpmsg_recv_done, rpmsg_xmit_done };
-	const char *names[] = { "input", "output" };
+	static const char * const names[] = { "input", "output" };
 	struct virtqueue *vqs[2];
 	struct virtproc_info *vrp;
 	void *bufs_va;
 	int err = 0, i;
+	bool notify;
 
 	vrp = kzalloc(sizeof(*vrp), GFP_KERNEL);
 	if (!vrp)
@@ -1015,8 +1016,22 @@ static int rpmsg_probe(struct virtio_device *vdev)
 		}
 	}
 
+	/*
+	 * Prepare to kick but don't notify yet - we can't do this before
+	 * device is ready.
+	 */
+	notify = virtqueue_kick_prepare(vrp->rvq);
+
+	/* From this point on, we can notify and get callbacks. */
+	virtio_device_ready(vdev);
+
 	/* tell the remote processor it can start sending messages */
-	virtqueue_kick(vrp->rvq);
+	/*
+	 * this might be concurrent with callbacks, but we are only
+	 * doing notify, not a full kick here, so that's ok.
+	 */
+	if (notify)
+		virtqueue_notify(vrp->rvq);
 
 	dev_info(&vdev->dev, "rpmsg host is online\n");
 

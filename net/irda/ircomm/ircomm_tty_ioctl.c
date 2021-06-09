@@ -174,7 +174,7 @@ void ircomm_tty_set_termios(struct tty_struct *tty,
 	    (cflag & CBAUD)) {
 		self->settings.dte |= IRCOMM_DTR;
 		if (!(tty->termios.c_cflag & CRTSCTS) ||
-		    !test_bit(TTY_THROTTLED, &tty->flags)) {
+		    !tty_throttled(tty)) {
 			self->settings.dte |= IRCOMM_RTS;
 		}
 		ircomm_param_request(self, IRCOMM_DTE, TRUE);

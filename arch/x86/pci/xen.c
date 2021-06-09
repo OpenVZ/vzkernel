@@ -23,6 +23,7 @@
 #include <xen/features.h>
 #include <xen/events.h>
 #include <asm/xen/pci.h>
+#include <asm/i8259.h>
 
 static int xen_pcifront_enable_irq(struct pci_dev *dev)
 {
@@ -40,7 +41,7 @@ static int xen_pcifront_enable_irq(struct pci_dev *dev)
 	/* In PV DomU the Xen PCI backend puts the PIRQ in the interrupt line.*/
 	pirq = gsi;
 
-	if (gsi < NR_IRQS_LEGACY)
+	if (gsi < nr_legacy_irqs())
 		share = 0;
 
 	rc = xen_bind_pirq_gsi_to_irq(gsi, pirq, share, "pcifront");
@@ -227,23 +228,14 @@ static int xen_hvm_setup_msi_irqs(struct pci_dev *dev, int nvec, int type)
 		return 1;
 
 	list_for_each_entry(msidesc, &dev->msi_list, list) {
-		__read_msi_msg(msidesc, &msg);
-		pirq = MSI_ADDR_EXT_DEST_ID(msg.address_hi) |
-			((msg.address_lo >> MSI_ADDR_DEST_ID_SHIFT) & 0xff);
-		if (msg.data != XEN_PIRQ_MSI_DATA ||
-		    xen_irq_from_pirq(pirq) < 0) {
-			pirq = xen_allocate_pirq_msi(dev, msidesc);
-			if (pirq < 0) {
-				irq = -ENODEV;
-				goto error;
-			}
-			xen_msi_compose_msg(dev, pirq, &msg);
-			__write_msi_msg(msidesc, &msg);
-			dev_dbg(&dev->dev, "xen: msi bound to pirq=%d\n", pirq);
-		} else {
-			dev_dbg(&dev->dev,
-				"xen: msi already bound to pirq=%d\n", pirq);
+		pirq = xen_allocate_pirq_msi(dev, msidesc);
+		if (pirq < 0) {
+			irq = -ENODEV;
+			goto error;
 		}
+		xen_msi_compose_msg(dev, pirq, &msg);
+		__write_msi_msg(msidesc, &msg);
+		dev_dbg(&dev->dev, "xen: msi bound to pirq=%d\n", pirq);
 		irq = xen_bind_pirq_msi_to_irq(dev, msidesc, pirq,
 					       (type == PCI_CAP_ID_MSIX) ?
 					       "msi-x" : "msi",
@@ -337,7 +329,7 @@ out:
 	return ret;
 }
 
-static void xen_initdom_restore_msi_irqs(struct pci_dev *dev, int irq)
+static void xen_initdom_restore_msi_irqs(struct pci_dev *dev)
 {
 	int ret = 0;
 
@@ -489,7 +481,7 @@ int __init pci_xen_initial_domain(void)
 	xen_setup_acpi_sci();
 	__acpi_register_gsi = acpi_register_gsi_xen;
 	/* Pre-allocate legacy irqs */
-	for (irq = 0; irq < NR_IRQS_LEGACY; irq++) {
+	for (irq = 0; irq < nr_legacy_irqs(); irq++) {
 		int trigger, polarity;
 
 		if (acpi_get_override_irq(irq, &trigger, &polarity) == -1)
@@ -500,7 +492,7 @@ int __init pci_xen_initial_domain(void)
 			true /* Map GSI to PIRQ */);
 	}
 	if (0 == nr_ioapics) {
-		for (irq = 0; irq < NR_IRQS_LEGACY; irq++)
+		for (irq = 0; irq < nr_legacy_irqs(); irq++)
 			xen_bind_pirq_gsi_to_irq(irq, irq, 0, "xt-pic");
 	}
 	return 0;

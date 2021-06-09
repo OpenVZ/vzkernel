@@ -33,26 +33,31 @@
 #define POLICYDB_VERSION_ROLETRANS	26
 #define POLICYDB_VERSION_NEW_OBJECT_DEFAULTS	27
 #define POLICYDB_VERSION_DEFAULT_TYPE	28
+#define POLICYDB_VERSION_CONSTRAINT_NAMES	29
+#define POLICYDB_VERSION_XPERMS_IOCTL	30
+#define POLICYDB_VERSION_INFINIBAND	31
 
 /* Range of policy versions we understand*/
 #define POLICYDB_VERSION_MIN   POLICYDB_VERSION_BASE
 #ifdef CONFIG_SECURITY_SELINUX_POLICYDB_VERSION_MAX
 #define POLICYDB_VERSION_MAX	CONFIG_SECURITY_SELINUX_POLICYDB_VERSION_MAX_VALUE
 #else
-#define POLICYDB_VERSION_MAX	POLICYDB_VERSION_DEFAULT_TYPE
+#define POLICYDB_VERSION_MAX	POLICYDB_VERSION_INFINIBAND
 #endif
 
 /* Mask for just the mount related flags */
 #define SE_MNTMASK	0x0f
 /* Super block security struct flags for mount options */
+/* BE CAREFUL, these need to be the low order bits for selinux_get_mnt_opts */
 #define CONTEXT_MNT	0x01
 #define FSCONTEXT_MNT	0x02
 #define ROOTCONTEXT_MNT	0x04
 #define DEFCONTEXT_MNT	0x08
+#define SBLABEL_MNT	0x10
 /* Non-mount related flags */
-#define SE_SBINITIALIZED	0x10
-#define SE_SBPROC		0x20
-#define SE_SBLABELSUPP	0x40
+#define SE_SBINITIALIZED	0x0100
+#define SE_SBPROC		0x0200
+#define SE_SBGENFS		0x0400
 
 #define CONTEXT_STR	"context="
 #define FSCONTEXT_STR	"fscontext="
@@ -68,12 +73,18 @@ extern int selinux_enabled;
 enum {
 	POLICYDB_CAPABILITY_NETPEER,
 	POLICYDB_CAPABILITY_OPENPERM,
+	POLICYDB_CAPABILITY_EXTSOCKCLASS,
+	POLICYDB_CAPABILITY_ALWAYSNETWORK,
+	POLICYDB_CAPABILITY_CGROUPSECLABEL,
+	POLICYDB_CAPABILITY_NNP_NOSUID_TRANSITION,
 	__POLICYDB_CAPABILITY_MAX
 };
 #define POLICYDB_CAPABILITY_MAX (__POLICYDB_CAPABILITY_MAX - 1)
 
 extern int selinux_policycap_netpeer;
 extern int selinux_policycap_openperm;
+extern int selinux_policycap_cgroupseclabel;
+extern int selinux_policycap_nnp_nosuid_transition;
 
 /*
  * type_datum properties
@@ -102,11 +113,38 @@ struct av_decision {
 	u32 flags;
 };
 
+#define XPERMS_ALLOWED 1
+#define XPERMS_AUDITALLOW 2
+#define XPERMS_DONTAUDIT 4
+
+#define security_xperm_set(perms, x) (perms[x >> 5] |= 1 << (x & 0x1f))
+#define security_xperm_test(perms, x) (1 & (perms[x >> 5] >> (x & 0x1f)))
+struct extended_perms_data {
+	u32 p[8];
+};
+
+struct extended_perms_decision {
+	u8 used;
+	u8 driver;
+	struct extended_perms_data *allowed;
+	struct extended_perms_data *auditallow;
+	struct extended_perms_data *dontaudit;
+};
+
+struct extended_perms {
+	u16 len;	/* length associated decision chain */
+	struct extended_perms_data drivers; /* flag drivers that are used */
+};
+
 /* definitions of av_decision.flags */
 #define AVD_FLAGS_PERMISSIVE	0x0001
 
 void security_compute_av(u32 ssid, u32 tsid,
-			 u16 tclass, struct av_decision *avd);
+			 u16 tclass, struct av_decision *avd,
+			 struct extended_perms *xperms);
+
+void security_compute_xperms_decision(u32 ssid, u32 tsid, u16 tclass,
+			 u8 driver, struct extended_perms_decision *xpermd);
 
 void security_compute_av_user(u32 ssid, u32 tsid,
 			     u16 tclass, struct av_decision *avd);
@@ -142,6 +180,10 @@ int security_get_user_sids(u32 callsid, char *username,
 
 int security_port_sid(u8 protocol, u16 port, u32 *out_sid);
 
+int security_ib_pkey_sid(u64 subnet_prefix, u16 pkey_num, u32 *out_sid);
+
+int security_ib_endport_sid(const char *dev_name, u8 port_num, u32 *out_sid);
+
 int security_netif_sid(char *name, u32 *if_sid);
 
 int security_node_sid(u16 domain, void *addr, u32 addrlen,
@@ -169,6 +211,8 @@ int security_get_allow_unknown(void);
 #define SECURITY_FS_USE_GENFS		4 /* use the genfs support */
 #define SECURITY_FS_USE_NONE		5 /* no labeling support */
 #define SECURITY_FS_USE_MNTPOINT	6 /* use mountpoint labeling */
+#define SECURITY_FS_USE_NATIVE		7 /* use native label support */
+#define SECURITY_FS_USE_MAX		7 /* Highest SECURITY_FS_USE_XXX */
 
 int security_fs_use(const char *fstype, unsigned int *behavior,
 	u32 *sid);

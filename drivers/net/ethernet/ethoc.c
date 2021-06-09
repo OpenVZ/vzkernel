@@ -671,7 +671,7 @@ static int ethoc_mdio_probe(struct net_device *dev)
 	int err;
 
 	if (priv->phy_id != -1)
-		phy = priv->mdio->phy_map[priv->phy_id];
+		phy = mdiobus_get_phy(priv->mdio, priv->phy_id);
 	else
 		phy = phy_find_first(priv->mdio);
 
@@ -754,7 +754,7 @@ static int ethoc_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 		if (mdio->phy_id >= PHY_MAX_ADDR)
 			return -ERANGE;
 
-		phy = priv->mdio->phy_map[mdio->phy_id];
+		phy = mdiobus_get_phy(priv->mdio, mdio->phy_id);
 		if (!phy)
 			return -ENODEV;
 	} else {
@@ -897,7 +897,7 @@ static const struct net_device_ops ethoc_netdev_ops = {
 	.ndo_set_config = ethoc_config,
 	.ndo_set_mac_address = ethoc_set_mac_address,
 	.ndo_set_rx_mode = ethoc_set_multicast_list,
-	.ndo_change_mtu = ethoc_change_mtu,
+	.ndo_change_mtu_rh74 = ethoc_change_mtu,
 	.ndo_tx_timeout = ethoc_tx_timeout,
 	.ndo_start_xmit = ethoc_start_xmit,
 };
@@ -1023,7 +1023,8 @@ static int ethoc_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "ethoc: num_tx: %d num_rx: %d\n",
 		priv->num_tx, priv->num_rx);
 
-	priv->vma = devm_kzalloc(&pdev->dev, num_bd*sizeof(void *), GFP_KERNEL);
+	priv->vma = devm_kcalloc(&pdev->dev, num_bd, sizeof(void *),
+				 GFP_KERNEL);
 	if (!priv->vma) {
 		ret = -ENOMEM;
 		goto error;

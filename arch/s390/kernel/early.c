@@ -18,6 +18,7 @@
 #include <linux/pfn.h>
 #include <linux/uaccess.h>
 #include <linux/kernel.h>
+#include <asm/diag.h>
 #include <asm/ebcdic.h>
 #include <asm/ipl.h>
 #include <asm/lowcore.h>
@@ -28,6 +29,7 @@
 #include <asm/cpcmd.h>
 #include <asm/sclp.h>
 #include <asm/facility.h>
+#include <asm/uv.h>
 #include "entry.h"
 
 /*
@@ -206,6 +208,7 @@ static noinline __init void clear_bss_section(void)
  */
 static noinline __init void init_kernel_storage_key(void)
 {
+#if PAGE_DEFAULT_KEY
 	unsigned long end_pfn, init_pfn;
 
 	end_pfn = PFN_UP(__pa(&_end));
@@ -213,6 +216,7 @@ static noinline __init void init_kernel_storage_key(void)
 	for (init_pfn = 0 ; init_pfn < end_pfn; init_pfn++)
 		page_set_storage_key(init_pfn << PAGE_SHIFT,
 				     PAGE_DEFAULT_KEY, 0);
+#endif
 }
 
 static __initdata char sysinfo_page[PAGE_SIZE] __aligned(PAGE_SIZE);
@@ -281,6 +285,11 @@ static noinline __init void setup_facility_list(void)
 {
 	stfle(S390_lowcore.stfle_fac_list,
 	      ARRAY_SIZE(S390_lowcore.stfle_fac_list));
+	memcpy(S390_lowcore.alt_stfle_fac_list,
+	       S390_lowcore.stfle_fac_list,
+	       sizeof(S390_lowcore.alt_stfle_fac_list));
+	if (!IS_ENABLED(CONFIG_KERNEL_NOBP))
+		__clear_facility(82, S390_lowcore.alt_stfle_fac_list);
 }
 
 static __init void detect_mvpg(void)
@@ -341,6 +350,7 @@ static __init void detect_diag9c(void)
 	int rc;
 
 	cpu_address = stap();
+	diag_stat_inc(DIAG_STAT_X09C);
 	asm volatile(
 		"	diag	%2,0,0x9c\n"
 		"0:	la	%0,0\n"
@@ -356,6 +366,7 @@ static __init void detect_diag44(void)
 #ifdef CONFIG_64BIT
 	int rc;
 
+	diag_stat_inc(DIAG_STAT_X044);
 	asm volatile(
 		"	diag	0,0,0x44\n"
 		"0:	la	%0,0\n"
@@ -378,16 +389,41 @@ static __init void detect_machine_facilities(void)
 		S390_lowcore.machine_flags |= MACHINE_FLAG_EDAT2;
 	if (test_facility(3))
 		S390_lowcore.machine_flags |= MACHINE_FLAG_IDTE;
-	if (test_facility(27))
-		S390_lowcore.machine_flags |= MACHINE_FLAG_MVCOS;
 	if (test_facility(40))
 		S390_lowcore.machine_flags |= MACHINE_FLAG_LPP;
-	if (test_facility(50) && test_facility(73))
+	if (test_facility(50) && test_facility(73)) {
 		S390_lowcore.machine_flags |= MACHINE_FLAG_TE;
+		__ctl_set_bit(0, 55);
+	}
 	if (test_facility(66))
 		S390_lowcore.machine_flags |= MACHINE_FLAG_RRBM;
+	if (test_facility(129))
+		S390_lowcore.machine_flags |= MACHINE_FLAG_VX;
+	if (test_facility(130)) {
+		S390_lowcore.machine_flags |= MACHINE_FLAG_NX;
+		__ctl_set_bit(0, 20);
+	}
+	if (test_facility(133))
+		S390_lowcore.machine_flags |= MACHINE_FLAG_GS;
 #endif
 }
+
+#ifdef CONFIG_64BIT
+static int __init noexec_setup(char *str)
+{
+	bool enabled;
+	int rc;
+
+	rc = kstrtobool(str, &enabled);
+	if (!rc && !enabled) {
+		/* Disable no-execute support */
+		S390_lowcore.machine_flags &= ~MACHINE_FLAG_NX;
+		__ctl_clear_bit(0, 20);
+	}
+	return rc;
+}
+early_param("noexec", noexec_setup);
+#endif
 
 static __init void rescue_initrd(void)
 {
@@ -448,6 +484,9 @@ static void __init setup_boot_command_line(void)
 	strlcpy(boot_command_line, strstrip(COMMAND_LINE),
 		ARCH_COMMAND_LINE_SIZE);
 
+	if (is_prot_virt_guest())
+		return;
+
 	/* append IPL PARM data to the boot command line */
 	if (MACHINE_IS_VM)
 		append_to_cmdline(append_ipl_vmparm);
@@ -465,11 +504,13 @@ void __init startup_init(void)
 	ipl_save_parameters();
 	rescue_initrd();
 	clear_bss_section();
+	setup_facility_list();
+	uv_query_info();
+	ptff_init();
 	init_kernel_storage_key();
 	lockdep_init();
 	lockdep_off();
 	setup_lowcore_early();
-	setup_facility_list();
 	detect_machine_type();
 	ipl_update_parameters();
 	setup_boot_command_line();
@@ -481,7 +522,7 @@ void __init startup_init(void)
 	detect_diag44();
 	detect_machine_facilities();
 	setup_topology();
-	sclp_facilities_detect();
+	sclp_early_detect();
 #ifdef CONFIG_DYNAMIC_FTRACE
 	S390_lowcore.ftrace_func = (unsigned long)ftrace_caller;
 #endif

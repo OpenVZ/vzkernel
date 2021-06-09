@@ -30,11 +30,11 @@
  * UVC Controls
  */
 
-static int __uvc_query_ctrl(struct uvc_device *dev, __u8 query, __u8 unit,
-			__u8 intfnum, __u8 cs, void *data, __u16 size,
+static int __uvc_query_ctrl(struct uvc_device *dev, u8 query, u8 unit,
+			u8 intfnum, u8 cs, void *data, u16 size,
 			int timeout)
 {
-	__u8 type = USB_TYPE_CLASS | USB_RECIP_INTERFACE;
+	u8 type = USB_TYPE_CLASS | USB_RECIP_INTERFACE;
 	unsigned int pipe;
 
 	pipe = (query & 0x80) ? usb_rcvctrlpipe(dev->udev, 0)
@@ -45,7 +45,7 @@ static int __uvc_query_ctrl(struct uvc_device *dev, __u8 query, __u8 unit,
 			unit << 8 | intfnum, data, size, timeout);
 }
 
-static const char *uvc_query_name(__u8 query)
+static const char *uvc_query_name(u8 query)
 {
 	switch (query) {
 	case UVC_SET_CUR:
@@ -69,21 +69,61 @@ static const char *uvc_query_name(__u8 query)
 	}
 }
 
-int uvc_query_ctrl(struct uvc_device *dev, __u8 query, __u8 unit,
-			__u8 intfnum, __u8 cs, void *data, __u16 size)
+int uvc_query_ctrl(struct uvc_device *dev, u8 query, u8 unit,
+			u8 intfnum, u8 cs, void *data, u16 size)
 {
 	int ret;
+	u8 error;
+	u8 tmp;
 
 	ret = __uvc_query_ctrl(dev, query, unit, intfnum, cs, data, size,
 				UVC_CTRL_CONTROL_TIMEOUT);
-	if (ret != size) {
-		uvc_printk(KERN_ERR, "Failed to query (%s) UVC control %u on "
-			"unit %u: %d (exp. %u).\n", uvc_query_name(query), cs,
-			unit, ret, size);
-		return -EIO;
+	if (likely(ret == size))
+		return 0;
+
+	uvc_printk(KERN_ERR,
+		   "Failed to query (%s) UVC control %u on unit %u: %d (exp. %u).\n",
+		   uvc_query_name(query), cs, unit, ret, size);
+
+	if (ret != -EPIPE)
+		return ret;
+
+	tmp = *(u8 *)data;
+
+	ret = __uvc_query_ctrl(dev, UVC_GET_CUR, 0, intfnum,
+			       UVC_VC_REQUEST_ERROR_CODE_CONTROL, data, 1,
+			       UVC_CTRL_CONTROL_TIMEOUT);
+
+	error = *(u8 *)data;
+	*(u8 *)data = tmp;
+
+	if (ret != 1)
+		return ret < 0 ? ret : -EPIPE;
+
+	uvc_trace(UVC_TRACE_CONTROL, "Control error %u\n", error);
+
+	switch (error) {
+	case 0:
+		/* Cannot happen - we received a STALL */
+		return -EPIPE;
+	case 1: /* Not ready */
+		return -EBUSY;
+	case 2: /* Wrong state */
+		return -EILSEQ;
+	case 3: /* Power */
+		return -EREMOTE;
+	case 4: /* Out of range */
+		return -ERANGE;
+	case 5: /* Invalid unit */
+	case 6: /* Invalid control */
+	case 7: /* Invalid Request */
+	case 8: /* Invalid value within range */
+		return -EINVAL;
+	default: /* reserved or unknown */
+		break;
 	}
 
-	return 0;
+	return -EPIPE;
 }
 
 static void uvc_fixup_video_ctrl(struct uvc_streaming *stream,
@@ -118,6 +158,14 @@ static void uvc_fixup_video_ctrl(struct uvc_streaming *stream,
 	      stream->dev->uvc_version < 0x0110))
 		ctrl->dwMaxVideoFrameSize =
 			frame->dwMaxVideoFrameBufferSize;
+
+	/* The "TOSHIBA Web Camera - 5M" Chicony device (04f2:b50b) seems to
+	 * compute the bandwidth on 16 bits and erroneously sign-extend it to
+	 * 32 bits, resulting in a huge bandwidth value. Detect and fix that
+	 * condition by setting the 16 MSBs to 0 when they're all equal to 1.
+	 */
+	if ((ctrl->dwMaxPayloadTransferSize & 0xffff0000) == 0xffff0000)
+		ctrl->dwMaxPayloadTransferSize &= ~0xffff0000;
 
 	if (!(format->flags & UVC_FMT_FLAG_COMPRESSED) &&
 	    stream->dev->quirks & UVC_QUIRK_FIX_BANDWIDTH &&
@@ -155,14 +203,27 @@ static void uvc_fixup_video_ctrl(struct uvc_streaming *stream,
 	}
 }
 
-static int uvc_get_video_ctrl(struct uvc_streaming *stream,
-	struct uvc_streaming_control *ctrl, int probe, __u8 query)
+static size_t uvc_video_ctrl_size(struct uvc_streaming *stream)
 {
-	__u8 *data;
-	__u16 size;
+	/*
+	 * Return the size of the video probe and commit controls, which depends
+	 * on the protocol version.
+	 */
+	if (stream->dev->uvc_version < 0x0110)
+		return 26;
+	else if (stream->dev->uvc_version < 0x0150)
+		return 34;
+	else
+		return 48;
+}
+
+static int uvc_get_video_ctrl(struct uvc_streaming *stream,
+	struct uvc_streaming_control *ctrl, int probe, u8 query)
+{
+	u16 size = uvc_video_ctrl_size(stream);
+	u8 *data;
 	int ret;
 
-	size = stream->dev->uvc_version >= 0x0110 ? 34 : 26;
 	if ((stream->dev->quirks & UVC_QUIRK_PROBE_DEF) &&
 			query == UVC_GET_DEF)
 		return -EIO;
@@ -217,7 +278,7 @@ static int uvc_get_video_ctrl(struct uvc_streaming *stream,
 	ctrl->dwMaxVideoFrameSize = get_unaligned_le32(&data[18]);
 	ctrl->dwMaxPayloadTransferSize = get_unaligned_le32(&data[22]);
 
-	if (size == 34) {
+	if (size >= 34) {
 		ctrl->dwClockFrequency = get_unaligned_le32(&data[26]);
 		ctrl->bmFramingInfo = data[30];
 		ctrl->bPreferedVersion = data[31];
@@ -246,11 +307,10 @@ out:
 static int uvc_set_video_ctrl(struct uvc_streaming *stream,
 	struct uvc_streaming_control *ctrl, int probe)
 {
-	__u8 *data;
-	__u16 size;
+	u16 size = uvc_video_ctrl_size(stream);
+	u8 *data;
 	int ret;
 
-	size = stream->dev->uvc_version >= 0x0110 ? 34 : 26;
 	data = kzalloc(size, GFP_KERNEL);
 	if (data == NULL)
 		return -ENOMEM;
@@ -267,7 +327,7 @@ static int uvc_set_video_ctrl(struct uvc_streaming *stream,
 	put_unaligned_le32(ctrl->dwMaxVideoFrameSize, &data[18]);
 	put_unaligned_le32(ctrl->dwMaxPayloadTransferSize, &data[22]);
 
-	if (size == 34) {
+	if (size >= 34) {
 		put_unaligned_le32(ctrl->dwClockFrequency, &data[26]);
 		data[30] = ctrl->bmFramingInfo;
 		data[31] = ctrl->bPreferedVersion;
@@ -293,7 +353,7 @@ int uvc_probe_video(struct uvc_streaming *stream,
 	struct uvc_streaming_control *probe)
 {
 	struct uvc_streaming_control probe_min, probe_max;
-	__u16 bandwidth;
+	u16 bandwidth;
 	unsigned int i;
 	int ret;
 
@@ -361,9 +421,17 @@ static int uvc_commit_video(struct uvc_streaming *stream,
  * Clocks and timestamps
  */
 
+static inline void uvc_video_get_ts(struct timespec *ts)
+{
+	if (uvc_clock_param == CLOCK_MONOTONIC)
+		ktime_get_ts(ts);
+	else
+		ktime_get_real_ts(ts);
+}
+
 static void
 uvc_video_clock_decode(struct uvc_streaming *stream, struct uvc_buffer *buf,
-		       const __u8 *data, int len)
+		       const u8 *data, int len)
 {
 	struct uvc_clock_sample *sample;
 	unsigned int header_size;
@@ -420,7 +488,7 @@ uvc_video_clock_decode(struct uvc_streaming *stream, struct uvc_buffer *buf,
 	stream->clock.last_sof = dev_sof;
 
 	host_sof = usb_get_current_frame_number(stream->dev->udev);
-	ktime_get_ts(&ts);
+	uvc_video_get_ts(&ts);
 
 	/* The UVC specification allows device implementations that can't obtain
 	 * the USB frame number to keep their own frame counters as long as they
@@ -607,6 +675,9 @@ void uvc_video_clock_update(struct uvc_streaming *stream,
 	u32 rem;
 	u64 y;
 
+	if (!uvc_hw_timestamps_param)
+		return;
+
 	spin_lock_irqsave(&clock->lock, flags);
 
 	if (clock->count < clock->size)
@@ -680,7 +751,8 @@ void uvc_video_clock_update(struct uvc_streaming *stream,
 		  stream->dev->name,
 		  sof >> 16, div_u64(((u64)sof & 0xffff) * 1000000LLU, 65536),
 		  y, ts.tv_sec, ts.tv_nsec / NSEC_PER_USEC,
-		  v4l2_buf->timestamp.tv_sec, v4l2_buf->timestamp.tv_usec,
+		  v4l2_buf->timestamp.tv_sec,
+		  (unsigned long)v4l2_buf->timestamp.tv_usec,
 		  x1, first->host_sof, first->dev_sof,
 		  x2, last->host_sof, last->dev_sof, y1, y2);
 
@@ -697,7 +769,7 @@ done:
  */
 
 static void uvc_video_stats_decode(struct uvc_streaming *stream,
-		const __u8 *data, int len)
+		const u8 *data, int len)
 {
 	unsigned int header_size;
 	bool has_pts = false;
@@ -708,7 +780,7 @@ static void uvc_video_stats_decode(struct uvc_streaming *stream,
 
 	if (stream->stats.stream.nb_frames == 0 &&
 	    stream->stats.frame.nb_packets == 0)
-		ktime_get_ts(&stream->stats.stream.start_ts);
+		stream->stats.stream.start_ts = ktime_get();
 
 	switch (data[1] & (UVC_STREAM_PTS | UVC_STREAM_SCR)) {
 	case UVC_STREAM_PTS | UVC_STREAM_SCR:
@@ -801,7 +873,7 @@ static void uvc_video_stats_decode(struct uvc_streaming *stream,
 
 	/* Update the packets counters. */
 	stream->stats.frame.nb_packets++;
-	if (len > header_size)
+	if (len <= header_size)
 		stream->stats.frame.nb_empty++;
 
 	if (data[1] & UVC_STREAM_ERR)
@@ -848,22 +920,13 @@ size_t uvc_video_stats_dump(struct uvc_streaming *stream, char *buf,
 {
 	unsigned int scr_sof_freq;
 	unsigned int duration;
-	struct timespec ts;
 	size_t count = 0;
-
-	ts.tv_sec = stream->stats.stream.stop_ts.tv_sec
-		  - stream->stats.stream.start_ts.tv_sec;
-	ts.tv_nsec = stream->stats.stream.stop_ts.tv_nsec
-		   - stream->stats.stream.start_ts.tv_nsec;
-	if (ts.tv_nsec < 0) {
-		ts.tv_sec--;
-		ts.tv_nsec += 1000000000;
-	}
 
 	/* Compute the SCR.SOF frequency estimate. At the nominal 1kHz SOF
 	 * frequency this will not overflow before more than 1h.
 	 */
-	duration = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+	duration = ktime_ms_delta(stream->stats.stream.stop_ts,
+				  stream->stats.stream.start_ts);
 	if (duration != 0)
 		scr_sof_freq = stream->stats.stream.scr_sof_count * 1000
 			     / duration;
@@ -904,7 +967,7 @@ static void uvc_video_stats_start(struct uvc_streaming *stream)
 
 static void uvc_video_stats_stop(struct uvc_streaming *stream)
 {
-	ktime_get_ts(&stream->stats.stream.stop_ts);
+	stream->stats.stream.stop_ts = ktime_get();
 }
 
 /* ------------------------------------------------------------------------
@@ -947,9 +1010,9 @@ static void uvc_video_stats_stop(struct uvc_streaming *stream)
  * uvc_video_decode_end will never be called with a NULL buffer.
  */
 static int uvc_video_decode_start(struct uvc_streaming *stream,
-		struct uvc_buffer *buf, const __u8 *data, int len)
+		struct uvc_buffer *buf, const u8 *data, int len)
 {
-	__u8 fid;
+	u8 fid;
 
 	/* Sanity checks:
 	 * - packet must be at least 2 bytes long
@@ -1010,11 +1073,9 @@ static int uvc_video_decode_start(struct uvc_streaming *stream,
 			return -ENODATA;
 		}
 
-		if (uvc_clock_param == CLOCK_MONOTONIC)
-			ktime_get_ts(&ts);
-		else
-			ktime_get_real_ts(&ts);
+		uvc_video_get_ts(&ts);
 
+		buf->buf.v4l2_buf.field = V4L2_FIELD_NONE;
 		buf->buf.v4l2_buf.sequence = stream->sequence;
 		buf->buf.v4l2_buf.timestamp.tv_sec = ts.tv_sec;
 		buf->buf.v4l2_buf.timestamp.tv_usec =
@@ -1052,7 +1113,7 @@ static int uvc_video_decode_start(struct uvc_streaming *stream,
 }
 
 static void uvc_video_decode_data(struct uvc_streaming *stream,
-		struct uvc_buffer *buf, const __u8 *data, int len)
+		struct uvc_buffer *buf, const u8 *data, int len)
 {
 	unsigned int maxlen, nbytes;
 	void *mem;
@@ -1070,12 +1131,13 @@ static void uvc_video_decode_data(struct uvc_streaming *stream,
 	/* Complete the current frame if the buffer size was exceeded. */
 	if (len > maxlen) {
 		uvc_trace(UVC_TRACE_FRAME, "Frame complete (overflow).\n");
+		buf->error = 1;
 		buf->state = UVC_BUF_STATE_READY;
 	}
 }
 
 static void uvc_video_decode_end(struct uvc_streaming *stream,
-		struct uvc_buffer *buf, const __u8 *data, int len)
+		struct uvc_buffer *buf, const u8 *data, int len)
 {
 	/* Mark the buffer as done if the EOF marker is set. */
 	if (data[1] & UVC_STREAM_EOF && buf->bytesused != 0) {
@@ -1100,7 +1162,7 @@ static void uvc_video_decode_end(struct uvc_streaming *stream,
  * video buffer to the transfer buffer.
  */
 static int uvc_video_encode_header(struct uvc_streaming *stream,
-		struct uvc_buffer *buf, __u8 *data, int len)
+		struct uvc_buffer *buf, u8 *data, int len)
 {
 	data[0] = 2;	/* Header length */
 	data[1] = UVC_STREAM_EOH | UVC_STREAM_EOF
@@ -1109,7 +1171,7 @@ static int uvc_video_encode_header(struct uvc_streaming *stream,
 }
 
 static int uvc_video_encode_data(struct uvc_streaming *stream,
-		struct uvc_buffer *buf, __u8 *data, int len)
+		struct uvc_buffer *buf, u8 *data, int len)
 {
 	struct uvc_video_queue *queue = &stream->queue;
 	unsigned int nbytes;
@@ -1130,6 +1192,17 @@ static int uvc_video_encode_data(struct uvc_streaming *stream,
 /* ------------------------------------------------------------------------
  * URB handling
  */
+
+/*
+ * Set error flag for incomplete buffer.
+ */
+static void uvc_video_validate_buffer(const struct uvc_streaming *stream,
+				      struct uvc_buffer *buf)
+{
+	if (stream->ctrl.dwMaxVideoFrameSize != buf->bytesused &&
+	    !(stream->cur_format->flags & UVC_FMT_FLAG_COMPRESSED))
+		buf->error = 1;
+}
 
 /*
  * Completion handler for video URBs.
@@ -1155,9 +1228,11 @@ static void uvc_video_decode_isoc(struct urb *urb, struct uvc_streaming *stream,
 		do {
 			ret = uvc_video_decode_start(stream, buf, mem,
 				urb->iso_frame_desc[i].actual_length);
-			if (ret == -EAGAIN)
+			if (ret == -EAGAIN) {
+				uvc_video_validate_buffer(stream, buf);
 				buf = uvc_queue_next_buffer(&stream->queue,
 							    buf);
+			}
 		} while (ret == -EAGAIN);
 
 		if (ret < 0)
@@ -1172,11 +1247,7 @@ static void uvc_video_decode_isoc(struct urb *urb, struct uvc_streaming *stream,
 			urb->iso_frame_desc[i].actual_length);
 
 		if (buf->state == UVC_BUF_STATE_READY) {
-			if (buf->length != buf->bytesused &&
-			    !(stream->cur_format->flags &
-			      UVC_FMT_FLAG_COMPRESSED))
-				buf->error = 1;
-
+			uvc_video_validate_buffer(stream, buf);
 			buf = uvc_queue_next_buffer(&stream->queue, buf);
 		}
 	}
@@ -1240,8 +1311,7 @@ static void uvc_video_decode_bulk(struct urb *urb, struct uvc_streaming *stream,
 			uvc_video_decode_end(stream, buf, stream->bulk.header,
 				stream->bulk.payload_size);
 			if (buf->state == UVC_BUF_STATE_READY)
-				buf = uvc_queue_next_buffer(&stream->queue,
-							    buf);
+				uvc_queue_next_buffer(&stream->queue, buf);
 		}
 
 		stream->bulk.header_size = 0;
@@ -1308,11 +1378,11 @@ static void uvc_video_complete(struct urb *urb)
 	default:
 		uvc_printk(KERN_WARNING, "Non-zero status (%d) in video "
 			"completion handler.\n", urb->status);
-
+		/* fall through */
 	case -ENOENT:		/* usb_kill_urb() called. */
 		if (stream->frozen)
 			return;
-
+		/* fall through */
 	case -ECONNRESET:	/* usb_unlink_urb() called. */
 	case -ESHUTDOWN:	/* The endpoint is being disabled. */
 		uvc_queue_cancel(queue, urb->status == -ESHUTDOWN);
@@ -1445,16 +1515,22 @@ static unsigned int uvc_endpoint_max_bpi(struct usb_device *dev,
 					 struct usb_host_endpoint *ep)
 {
 	u16 psize;
+	u16 mult;
 
 	switch (dev->speed) {
 	case USB_SPEED_SUPER:
-		return ep->ss_ep_comp.wBytesPerInterval;
+	case USB_SPEED_SUPER_PLUS:
+		return le16_to_cpu(ep->ss_ep_comp.wBytesPerInterval);
 	case USB_SPEED_HIGH:
 		psize = usb_endpoint_maxp(&ep->desc);
-		return (psize & 0x07ff) * (1 + ((psize >> 11) & 3));
+		mult = usb_endpoint_maxp_mult(&ep->desc);
+		return psize * mult;
+	case USB_SPEED_WIRELESS:
+		psize = usb_endpoint_maxp(&ep->desc);
+		return psize;
 	default:
 		psize = usb_endpoint_maxp(&ep->desc);
-		return psize & 0x07ff;
+		return psize;
 	}
 }
 
@@ -1525,7 +1601,7 @@ static int uvc_init_video_bulk(struct uvc_streaming *stream,
 	u16 psize;
 	u32 size;
 
-	psize = usb_endpoint_maxp(&ep->desc) & 0x7ff;
+	psize = usb_endpoint_maxp(&ep->desc);
 	size = stream->ctrl.dwMaxPayloadTransferSize;
 	stream->bulk.max_payload_size = size;
 
@@ -1846,7 +1922,25 @@ int uvc_video_enable(struct uvc_streaming *stream, int enable)
 
 	if (!enable) {
 		uvc_uninit_video(stream, 1);
-		usb_set_interface(stream->dev->udev, stream->intfnum, 0);
+		if (stream->intf->num_altsetting > 1) {
+			usb_set_interface(stream->dev->udev,
+					  stream->intfnum, 0);
+		} else {
+			/* UVC doesn't specify how to inform a bulk-based device
+			 * when the video stream is stopped. Windows sends a
+			 * CLEAR_FEATURE(HALT) request to the video streaming
+			 * bulk endpoint, mimic the same behaviour.
+			 */
+			unsigned int epnum = stream->header.bEndpointAddress
+					   & USB_ENDPOINT_NUMBER_MASK;
+			unsigned int dir = stream->header.bEndpointAddress
+					 & USB_ENDPOINT_DIR_MASK;
+			unsigned int pipe;
+
+			pipe = usb_sndbulkpipe(stream->dev->udev, epnum) | dir;
+			usb_clear_halt(stream->dev->udev, pipe);
+		}
+
 		uvc_queue_enable(&stream->queue, 0);
 		uvc_video_clock_cleanup(stream);
 		return 0;

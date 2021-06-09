@@ -11,7 +11,35 @@
 #include <linux/preempt.h>
 #include <asm/lowcore.h>
 
-#define MAX_FACILITY_BIT (256*8)	/* stfle_fac_list has 256 bytes */
+#define MAX_FACILITY_BIT (sizeof(((struct _lowcore *)0)->stfle_fac_list) * 8)
+
+static inline void __set_facility(unsigned long nr, void *facilities)
+{
+	unsigned char *ptr = (unsigned char *) facilities;
+
+	if (nr >= MAX_FACILITY_BIT)
+		return;
+	ptr[nr >> 3] |= 0x80 >> (nr & 7);
+}
+
+static inline void __clear_facility(unsigned long nr, void *facilities)
+{
+	unsigned char *ptr = (unsigned char *) facilities;
+
+	if (nr >= MAX_FACILITY_BIT)
+		return;
+	ptr[nr >> 3] &= ~(0x80 >> (nr & 7));
+}
+
+static inline int __test_facility(unsigned long nr, void *facilities)
+{
+	unsigned char *ptr;
+
+	if (nr >= MAX_FACILITY_BIT)
+		return 0;
+	ptr = (unsigned char *) facilities + (nr >> 3);
+	return (*ptr & (0x80 >> (nr & 7))) != 0;
+}
 
 /*
  * The test_facility function uses the bit odering where the MSB is bit 0.
@@ -20,12 +48,7 @@
  */
 static inline int test_facility(unsigned long nr)
 {
-	unsigned char *ptr;
-
-	if (nr >= MAX_FACILITY_BIT)
-		return 0;
-	ptr = (unsigned char *) &S390_lowcore.stfle_fac_list + (nr >> 3);
-	return (*ptr & (0x80 >> (nr & 7))) != 0;
+	return __test_facility(nr, &S390_lowcore.stfle_fac_list);
 }
 
 /**

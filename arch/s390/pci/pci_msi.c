@@ -62,19 +62,15 @@ int zpci_msi_set_mask_bits(struct msi_desc *msi, u32 mask, u32 flag)
 }
 
 int zpci_setup_msi_irq(struct zpci_dev *zdev, struct msi_desc *msi,
-			unsigned int nr, int offset)
+		       unsigned int nr, int offset)
 {
 	struct msi_map *map;
 	struct msi_msg msg;
 	int rc;
 
-	map = kmalloc(sizeof(*map), GFP_KERNEL);
-	if (map == NULL)
-		return -ENOMEM;
-
+	map = zdev->msi_map + (nr - offset);
 	map->irq = nr;
 	map->msi = msi;
-	zdev->msi_map[nr & ZPCI_MSI_MASK] = map;
 	INIT_HLIST_NODE(&map->msi_chain);
 
 	pr_debug("%s hashing irq: %u  to bucket nr: %llu\n",
@@ -86,8 +82,6 @@ int zpci_setup_msi_irq(struct zpci_dev *zdev, struct msi_desc *msi,
 	if (rc) {
 		spin_unlock(&msi_map_lock);
 		hlist_del_rcu(&map->msi_chain);
-		kfree(map);
-		zdev->msi_map[nr & ZPCI_MSI_MASK] = NULL;
 		return rc;
 	}
 	spin_unlock(&msi_map_lock);
@@ -99,22 +93,22 @@ int zpci_setup_msi_irq(struct zpci_dev *zdev, struct msi_desc *msi,
 	return 0;
 }
 
-void zpci_teardown_msi_irq(struct zpci_dev *zdev, struct msi_desc *msi)
+void zpci_teardown_msi_irq(struct zpci_dev *zdev, struct msi_desc *msi, int offset)
 {
-	int irq = msi->irq & ZPCI_MSI_MASK;
+	int nr = msi->irq - offset;
 	struct msi_map *map;
 
+	zpci_msi_set_mask_bits(msi, 1, 1);
 	msi->msg.address_lo = 0;
 	msi->msg.address_hi = 0;
 	msi->msg.data = 0;
 	msi->irq = 0;
-	zpci_msi_set_mask_bits(msi, 1, 1);
 
 	spin_lock(&msi_map_lock);
-	map = zdev->msi_map[irq];
-	hlist_del_rcu(&map->msi_chain);
-	kfree(map);
-	zdev->msi_map[irq] = NULL;
+	if (zdev->msi_map) {
+		map = zdev->msi_map + nr;
+		hlist_del_rcu(&map->msi_chain);
+	}
 	spin_unlock(&msi_map_lock);
 }
 

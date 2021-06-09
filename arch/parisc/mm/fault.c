@@ -15,8 +15,8 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/uaccess.h>
 
-#include <asm/uaccess.h>
 #include <asm/traps.h>
 
 #define PRINT_USER_FAULTS /* (turn this on if you want user faults to be */
@@ -177,7 +177,7 @@ void do_page_fault(struct pt_regs *regs, unsigned long code,
 	int fault;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
-	if (in_atomic() || !mm)
+	if (faulthandler_disabled() || !mm)
 		goto no_context;
 
 retry:
@@ -203,7 +203,7 @@ good_area:
 	 * fault.
 	 */
 
-	fault = handle_mm_fault(mm, vma, address,
+	fault = handle_mm_fault(vma, address,
 			flags | ((acc_type & VM_WRITE) ? FAULT_FLAG_WRITE : 0));
 
 	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current))

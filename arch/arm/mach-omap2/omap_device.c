@@ -32,6 +32,7 @@
 #include <linux/io.h>
 #include <linux/clk.h>
 #include <linux/clkdev.h>
+#include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
 #include <linux/of.h>
 #include <linux/notifier.h>
@@ -173,7 +174,7 @@ static int omap_device_build_from_dt(struct platform_device *pdev)
 	if (of_get_property(node, "ti,no_idle_on_suspend", NULL))
 		omap_device_disable_idle_on_suspend(pdev);
 
-	pdev->dev.pm_domain = &omap_device_pm_domain;
+	dev_pm_domain_set(&pdev->dev, &omap_device_pm_domain);
 
 odbfd_exit1:
 	kfree(hwmods);
@@ -672,7 +673,7 @@ int omap_device_register(struct platform_device *pdev)
 {
 	pr_debug("omap_device: %s: registering\n", pdev->name);
 
-	pdev->dev.pm_domain = &omap_device_pm_domain;
+	dev_pm_domain_set(&pdev->dev, &omap_device_pm_domain);
 	return platform_device_add(pdev);
 }
 

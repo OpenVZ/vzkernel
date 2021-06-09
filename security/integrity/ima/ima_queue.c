@@ -93,7 +93,7 @@ static int ima_pcr_extend(const u8 *hash)
 	if (!ima_used_chip)
 		return result;
 
-	result = tpm_pcr_extend(TPM_ANY_NUM, CONFIG_IMA_MEASURE_PCR_IDX, hash);
+	result = tpm_pcr_extend(NULL, CONFIG_IMA_MEASURE_PCR_IDX, hash);
 	if (result != 0)
 		pr_err("IMA: Error Communicating to TPM chip, result: %d\n",
 		       result);

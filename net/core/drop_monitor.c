@@ -59,13 +59,7 @@ struct dm_hw_stat_delta {
 	unsigned long last_drop_val;
 };
 
-static struct genl_family net_drop_monitor_family = {
-	.id             = GENL_ID_GENERATE,
-	.hdrsize        = 0,
-	.name           = "NET_DM",
-	.version        = 2,
-	.maxattr        = NET_DM_CMD_MAX,
-};
+static struct genl_family net_drop_monitor_family;
 
 static DEFINE_PER_CPU(struct per_cpu_dm_data, dm_cpu_data);
 
@@ -106,6 +100,10 @@ static struct sk_buff *reset_per_cpu_data(struct per_cpu_dm_data *data)
 	return skb;
 }
 
+static struct genl_multicast_group dropmon_mcgrps[] = {
+	{ .name = "events", },
+};
+
 static void send_dm_alert(struct work_struct *work)
 {
 	struct sk_buff *skb;
@@ -116,7 +114,8 @@ static void send_dm_alert(struct work_struct *work)
 	skb = reset_per_cpu_data(data);
 
 	if (skb)
-		genlmsg_multicast(skb, 0, NET_DM_GRP_ALERT, GFP_KERNEL);
+		genlmsg_multicast(&net_drop_monitor_family, skb, 0,
+				  0, GFP_KERNEL);
 }
 
 /*
@@ -295,9 +294,9 @@ static int net_dm_cmd_trace(struct sk_buff *skb,
 }
 
 static int dropmon_net_event(struct notifier_block *ev_block,
-			unsigned long event, void *ptr)
+			     unsigned long event, void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct dm_hw_stat_delta *new_stat = NULL;
 	struct dm_hw_stat_delta *tmp;
 
@@ -333,7 +332,7 @@ out:
 	return NOTIFY_DONE;
 }
 
-static struct genl_ops dropmon_ops[] = {
+static const struct genl_ops dropmon_ops[] = {
 	{
 		.cmd = NET_DM_CMD_CONFIG,
 		.doit = net_dm_cmd_config,
@@ -346,6 +345,17 @@ static struct genl_ops dropmon_ops[] = {
 		.cmd = NET_DM_CMD_STOP,
 		.doit = net_dm_cmd_trace,
 	},
+};
+
+static struct genl_family net_drop_monitor_family = {
+	.hdrsize        = 0,
+	.name           = "NET_DM",
+	.version        = 2,
+	.module		= THIS_MODULE,
+	.ops		= dropmon_ops,
+	.n_ops		= ARRAY_SIZE(dropmon_ops),
+	.mcgrps		= dropmon_mcgrps,
+	.n_mcgrps	= ARRAY_SIZE(dropmon_mcgrps),
 };
 
 static struct notifier_block dropmon_net_notifier = {
@@ -364,15 +374,14 @@ static int __init init_net_drop_monitor(void)
 		return -ENOSPC;
 	}
 
-	rc = genl_register_family_with_ops(&net_drop_monitor_family,
-					   dropmon_ops,
-					   ARRAY_SIZE(dropmon_ops));
+	rc = genl_register_family(&net_drop_monitor_family);
 	if (rc) {
 		pr_err("Could not create drop monitor netlink family\n");
 		return rc;
 	}
+	WARN_ON(net_drop_monitor_family.mcgrp_offset != NET_DM_GRP_ALERT);
 
-	rc = register_netdevice_notifier(&dropmon_net_notifier);
+	rc = register_netdevice_notifier_rh(&dropmon_net_notifier);
 	if (rc < 0) {
 		pr_crit("Failed to register netdevice notifier\n");
 		goto out_unreg;
@@ -404,7 +413,7 @@ static void exit_net_drop_monitor(void)
 	struct per_cpu_dm_data *data;
 	int cpu;
 
-	BUG_ON(unregister_netdevice_notifier(&dropmon_net_notifier));
+	BUG_ON(unregister_netdevice_notifier_rh(&dropmon_net_notifier));
 
 	/*
 	 * Because of the module_get/put we do in the trace state change path

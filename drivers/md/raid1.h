@@ -1,6 +1,42 @@
 #ifndef _RAID1_H
 #define _RAID1_H
 
+/*
+ * each barrier unit size is 64MB fow now
+ * note: it must be larger than RESYNC_DEPTH
+ */
+#define BARRIER_UNIT_SECTOR_BITS	17
+#define BARRIER_UNIT_SECTOR_SIZE	(1<<17)
+/*
+ * In struct r1conf, the following members are related to I/O barrier
+ * buckets,
+ *	atomic_t	*nr_pending;
+ *	atomic_t	*nr_waiting;
+ *	atomic_t	*nr_queued;
+ *	atomic_t	*barrier;
+ * Each of them points to array of atomic_t variables, each array is
+ * designed to have BARRIER_BUCKETS_NR elements and occupy a single
+ * memory page. The data width of atomic_t variables is 4 bytes, equal
+ * to 1<<(ilog2(sizeof(atomic_t))), BARRIER_BUCKETS_NR_BITS is defined
+ * as (PAGE_SHIFT - ilog2(sizeof(int))) to make sure an array of
+ * atomic_t variables with BARRIER_BUCKETS_NR elements just exactly
+ * occupies a single memory page.
+ */
+#define BARRIER_BUCKETS_NR_BITS		(PAGE_SHIFT - ilog2(sizeof(atomic_t)))
+#define BARRIER_BUCKETS_NR		(1<<BARRIER_BUCKETS_NR_BITS)
+
+/* Note: raid1_info.rdev can be set to NULL asynchronously by raid1_remove_disk.
+ * There are three safe ways to access raid1_info.rdev.
+ * 1/ when holding mddev->reconfig_mutex
+ * 2/ when resync/recovery is known to be happening - i.e. in code that is
+ *    called as part of performing resync/recovery.
+ * 3/ while holding rcu_read_lock(), use rcu_dereference to get the pointer
+ *    and if it is non-NULL, increment rdev->nr_pending before dropping the
+ *    RCU lock.
+ * When .rdev is set to NULL, the nr_pending count checked again and if it has
+ * been incremented, the pointer is put back in .rdev.
+ */
+
 struct raid1_info {
 	struct md_rdev	*rdev;
 	sector_t	head_position;
@@ -35,12 +71,6 @@ struct r1conf {
 						 */
 	int			raid_disks;
 
-	/* During resync, read_balancing is only allowed on the part
-	 * of the array that has been resynced.  'next_resync' tells us
-	 * where that is.
-	 */
-	sector_t		next_resync;
-
 	spinlock_t		device_lock;
 
 	/* list of 'struct r1bio' that need to be processed by raid1d,
@@ -48,6 +78,11 @@ struct r1conf {
 	 * block, or anything else.
 	 */
 	struct list_head	retry_list;
+	/* A separate list of r1bio which just need raid_end_bio_io called.
+	 * This mustn't happen for writes which had any errors if the superblock
+	 * needs to be written.
+	 */
+	struct list_head	bio_end_io_list;
 
 	/* queue pending writes to be submitted on unplug */
 	struct bio_list		pending_bio_list;
@@ -61,10 +96,12 @@ struct r1conf {
 	 */
 	wait_queue_head_t	wait_barrier;
 	spinlock_t		resync_lock;
-	int			nr_pending;
-	int			nr_waiting;
-	int			nr_queued;
-	int			barrier;
+	atomic_t		nr_sync_pending;
+	atomic_t		*nr_pending;
+	atomic_t		*nr_waiting;
+	atomic_t		*nr_queued;
+	atomic_t		*barrier;
+	int			array_frozen;
 
 	/* Set to 1 if a full sync is needed, (fresh device added).
 	 * Cleared when a sync completes.
@@ -75,7 +112,6 @@ struct r1conf {
 	 * recovery to be attempted as we expect a read error.
 	 */
 	int			recovery_disabled;
-
 
 	/* poolinfo contains information about the content of the
 	 * mempools - it changes when the array grows or shrinks
@@ -88,7 +124,6 @@ struct r1conf {
 	 * a read error.
 	 */
 	struct page		*tmppage;
-
 
 	/* When taking over an array from a different personality, we store
 	 * the new thread here until we fully activate the array.
@@ -110,6 +145,7 @@ struct r1bio {
 	atomic_t		behind_remaining; /* number of write-behind ios remaining
 						 * in this BehindIO request
 						 */
+	atomic_t		split_bios;
 	sector_t		sector;
 	int			sectors;
 	unsigned long		state;
@@ -118,6 +154,7 @@ struct r1bio {
 	 * original bio going to /dev/mdx
 	 */
 	struct bio		*master_bio;
+	struct r1bio		*master_r1bio;
 	/*
 	 * if the IO is in READ direction, then this is where we read
 	 */
@@ -157,7 +194,11 @@ struct r1bio {
  */
 #define	R1BIO_MadeGood 7
 #define	R1BIO_WriteError 8
+#define	R1BIO_FailFast 9
 
-extern int md_raid1_congested(struct mddev *mddev, int bits);
-
+static inline int sector_to_idx(sector_t sector)
+{
+	return hash_long(sector >> BARRIER_UNIT_SECTOR_BITS,
+			 BARRIER_BUCKETS_NR_BITS);
+}
 #endif

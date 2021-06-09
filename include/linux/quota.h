@@ -48,6 +48,8 @@
 #include <linux/projid.h>
 #include <uapi/linux/quota.h>
 
+#include <linux/rh_kabi.h>
+
 #undef USRQUOTA
 #undef GRPQUOTA
 enum quota_type {
@@ -171,6 +173,16 @@ static inline struct kqid make_kqid_projid(kprojid_t projid)
 	kqid.type = PRJQUOTA;
 	kqid.projid = projid;
 	return kqid;
+}
+
+/**
+ *	qid_has_mapping - Report if a qid maps into a user namespace.
+ *	@ns:  The user namespace to see if a value maps into.
+ *	@qid: The kernel internal quota identifier to test.
+ */
+static inline bool qid_has_mapping(struct user_namespace *ns, struct kqid qid)
+{
+	return from_kqid(ns, qid) != (qid_t) -1;
 }
 
 
@@ -328,6 +340,10 @@ struct quotactl_ops {
 	int (*set_dqblk)(struct super_block *, struct kqid, struct fs_disk_quota *);
 	int (*get_xstate)(struct super_block *, struct fs_quota_stat *);
 	int (*set_xstate)(struct super_block *, unsigned int, int);
+	int (*get_xstatev)(struct super_block *, struct fs_quota_statv *);
+	RH_KABI_EXTEND(int (*rm_xquota)(struct super_block *, unsigned int))
+	RH_KABI_EXTEND(int (*get_nextdqblk)(struct super_block *, struct kqid *,
+			     struct fs_disk_quota *))
 };
 
 struct quota_format_type {

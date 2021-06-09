@@ -1105,6 +1105,9 @@ static int irda_create(struct net *net, struct socket *sock, int protocol,
 
 	IRDA_DEBUG(2, "%s()\n", __func__);
 
+	if (protocol < 0 || protocol > SK_PROTOCOL_MAX)
+		return -EINVAL;
+
 	if (net != &init_net)
 		return -EAFNOSUPPORT;
 
@@ -1340,7 +1343,7 @@ static int irda_sendmsg(struct kiocb *iocb, struct socket *sock,
 	skb_reserve(skb, self->max_header_size + 16);
 	skb_reset_transport_header(skb);
 	skb_put(skb, len);
-	err = memcpy_fromiovec(skb_transport_header(skb), msg->msg_iov, len);
+	err = memcpy_from_msg(skb_transport_header(skb), msg, len);
 	if (err) {
 		kfree_skb(skb);
 		goto out_err;
@@ -1384,8 +1387,6 @@ static int irda_recvmsg_dgram(struct kiocb *iocb, struct socket *sock,
 	int err;
 
 	IRDA_DEBUG(4, "%s()\n", __func__);
-
-	msg->msg_namelen = 0;
 
 	skb = skb_recv_datagram(sk, flags & ~MSG_DONTWAIT,
 				flags & MSG_DONTWAIT, &err);
@@ -1450,8 +1451,6 @@ static int irda_recvmsg_stream(struct kiocb *iocb, struct socket *sock,
 	err = 0;
 	target = sock_rcvlowat(sk, flags & MSG_WAITALL, size);
 	timeo = sock_rcvtimeo(sk, noblock);
-
-	msg->msg_namelen = 0;
 
 	do {
 		int chunk;
@@ -1599,7 +1598,7 @@ static int irda_sendmsg_dgram(struct kiocb *iocb, struct socket *sock,
 
 	IRDA_DEBUG(4, "%s(), appending user data\n", __func__);
 	skb_put(skb, len);
-	err = memcpy_fromiovec(skb_transport_header(skb), msg->msg_iov, len);
+	err = memcpy_from_msg(skb_transport_header(skb), msg, len);
 	if (err) {
 		kfree_skb(skb);
 		goto out;
@@ -1708,7 +1707,7 @@ static int irda_sendmsg_ultra(struct kiocb *iocb, struct socket *sock,
 
 	IRDA_DEBUG(4, "%s(), appending user data\n", __func__);
 	skb_put(skb, len);
-	err = memcpy_fromiovec(skb_transport_header(skb), msg->msg_iov, len);
+	err = memcpy_from_msg(skb_transport_header(skb), msg, len);
 	if (err) {
 		kfree_skb(skb);
 		goto out;

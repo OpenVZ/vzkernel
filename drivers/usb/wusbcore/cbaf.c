@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Wireless USB - Cable Based Association
  *
@@ -5,21 +6,6 @@
  * Copyright (C) 2006 Intel Corporation
  * Inaky Perez-Gonzalez <inaky.perez-gonzalez@intel.com>
  * Copyright (C) 2008 Cambridge Silicon Radio Ltd.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
- *
  *
  * WUSB devices have to be paired (associated in WUSB lingo) so
  * that they can connect to the system.
@@ -144,7 +130,7 @@ static int cbaf_check(struct cbaf *cbaf)
 		CBAF_REQ_GET_ASSOCIATION_INFORMATION,
 		USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
 		0, cbaf->usb_iface->cur_altsetting->desc.bInterfaceNumber,
-		cbaf->buffer, cbaf->buffer_size, 1000 /* FIXME: arbitrary */);
+		cbaf->buffer, cbaf->buffer_size, USB_CTRL_GET_TIMEOUT);
 	if (result < 0) {
 		dev_err(dev, "Cannot get available association types: %d\n",
 			result);
@@ -184,7 +170,7 @@ static int cbaf_check(struct cbaf *cbaf)
 		assoc_request = itr;
 
 		if (top - itr < sizeof(*assoc_request)) {
-			dev_err(dev, "Not enough data to decode associaton "
+			dev_err(dev, "Not enough data to decode association "
 				"request (%zu vs %zu bytes needed)\n",
 				top - itr, sizeof(*assoc_request));
 			break;
@@ -208,9 +194,9 @@ static int cbaf_check(struct cbaf *cbaf)
 				ar_name = "ASSOCIATE";
 				ar_assoc = 1;
 				break;
-			};
+			}
 			break;
-		};
+		}
 
 		dev_dbg(dev, "Association request #%02u: 0x%04x/%04x "
 			 "(%zu bytes): %s\n",
@@ -235,7 +221,7 @@ static int cbaf_check(struct cbaf *cbaf)
 
 static const struct wusb_cbaf_host_info cbaf_host_info_defaults = {
 	.AssociationTypeId_hdr    = WUSB_AR_AssociationTypeId,
-	.AssociationTypeId    	  = cpu_to_le16(AR_TYPE_WUSB),
+	.AssociationTypeId	  = cpu_to_le16(AR_TYPE_WUSB),
 	.AssociationSubTypeId_hdr = WUSB_AR_AssociationSubTypeId,
 	.AssociationSubTypeId = cpu_to_le16(AR_TYPE_WUSB_RETRIEVE_HOST_INFO),
 	.CHID_hdr                 = WUSB_AR_CHID,
@@ -260,12 +246,13 @@ static int cbaf_send_host_info(struct cbaf *cbaf)
 	hi->HostFriendlyName_hdr.len = cpu_to_le16(name_len);
 	hi_size = sizeof(*hi) + name_len;
 
-	return usb_control_msg(cbaf->usb_dev, usb_sndctrlpipe(cbaf->usb_dev, 0),
+	return usb_control_msg(cbaf->usb_dev,
+			usb_sndctrlpipe(cbaf->usb_dev, 0),
 			CBAF_REQ_SET_ASSOCIATION_RESPONSE,
 			USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
 			0x0101,
 			cbaf->usb_iface->cur_altsetting->desc.bInterfaceNumber,
-			hi, hi_size, 1000 /* FIXME: arbitrary */);
+			hi, hi_size, USB_CTRL_SET_TIMEOUT);
 }
 
 /*
@@ -288,9 +275,10 @@ static int cbaf_cdid_get(struct cbaf *cbaf)
 		CBAF_REQ_GET_ASSOCIATION_REQUEST,
 		USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
 		0x0200, cbaf->usb_iface->cur_altsetting->desc.bInterfaceNumber,
-		di, cbaf->buffer_size, 1000 /* FIXME: arbitrary */);
+		di, cbaf->buffer_size, USB_CTRL_GET_TIMEOUT);
 	if (result < 0) {
-		dev_err(dev, "Cannot request device information: %d\n", result);
+		dev_err(dev, "Cannot request device information: %d\n",
+			result);
 		return result;
 	}
 
@@ -491,11 +479,11 @@ static DEVICE_ATTR(wusb_device_name, 0600, cbaf_wusb_device_name_show, NULL);
 
 static const struct wusb_cbaf_cc_data cbaf_cc_data_defaults = {
 	.AssociationTypeId_hdr    = WUSB_AR_AssociationTypeId,
-	.AssociationTypeId    	  = cpu_to_le16(AR_TYPE_WUSB),
+	.AssociationTypeId	  = cpu_to_le16(AR_TYPE_WUSB),
 	.AssociationSubTypeId_hdr = WUSB_AR_AssociationSubTypeId,
 	.AssociationSubTypeId     = cpu_to_le16(AR_TYPE_WUSB_ASSOCIATE),
 	.Length_hdr               = WUSB_AR_Length,
-	.Length               	  = cpu_to_le32(sizeof(struct wusb_cbaf_cc_data)),
+	.Length		= cpu_to_le32(sizeof(struct wusb_cbaf_cc_data)),
 	.ConnectionContext_hdr    = WUSB_AR_ConnectionContext,
 	.BandGroups_hdr           = WUSB_AR_BandGroups,
 };
@@ -536,7 +524,7 @@ static int cbaf_cc_upload(struct cbaf *cbaf)
 		CBAF_REQ_SET_ASSOCIATION_RESPONSE,
 		USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
 		0x0201, cbaf->usb_iface->cur_altsetting->desc.bInterfaceNumber,
-		ccd, sizeof(*ccd), 1000 /* FIXME: arbitrary */);
+		ccd, sizeof(*ccd), USB_CTRL_SET_TIMEOUT);
 
 	return result;
 }
@@ -584,7 +572,7 @@ static struct attribute *cbaf_dev_attrs[] = {
 	NULL,
 };
 
-static struct attribute_group cbaf_dev_attr_group = {
+static const struct attribute_group cbaf_dev_attr_group = {
 	.name = NULL,	/* we want them in the same directory */
 	.attrs = cbaf_dev_attrs,
 };
@@ -608,8 +596,7 @@ static int cbaf_probe(struct usb_interface *iface,
 	cbaf->usb_iface = usb_get_intf(iface);
 	result = cbaf_check(cbaf);
 	if (result < 0) {
-		dev_err(dev, "This device is not WUSB-CBAF compliant"
-			"and is not supported yet.\n");
+		dev_err(dev, "This device is not WUSB-CBAF compliant and is not supported yet.\n");
 		goto error_check;
 	}
 
@@ -623,6 +610,8 @@ static int cbaf_probe(struct usb_interface *iface,
 
 error_create_group:
 error_check:
+	usb_put_intf(iface);
+	usb_put_dev(cbaf->usb_dev);
 	kfree(cbaf->buffer);
 error_kmalloc_buffer:
 	kfree(cbaf);
@@ -637,6 +626,7 @@ static void cbaf_disconnect(struct usb_interface *iface)
 	sysfs_remove_group(&dev->kobj, &cbaf_dev_attr_group);
 	usb_set_intfdata(iface, NULL);
 	usb_put_intf(iface);
+	usb_put_dev(cbaf->usb_dev);
 	kfree(cbaf->buffer);
 	/* paranoia: clean up crypto keys */
 	kzfree(cbaf);

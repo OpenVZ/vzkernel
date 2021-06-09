@@ -1,13 +1,16 @@
 #
 # PCI configuration
 #
-config ARCH_SUPPORTS_MSI
-	bool
+
+source "drivers/pci/pcie/Kconfig"
+
+config PCI_BUS_ADDR_T_64BIT
+	def_bool y if (ARCH_DMA_ADDR_T_64BIT || 64BIT)
+	depends on PCI
 
 config PCI_MSI
 	bool "Message Signaled Interrupts (MSI and MSI-X)"
 	depends on PCI
-	depends on ARCH_SUPPORTS_MSI
 	help
 	   This allows device drivers to enable MSI (Message Signaled
 	   Interrupts).  Message Signaled Interrupts enable a device to
@@ -55,10 +58,16 @@ config PCI_STUB
 config XEN_PCIDEV_FRONTEND
         tristate "Xen PCI Frontend"
         depends on PCI && X86 && XEN
-        select HOTPLUG
         select PCI_XEN
 	select XEN_XENBUS_FRONTEND
         default y
+        help
+          The PCI device frontend driver allows the kernel to import arbitrary
+          PCI devices from a PCI backend to support PCI driver domains.
+
+config PCI_HYPERV
+        tristate "Hyper-V PCI Frontend"
+        depends on PCI && X86 && HYPERV && PCI_MSI && X86_64
         help
           The PCI device frontend driver allows the kernel to import arbitrary
           PCI devices from a PCI backend to support PCI driver domains.
@@ -110,12 +119,14 @@ config PCI_PASID
 	  If unsure, say N.
 
 config PCI_IOAPIC
-	tristate "PCI IO-APIC hotplug support" if X86
+	bool "PCI IO-APIC hotplug support" if X86
 	depends on PCI
 	depends on ACPI
-	depends on HOTPLUG
+	depends on X86_IO_APIC
 	default !X86
 
 config PCI_LABEL
 	def_bool y if (DMI || ACPI)
 	select NLS
+
+source "drivers/pci/hotplug/Kconfig"

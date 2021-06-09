@@ -9,3 +9,10 @@ config SRCARCH
 	option env="SRCARCH"
 
 source "arch/$SRCARCH/Kconfig"
+
+config RH_KABI_SIZE_ALIGN_CHECKS
+	bool "Enables more stringent kabi checks in the macros"
+	default y
+	help
+	  This option enables more stringent kabi checks. Those must be disabled
+	  in case of a debug-build because they allow to change struct sizes.

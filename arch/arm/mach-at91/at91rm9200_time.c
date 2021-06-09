@@ -98,7 +98,7 @@ static struct irqaction at91rm9200_timer_irq = {
 	.irq		= NR_IRQS_LEGACY + AT91_ID_SYS,
 };
 
-static cycle_t read_clk32k(struct clocksource *cs)
+static u64 read_clk32k(struct clocksource *cs)
 {
 	return read_CRTR();
 }

@@ -176,7 +176,7 @@ struct ipath_pd {
 /* Address Handle */
 struct ipath_ah {
 	struct ib_ah ibah;
-	struct ib_ah_attr attr;
+	struct rdma_ah_attr attr;
 };
 
 /*
@@ -277,7 +277,13 @@ struct ipath_mr {
  * in qp->s_max_sge.
  */
 struct ipath_swqe {
-	struct ib_send_wr wr;	/* don't use wr.sg_list */
+	union {
+		struct ib_send_wr wr;   /* don't use wr.sg_list */
+		struct ib_ud_wr ud_wr;
+		struct ib_rdma_wr rdma_wr;
+		struct ib_atomic_wr atomic_wr;
+	};
+
 	u32 psn;		/* first packet sequence number */
 	u32 lpsn;		/* last packet sequence number */
 	u32 ssn;		/* send sequence number */
@@ -361,7 +367,7 @@ struct ipath_qp {
 	struct ipath_qp *pio_next;	/* link for ipath_ib_piobufavail() */
 	struct list_head piowait;	/* link for wait PIO buf */
 	struct list_head timerwait;	/* link for waiting for timeouts */
-	struct ib_ah_attr remote_ah_attr;
+	struct rdma_ah_attr remote_ah_attr;
 	struct ipath_ib_header s_hdr;	/* next packet header to send */
 	atomic_t refcount;
 	wait_queue_head_t wait;
@@ -701,9 +707,11 @@ static inline void ipath_schedule_send(struct ipath_qp *qp)
 int ipath_process_mad(struct ib_device *ibdev,
 		      int mad_flags,
 		      u8 port_num,
-		      struct ib_wc *in_wc,
-		      struct ib_grh *in_grh,
-		      struct ib_mad *in_mad, struct ib_mad *out_mad);
+		      const struct ib_wc *in_wc,
+		      const struct ib_grh *in_grh,
+		      const struct ib_mad_hdr *in, size_t in_mad_size,
+		      struct ib_mad_hdr *out, size_t *out_mad_size,
+		      u16 *out_mad_pkey_index);
 
 /*
  * Compare the lower 24 bits of the two values.
@@ -788,8 +796,8 @@ int ipath_lkey_ok(struct ipath_qp *qp, struct ipath_sge *isge,
 int ipath_rkey_ok(struct ipath_qp *qp, struct ipath_sge_state *ss,
 		  u32 len, u64 vaddr, u32 rkey, int acc);
 
-int ipath_post_srq_receive(struct ib_srq *ibsrq, struct ib_recv_wr *wr,
-			   struct ib_recv_wr **bad_wr);
+int ipath_post_srq_receive(struct ib_srq *ibsrq, const struct ib_recv_wr *wr,
+			   const struct ib_recv_wr **bad_wr);
 
 struct ib_srq *ipath_create_srq(struct ib_pd *ibpd,
 				struct ib_srq_init_attr *srq_init_attr,
@@ -807,7 +815,8 @@ void ipath_cq_enter(struct ipath_cq *cq, struct ib_wc *entry, int sig);
 
 int ipath_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *entry);
 
-struct ib_cq *ipath_create_cq(struct ib_device *ibdev, int entries, int comp_vector,
+struct ib_cq *ipath_create_cq(struct ib_device *ibdev,
+			      const struct ib_cq_init_attr *attr,
 			      struct ib_ucontext *context,
 			      struct ib_udata *udata);
 
@@ -818,10 +827,6 @@ int ipath_req_notify_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags notify_flags
 int ipath_resize_cq(struct ib_cq *ibcq, int cqe, struct ib_udata *udata);
 
 struct ib_mr *ipath_get_dma_mr(struct ib_pd *pd, int acc);
-
-struct ib_mr *ipath_reg_phys_mr(struct ib_pd *pd,
-				struct ib_phys_buf *buffer_list,
-				int num_phys_buf, int acc, u64 *iova_start);
 
 struct ib_mr *ipath_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 				u64 virt_addr, int mr_access_flags,

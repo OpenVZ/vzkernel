@@ -14,7 +14,6 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <linux/ctype.h>
-#include <linux/init.h>
 #include <linux/hardirq.h>
 #include <linux/module.h>
 #include <asm/smp.h>
@@ -265,7 +264,8 @@ static void physflat_send_IPI_all(int vector)
 
 static int physflat_probe(void)
 {
-	if (apic == &apic_physflat || num_possible_cpus() > 8)
+	if (apic == &apic_physflat ||
+	    (num_possible_cpus() + rh_invalid_cpus) > 8)
 		return 1;
 
 	return 0;

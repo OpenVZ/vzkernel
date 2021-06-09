@@ -16,6 +16,14 @@ CFLAGS_REMOVE_ftrace.o = -pg
 CFLAGS_REMOVE_early_printk.o = -pg
 endif
 
+OBJECT_FILES_NON_STANDARD_head_$(BITS).o		:= y
+OBJECT_FILES_NON_STANDARD_relocate_kernel_$(BITS).o	:= y
+OBJECT_FILES_NON_STANDARD_mcount_$(BITS).o		:= y
+OBJECT_FILES_NON_STANDARD_test_nx.o			:= y
+OBJECT_FILES_NON_STANDARD_entry_$(BITS).o		:= y
+
+CFLAGS_irq.o := -I$(src)/../include/asm/trace
+
 obj-y			:= process_$(BITS).o signal.o entry_$(BITS).o
 obj-y			+= traps.o irq.o irq_$(BITS).o dumpstack_$(BITS).o
 obj-y			+= time.o ioport.o ldt.o dumpstack.o nmi.o
@@ -24,13 +32,15 @@ obj-$(CONFIG_IRQ_WORK)  += irq_work.o
 obj-y			+= probe_roms.o
 obj-$(CONFIG_X86_32)	+= i386_ksyms_32.o
 obj-$(CONFIG_X86_64)	+= sys_x86_64.o x8664_ksyms_64.o
+obj-$(CONFIG_X86_64)	+= mcount_64.o
 obj-y			+= syscall_$(BITS).o
 obj-$(CONFIG_X86_64)	+= vsyscall_64.o
 obj-$(CONFIG_X86_64)	+= vsyscall_emu_64.o
+obj-$(CONFIG_SYSFS)	+= ksysfs.o
 obj-y			+= bootflag.o e820.o
 obj-y			+= pci-dma.o quirks.o topology.o kdebugfs.o
 obj-y			+= alternative.o i8253.o pci-nommu.o hw_breakpoint.o
-obj-y			+= tsc.o io_delay.o rtc.o
+obj-y			+= tsc.o tsc_msr.o io_delay.o rtc.o
 obj-y			+= pci-iommu_table.o
 obj-y			+= resource.o
 
@@ -53,17 +63,19 @@ apm-y				:= apm_32.o
 obj-$(CONFIG_APM)		+= apm.o
 obj-$(CONFIG_SMP)		+= smp.o
 obj-$(CONFIG_SMP)		+= smpboot.o
-obj-$(CONFIG_SMP)		+= tsc_sync.o
+obj-$(CONFIG_X86_TSC)		+= tsc_sync.o
 obj-$(CONFIG_SMP)		+= setup_percpu.o
 obj-$(CONFIG_X86_MPPARSE)	+= mpparse.o
 obj-y				+= apic/
 obj-$(CONFIG_X86_REBOOTFIXUPS)	+= reboot_fixups_32.o
 obj-$(CONFIG_DYNAMIC_FTRACE)	+= ftrace.o
+obj-$(CONFIG_LIVEPATCH)	+= livepatch.o
 obj-$(CONFIG_FUNCTION_GRAPH_TRACER) += ftrace.o
 obj-$(CONFIG_FTRACE_SYSCALLS)	+= ftrace.o
 obj-$(CONFIG_X86_TSC)		+= trace_clock.o
-obj-$(CONFIG_KEXEC)		+= machine_kexec_$(BITS).o
-obj-$(CONFIG_KEXEC)		+= relocate_kernel_$(BITS).o crash.o
+obj-$(CONFIG_KEXEC_CORE)	+= machine_kexec_$(BITS).o
+obj-$(CONFIG_KEXEC_CORE)	+= relocate_kernel_$(BITS).o crash.o
+obj-$(CONFIG_KEXEC_FILE)	+= kexec-bzimage64.o
 obj-$(CONFIG_CRASH_DUMP)	+= crash_dump_$(BITS).o
 obj-y				+= kprobes/
 obj-$(CONFIG_MODULES)		+= module.o
@@ -77,23 +89,15 @@ obj-$(CONFIG_APB_TIMER)		+= apb_timer.o
 
 obj-$(CONFIG_AMD_NB)		+= amd_nb.o
 obj-$(CONFIG_DEBUG_RODATA_TEST)	+= test_rodata.o
-obj-$(CONFIG_DEBUG_NX_TEST)	+= test_nx.o
 obj-$(CONFIG_DEBUG_NMI_SELFTEST) += nmi_selftest.o
 
 obj-$(CONFIG_KVM_GUEST)		+= kvm.o kvmclock.o
 obj-$(CONFIG_PARAVIRT)		+= paravirt.o paravirt_patch_$(BITS).o
 obj-$(CONFIG_PARAVIRT_SPINLOCKS)+= paravirt-spinlocks.o
 obj-$(CONFIG_PARAVIRT_CLOCK)	+= pvclock.o
+obj-$(CONFIG_X86_PMEM_LEGACY_DEVICE) += pmem.o
 
 obj-$(CONFIG_PCSPKR_PLATFORM)	+= pcspeaker.o
-
-obj-$(CONFIG_MICROCODE_EARLY)		+= microcode_core_early.o
-obj-$(CONFIG_MICROCODE_INTEL_EARLY)	+= microcode_intel_early.o
-obj-$(CONFIG_MICROCODE_INTEL_LIB)	+= microcode_intel_lib.o
-microcode-y				:= microcode_core.o
-microcode-$(CONFIG_MICROCODE_INTEL)	+= microcode_intel.o
-microcode-$(CONFIG_MICROCODE_AMD)	+= microcode_amd.o
-obj-$(CONFIG_MICROCODE)			+= microcode.o
 
 obj-$(CONFIG_X86_CHECK_BIOS_CORRUPTION) += check.o
 
@@ -102,6 +106,15 @@ obj-$(CONFIG_OF)			+= devicetree.o
 obj-$(CONFIG_UPROBES)			+= uprobes.o
 
 obj-$(CONFIG_PERF_EVENTS)		+= perf_regs.o
+obj-$(CONFIG_TRACING)			+= tracepoint.o
+obj-$(CONFIG_SCHED_MC_PRIO)		+= itmt.o
+obj-$(CONFIG_X86_INTEL_UMIP)		+= umip.o
+
+ifdef CONFIG_FRAME_POINTER
+obj-y					+= unwind_frame.o
+else
+obj-y					+= unwind_guess.o
+endif
 
 ###
 # 64 bit specific files
@@ -114,3 +127,5 @@ ifeq ($(CONFIG_X86_64),y)
 	obj-$(CONFIG_PCI_MMCONFIG)	+= mmconf-fam10h_64.o
 	obj-y				+= vsmp_64.o
 endif
+
+obj-y				+= spec_ctrl.o

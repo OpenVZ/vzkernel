@@ -83,7 +83,7 @@ struct smsc9420_pdata {
 	int last_carrier;
 };
 
-static DEFINE_PCI_DEVICE_TABLE(smsc9420_id_table) = {
+static const struct pci_device_id smsc9420_id_table[] = {
 	{ PCI_VENDOR_ID_9420, PCI_DEVICE_ID_9420, PCI_ANY_ID, PCI_ANY_ID, },
 	{ 0, }
 };
@@ -331,7 +331,8 @@ smsc9420_ethtool_getregs(struct net_device *dev, struct ethtool_regs *regs,
 		return;
 
 	for (i = 0; i <= 31; i++)
-		data[j++] = smsc9420_mii_read(phy_dev->bus, phy_dev->addr, i);
+		data[j++] = smsc9420_mii_read(phy_dev->mdio_bus,
+					      phy_dev->mdio_addr, i);
 }
 
 static void smsc9420_eeprom_enable_access(struct smsc9420_pdata *pd)
@@ -1172,11 +1173,7 @@ static int smsc9420_mii_probe(struct net_device *dev)
 		return -ENODEV;
 	}
 
-	phydev = pd->mii_bus->phy_map[1];
-	smsc_info(PROBE, "PHY addr %d, phy_id 0x%08X", phydev->addr,
-		phydev->phy_id);
-
-	phydev = phy_connect(dev, dev_name(&phydev->dev),
+	phydev = phy_connect(dev, phydev_name(phydev),
 			     smsc9420_phy_adjust_link, PHY_INTERFACE_MODE_MII);
 
 	if (IS_ERR(phydev)) {
@@ -1184,13 +1181,12 @@ static int smsc9420_mii_probe(struct net_device *dev)
 		return PTR_ERR(phydev);
 	}
 
-	pr_info("%s: attached PHY driver [%s] (mii_bus:phy_addr=%s, irq=%d)\n",
-		dev->name, phydev->drv->name, dev_name(&phydev->dev), phydev->irq);
-
 	/* mask with MAC supported features */
 	phydev->supported &= (PHY_BASIC_FEATURES | SUPPORTED_Pause |
 			      SUPPORTED_Asym_Pause);
 	phydev->advertising = phydev->supported;
+
+	phy_attached_info(phydev);
 
 	pd->phy_dev = phydev;
 	pd->last_duplex = -1;

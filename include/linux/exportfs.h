@@ -2,9 +2,12 @@
 #define LINUX_EXPORTFS_H 1
 
 #include <linux/types.h>
+#include <linux/rh_kabi.h>
 
 struct dentry;
+struct iattr;
 struct inode;
+struct iomap;
 struct super_block;
 struct vfsmount;
 
@@ -191,6 +194,13 @@ struct export_operations {
 			struct dentry *child);
 	struct dentry * (*get_parent)(struct dentry *child);
 	int (*commit_metadata)(struct inode *inode);
+
+	RH_KABI_EXTEND(int (*get_uuid)(struct super_block *sb, u8 *buf, u32 *len, u64 *offset))
+	RH_KABI_EXTEND(int (*map_blocks)(struct inode *inode, loff_t offset,
+			  u64 len, struct iomap *iomap,
+			  bool write, u32 *device_generation))
+	RH_KABI_EXTEND(int (*commit_blocks)(struct inode *inode, struct iomap *iomaps,
+			     int nr_iomaps, struct iattr *iattr))
 };
 
 extern int exportfs_encode_inode_fh(struct inode *inode, struct fid *fid,

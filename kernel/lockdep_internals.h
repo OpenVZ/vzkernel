@@ -53,10 +53,12 @@ enum {
  * every to-be-taken lock to all currently held lock's own dependency
  * table (if it's not there yet), and we check it for lock order
  * conflicts and deadlocks.
+ *
+ * RHEL7 specific: Increase lock dependency entries from 32k to 40k.
  */
-#define MAX_LOCKDEP_ENTRIES	16384UL
+#define MAX_LOCKDEP_ENTRIES	40960UL
 
-#define MAX_LOCKDEP_CHAINS_BITS	15
+#define MAX_LOCKDEP_CHAINS_BITS	16
 #define MAX_LOCKDEP_CHAINS	(1UL << MAX_LOCKDEP_CHAINS_BITS)
 
 #define MAX_LOCKDEP_CHAIN_HLOCKS (MAX_LOCKDEP_CHAINS*5)
@@ -64,8 +66,10 @@ enum {
 /*
  * Stack-trace: tightly packed array of stack backtrace
  * addresses. Protected by the hash_lock.
+ *
+ * RHEL7 specific: Increase # of stack entries from 512k to 640k.
  */
-#define MAX_STACK_TRACE_ENTRIES	262144UL
+#define MAX_STACK_TRACE_ENTRIES	655360UL
 
 extern struct list_head all_lock_classes;
 extern struct lock_chain lock_chains[];
@@ -135,9 +139,15 @@ struct lockdep_stats {
 	int	nr_find_usage_forwards_recursions;
 	int	nr_find_usage_backwards_checks;
 	int	nr_find_usage_backwards_recursions;
+
+	/*
+	 * Per lock class locking operation stat counts
+	 */
+	unsigned long lock_class_ops[MAX_LOCKDEP_KEYS];
 };
 
 DECLARE_PER_CPU(struct lockdep_stats, lockdep_stats);
+extern struct lock_class lock_classes[MAX_LOCKDEP_KEYS];
 
 #define __debug_atomic_inc(ptr)					\
 	this_cpu_inc(lockdep_stats.ptr);
@@ -162,9 +172,30 @@ DECLARE_PER_CPU(struct lockdep_stats, lockdep_stats);
 	}								\
 	__total;							\
 })
+
+static inline void debug_class_ops_inc(struct lock_class *class)
+{
+	int idx;
+
+	idx = class - lock_classes;
+	__debug_atomic_inc(lock_class_ops[idx]);
+}
+
+static inline unsigned long debug_class_ops_read(struct lock_class *class)
+{
+	int idx, cpu;
+	unsigned long ops = 0;
+
+	idx = class - lock_classes;
+	for_each_possible_cpu(cpu)
+		ops += per_cpu(lockdep_stats.lock_class_ops[idx], cpu);
+	return ops;
+}
+
 #else
 # define __debug_atomic_inc(ptr)	do { } while (0)
 # define debug_atomic_inc(ptr)		do { } while (0)
 # define debug_atomic_dec(ptr)		do { } while (0)
 # define debug_atomic_read(ptr)		0
+# define debug_class_ops_inc(ptr)	do { } while (0)
 #endif

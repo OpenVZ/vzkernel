@@ -58,7 +58,7 @@ static int evm_find_protected_xattrs(struct dentry *dentry)
 	int error;
 	int count = 0;
 
-	if (!inode->i_op || !inode->i_op->getxattr)
+	if (!inode->i_op->getxattr)
 		return -EOPNOTSUPP;
 
 	for (xattr = evm_config_xattrnames; *xattr != NULL; xattr++) {
@@ -405,7 +405,7 @@ int evm_inode_init_security(struct inode *inode,
 
 	evm_xattr->value = xattr_data;
 	evm_xattr->value_len = sizeof(*xattr_data);
-	evm_xattr->name = kstrdup(XATTR_EVM_SUFFIX, GFP_NOFS);
+	evm_xattr->name = XATTR_EVM_SUFFIX;
 	return 0;
 out:
 	kfree(xattr_data);

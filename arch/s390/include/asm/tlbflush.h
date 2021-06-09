@@ -5,6 +5,7 @@
 #include <linux/sched.h>
 #include <asm/processor.h>
 #include <asm/pgalloc.h>
+#include <asm/pgtable.h>
 
 /*
  * Flush all tlb entries on the local cpu.
@@ -22,24 +23,9 @@ void smp_ptlb_all(void);
 
 static inline void __tlb_flush_global(void)
 {
-	register unsigned long reg2 asm("2");
-	register unsigned long reg3 asm("3");
-	register unsigned long reg4 asm("4");
-	long dummy;
+	unsigned int dummy = 0;
 
-#ifndef CONFIG_64BIT
-	if (!MACHINE_HAS_CSP) {
-		smp_ptlb_all();
-		return;
-	}
-#endif /* CONFIG_64BIT */
-
-	dummy = 0;
-	reg2 = reg3 = 0;
-	reg4 = ((unsigned long) &dummy) + 1;
-	asm volatile(
-		"	csp	%0,%2"
-		: : "d" (reg2), "d" (reg3), "d" (reg4), "m" (dummy) : "cc" );
+	csp(&dummy, 0, 0);
 }
 
 static inline void __tlb_flush_full(struct mm_struct *mm)
@@ -80,13 +66,12 @@ static inline void __tlb_flush_mm(struct mm_struct * mm)
 	 * only ran on the local cpu.
 	 */
 	if (MACHINE_HAS_IDTE && list_empty(&mm->context.gmap_list))
-		__tlb_flush_idte((unsigned long) mm->pgd |
-				 mm->context.asce_bits);
+		__tlb_flush_idte(mm->context.asce);
 	else
 		__tlb_flush_full(mm);
 }
 
-static inline void __tlb_flush_mm_cond(struct mm_struct * mm)
+static inline void __tlb_flush_mm_lazy(struct mm_struct * mm)
 {
 	if (mm->context.flush_mm) {
 		__tlb_flush_mm(mm);
@@ -118,13 +103,13 @@ static inline void __tlb_flush_mm_cond(struct mm_struct * mm)
 
 static inline void flush_tlb_mm(struct mm_struct *mm)
 {
-	__tlb_flush_mm_cond(mm);
+	__tlb_flush_mm_lazy(mm);
 }
 
 static inline void flush_tlb_range(struct vm_area_struct *vma,
 				   unsigned long start, unsigned long end)
 {
-	__tlb_flush_mm_cond(vma->vm_mm);
+	__tlb_flush_mm_lazy(vma->vm_mm);
 }
 
 static inline void flush_tlb_kernel_range(unsigned long start,
