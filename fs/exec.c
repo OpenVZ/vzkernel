@@ -62,6 +62,7 @@
 #include <linux/oom.h>
 #include <linux/compat.h>
 #include <linux/vmalloc.h>
+#include <linux/sysctl.h>
 #include <linux/ve.h>
 
 #include <linux/uaccess.h>

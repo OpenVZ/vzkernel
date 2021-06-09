@@ -197,6 +197,7 @@ struct ctl_path {
 };
 
 extern int ve_allow_module_load;
+extern int trusted_exec;
 
 #ifdef CONFIG_SYSCTL
 
