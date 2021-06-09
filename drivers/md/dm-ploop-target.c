@@ -130,21 +130,18 @@ void free_md_pages_tree(struct rb_root *root)
 	}
 }
 
-/* This is called on final device destroy */
-static void ploop_flush_workqueue(struct ploop *ploop)
+static bool ploop_has_pending_activity(struct ploop *ploop)
 {
-	char *argv[1] = {"try_preflush"};
-	bool again = true;
+	bool has;
 
-	while (again) {
-		flush_workqueue(ploop->wq);
-		/*
-		 * Normally, ploop_message("try_preflush") returns 0 or 1.
-		 * In case of underlining bdev is hung, this finishes with
-		 * error by timeout, and our caller (.dtr) never completes.
-		 */
-		again = ploop_message(ploop->ti, 1, argv, NULL, 0);
-	}
+	spin_lock_irq(&ploop->deferred_lock);
+	has = ploop->deferred_cmd;
+	has |= !list_empty(&ploop->deferred_pios);
+	has |= !list_empty(&ploop->discard_pios);
+	has |= !list_empty(&ploop->delta_cow_action_list);
+	spin_unlock_irq(&ploop->deferred_lock);
+
+	return has;
 }
 
 static void ploop_destroy(struct ploop *ploop)
@@ -156,8 +153,9 @@ static void ploop_destroy(struct ploop *ploop)
 		ploop_free_pb(ploop->pb);
 	}
 	if (ploop->wq) {
-		ploop_flush_workqueue(ploop);
+		flush_workqueue(ploop->wq);
 		destroy_workqueue(ploop->wq);
+		WARN_ON_ONCE(ploop_has_pending_activity(ploop));
 	}
 	for (i = 0; i < 2; i++)
 		percpu_ref_exit(&ploop->inflight_bios_ref[i]);

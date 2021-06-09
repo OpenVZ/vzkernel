@@ -1492,43 +1492,6 @@ static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
 	return 0;
 }
 
-static bool ploop_has_pending_activity(struct ploop *ploop)
-{
-	bool has;
-
-	spin_lock_irq(&ploop->deferred_lock);
-	has = ploop->deferred_cmd;
-	has |= !list_empty(&ploop->deferred_pios);
-	has |= !list_empty(&ploop->discard_pios);
-	has |= !list_empty(&ploop->delta_cow_action_list);
-	spin_unlock_irq(&ploop->deferred_lock);
-
-	return has;
-}
-
-static void process_try_preflush(struct ploop *ploop, struct ploop_cmd *cmd)
-{
-	/* Make all inflight bios appear in pending activities */
-	cmd->retval = ploop_inflight_bios_ref_switch(ploop, true);
-	if (!cmd->retval)
-		cmd->retval = ploop_has_pending_activity(ploop);
-	complete(&cmd->comp); /* Last touch of cmd memory */
-}
-
-static int ploop_try_preflush(struct ploop *ploop)
-{
-	struct ploop_cmd cmd = { {0} };
-
-	cmd.type = PLOOP_CMD_TRY_PREFLUSH;
-	cmd.ploop = ploop;
-
-	init_completion(&cmd.comp);
-	ploop_queue_deferred_cmd(ploop, &cmd);
-	wait_for_completion(&cmd.comp);
-	return cmd.retval;
-
-}
-
 /* Handle user commands requested via "message" interface */
 void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 	__releases(&ploop->deferred_lock)
@@ -1559,8 +1522,6 @@ void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 		process_flip_upper_deltas(ploop, cmd);
 	} else if (cmd->type == PLOOP_CMD_SET_PUSH_BACKUP) {
 		process_set_push_backup(ploop, cmd);
-	} else if (cmd->type == PLOOP_CMD_TRY_PREFLUSH) {
-		process_try_preflush(ploop, cmd);
 	} else {
 		cmd->retval = -EINVAL;
 		complete(&cmd->comp);
@@ -1660,8 +1621,6 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 		if (argc != 3 || sscanf(argv[2], "%llu:%llu", &val, &val2) != 2)
 			goto unlock;
 		ret = ploop_push_backup_write(ploop, argv[1], val, val2);
-	} else if (!strcmp(argv[0], "try_preflush")) {
-		ret = ploop_try_preflush(ploop);
 	} else {
 		ret = -ENOTSUPP;
 	}
