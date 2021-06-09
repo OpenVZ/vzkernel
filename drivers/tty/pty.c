@@ -1432,11 +1432,6 @@ int vtty_open_master(envid_t veid, int idx)
 	vtty_set_context(veid);
 
 	tty = vtty_lookup(vttym_driver, NULL, idx);
-	if (IS_ERR(tty)) {
-		ret = PTR_ERR(tty);
-		goto err_install;
-	}
-
 	if (!tty ||
 	    (test_bit(TTY_OTHER_CLOSED, &tty->flags) ||
 	     test_bit(TTY_OTHER_CLOSED, &tty->link->flags))) {
@@ -1448,10 +1443,8 @@ int vtty_open_master(envid_t veid, int idx)
 		if (tty)
 			vtty_map_clear(tty);
 		tty = tty_init_dev(vttys_driver, idx);
-		if (IS_ERR(tty)) {
-			ret = PTR_ERR(tty);
+		if (IS_ERR(tty))
 			goto err_install;
-		}
 		tty->count--;
 		tty_unlock(tty);
 		tty = tty->link;
