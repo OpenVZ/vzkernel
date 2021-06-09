@@ -1117,7 +1117,7 @@ void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio)
 	remap_to_cluster(ploop, pio, dst_clu);
 	pos = to_bytes(pio->bi_iter.bi_sector);
 
-	call_rw_iter(top_delta(ploop)->file, pos, rw, &iter, pio);
+	ploop_call_rw_iter(top_delta(ploop)->file, pos, rw, &iter, pio);
 }
 
 /*
@@ -1568,8 +1568,8 @@ void ploop_submit_index_wb_sync(struct ploop *ploop,
 
 	/* track_bio() will be called in ploop_bat_write_complete() */
 
-	ret = rw_page_sync(WRITE, top_delta(ploop)->file,
-			   piwb->page_nr, piwb->bat_page);
+	ret = ploop_rw_page_sync(WRITE, top_delta(ploop)->file,
+				 piwb->page_nr, piwb->bat_page);
 	if (ret)
 		status = errno_to_blk_status(ret);
 

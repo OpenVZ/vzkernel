@@ -536,7 +536,7 @@ static inline struct pio *pio_list_pop(struct list_head *pio_list)
 }
 
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);
-extern void free_md_page(struct md_page *md);
+extern void ploop_free_md_page(struct md_page *md);
 extern void free_md_pages_tree(struct rb_root *root);
 extern bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
 				 u8 level, unsigned int dst_cluster);
@@ -556,8 +556,8 @@ extern void unlink_postponed_backup_endio(struct ploop *ploop,
 					  struct list_head *pio_list,
 					  struct pio *h);
 extern void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio);
-extern int rw_page_sync(unsigned rw, struct file *file,
-			u64 index, struct page *page);
+extern int ploop_rw_page_sync(unsigned rw, struct file *file,
+			      u64 index, struct page *page);
 extern void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio);
 
 extern int ploop_prepare_reloc_index_wb(struct ploop *, struct ploop_index_wb *,
@@ -579,6 +579,6 @@ extern void cleanup_backup(struct ploop *ploop);
 extern int ploop_setup_metadata(struct ploop *ploop, struct page *page);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 				     void **d_hdr);
-extern void call_rw_iter(struct file *file, loff_t pos, unsigned rw,
-			 struct iov_iter *iter, struct pio *pio);
+extern void ploop_call_rw_iter(struct file *file, loff_t pos, unsigned rw,
+			       struct iov_iter *iter, struct pio *pio);
 #endif /* __DM_PLOOP_H */
