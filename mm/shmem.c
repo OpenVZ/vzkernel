@@ -111,16 +111,17 @@ static unsigned long tmpfs_ram_pages(void)
 {
 	struct ve_struct *ve = get_exec_env();
 	struct cgroup_subsys_state *css;
+	unsigned long ve_ram_pages;
 
 	if (ve_is_super(ve))
 		return totalram_pages;
 
 	css = ve_get_init_css(ve, memory_cgrp_id);
-	totalram_pages = min(totalram_pages,
+	ve_ram_pages = min(totalram_pages,
 			mem_cgroup_total_pages(mem_cgroup_from_css(css)));
 	css_put(css);
 
-	return totalram_pages;
+	return ve_ram_pages;
 }
 
 static unsigned long shmem_default_max_blocks(void)
