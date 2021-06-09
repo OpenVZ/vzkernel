@@ -30,10 +30,12 @@
 #include <linux/task_work.h>
 #include <linux/ctype.h>
 #include <linux/tty.h>
+#include <linux/genhd.h>
 
 #include <uapi/linux/vzcalluser.h>
 #include <net/rtnetlink.h>
 
+#include "../fs/mount.h"
 #include "../cgroup/cgroup-internal.h" /* For cgroup_task_count() */
 
 struct per_cgroot_data {
@@ -1783,6 +1785,51 @@ static int __init ve_subsys_init(void)
 	return 0;
 }
 late_initcall(ve_subsys_init);
+
+static bool ve_check_trusted_file(struct file *file)
+{
+	struct block_device *bdev;
+	bool exec_from_ct;
+	bool file_on_host_mount;
+
+	/* The current process does not belong to ve0. */
+	exec_from_ct = !ve_is_super(get_exec_env());
+	if (exec_from_ct)
+		return true;
+
+	/* The current process belongs to ve0. */
+	bdev = file->f_inode->i_sb->s_bdev;
+	if (bdev) {
+		/* The file to execute is stored on trusted block device. */
+		if (bdev->bd_disk->vz_trusted_exec)
+			return true;
+	} else {
+		/*
+		 * bdev can be NULL if the file is on tmpfs, for example.
+		 * If this is a host's tmpfs - execution is allowed.
+		 */
+		file_on_host_mount = ve_is_super(
+				     real_mount(file->f_path.mnt)->ve_owner);
+		if (file_on_host_mount)
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * We don't want a VE0-privileged user intentionally or by mistake
+ * to execute files of container, these files are untrusted.
+ */
+bool ve_check_trusted_exec(struct file *file, struct filename *name)
+{
+	if (ve_check_trusted_file(file))
+		return true;
+
+	WARN_ONCE(1, "VE0's %s tried to execute untrusted file %s from VEX\n",
+		     current->comm, name->name);
+	return false;
+}
 
 #ifdef CONFIG_CGROUP_SCHED
 int cpu_cgroup_proc_stat(struct cgroup_subsys_state *cpu_css,

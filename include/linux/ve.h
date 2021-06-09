@@ -164,6 +164,7 @@ extern void put_ve(struct ve_struct *ve);
 
 void ve_stop_ns(struct pid_namespace *ns);
 void ve_exit_ns(struct pid_namespace *ns);
+bool ve_check_trusted_exec(struct file *file, struct filename *name);
 
 #ifdef CONFIG_TTY
 #define MAX_NR_VTTY_CONSOLES	(12)
