@@ -106,7 +106,6 @@
 #include <linux/init.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/if_ether.h>
-#include <linux/ve.h>
 
 #include <net/sock.h>
 #include <net/ip.h>
