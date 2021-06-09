@@ -1252,6 +1252,15 @@ static void delayed_mntput(struct work_struct *unused)
 }
 static DECLARE_DELAYED_WORK(delayed_mntput_work, delayed_mntput);
 
+static inline bool stack_is_low(void)
+{
+	u64 curbase = (u64)task_stack_page(current);
+	u64 fp = (u64)__builtin_frame_address(0);
+	if ((fp < curbase + THREAD_SIZE) && (fp > curbase + PAGE_SIZE))
+		return false;
+	return true;
+}
+
 static void mntput_no_expire(struct mount *mnt)
 {
 	rcu_read_lock();
@@ -1295,7 +1304,8 @@ static void mntput_no_expire(struct mount *mnt)
 	unlock_mount_hash();
 
 	if (likely(!(mnt->mnt.mnt_flags & MNT_INTERNAL))
-	    && !(mnt->mnt.mnt_sb->s_iflags & SB_I_UMOUNT_SYNC)) {
+	    && ((!(mnt->mnt.mnt_sb->s_iflags & SB_I_UMOUNT_SYNC)) ||
+		stack_is_low())) {
 		struct task_struct *task = current;
 		if (likely(!(task->flags & PF_KTHREAD))) {
 			init_task_work(&mnt->mnt_rcu, __cleanup_mnt);
