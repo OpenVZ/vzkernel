@@ -106,7 +106,6 @@
 
 #include <linux/kmod.h>
 #include <linux/nsproxy.h>
-#include <linux/ve.h>
 
 #undef TTY_DEBUG_HANGUP
 #ifdef TTY_DEBUG_HANGUP
@@ -1675,8 +1674,6 @@ int tty_release(struct inode *inode, struct file *filp)
 	/* If tty is pty master, lock the slave pty (stable lock order) */
 	tty_lock_slave(o_tty);
 
-	vtty_release_init(tty, o_tty);
-
 	/*
 	 * Sanity check: if tty->count is going to zero, there shouldn't be
 	 * any waiters on tty->read_wait or tty->write_wait.  We test the
@@ -1767,7 +1764,6 @@ int tty_release(struct inode *inode, struct file *filp)
 	/* check whether both sides are closing ... */
 	final = !tty->count && !(o_tty && o_tty->count);
 
-	vtty_release_fini(tty, o_tty);
 	tty_unlock_slave(o_tty);
 	tty_unlock(tty);
 
@@ -1836,19 +1832,6 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 {
 	struct tty_driver *driver;
 
-#ifdef CONFIG_VE
-	struct ve_struct *ve = get_exec_env();
-
-	if (!ve_is_super(ve)) {
-		driver = vtty_driver(device, index);
-		if (driver) {
-			if (MINOR(device) == 0)
-				filp->f_flags |= O_NOCTTY;
-			return tty_driver_kref_get(driver);
-		}
-	}
-#endif
-
 	switch (device) {
 #ifdef CONFIG_VT
 	case MKDEV(TTY_MAJOR, 0): {
@@ -1860,17 +1843,6 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 #endif
 	case MKDEV(TTYAUX_MAJOR, 1): {
 		struct tty_driver *console_driver = console_device(index);
- #ifdef CONFIG_VE
-		if (!ve_is_super(ve)) {
-			console_driver = vtty_console_driver(index);
-			/*
-			 * Reset fops, sometimes there might be
-			 * console_fops picked from inode->i_cdev
-			 * in chrdev_open()
-			 */
-			filp->f_op = &tty_fops;
-		}
- #endif
 		if (console_driver) {
 			driver = tty_driver_kref_get(console_driver);
 			if (driver && filp) {

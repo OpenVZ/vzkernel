@@ -23,9 +23,6 @@ struct nsproxy;
 struct veip_struct;
 struct user_namespace;
 struct super_block;
-struct tty_driver;
-struct tty_struct;
-struct cn_private;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -166,16 +163,6 @@ void ve_stop_ns(struct pid_namespace *ns);
 void ve_exit_ns(struct pid_namespace *ns);
 bool ve_check_trusted_exec(struct file *file, struct filename *name);
 bool ve_check_trusted_mmap(struct file *file);
-
-#ifdef CONFIG_TTY
-#define MAX_NR_VTTY_CONSOLES	(12)
-extern struct tty_driver *vtty_driver(dev_t dev, int *index);
-extern struct tty_driver *vtty_console_driver(int *index);
-extern int vtty_open_master(envid_t veid, int idx);
-extern void vtty_release_init(struct tty_struct *tty, struct tty_struct *o_tty);
-extern void vtty_release_fini(struct tty_struct *tty, struct tty_struct *o_tty);
-extern bool vtty_is_master(struct tty_struct *tty);
-#endif /* CONFIG_TTY */
 
 static inline struct ve_struct *css_to_ve(struct cgroup_subsys_state *css)
 {
