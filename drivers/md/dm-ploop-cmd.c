@@ -1211,287 +1211,6 @@ static int ploop_flip_upper_deltas(struct ploop *ploop)
 	return cmd.retval;
 }
 
-static void process_set_push_backup(struct ploop *ploop, struct ploop_cmd *cmd)
-{
-	struct push_backup *pb = cmd->set_push_backup.pb;
-
-	if (!pb)
-		cleanup_backup(ploop);
-
-	spin_lock_irq(&ploop->pb_lock);
-	/* Take bat_rwlock to make pb visible in ploop_map() */
-	write_lock(&ploop->bat_rwlock);
-	swap(ploop->pb, pb);
-	write_unlock(&ploop->bat_rwlock);
-	spin_unlock_irq(&ploop->pb_lock);
-	cmd->retval = 0;
-	complete(&cmd->comp); /* Last touch of cmd memory */
-
-	if (pb)
-		ploop_free_pb(pb);
-}
-
-static void ploop_pb_timer(struct timer_list *timer)
-{
-	struct push_backup *pb = from_timer(pb, timer, deadline_timer);
-	u64 deadline, now = get_jiffies_64();
-	struct ploop *ploop = pb->ploop;
-	unsigned long flags;
-
-	spin_lock_irqsave(&ploop->pb_lock, flags);
-	deadline = pb->deadline_jiffies;
-	spin_unlock_irqrestore(&ploop->pb_lock, flags);
-
-	if (unlikely(time_before64(now, deadline)))
-		mod_timer(timer, deadline - now + 1);
-	else
-		queue_work(ploop->wq, &ploop->worker);
-}
-
-static struct push_backup *ploop_alloc_pb(struct ploop *ploop,
-					  char *uuid, int timeout)
-{
-	struct push_backup *pb;
-	unsigned int size;
-	void *map;
-
-	pb = kzalloc(sizeof(*pb), GFP_KERNEL);
-	if (!pb)
-		return NULL;
-	snprintf(pb->uuid, sizeof(pb->uuid), "%s", uuid);
-	pb->ploop = ploop;
-	init_waitqueue_head(&pb->wq);
-	INIT_LIST_HEAD(&pb->pending);
-	pb->rb_root = RB_ROOT;
-
-	pb->deadline_jiffies = S64_MAX;
-	pb->timeout_in_jiffies = timeout * HZ;
-	timer_setup(&pb->deadline_timer, ploop_pb_timer, 0);
-
-	size = DIV_ROUND_UP(ploop->nr_bat_entries, 8);
-	size = round_up(size, sizeof(unsigned long));
-	map = kvzalloc(size, GFP_KERNEL);
-	if (!map)
-		goto out_pb;
-	pb->ppb_map = map;
-	pb->alive = true;
-	return pb;
-out_pb:
-	kfree(pb);
-	return NULL;
-}
-
-void ploop_free_pb(struct push_backup *pb)
-{
-	WARN_ON(!RB_EMPTY_ROOT(&pb->rb_root));
-	kvfree(pb->ppb_map);
-	kfree(pb);
-}
-
-static int ploop_setup_pb_map(struct push_backup *pb, void __user *mask)
-{
-	unsigned int i, size, nr_bat_entries;
-	struct ploop *ploop = pb->ploop;
-
-	nr_bat_entries = ploop->nr_bat_entries;
-
-	if (!mask) {
-		/* Full backup */
-		memset(pb->ppb_map, 0xff, nr_bat_entries / 8);
-		for (i = round_down(nr_bat_entries, 8); i < nr_bat_entries; i++)
-			set_bit(i, pb->ppb_map);
-	} else {
-		/* Partial backup */
-		size = DIV_ROUND_UP(nr_bat_entries, 8);
-		if (copy_from_user(pb->ppb_map, mask, size))
-			return -EFAULT;
-	}
-
-	return 0;
-}
-
-static int ploop_push_backup_start(struct ploop *ploop, char *uuid,
-				   void __user *mask, int timeout)
-{
-	struct ploop_cmd cmd = { {0} };
-	struct push_backup *pb;
-	char *p = uuid;
-	int ret;
-
-	cmd.type = PLOOP_CMD_SET_PUSH_BACKUP;
-	cmd.ploop = ploop;
-
-	if (ploop->pb)
-		return -EEXIST;
-	if (timeout <= 0)
-		return -EINVAL;
-	/*
-	 * There is no a problem in case of not suspended for the device.
-	 * But this means userspace collects wrong backup. Warn it here.
-	 * Since the device is suspended, we do not care about inflight bios.
-	 */
-	if (!dm_suspended(ploop->ti) || ploop->maintaince)
-		return -EBUSY;
-	/* Check UUID */
-	while (*p) {
-		if (!isxdigit(*p))
-			return -EINVAL;
-		p++;
-	}
-	if (p != uuid + sizeof(pb->uuid) - 1)
-		return -EINVAL;
-	pb = ploop_alloc_pb(ploop, uuid, timeout);
-	if (!pb)
-		return -ENOMEM;
-	ret = ploop_setup_pb_map(pb, mask);
-	if (ret)
-		goto err_free;
-
-	/* Assign pb in work, to make it visible w/o locks (in work) */
-	cmd.set_push_backup.pb = pb;
-	init_completion(&cmd.comp);
-	ploop_queue_deferred_cmd(ploop, &cmd);
-	wait_for_completion(&cmd.comp);
-	ploop->maintaince = true;
-	return 0;
-err_free:
-	ploop_free_pb(pb);
-	return ret;
-}
-
-static int ploop_push_backup_stop(struct ploop *ploop, char *uuid,
-		   int uretval, char *result, unsigned int maxlen)
-{
-	struct ploop_cmd cmd = { {0} };
-	unsigned int sz = 0;
-
-	cmd.type = PLOOP_CMD_SET_PUSH_BACKUP;
-	cmd.ploop = ploop;
-
-	if (!ploop->pb)
-		return -EBADF;
-	if (strcmp(ploop->pb->uuid, uuid))
-		return -EINVAL;
-
-	WARN_ON(!ploop->maintaince);
-
-	/* Assign pb in work, to make it visible w/o locks (in work) */
-	init_completion(&cmd.comp);
-	ploop_queue_deferred_cmd(ploop, &cmd);
-	wait_for_completion(&cmd.comp);
-	ploop->maintaince = false;
-	DMEMIT("0");
-	return 1;
-}
-
-static int ploop_push_backup_get_uuid(struct ploop *ploop, char *result,
-				      unsigned int maxlen)
-{
-	struct push_backup *pb = ploop->pb;
-	unsigned int sz = 0;
-
-	if (pb)
-		DMEMIT("%s", pb->uuid);
-	else
-		result[0] = '\0';
-	return 1;
-}
-
-static int ploop_push_backup_read(struct ploop *ploop, char *uuid,
-				char *result, unsigned int maxlen)
-{
-	struct push_backup *pb = ploop->pb;
-	unsigned int left, right, sz = 0;
-	struct pio *h, *orig_h;
-	struct rb_node *node;
-	int ret = 1;
-
-	if (!pb)
-		return -EBADF;
-	if (strcmp(uuid, pb->uuid))
-		return -EINVAL;
-	if (!pb->alive)
-		return -ESTALE;
-again:
-	if (wait_event_interruptible(pb->wq, !list_empty_careful(&pb->pending)))
-		return -EINTR;
-
-	spin_lock_irq(&ploop->pb_lock);
-	h = orig_h = list_first_entry_or_null(&pb->pending, typeof(*h), list);
-	if (unlikely(!h)) {
-		spin_unlock_irq(&ploop->pb_lock);
-		goto again;
-	}
-	list_del_init(&h->list);
-
-	left = right = h->cluster;
-	while ((node = rb_prev(&h->node)) != NULL) {
-		h = rb_entry(node, struct pio, node);
-		if (h->cluster + 1 != left || list_empty(&h->list))
-			break;
-		list_del_init(&h->list);
-		left = h->cluster;
-	}
-
-	h = orig_h;
-	while ((node = rb_next(&h->node)) != NULL) {
-		h = rb_entry(node, struct pio, node);
-		if (h->cluster - 1 != right || list_empty(&h->list))
-			break;
-		list_del_init(&h->list);
-		right = h->cluster;
-	}
-
-	DMEMIT("%u:%u", left, right - left + 1);
-	spin_unlock_irq(&ploop->pb_lock);
-	return ret;
-}
-
-static int ploop_push_backup_write(struct ploop *ploop, char *uuid,
-			     unsigned int cluster, unsigned int nr)
-{
-	unsigned int i, nr_bat_entries = ploop->nr_bat_entries;
-	struct push_backup *pb = ploop->pb;
-	LIST_HEAD(pio_list);
-	struct pio *h;
-	bool has_more = false;
-
-	if (!pb)
-		return -EBADF;
-	if (strcmp(uuid, pb->uuid) || !nr)
-		return -EINVAL;
-	if (cluster >= nr_bat_entries || nr > nr_bat_entries - cluster)
-		return -E2BIG;
-	if (!pb->alive)
-		return -ESTALE;
-
-	spin_lock_irq(&ploop->pb_lock);
-	for (i = cluster; i < cluster + nr; i++)
-		clear_bit(i, pb->ppb_map);
-	for (i = 0; i < nr; i++) {
-		h = find_endio_hook_range(ploop, &pb->rb_root, cluster,
-					  cluster + nr - 1);
-		if (!h)
-			break;
-		unlink_postponed_backup_endio(ploop, &pio_list, h);
-	}
-
-	has_more = !RB_EMPTY_ROOT(&pb->rb_root);
-	if (has_more)
-		pb->deadline_jiffies = get_jiffies_64() + pb->timeout_in_jiffies;
-	else
-		pb->deadline_jiffies = S64_MAX;
-	spin_unlock_irq(&ploop->pb_lock);
-
-	if (!list_empty(&pio_list)) {
-		defer_pios(ploop, NULL, &pio_list);
-		if (has_more)
-			mod_timer(&pb->deadline_timer, pb->timeout_in_jiffies + 1);
-	}
-
-	return 0;
-}
-
 /* Handle user commands requested via "message" interface */
 void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 	__releases(&ploop->deferred_lock)
@@ -1520,8 +1239,6 @@ void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 		process_tracking_start(ploop, cmd);
 	} else if (cmd->type == PLOOP_CMD_FLIP_UPPER_DELTAS) {
 		process_flip_upper_deltas(ploop, cmd);
-	} else if (cmd->type == PLOOP_CMD_SET_PUSH_BACKUP) {
-		process_set_push_backup(ploop, cmd);
 	} else {
 		cmd->retval = -EINVAL;
 		complete(&cmd->comp);
@@ -1533,10 +1250,7 @@ static bool msg_wants_down_read(const char *cmd)
 {
 	/* TODO: kill get_delta_name */
 	if (!strcmp(cmd, "get_delta_name") ||
-	    !strcmp(cmd, "get_img_name") ||
-	    !strcmp(cmd, "push_backup_get_uuid") ||
-	    !strcmp(cmd, "push_backup_read") ||
-	    !strcmp(cmd, "push_backup_write"))
+	    !strcmp(cmd, "get_img_name"))
 		return true;
 
 	return false;
@@ -1547,8 +1261,8 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 {
 	struct ploop *ploop = ti->private;
 	bool read, forward = true;
-	int ival, ret = -EPERM;
-	u64 val, val2;
+	int ret = -EPERM;
+	u64 val;
 
 	if (!capable(CAP_SYS_ADMIN))
 		goto out;
@@ -1599,28 +1313,6 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 		if (argc != 1)
 			goto unlock;
 		ret = ploop_flip_upper_deltas(ploop);
-	} else if (!strcmp(argv[0], "push_backup_start")) {
-		if (argc != 4 || kstrtou64(argv[2], 10, &val) < 0 ||
-				 kstrtos32(argv[3], 10, &ival) < 0)
-			goto unlock;
-		ret = ploop_push_backup_start(ploop, argv[1], (void *)val, ival);
-	} else if (!strcmp(argv[0], "push_backup_stop")) {
-		if (argc != 3 || kstrtos32(argv[2], 10, &ival) < 0)
-			goto unlock;
-		ret = ploop_push_backup_stop(ploop, argv[1], ival,
-					     result, maxlen);
-	} else if (!strcmp(argv[0], "push_backup_get_uuid")) {
-		if (argc != 1)
-			goto unlock;
-		ret = ploop_push_backup_get_uuid(ploop, result, maxlen);
-	} else if (!strcmp(argv[0], "push_backup_read")) {
-		if (argc != 2)
-			goto unlock;
-		ret = ploop_push_backup_read(ploop, argv[1], result, maxlen);
-	} else if (!strcmp(argv[0], "push_backup_write")) {
-		if (argc != 3 || sscanf(argv[2], "%llu:%llu", &val, &val2) != 2)
-			goto unlock;
-		ret = ploop_push_backup_write(ploop, argv[1], val, val2);
 	} else {
 		ret = -ENOTSUPP;
 	}

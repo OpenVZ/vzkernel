@@ -54,7 +54,6 @@ struct ploop_cmd {
 #define PLOOP_CMD_UPDATE_DELTA_INDEX	6
 #define PLOOP_CMD_TRACKING_START	7
 #define PLOOP_CMD_FLIP_UPPER_DELTAS	8
-#define PLOOP_CMD_SET_PUSH_BACKUP	9
 	struct completion comp;
 	struct ploop *ploop;
 	unsigned int type;
@@ -94,9 +93,6 @@ struct ploop_cmd {
 			void *tracking_bitmap;
 			unsigned int tb_nr;
 		} tracking_start;
-		struct {
-			struct push_backup *pb;
-		} set_push_backup;
 	};
 };
 
@@ -134,25 +130,6 @@ struct ploop_index_wb {
 	bool completed;
 	int bi_status;
 	unsigned int page_nr;
-};
-
-struct push_backup {
-	struct ploop *ploop;
-	/* Store uuid as string and avoid convertation on every read/write */
-	u8 uuid[33];
-	bool alive;
-
-	void *ppb_map;
-
-	u64 timeout_in_jiffies;
-	u64 deadline_jiffies;
-	struct timer_list deadline_timer;
-
-	/* This tree is for looking for delayed bio by cluster */
-	struct rb_root rb_root;
-
-	struct wait_queue_head wq;
-	struct list_head pending;
 };
 
 /* Metadata page */
@@ -236,10 +213,6 @@ struct ploop {
 
 	/* Maintaince in process */
 	bool maintaince;
-
-	/* Push Backup */
-	struct push_backup *pb;
-	spinlock_t pb_lock;
 };
 
 struct ploop_rq {
@@ -551,9 +524,6 @@ extern int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 		    union map_info *map_context, struct request **clone);
 extern int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable);
 extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
-extern void unlink_postponed_backup_endio(struct ploop *ploop,
-					  struct list_head *pio_list,
-					  struct pio *h);
 extern void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio);
 extern int ploop_rw_page_sync(unsigned rw, struct file *file,
 			      u64 index, struct page *page);
@@ -572,8 +542,6 @@ extern int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 extern struct pio * alloc_pio_with_pages(struct ploop *ploop);
 extern void free_pio_with_pages(struct ploop *ploop, struct pio *pio);
 extern void pio_prepare_offsets(struct ploop *, struct pio *, unsigned int);
-extern void ploop_free_pb(struct push_backup *pb);
-extern void cleanup_backup(struct ploop *ploop);
 
 extern int ploop_setup_metadata(struct ploop *ploop, struct page *page);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,

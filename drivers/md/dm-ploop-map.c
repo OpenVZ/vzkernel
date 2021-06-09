@@ -1213,51 +1213,6 @@ static bool postpone_if_cluster_locked(struct ploop *ploop, struct pio *pio,
 	return e_h != NULL;
 }
 
-static bool postpone_if_required_for_backup(struct ploop *ploop,
-			  struct pio *pio, unsigned int cluster)
-{
-	struct push_backup *pb = ploop->pb;
-	bool first, queue_timer = false;
-	struct pio *h;
-
-	if (likely(!pb || !pb->alive))
-		return false;
-	if (!op_is_write(pio->bi_op))
-		return false;
-	if (!test_bit(cluster, pb->ppb_map))
-		return false;
-	spin_lock_irq(&ploop->pb_lock);
-	if (!test_bit(cluster, pb->ppb_map)) {
-		spin_unlock_irq(&ploop->pb_lock);
-		return false;
-	}
-
-	h = find_endio_hook(ploop, &pb->rb_root, cluster);
-	if (h) {
-		add_endio_pio(h, pio);
-		spin_unlock_irq(&ploop->pb_lock);
-		return true;
-	}
-
-	if (RB_EMPTY_ROOT(&pb->rb_root)) {
-		pb->deadline_jiffies = get_jiffies_64() + pb->timeout_in_jiffies;
-		queue_timer = true;
-	}
-
-	link_endio_hook(ploop, pio, &pb->rb_root, cluster, true);
-	first = list_empty(&pb->pending);
-	list_add_tail(&pio->list, &pb->pending);
-	spin_unlock_irq(&ploop->pb_lock);
-
-	if (first)
-		wake_up_interruptible(&pb->wq);
-
-	if (queue_timer)
-		mod_timer(&pb->deadline_timer, pb->timeout_in_jiffies + 1);
-
-	return true;
-}
-
 int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 		       unsigned int cluster, unsigned int dst_cluster,
 		       void (*end_fn)(struct ploop *, int, void *), void *data)
@@ -1509,8 +1464,6 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 
 	if (postpone_if_cluster_locked(ploop, pio, cluster))
 		goto out;
-	if (postpone_if_required_for_backup(ploop, pio, cluster))
-		goto out;
 
 	if (op_is_discard(pio->bi_op)) {
 		handle_discard_pio(ploop, pio, cluster, dst_cluster);
@@ -1664,69 +1617,9 @@ static void process_discard_pios(struct ploop *ploop, struct list_head *pios,
 		process_one_discard_pio(ploop, pio, piwb);
 }
 
-/* Remove from tree bio and endio bio chain */
-void unlink_postponed_backup_endio(struct ploop *ploop,
-				   struct list_head *pio_list, struct pio *h)
-{
-	struct push_backup *pb = ploop->pb;
-
-	/* Remove from tree and queue attached pios */
-	unlink_endio_hook(ploop, &pb->rb_root, h, pio_list);
-
-	/* Unlink from pb->pending */
-	list_del_init(&h->list);
-
-	/* Queue relared bio itself */
-	list_add_tail(&h->list, pio_list);
-}
-
-void cleanup_backup(struct ploop *ploop)
-{
-	struct push_backup *pb = ploop->pb;
-	struct pio *h;
-	struct rb_node *node;
-	LIST_HEAD(pio_list);
-
-	spin_lock_irq(&ploop->pb_lock);
-	/* Take bat_rwlock for visability in kwork */
-	write_lock(&ploop->bat_rwlock);
-	pb->alive = false;
-	write_unlock(&ploop->bat_rwlock);
-
-	while ((node = pb->rb_root.rb_node) != NULL) {
-		h = rb_entry(node, struct pio, node);
-		unlink_postponed_backup_endio(ploop, &pio_list, h);
-	}
-	spin_unlock_irq(&ploop->pb_lock);
-
-	if (!list_empty(&pio_list))
-		defer_pios(ploop, NULL, &pio_list);
-
-	del_timer_sync(&pb->deadline_timer);
-}
-
-static void check_backup_deadline(struct ploop *ploop)
-{
-	u64 deadline, now = get_jiffies_64();
-	struct push_backup *pb = ploop->pb;
-
-	if (likely(!pb || !pb->alive))
-		return;
-
-	spin_lock_irq(&ploop->pb_lock);
-	deadline = READ_ONCE(pb->deadline_jiffies);
-	spin_unlock_irq(&ploop->pb_lock);
-
-	if (time_before64(now, deadline))
-		return;
-
-	cleanup_backup(ploop);
-}
-
 static void check_services_timeout(struct ploop *ploop)
 {
 	do_discard_cleanup(ploop);
-	check_backup_deadline(ploop);
 }
 
 void do_ploop_work(struct work_struct *ws)

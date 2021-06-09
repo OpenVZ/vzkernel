@@ -148,10 +148,6 @@ static void ploop_destroy(struct ploop *ploop)
 {
 	int i;
 
-	if (ploop->pb) {
-		cleanup_backup(ploop);
-		ploop_free_pb(ploop->pb);
-	}
 	if (ploop->wq) {
 		flush_workqueue(ploop->wq);
 		destroy_workqueue(ploop->wq);
@@ -304,7 +300,6 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	rwlock_init(&ploop->bat_rwlock);
 	init_rwsem(&ploop->ctl_rwsem);
 	spin_lock_init(&ploop->deferred_lock);
-	spin_lock_init(&ploop->pb_lock);
 
 	INIT_LIST_HEAD(&ploop->deferred_pios);
 	INIT_LIST_HEAD(&ploop->flush_pios);
@@ -396,12 +391,6 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 		p += sprintf(p, "t");
 	if (READ_ONCE(ploop->noresume))
 		p += sprintf(p, "n");
-	if (ploop->pb) {
-		if (ploop->pb->alive)
-			p += sprintf(p, "b");
-		else
-			p += sprintf(p, "B");
-	}
 	if (p == stat)
 		p += sprintf(p, "o");
 	BUG_ON(p - stat >= sizeof(stat));
