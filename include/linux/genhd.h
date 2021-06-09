@@ -220,6 +220,10 @@ struct gendisk {
 	int node_id;
 	struct badblocks *bb;
 	struct lockdep_map lockdep_map;
+	/*
+	 * if trusted, allow code execution from this disk
+	 */
+	bool vz_trusted_exec;
 
 	RH_KABI_USE(1, struct cdrom_device_info *cdi)
 	RH_KABI_RESERVE(2)
