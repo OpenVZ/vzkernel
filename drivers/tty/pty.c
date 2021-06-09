@@ -1047,13 +1047,11 @@ static vtty_map_t *vtty_map_alloc(envid_t veid)
 
 	lockdep_assert_held(&tty_mutex);
 	if (map) {
-		int id;
-
 		map->veid = veid;
-		id = idr_alloc(&vtty_idr, map, veid, veid + 1, GFP_KERNEL);
-		if (id < 0) {
+		veid = idr_alloc(&vtty_idr, map, veid, veid + 1, GFP_KERNEL);
+		if (veid < 0) {
 			kfree(map);
-			return ERR_PTR(id);
+			return ERR_PTR(veid);
 		}
 	} else
 		map = ERR_PTR(-ENOMEM);
