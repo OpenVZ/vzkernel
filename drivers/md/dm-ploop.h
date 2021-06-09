@@ -55,7 +55,6 @@ struct ploop_cmd {
 #define PLOOP_CMD_TRACKING_START	7
 #define PLOOP_CMD_FLIP_UPPER_DELTAS	8
 #define PLOOP_CMD_SET_PUSH_BACKUP	9
-#define PLOOP_CMD_TRY_PREFLUSH		10
 	struct completion comp;
 	struct ploop *ploop;
 	unsigned int type;
