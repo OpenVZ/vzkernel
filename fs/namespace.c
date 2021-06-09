@@ -3264,6 +3264,10 @@ static void free_mnt_ns(struct mnt_namespace *ns)
 		ns_free_inum(&ns->ns);
 	dec_mnt_namespaces(ns->ucounts);
 	put_user_ns(ns->user_ns);
+
+	namespace_lock();
+	list_del(&ns->mntns_list);
+	namespace_unlock();
 	kfree(ns);
 }
 
@@ -3275,6 +3279,7 @@ static void free_mnt_ns(struct mnt_namespace *ns)
  * is effectively never, so we can ignore the possibility.
  */
 static atomic64_t mnt_ns_seq = ATOMIC64_INIT(1);
+static LIST_HEAD(all_mntns_list); /* protected by namespace_sem */
 
 static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns, bool anon)
 {
@@ -3304,6 +3309,7 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns, bool a
 		new_ns->seq = atomic64_add_return(1, &mnt_ns_seq);
 	atomic_set(&new_ns->count, 1);
 	INIT_LIST_HEAD(&new_ns->list);
+	INIT_LIST_HEAD(&new_ns->mntns_list);
 	init_waitqueue_head(&new_ns->poll);
 	new_ns->user_ns = get_user_ns(user_ns);
 	new_ns->ucounts = ucounts;
@@ -3335,6 +3341,8 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 		return new_ns;
 
 	namespace_lock();
+	list_add_tail(&new_ns->mntns_list, &all_mntns_list);
+
 	/* First pass: copy the tree topology */
 	copy_flags = CL_COPY_UNBINDABLE | CL_EXPIRE;
 	if (user_ns != ns->user_ns)
@@ -3402,6 +3410,9 @@ struct dentry *mount_subtree(struct vfsmount *m, const char *name)
 	ns->root = mnt;
 	ns->mounts++;
 	list_add(&mnt->mnt_list, &ns->list);
+	namespace_lock();
+	list_add_tail(&ns->mntns_list, &all_mntns_list);
+	namespace_unlock();
 
 	err = vfs_path_lookup(m->mnt_root, m,
 			name, LOOKUP_FOLLOW|LOOKUP_AUTOMOUNT, &path);
@@ -3693,6 +3704,9 @@ static void __init init_mount_tree(void)
 	ns->root = m;
 	ns->mounts = 1;
 	list_add(&m->mnt_list, &ns->list);
+	namespace_lock();
+	list_add_tail(&ns->mntns_list, &all_mntns_list);
+	namespace_unlock();
 	init_task.nsproxy->mnt_ns = ns;
 	get_mnt_ns(ns);
 
