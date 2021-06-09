@@ -551,6 +551,18 @@ static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 	loff_t pos;
 	int ret;
 
+	if (!whole_cluster(ploop, pio)) {
+		/*
+		 * Despite discard_granularity is given, block level
+		 * may submit shorter reqs. E.g., these are boundary
+		 * bios around trimed continuous hunk. For discard
+		 * it's OK to just ignore such reqs. Keep in mind
+		 * this implementing REQ_OP_WRITE_ZEROES etc.
+		 */
+		pio_endio(pio);
+		return;
+	}
+
 	if (!cluster_is_in_top_delta(ploop, cluster)) {
 		pio_endio(pio);
 		return;
