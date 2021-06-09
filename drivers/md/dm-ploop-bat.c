@@ -90,7 +90,7 @@ err_levels:
 	return NULL;
 }
 
-void free_md_page(struct md_page *md)
+void ploop_free_md_page(struct md_page *md)
 {
 	put_page(md->page);
 	kfree(md->bat_levels);

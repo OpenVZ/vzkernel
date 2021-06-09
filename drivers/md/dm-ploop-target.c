@@ -48,8 +48,8 @@ static void ploop_aio_complete(struct kiocb *iocb, long ret, long ret2)
 	ploop_aio_do_completion(pio);
 }
 
-void call_rw_iter(struct file *file, loff_t pos, unsigned rw,
-		  struct iov_iter *iter, struct pio *pio)
+void ploop_call_rw_iter(struct file *file, loff_t pos, unsigned rw,
+			struct iov_iter *iter, struct pio *pio)
 {
 	struct kiocb *iocb = &pio->iocb;
 	int ret;
@@ -73,8 +73,8 @@ void call_rw_iter(struct file *file, loff_t pos, unsigned rw,
 		iocb->ki_complete(iocb, ret, 0);
 }
 
-int rw_page_sync(unsigned rw, struct file *file,
-		 u64 index, struct page *page)
+int ploop_rw_page_sync(unsigned rw, struct file *file,
+		       u64 index, struct page *page)
 {
 	struct bio_vec *bvec, bvec_on_stack;
 	struct iov_iter iter;
@@ -126,7 +126,7 @@ void free_md_pages_tree(struct rb_root *root)
 	while ((node = root->rb_node) != NULL) {
 		md = rb_entry(node, struct md_page, node);
 		rb_erase(node, root);
-		free_md_page(md);
+		ploop_free_md_page(md);
 	}
 }
 
@@ -210,7 +210,7 @@ static int check_top_delta(struct ploop *ploop, struct file *file)
 	if (!page)
 		goto out;
 
-	ret = rw_page_sync(READ, file, 0, page);
+	ret = ploop_rw_page_sync(READ, file, 0, page);
 	if (ret < 0)
 		goto out;
 
