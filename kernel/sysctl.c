@@ -119,6 +119,13 @@ extern int sysctl_nr_trim_pages;
 
 int ve_allow_module_load = 1;
 EXPORT_SYMBOL(ve_allow_module_load);
+int trusted_exec;
+static int __init set_trusted_exec(char *str)
+{
+	trusted_exec = 1;
+	return 1;
+}
+__setup("trusted_exec", set_trusted_exec);
 
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
@@ -1978,6 +1985,15 @@ static struct ctl_table fs_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "trusted_exec",
+		.data		= &trusted_exec,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
 	},
 	{ }
 };
