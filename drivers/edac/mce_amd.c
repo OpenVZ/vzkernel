@@ -1060,8 +1060,7 @@ static const char *decode_error_status(struct mce *m)
 	return "Corrected error, no action required.";
 }
 
-static int
-amd_decode_mce(struct notifier_block *nb, unsigned long val, void *data)
+int amd_decode_mce(struct notifier_block *nb, unsigned long val, void *data)
 {
 	struct mce *m = (struct mce *)data;
 	unsigned int fam = x86_family(m->cpuid);
@@ -1172,6 +1171,7 @@ amd_decode_mce(struct notifier_block *nb, unsigned long val, void *data)
 
 	return NOTIFY_STOP;
 }
+EXPORT_SYMBOL_GPL(amd_decode_mce);
 
 static struct notifier_block amd_mce_dec_nb = {
 	.notifier_call	= amd_decode_mce,
