@@ -627,6 +627,7 @@ static void *empty_seq_start(struct seq_file *m, loff_t *pos)
 
 static void *empty_seq_next(struct seq_file *m, void *v, loff_t *pos)
 {
+	(*pos)++;
 	return NULL;
 }
 

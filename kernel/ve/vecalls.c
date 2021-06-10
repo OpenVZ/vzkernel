@@ -183,9 +183,10 @@ static void *ve_seq_start(struct seq_file *m, loff_t *pos)
 
 static void *ve_seq_next(struct seq_file *m, void *v, loff_t *pos)
 {
-	if (!ve_is_super(get_exec_env()))
+	if (!ve_is_super(get_exec_env())) {
+		(*pos)++;
 		return NULL;
-	else
+	} else
 		return seq_list_next(v, &ve_list_head, pos);
 }
 
