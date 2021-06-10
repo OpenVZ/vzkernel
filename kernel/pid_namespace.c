@@ -118,6 +118,7 @@ static struct pid_namespace *create_pid_namespace(struct user_namespace *user_ns
 	ns->ucounts = ucounts;
 	ns->pid_allocated = PIDNS_ADDING;
 	INIT_WORK(&ns->proc_work, proc_cleanup_work);
+	ns->pid_max = PID_MAX_NS_DEFAULT;
 
 	return ns;
 
@@ -289,6 +290,7 @@ static int pid_ns_ctl_handler(struct ctl_table *table, int write,
 	next = idr_get_cursor(&pid_ns->idr) - 1;
 
 	tmp.data = &next;
+	tmp.extra2 = &pid_ns->pid_max;
 	ret = proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
 	if (!ret && write)
 		idr_set_cursor(&pid_ns->idr, next + 1);
@@ -296,7 +298,6 @@ static int pid_ns_ctl_handler(struct ctl_table *table, int write,
 	return ret;
 }
 
-extern int pid_max;
 static struct ctl_table pid_ns_ctl_table[] = {
 	{
 		.procname = "ns_last_pid",
@@ -304,7 +305,6 @@ static struct ctl_table pid_ns_ctl_table[] = {
 		.mode = 0666 | S_ISVTX, /* permissions are checked in the handler */
 		.proc_handler = pid_ns_ctl_handler,
 		.extra1 = SYSCTL_ZERO,
-		.extra2 = &pid_max,
 	},
 	{ }
 };
