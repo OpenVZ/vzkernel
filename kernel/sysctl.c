@@ -338,6 +338,16 @@ static int min_extfrag_threshold;
 static int max_extfrag_threshold = 1000;
 #endif
 
+static int proc_dointvec_pidmax(struct ctl_table *table, int write,
+		  void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ctl_table tmp;
+
+	tmp = *table;
+	tmp.data = &task_active_pid_ns(current)->pid_max;
+	return proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
+}
+
 #ifdef CONFIG_COREDUMP
 sysctl_virtual(proc_dostring_coredump);
 #endif
@@ -853,10 +863,9 @@ static struct ctl_table kern_table[] = {
 #endif
 	{
 		.procname	= "pid_max",
-		.data		= &pid_max,
 		.maxlen		= sizeof (int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= proc_dointvec_pidmax,
 		.extra1		= &pid_max_min,
 		.extra2		= &pid_max_max,
 	},
