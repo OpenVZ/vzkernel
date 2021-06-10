@@ -885,21 +885,6 @@ static inline bool sock_flag(const struct sock *sk, enum sock_flags flag)
 	return test_bit(flag, &sk->sk_flags);
 }
 
-#ifdef CONFIG_NET
-DECLARE_STATIC_KEY_FALSE(memalloc_socks_key);
-static inline int sk_memalloc_socks(void)
-{
-	return static_branch_unlikely(&memalloc_socks_key);
-}
-#else
-
-static inline int sk_memalloc_socks(void)
-{
-	return 0;
-}
-
-#endif
-
 static inline gfp_t sk_gfp_mask(const struct sock *sk, gfp_t gfp_mask)
 {
 	return gfp_mask | (sk->sk_allocation & __GFP_MEMALLOC);
