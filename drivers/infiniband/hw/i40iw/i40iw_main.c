@@ -1535,7 +1535,7 @@ static void i40iw_deinit_device(struct i40iw_device *iwdev)
 	}
 
 	i40iw_del_handler(i40iw_find_i40e_handler(ldev));
-	kfree(iwdev->hdl);
+	kvfree(iwdev->hdl);
 }
 
 /**
@@ -1633,14 +1633,14 @@ static int i40iw_open(struct i40e_info *ldev, struct i40e_client *client)
 	if (hdl)
 		return 0;
 
-	hdl = kzalloc(sizeof(*hdl), GFP_KERNEL);
+	hdl = kvzalloc(sizeof(*hdl), GFP_KERNEL);
 	if (!hdl)
 		return -ENOMEM;
 	iwdev = &hdl->device;
 	iwdev->hdl = hdl;
 	dev = &iwdev->sc_dev;
 	if (i40iw_setup_cm_core(iwdev)) {
-		kfree(iwdev->hdl);
+		kvfree(iwdev->hdl);
 		return -ENOMEM;
 	}
 
