@@ -1364,7 +1364,7 @@ unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
 
 	guarantee = READ_ONCE(memcg->oom_guarantee);
 	usage = page_counter_read(&memcg->memsw);
-	return div64_u64(1000 * usage, guarantee + 1);
+	return usage > guarantee ? (usage - guarantee) : 0;
 }
 
 bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio)
