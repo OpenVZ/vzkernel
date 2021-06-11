@@ -34,6 +34,7 @@
 #include <linux/hash.h>
 #include <linux/if_tunnel.h>
 #include <linux/ip6_tunnel.h>
+#include <linux/ve.h>
 
 #include <net/sock.h>
 #include <net/ip.h>
@@ -1966,8 +1967,12 @@ static int ip6gre_newlink_common(struct net *src_net, struct net_device *dev,
 	struct ip6_tnl *nt;
 	struct ip_tunnel_encap ipencap;
 	int err;
-
 #ifdef CONFIG_VE
+	struct net *net = dev_net(dev);
+	struct ip6gre_net *ign;
+
+	ign = net_generic(net, ip6gre_net_id);
+
 	if (!ign) /* no VE_FEATURE_IPGRE */
 		return -EACCES;
 #endif
