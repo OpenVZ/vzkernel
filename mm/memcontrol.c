@@ -2411,6 +2411,28 @@ void mem_cgroup_handle_over_high(void)
 	current->memcg_nr_pages_over_high = 0;
 }
 
+extern bool dcache_is_low(struct mem_cgroup *memcg);
+/*
+ * Do we have anything to reclaim in memcg kmem?
+ * Have to honor vfs_cache_min_ratio here because if dcache_is_low()
+ * we won't reclaim dcache at all in do_shrink_slab().
+ */
+static bool kmem_reclaim_is_low(struct mem_cgroup *memcg)
+{
+#define	KMEM_RECLAIM_LOW_MARK	32
+
+	unsigned long dcache;
+	int vfs_cache_min_ratio = READ_ONCE(sysctl_vfs_cache_min_ratio);
+
+	if (vfs_cache_min_ratio <= 0) {
+		dcache = memcg_page_state(memcg, NR_SLAB_RECLAIMABLE);
+
+		return dcache < KMEM_RECLAIM_LOW_MARK;
+	}
+
+	return dcache_is_low(memcg);
+}
+
 static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask, bool kmem_charge,
 		      unsigned int nr_pages, bool cache_charge)
 {
@@ -2541,6 +2563,16 @@ retry:
 		goto force;
 
 	if (fatal_signal_pending(current))
+		goto force;
+
+	/*
+	 * We might have [a lot of] reclaimable kmem which we cannot reclaim in
+	 * the current context, e.g. lot of inodes/dentries while tring to get
+	 * allocate kmem for new inode with GFP_NOFS.
+	 * Thus overcharge kmem now, it will be reclaimed on next allocation in
+	 * usual GFP_KERNEL context.
+	 */
+	if (kmem_limit && !kmem_reclaim_is_low(mem_over_limit))
 		goto force;
 
 	/*
