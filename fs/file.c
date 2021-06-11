@@ -948,6 +948,7 @@ out_unlock:
 	spin_unlock(&files->file_lock);
 	return err;
 }
+EXPORT_SYMBOL(replace_fd);
 
 static int ksys_dup3(unsigned int oldfd, unsigned int newfd, int flags)
 {
