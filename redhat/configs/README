@@ -41,6 +41,13 @@ to default in pending-common. These settings are moved to the fedora/
 configuration directory after community review. Options are populated with
 "make FLAVOR=fedora dist-commit-configs".
 
+custom-overrides - This directory contains an empty set of the generic and debug
+arch-specific directory tree. Any config option set here is applied last and
+therefore will override anything set in the ark, fedora, or pending directories.
+This allows users to easily override a config option without altering the
+standard directories. Users can even maintain their own branch with a full set
+of custom configuration options that can be easily be rebased on top of
+os-build without worrying about conflicts.
 
 All the configuration options for each arch and variant can be found
 in the "priority" file.
