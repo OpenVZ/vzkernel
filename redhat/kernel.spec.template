@@ -551,7 +551,7 @@ BuildRequires: libtraceevent-devel
 BuildRequires: numactl-devel
 %endif
 %ifarch aarch64
-BuildRequires: opencsd-devel >= 1.0.0-2
+BuildRequires: opencsd-devel >= 1.0.0
 %endif
 %endif
 %if %{with_tools}
