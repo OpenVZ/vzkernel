@@ -411,6 +411,7 @@ static void veth_setup(struct net_device *dev)
 			     ~(NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_STAG_TX);
 	dev->extended->needs_free_netdev = true;
 	dev->extended->priv_destructor = veth_dev_free;
+	dev->extended->max_mtu = ETH_MAX_MTU;
 
 	dev->hw_features = VETH_FEATURES;
 	dev->hw_enc_features = VETH_FEATURES;
