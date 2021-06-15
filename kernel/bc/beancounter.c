@@ -1067,8 +1067,7 @@ static void init_beancounter_nolimits(struct user_beancounter *ub)
 	ub->ub_parms[UB_OOMGUARPAGES].barrier = totalram_pages * 3 / 4;
 
 	/* Ratelimit for messages in the kernel log */
-	ub->ub_ratelimit.burst = 4;
-	ub->ub_ratelimit.interval = 300*HZ;
+	ratelimit_state_init(&ub->ub_ratelimit, 300*HZ, 4);
 }
 
 static DEFINE_PER_CPU(struct ub_percpu_struct, ub0_percpu);
