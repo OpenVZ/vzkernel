@@ -342,7 +342,14 @@ static int __net_init xfrm6_tunnel_net_init(struct net *net)
 static void __net_exit xfrm6_tunnel_net_exit(struct net *net)
 {
 	struct xfrm6_tunnel_net *xfrm6_tn = xfrm6_tunnel_pernet(net);
+	struct xfrm_audit audit_info;
 	unsigned int i;
+
+	audit_info.loginuid = INVALID_UID;
+	audit_info.sessionid = (unsigned int)-1;
+	audit_info.secid = 0;
+	xfrm_state_flush(net, IPSEC_PROTO_ANY, &audit_info);
+	flush_work(&net->xfrm.state_gc_work);
 
 	for (i = 0; i < XFRM6_TUNNEL_SPI_BYADDR_HSIZE; i++)
 		WARN_ON_ONCE(!hlist_empty(&xfrm6_tn->spi_byaddr[i]));
