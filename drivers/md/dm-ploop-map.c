@@ -1628,6 +1628,9 @@ void do_ploop_work(struct work_struct *ws)
 	struct ploop_index_wb piwb;
 	LIST_HEAD(deferred_pios);
 	LIST_HEAD(discard_pios);
+	unsigned int pf_io_thread = (current->flags & PF_IO_THREAD);
+
+	current->flags |= PF_IO_THREAD;
 
 	/*
 	 * In piwb we collect inquires of indexes updates, which are
@@ -1659,6 +1662,8 @@ void do_ploop_work(struct work_struct *ws)
 	}
 
 	check_services_timeout(ploop);
+
+	current->flags = (current->flags & ~PF_IO_THREAD) | pf_io_thread;
 }
 
 void do_ploop_fsync_work(struct work_struct *ws)
