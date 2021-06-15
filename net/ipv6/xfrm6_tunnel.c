@@ -348,7 +348,7 @@ static void __net_exit xfrm6_tunnel_net_exit(struct net *net)
 	audit_info.loginuid = INVALID_UID;
 	audit_info.sessionid = (unsigned int)-1;
 	audit_info.secid = 0;
-	xfrm_state_flush(net, IPSEC_PROTO_ANY, &audit_info);
+	xfrm_state_flush(net, 0, &audit_info);
 	flush_work(&net->xfrm.state_gc_work);
 
 	for (i = 0; i < XFRM6_TUNNEL_SPI_BYADDR_HSIZE; i++)
