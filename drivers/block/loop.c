@@ -942,7 +942,7 @@ static void loop_unprepare_queue(struct loop_device *lo)
 
 static int loop_kthread_worker_fn(void *worker_ptr)
 {
-	current->flags |= PF_LOCAL_THROTTLE | PF_MEMALLOC_NOIO;
+	current->flags |= PF_LOCAL_THROTTLE | PF_MEMALLOC_NOIO | PF_IO_THREAD;
 	return kthread_worker_fn(worker_ptr);
 }
 
