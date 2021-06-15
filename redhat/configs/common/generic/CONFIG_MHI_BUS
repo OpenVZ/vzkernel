@@ -1,1 +1,1 @@
-# CONFIG_MHI_BUS is not set
+CONFIG_MHI_BUS=m
