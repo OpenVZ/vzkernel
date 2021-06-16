@@ -1388,6 +1388,9 @@ static long kernel_set_mempolicy(int mode, const unsigned long __user *nmask,
 	nodemask_t nodes;
 	unsigned short flags;
 
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
+
 	flags = mode & MPOL_MODE_FLAGS;
 	mode &= ~MPOL_MODE_FLAGS;
 	if ((unsigned int)mode >= MPOL_MAX)
@@ -1553,6 +1556,9 @@ COMPAT_SYSCALL_DEFINE5(get_mempolicy, int __user *, policy,
 	unsigned long nr_bits, alloc_size;
 	DECLARE_BITMAP(bm, MAX_NUMNODES);
 
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
+
 	nr_bits = min_t(unsigned long, maxnode-1, MAX_NUMNODES);
 	alloc_size = ALIGN(nr_bits, BITS_PER_LONG) / 8;
 
@@ -1601,6 +1607,9 @@ COMPAT_SYSCALL_DEFINE6(mbind, compat_ulong_t, start, compat_ulong_t, len,
 	unsigned long __user *nm = NULL;
 	unsigned long nr_bits, alloc_size;
 	nodemask_t bm;
+
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
 
 	nr_bits = min_t(unsigned long, maxnode-1, MAX_NUMNODES);
 	alloc_size = ALIGN(nr_bits, BITS_PER_LONG) / 8;
