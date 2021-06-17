@@ -169,7 +169,7 @@ struct ploop {
 	bool inflight_ref_comp_pending;
 	unsigned int inflight_bios_ref_index:1;
 
-	struct list_head delayed_pios;
+	struct list_head suspended_pios;
 	bool stop_submitting_pios;
 
 	spinlock_t inflight_lock;
