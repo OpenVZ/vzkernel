@@ -83,7 +83,6 @@ struct ploop_cmd {
 /* We can't use 0 for unmapped clusters, since RAW image references 0 cluster */
 #define BAT_ENTRY_NONE		UINT_MAX
 
-#define CLEANUP_DELAY		20
 #define PLOOP_INFLIGHT_TIMEOUT	(60 * HZ)
 
 #define PLOOP_BIOS_HTABLE_BITS	8
