@@ -995,6 +995,49 @@ static void ploop_queue_resubmit(struct pio *pio)
 	queue_work(ploop->wq, &ploop->fsync_worker);
 }
 
+void ploop_enospc_timer(struct timer_list *timer)
+{
+	struct ploop *ploop = from_timer(ploop, timer, enospc_timer);
+	unsigned long flags;
+
+	spin_lock_irqsave(&ploop->deferred_lock, flags);
+	list_splice_init(&ploop->enospc_pios, &ploop->resubmit_pios);
+	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+
+	queue_work(ploop->wq, &ploop->fsync_worker);
+}
+
+void ploop_event_work(struct work_struct *ws)
+{
+	struct ploop *ploop = container_of(ws, struct ploop, event_work);
+
+	dm_table_event(ploop->ti->table);
+}
+
+static bool ploop_try_delay_enospc(struct pio *pio)
+{
+	struct ploop *ploop = pio->ploop;
+	bool delayed = true;
+	unsigned long flags;
+
+	spin_lock_irqsave(&ploop->deferred_lock, flags);
+	if (unlikely(ploop->wants_suspend)) {
+		delayed = false;
+		goto unlock;
+	}
+
+	ploop->event_enospc = true;
+	list_add_tail(&pio->list, &ploop->enospc_pios);
+unlock:
+	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+
+	if (delayed)
+		mod_timer(&ploop->enospc_timer, jiffies + PLOOP_ENOSPC_TIMEOUT);
+	schedule_work(&ploop->event_work);
+
+	return delayed;
+}
+
 static void data_rw_complete(struct pio *pio)
 {
 	bool completed;
@@ -1007,8 +1050,12 @@ static void data_rw_complete(struct pio *pio)
 			ploop_queue_resubmit(pio);
 			return;
 		}
-
-                pio->bi_status = errno_to_blk_status(pio->ret);
+		if (pio->ret == -ENOSPC) {
+			WARN_ON_ONCE(!op_is_write(pio->bi_op));
+			if (ploop_try_delay_enospc(pio))
+				return;
+		}
+		pio->bi_status = errno_to_blk_status(pio->ret);
 	}
 
 	if (pio->is_data_alloc) {

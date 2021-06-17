@@ -84,6 +84,7 @@ struct ploop_cmd {
 #define BAT_ENTRY_NONE		UINT_MAX
 
 #define PLOOP_INFLIGHT_TIMEOUT	(60 * HZ)
+#define PLOOP_ENOSPC_TIMEOUT	(20 * HZ)
 
 #define PLOOP_BIOS_HTABLE_BITS	8
 #define PLOOP_BIOS_HTABLE_SIZE	(1 << PLOOP_BIOS_HTABLE_BITS)
@@ -162,6 +163,7 @@ struct ploop {
 	struct workqueue_struct *wq;
 	struct work_struct worker;
 	struct work_struct fsync_worker;
+	struct work_struct event_work;
 
 	struct completion inflight_bios_ref_comp;
 	struct percpu_ref inflight_bios_ref[2];
@@ -177,6 +179,7 @@ struct ploop {
 	struct list_head flush_pios;
 	struct list_head discard_pios;
 	struct list_head resubmit_pios; /* After partial IO */
+	struct list_head enospc_pios; /* Delayed after ENOSPC */
 
 	struct rw_semaphore ctl_rwsem;
 	struct ploop_cmd *deferred_cmd;
@@ -194,9 +197,14 @@ struct ploop {
 	bool noresume;
 	/* Device is suspended */
 	bool suspended;
+	/* Device wants suspend */
+	bool wants_suspend;
 
 	/* Maintaince in process */
 	bool maintaince;
+
+	struct timer_list enospc_timer;
+	bool event_enospc;
 };
 
 struct ploop_rq {
@@ -498,6 +506,7 @@ extern void submit_pios(struct ploop *ploop, struct list_head *list);
 extern void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list);
 extern void do_ploop_work(struct work_struct *ws);
 extern void do_ploop_fsync_work(struct work_struct *ws);
+extern void ploop_event_work(struct work_struct *work);
 extern void process_deferred_cmd(struct ploop *ploop,
 			struct ploop_index_wb *piwb);
 extern int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
@@ -527,4 +536,5 @@ extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 				     void **d_hdr);
 extern void ploop_call_rw_iter(struct file *file, loff_t pos, unsigned rw,
 			       struct iov_iter *iter, struct pio *pio);
+extern void ploop_enospc_timer(struct timer_list *timer);
 #endif /* __DM_PLOOP_H */

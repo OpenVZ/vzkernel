@@ -1204,6 +1204,22 @@ void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 	spin_lock_irq(&ploop->deferred_lock);
 }
 
+static int ploop_get_event(struct ploop *ploop, char *result, unsigned int maxlen)
+{
+	unsigned int sz = 0;
+	int ret = 0;
+
+	spin_lock_irq(&ploop->deferred_lock);
+	if (ploop->event_enospc) {
+		ret = (DMEMIT("event_ENOSPC\n")) ? 1 : 0;
+		if (ret)
+			ploop->event_enospc = false;
+	}
+	spin_unlock_irq(&ploop->deferred_lock);
+
+	return ret;
+}
+
 static bool msg_wants_down_read(const char *cmd)
 {
 	/* TODO: kill get_delta_name */
@@ -1228,6 +1244,12 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 	ret = -EINVAL;
 	if (argc < 1)
 		goto out;
+
+	if (!strcmp(argv[0], "get_event")) {
+		if (argc == 1)
+			ret = ploop_get_event(ploop, result, maxlen);
+		goto out;
+	}
 
 	read = msg_wants_down_read(argv[0]);
 	if (read)
