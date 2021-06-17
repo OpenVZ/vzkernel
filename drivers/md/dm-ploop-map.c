@@ -1639,11 +1639,16 @@ out:
 
 static noinline void submit_pio(struct ploop *ploop, struct pio *pio)
 {
+	struct list_head *queue_list;
+	struct work_struct *worker;
 	unsigned long flags;
 	LIST_HEAD(list);
 	int ret;
 
 	if (pio->bi_iter.bi_size) {
+		queue_list = &ploop->deferred_pios;
+		worker = &ploop->worker;
+
 		if (ploop_pio_valid(ploop, pio) < 0)
 			goto kill;
 
@@ -1652,20 +1657,20 @@ static noinline void submit_pio(struct ploop *ploop, struct pio *pio)
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto endio;
 		}
-		list_add(&pio->list, &list);
+	} else {
+		queue_list = &ploop->flush_pios;
+		worker = &ploop->fsync_worker;
 
-		defer_pios(ploop, NULL, &list);
-		goto out;
+		if (WARN_ON_ONCE(pio->bi_op != REQ_OP_FLUSH))
+			goto kill;
 	}
 
-	if (WARN_ON_ONCE(pio->bi_op != REQ_OP_FLUSH))
-		goto kill;
+	list_add(&pio->list, &list);
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	list_add_tail(&pio->list, &ploop->flush_pios);
+	list_splice_tail(&list, queue_list);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
-	queue_work(ploop->wq, &ploop->fsync_worker);
-out:
+	queue_work(ploop->wq, worker);
 	return;
 kill:
 	pio->bi_status = BLK_STS_IOERR;
