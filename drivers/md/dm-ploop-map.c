@@ -454,24 +454,21 @@ static void del_cluster_lk(struct ploop *ploop, struct pio *pio)
 
 }
 
-static void maybe_link_submitting_pio(struct ploop *ploop, struct pio *pio,
-				      unsigned int cluster)
+static void link_submitting_pio(struct ploop *ploop, struct pio *pio,
+				unsigned int cluster)
 {
 	unsigned long flags;
-
-	if (!ploop->force_rbtree_for_inflight)
-		return;
 
 	spin_lock_irqsave(&ploop->inflight_lock, flags);
 	link_pio(ploop->inflight_pios, pio, cluster, false);
 	spin_unlock_irqrestore(&ploop->inflight_lock, flags);
 }
-static void maybe_unlink_completed_pio(struct ploop *ploop, struct pio *pio)
+static void unlink_completed_pio(struct ploop *ploop, struct pio *pio)
 {
 	LIST_HEAD(pio_list);
 	unsigned long flags;
 
-	if (likely(hlist_unhashed(&pio->hlist_node)))
+	if (hlist_unhashed(&pio->hlist_node))
 		return;
 
 	spin_lock_irqsave(&ploop->inflight_lock, flags);
@@ -546,25 +543,6 @@ static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 	if (ploop->nr_deltas != 1)
 		goto punch_hole;
 
-	if (!ploop->force_rbtree_for_inflight) {
-		/*
-		 * Force all not exclusive inflight bios to link into
-		 * inflight_pios_rbtree. Note, that this does not wait
-		 * completion of two-stages requests (currently, these
-		 * may be only cow, which take cluster lk, so we are
-		 * safe with them).
-		 */
-		ploop->force_rbtree_for_inflight = true;
-		ret = ploop_inflight_bios_ref_switch(ploop, true);
-		if (ret) {
-			pr_err_ratelimited("ploop: discard ignored by err=%d\n",
-					ret);
-			ploop->force_rbtree_for_inflight = false;
-			pio->bi_status = BLK_STS_IOERR;
-			pio_endio(pio);
-		}
-	}
-
 	spin_lock_irqsave(&ploop->inflight_lock, flags);
 	inflight_h = find_inflight_bio(ploop, cluster);
 	if (inflight_h)
@@ -578,7 +556,6 @@ static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 	}
 
 	add_cluster_lk(ploop, pio, cluster);
-	atomic_inc(&ploop->nr_discard_bios);
 	pio->wants_discard_index_cleanup = true;
 
 punch_hole:
@@ -598,11 +575,6 @@ punch_hole:
 static void ploop_discard_index_pio_end(struct ploop *ploop, struct pio *pio)
 {
 	del_cluster_lk(ploop, pio);
-
-	WRITE_ONCE(ploop->pending_discard_cleanup, jiffies);
-	/* Pairs with barrier in do_discard_cleanup() */
-	smp_mb__before_atomic();
-	atomic_dec(&ploop->nr_discard_bios);
 }
 
 static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
@@ -1479,7 +1451,7 @@ queue:
 	inc_nr_inflight(ploop, pio);
 	read_unlock_irq(&ploop->bat_rwlock);
 
-	maybe_link_submitting_pio(ploop, pio, cluster);
+	link_submitting_pio(ploop, pio, cluster);
 
 	submit_rw_mapped(ploop, dst_cluster, pio);
 out:
@@ -1563,25 +1535,6 @@ out:
 	return 0;
 }
 
-static void do_discard_cleanup(struct ploop *ploop)
-{
-	unsigned long cleanup_jiffies;
-
-	if (ploop->force_rbtree_for_inflight &&
-	    !atomic_read(&ploop->nr_discard_bios)) {
-		/* Pairs with barrier in ploop_discard_index_pio_end() */
-		smp_rmb();
-		cleanup_jiffies = READ_ONCE(ploop->pending_discard_cleanup);
-
-		if (time_after(jiffies, cleanup_jiffies + CLEANUP_DELAY * HZ))
-			ploop->force_rbtree_for_inflight = false;
-	}
-}
-
-/*
- * This switches the device back in !force_rbtree_for_inflight mode
- * after cleanup timeout has expired.
- */
 static void process_discard_pios(struct ploop *ploop, struct list_head *pios,
 				 struct ploop_index_wb *piwb)
 {
@@ -1589,11 +1542,6 @@ static void process_discard_pios(struct ploop *ploop, struct list_head *pios,
 
 	while ((pio = pio_list_pop(pios)) != NULL)
 		process_one_discard_pio(ploop, pio, piwb);
-}
-
-static void check_services_timeout(struct ploop *ploop)
-{
-	do_discard_cleanup(ploop);
 }
 
 void do_ploop_work(struct work_struct *ws)
@@ -1634,8 +1582,6 @@ void do_ploop_work(struct work_struct *ws)
 		ploop_submit_index_wb_sync(ploop, &piwb);
 		ploop_reset_bat_update(&piwb);
 	}
-
-	check_services_timeout(ploop);
 
 	current->flags = (current->flags & ~PF_IO_THREAD) | pf_io_thread;
 }
@@ -1786,7 +1732,7 @@ static void handle_cleanup(struct ploop *ploop, struct pio *pio)
 	if (pio->wants_discard_index_cleanup)
 		ploop_discard_index_pio_end(ploop, pio);
 
-	maybe_unlink_completed_pio(ploop, pio);
+	unlink_completed_pio(ploop, pio);
 	dec_nr_inflight(ploop, pio);
 }
 
