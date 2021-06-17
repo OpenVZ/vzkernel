@@ -161,7 +161,7 @@ static void ploop_destroy(struct ploop *ploop)
 			fput(ploop->deltas[ploop->nr_deltas].file);
 	}
 	WARN_ON(!RB_EMPTY_ROOT(&ploop->exclusive_bios_rbtree));
-	WARN_ON(!RB_EMPTY_ROOT(&ploop->inflight_bios_rbtree));
+	WARN_ON(!RB_EMPTY_ROOT(&ploop->inflight_pios_rbtree));
 	kfree(ploop->deltas);
 	kvfree(ploop->holes_bitmap);
 	kvfree(ploop->tracking_bitmap);
@@ -309,7 +309,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	atomic_set(&ploop->nr_discard_bios, 0);
 	ploop->bat_entries = RB_ROOT;
 	ploop->exclusive_bios_rbtree = RB_ROOT;
-	ploop->inflight_bios_rbtree = RB_ROOT;
+	ploop->inflight_pios_rbtree = RB_ROOT;
 
 	INIT_WORK(&ploop->worker, do_ploop_work);
 	INIT_WORK(&ploop->fsync_worker, do_ploop_fsync_work);
