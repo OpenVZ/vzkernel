@@ -104,6 +104,7 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 	INIT_LIST_HEAD(&pio->endio_list);
 	/* FIXME: assign real cluster? */
 	pio->cluster = UINT_MAX;
+	pio->level = BAT_LEVEL_INVALID;
 }
 
 /* Get cluster related to pio sectors */
@@ -1015,7 +1016,7 @@ static void data_rw_complete(struct pio *pio)
 	pio_endio(pio);
 }
 
-static void submit_rw_mapped(struct ploop *ploop, struct pio *pio, u8 level)
+static void submit_rw_mapped(struct ploop *ploop, struct pio *pio)
 {
 	unsigned int rw, nr_segs;
 	struct bio_vec *bvec;
@@ -1023,7 +1024,7 @@ static void submit_rw_mapped(struct ploop *ploop, struct pio *pio, u8 level)
 	struct file *file;
 	loff_t pos;
 
-	BUG_ON(level > top_level(ploop));
+	BUG_ON(pio->level > top_level(ploop));
 
 	pio->complete = data_rw_complete;
 
@@ -1036,14 +1037,16 @@ static void submit_rw_mapped(struct ploop *ploop, struct pio *pio, u8 level)
 
 	pos = to_bytes(pio->bi_iter.bi_sector);
 
-	file = ploop->deltas[level].file;
+	file = ploop->deltas[pio->level].file;
 	ploop_call_rw_iter(file, pos, rw, &iter, pio);
 }
 
 void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level)
 {
 	remap_to_cluster(ploop, pio, dst_clu);
-	submit_rw_mapped(ploop, pio, level);
+	pio->level = level;
+
+	submit_rw_mapped(ploop, pio);
 }
 
 static void initiate_delta_read(struct ploop *ploop, unsigned int level,
