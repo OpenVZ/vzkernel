@@ -94,7 +94,7 @@ static int wait_for_completion_maybe_killable(struct completion *comp,
  * weaker, than "dmsetup suspend".
  * It is called from kwork only, so this can't be executed in parallel.
  */
-int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable)
+static int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable)
 {
 	struct completion *comp = &ploop->inflight_bios_ref_comp;
 	unsigned int index = ploop->inflight_bios_ref_index;
