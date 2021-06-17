@@ -1022,7 +1022,7 @@ static void data_rw_complete(struct pio *pio)
 	pio_endio(pio);
 }
 
-void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level)
+static void submit_rw_mapped(struct ploop *ploop, struct pio *pio, u8 level)
 {
 	unsigned int rw, nr_segs;
 	struct bio_vec *bvec;
@@ -1041,11 +1041,16 @@ void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 lev
 	iov_iter_bvec(&iter, rw, bvec, nr_segs, pio->bi_iter.bi_size);
 	iter.iov_offset = pio->bi_iter.bi_bvec_done;
 
-	remap_to_cluster(ploop, pio, dst_clu);
 	pos = to_bytes(pio->bi_iter.bi_sector);
 
 	file = ploop->deltas[level].file;
 	ploop_call_rw_iter(file, pos, rw, &iter, pio);
+}
+
+void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level)
+{
+	remap_to_cluster(ploop, pio, dst_clu);
+	submit_rw_mapped(ploop, pio, level);
 }
 
 static void initiate_delta_read(struct ploop *ploop, unsigned int level,
