@@ -19,30 +19,6 @@
 
 #define PREALLOC_SIZE (128ULL * 1024 * 1024)
 
-/*
- * The idea of this driver is that the most part of time it does nothing:
- * ploop_map() just replaces bio->bi_iter.bi_sector with the cluster value
- * referred in bat_entries[]. No kwork is involved, all the work becomes
- * delegated to backed device (loop). Kwork starts only when a bio aims
- * to a not present cluster or for service requests.
- *
- * Service operations are also made from kwork, so sometimes we may avoid
- * synchronization because of this. Two different service operations can't
- * be executed in parallel.
- *
- * Discard begins from switching ploop in a special mode, when all requests
- * are managed by kwork, while all not-exclusive bios (e.g., READ or simple
- * WRITE) are linked to inflight_pios_rbtree. Discard bios are linked into
- * exclusive_bios_rbtree, but their start is delayed till all not-exclusive
- * bios going into the same cluster are finished. After exclusive bio is
- * started, the corresponding cluster becomes "locked", and all further bios
- * going into the same cluster becomes delayed.
- * Since the swithing into the mode is expensive, ploop remains in the mode
- * for CLEANUP_DELAY seconds in a hope that a new discard bio will come.
- * After this interval the device returns into normal mode, and ordinary bios
- * become handled in ploop_map() as before.
- */
-
 static void handle_cleanup(struct ploop *ploop, struct pio *pio);
 
 #define DM_MSG_PREFIX "ploop"
