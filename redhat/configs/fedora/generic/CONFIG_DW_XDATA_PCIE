@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_DW_XDATA_PCIE is not set
+CONFIG_DW_XDATA_PCIE=m

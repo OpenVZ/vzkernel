@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_GIGABYTE_WMI is not set
+CONFIG_GIGABYTE_WMI=m

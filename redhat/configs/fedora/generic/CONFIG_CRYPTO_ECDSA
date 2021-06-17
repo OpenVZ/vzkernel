@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_CRYPTO_ECDSA is not set
+CONFIG_CRYPTO_ECDSA=y

@@ -21,4 +21,4 @@
 # 
 # 
 # 
-# CONFIG_CORESIGHT_TRBE is not set
+CONFIG_CORESIGHT_TRBE=m
