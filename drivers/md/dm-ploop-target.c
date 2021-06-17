@@ -317,6 +317,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	INIT_LIST_HEAD(&ploop->deferred_pios);
 	INIT_LIST_HEAD(&ploop->flush_pios);
 	INIT_LIST_HEAD(&ploop->discard_pios);
+	INIT_LIST_HEAD(&ploop->resubmit_pios);
 	INIT_LIST_HEAD(&ploop->cluster_lk_list);
 	INIT_LIST_HEAD(&ploop->delta_cow_action_list);
 	ploop->bat_entries = RB_ROOT;

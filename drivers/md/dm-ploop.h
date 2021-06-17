@@ -177,6 +177,7 @@ struct ploop {
 	struct list_head deferred_pios;
 	struct list_head flush_pios;
 	struct list_head discard_pios;
+	struct list_head resubmit_pios; /* After partial IO */
 
 	struct rw_semaphore ctl_rwsem;
 	struct ploop_cmd *deferred_cmd;
