@@ -160,8 +160,10 @@ static void ploop_destroy(struct ploop *ploop)
 		if (ploop->deltas[ploop->nr_deltas].file)
 			fput(ploop->deltas[ploop->nr_deltas].file);
 	}
-	WARN_ON(!RB_EMPTY_ROOT(&ploop->exclusive_bios_rbtree));
-	WARN_ON(!RB_EMPTY_ROOT(&ploop->inflight_pios_rbtree));
+//	WARN_ON(!RB_EMPTY_ROOT(&ploop->exclusive_pios));
+//	WARN_ON(!RB_EMPTY_ROOT(&ploop->inflight_pios));
+	kfree(ploop->inflight_pios);
+	kfree(ploop->exclusive_pios);
 	kfree(ploop->deltas);
 	kvfree(ploop->holes_bitmap);
 	kvfree(ploop->tracking_bitmap);
@@ -297,6 +299,17 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		return -ENOMEM;
 	}
 
+	ploop->exclusive_pios = kcalloc(PLOOP_HASH_TABLE_SIZE,
+					sizeof(struct hlist_head),
+					GFP_KERNEL);
+	ploop->inflight_pios = kcalloc(PLOOP_HASH_TABLE_SIZE,
+					sizeof(struct hlist_head),
+					GFP_KERNEL);
+	if (!ploop->exclusive_pios || !ploop->inflight_pios) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
 	rwlock_init(&ploop->bat_rwlock);
 	init_rwsem(&ploop->ctl_rwsem);
 	spin_lock_init(&ploop->inflight_lock);
@@ -309,8 +322,6 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	INIT_LIST_HEAD(&ploop->delta_cow_action_list);
 	atomic_set(&ploop->nr_discard_bios, 0);
 	ploop->bat_entries = RB_ROOT;
-	ploop->exclusive_bios_rbtree = RB_ROOT;
-	ploop->inflight_pios_rbtree = RB_ROOT;
 
 	INIT_WORK(&ploop->worker, do_ploop_work);
 	INIT_WORK(&ploop->fsync_worker, do_ploop_fsync_work);
