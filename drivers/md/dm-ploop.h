@@ -518,7 +518,6 @@ extern void process_deferred_cmd(struct ploop *ploop,
 			struct ploop_index_wb *piwb);
 extern int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 		    union map_info *map_context, struct request **clone);
-extern int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable);
 extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
 extern void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio);
 extern int ploop_rw_page_sync(unsigned rw, struct file *file,
