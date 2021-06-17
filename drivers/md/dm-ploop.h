@@ -502,7 +502,7 @@ extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
 extern void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio);
 extern int ploop_rw_page_sync(unsigned rw, struct file *file,
 			      u64 index, struct page *page);
-extern void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio);
+extern void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level);
 
 extern int ploop_prepare_reloc_index_wb(struct ploop *, struct ploop_index_wb *,
 					unsigned int, unsigned int *);

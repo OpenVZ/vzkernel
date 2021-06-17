@@ -1022,12 +1022,15 @@ static void data_rw_complete(struct pio *pio)
 	pio_endio(pio);
 }
 
-void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio)
+void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level)
 {
 	unsigned int rw, nr_segs;
 	struct bio_vec *bvec;
 	struct iov_iter iter;
+	struct file *file;
 	loff_t pos;
+
+	BUG_ON(level > top_level(ploop));
 
 	pio->complete = data_rw_complete;
 
@@ -1041,7 +1044,8 @@ void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio)
 	remap_to_cluster(ploop, pio, dst_clu);
 	pos = to_bytes(pio->bi_iter.bi_sector);
 
-	ploop_call_rw_iter(top_delta(ploop)->file, pos, rw, &iter, pio);
+	file = ploop->deltas[level].file;
+	ploop_call_rw_iter(file, pos, rw, &iter, pio);
 }
 
 /*
@@ -1191,7 +1195,7 @@ static void submit_cluster_write(struct ploop_cow *cow)
 	pio->endio_cb = ploop_cow_endio;
 	pio->endio_cb_data = cow;
 
-	submit_rw_mapped(ploop, dst_cluster, pio);
+	submit_rw_mapped(ploop, dst_cluster, pio, top_level(ploop));
 	return;
 error:
 	complete_cow(cow, BLK_STS_IOERR);
@@ -1400,7 +1404,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 queue:
 	link_submitting_pio(ploop, pio, cluster);
 
-	submit_rw_mapped(ploop, dst_cluster, pio);
+	submit_rw_mapped(ploop, dst_cluster, pio, top_level(ploop));
 out:
 	return 0;
 }
