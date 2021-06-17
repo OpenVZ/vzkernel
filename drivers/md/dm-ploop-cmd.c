@@ -1160,10 +1160,9 @@ static int ploop_set_noresume(struct ploop *ploop, char *mode)
 
 static int ploop_flip_upper_deltas(struct ploop *ploop)
 {
-	struct dm_target *ti = ploop->ti;
 	struct file *file;
 
-	if (!dm_suspended(ti) || !ploop->noresume || ploop->maintaince)
+	if (!ploop->suspended || !ploop->noresume || ploop->maintaince)
 		return -EBUSY;
 	if (ploop_is_ro(ploop))
 		return -EROFS;
