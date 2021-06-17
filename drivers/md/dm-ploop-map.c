@@ -1007,12 +1007,33 @@ static bool ploop_attach_end_action(struct pio *pio, struct ploop_index_wb *piwb
 	return true;
 }
 
+static void ploop_queue_resubmit(struct pio *pio)
+{
+	struct ploop *ploop = pio->ploop;
+	unsigned long flags;
+
+	spin_lock_irqsave(&ploop->deferred_lock, flags);
+	list_add_tail(&pio->list, &ploop->resubmit_pios);
+	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+
+	queue_work(ploop->wq, &ploop->fsync_worker);
+}
+
 static void data_rw_complete(struct pio *pio)
 {
 	bool completed;
 
-	if (pio->ret != pio->bi_iter.bi_size)
-                pio->bi_status = BLK_STS_IOERR;
+	if (pio->ret != pio->bi_iter.bi_size) {
+		if (pio->ret >= 0) {
+			/* Partial IO */
+			WARN_ON_ONCE(pio->ret == 0);
+			pio_advance(pio, pio->ret);
+			ploop_queue_resubmit(pio);
+			return;
+		}
+
+                pio->bi_status = errno_to_blk_status(pio->ret);
+	}
 
 	if (pio->is_data_alloc) {
 		completed = ploop_data_pio_end(pio);
@@ -1023,6 +1044,11 @@ static void data_rw_complete(struct pio *pio)
 	pio_endio(pio);
 }
 
+/*
+ * XXX: Keep in mind, data_rw_complete may queue resubmit after partial IO.
+ * Don't use this function from fsync kwork in case of the caller blocks
+ * to wait for completion, since kwork is who resubmits after partial IO.
+ */
 static void submit_rw_mapped(struct ploop *ploop, struct pio *pio)
 {
 	unsigned int rw, nr_segs;
@@ -1473,6 +1499,14 @@ static void process_discard_pios(struct ploop *ploop, struct list_head *pios,
 		process_one_discard_pio(ploop, pio, piwb);
 }
 
+static void process_resubmit_pios(struct ploop *ploop, struct list_head *pios)
+{
+	struct pio *pio;
+
+	while ((pio = pio_list_pop(pios)) != NULL)
+		submit_rw_mapped(ploop, pio);
+}
+
 void do_ploop_work(struct work_struct *ws)
 {
 	struct ploop *ploop = container_of(ws, struct ploop, worker);
@@ -1518,6 +1552,7 @@ void do_ploop_work(struct work_struct *ws)
 void do_ploop_fsync_work(struct work_struct *ws)
 {
 	struct ploop *ploop = container_of(ws, struct ploop, fsync_worker);
+	LIST_HEAD(resubmit_pios);
 	LIST_HEAD(flush_pios);
 	struct file *file;
 	struct pio *pio;
@@ -1525,7 +1560,14 @@ void do_ploop_fsync_work(struct work_struct *ws)
 
 	spin_lock_irq(&ploop->deferred_lock);
 	list_splice_init(&ploop->flush_pios, &flush_pios);
+	list_splice_init(&ploop->resubmit_pios, &resubmit_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
+
+	/*
+	 * FIXME: move this to main kwork, after BAT write
+	 * will be made async.
+	 */
+	process_resubmit_pios(ploop, &resubmit_pios);
 
 	file = top_delta(ploop)->file;
 	ret = vfs_fsync(file, 0);
