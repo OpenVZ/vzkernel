@@ -143,6 +143,17 @@ static bool ploop_has_pending_activity(struct ploop *ploop)
 	return has;
 }
 
+static bool ploop_empty_htable(struct hlist_head head[])
+{
+	int i;
+
+	for (i = 0; i < PLOOP_HASH_TABLE_SIZE; i++)
+		if (!hlist_empty(&head[i]))
+			return false;
+
+	return true;
+}
+
 static void ploop_destroy(struct ploop *ploop)
 {
 	int i;
@@ -159,8 +170,8 @@ static void ploop_destroy(struct ploop *ploop)
 		if (ploop->deltas[ploop->nr_deltas].file)
 			fput(ploop->deltas[ploop->nr_deltas].file);
 	}
-//	WARN_ON(!RB_EMPTY_ROOT(&ploop->exclusive_pios));
-//	WARN_ON(!RB_EMPTY_ROOT(&ploop->inflight_pios));
+	WARN_ON(!ploop_empty_htable(ploop->exclusive_pios));
+	WARN_ON(!ploop_empty_htable(ploop->inflight_pios));
 	kfree(ploop->inflight_pios);
 	kfree(ploop->exclusive_pios);
 	kfree(ploop->deltas);
