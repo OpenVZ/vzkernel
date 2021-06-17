@@ -191,6 +191,7 @@ struct ploop {
 	bool inflight_ref_comp_pending;
 	unsigned int inflight_bios_ref_index:1;
 
+	spinlock_t inflight_lock;
 	spinlock_t deferred_lock;
 	struct list_head deferred_pios;
 	struct list_head flush_pios;
