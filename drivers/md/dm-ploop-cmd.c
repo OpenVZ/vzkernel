@@ -146,7 +146,7 @@ static void ploop_resume_submitting_pios(struct ploop *ploop)
 	spin_lock_irq(&ploop->deferred_lock);
 	WARN_ON_ONCE(!ploop->stop_submitting_pios);
 	ploop->stop_submitting_pios = false;
-	list_splice_tail_init(&ploop->delayed_pios, &list);
+	list_splice_tail_init(&ploop->suspended_pios, &list);
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	submit_pios(ploop, &list);

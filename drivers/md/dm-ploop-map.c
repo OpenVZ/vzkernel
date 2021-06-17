@@ -1641,7 +1641,7 @@ static void submit_pio(struct ploop *ploop, struct pio *pio)
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	if (unlikely(ploop->stop_submitting_pios)) {
-		list_splice_tail(&list, &ploop->delayed_pios);
+		list_splice_tail(&list, &ploop->suspended_pios);
 		queue = false;
 		goto unlock;
 	}

@@ -324,7 +324,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	spin_lock_init(&ploop->inflight_lock);
 	spin_lock_init(&ploop->deferred_lock);
 
-	INIT_LIST_HEAD(&ploop->delayed_pios);
+	INIT_LIST_HEAD(&ploop->suspended_pios);
 	INIT_LIST_HEAD(&ploop->deferred_pios);
 	INIT_LIST_HEAD(&ploop->flush_pios);
 	INIT_LIST_HEAD(&ploop->discard_pios);
