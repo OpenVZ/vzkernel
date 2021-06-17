@@ -320,7 +320,6 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	INIT_LIST_HEAD(&ploop->discard_pios);
 	INIT_LIST_HEAD(&ploop->cluster_lk_list);
 	INIT_LIST_HEAD(&ploop->delta_cow_action_list);
-	atomic_set(&ploop->nr_discard_bios, 0);
 	ploop->bat_entries = RB_ROOT;
 
 	INIT_WORK(&ploop->worker, do_ploop_work);
