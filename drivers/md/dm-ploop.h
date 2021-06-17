@@ -167,17 +167,17 @@ struct ploop {
 
 	bool force_rbtree_for_inflight;
 	/*
-	 * RBtree to link non-exclusive submitted bios.
+	 * Hash table to link non-exclusive submitted bios.
 	 * This is needed for discard to check, nobody uses
 	 * the discarding cluster. Only made when the above
 	 * force_rbtree_for_inflight is enabled.
 	 */
-	struct rb_root inflight_pios_rbtree;
+	struct hlist_head *inflight_pios;
 	/*
 	 * Hash table to link exclusive submitted bios.
 	 * This allows to delay bios going in some cluster.
 	 */
-	struct rb_root exclusive_bios_rbtree;
+	struct hlist_head *exclusive_pios;
 
 	atomic_t nr_discard_bios;
 	unsigned long pending_discard_cleanup;
@@ -228,7 +228,7 @@ struct pio {
 	struct ploop *ploop;
 
 	struct list_head list;
-	struct rb_node node;
+	struct hlist_node hlist_node;
 	/* List of pios, which will be queued from this pio end */
 	struct list_head endio_list;
 
@@ -481,14 +481,7 @@ static inline void track_pio(struct ploop *ploop, struct pio *pio)
 		__track_pio(ploop, pio);
 }
 
-extern struct pio *find_pio_range(struct ploop *ploop, struct rb_root *root,
-				  unsigned int l, unsigned int r);
-
-static inline struct pio *find_pio(struct ploop *ploop, struct rb_root *root,
-					  unsigned int cluster)
-{
-	return find_pio_range(ploop, root, cluster, cluster);
-}
+extern struct pio *find_pio(struct hlist_head head[], u32 clu);
 
 extern int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
 			     unsigned int new_nr_bat_entries);
@@ -506,6 +499,13 @@ static inline struct pio *pio_list_pop(struct list_head *pio_list)
 	if (pio)
 		list_del_init(&pio->list);
 	return pio;
+}
+
+#define PLOOP_HASH_TABLE_BITS 5
+#define PLOOP_HASH_TABLE_SIZE (1 << PLOOP_HASH_TABLE_BITS)
+static inline struct hlist_head *ploop_htable_slot(struct hlist_head head[], u32 clu)
+{
+	return &head[hash_32(clu, PLOOP_HASH_TABLE_BITS)];
 }
 
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);

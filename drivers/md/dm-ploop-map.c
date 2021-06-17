@@ -107,10 +107,10 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 	atomic_set(&pio->remaining, 1);
 	pio->piwb = NULL;
 	INIT_LIST_HEAD(&pio->list);
+	INIT_HLIST_NODE(&pio->hlist_node);
 	INIT_LIST_HEAD(&pio->endio_list);
 	/* FIXME: assign real cluster? */
 	pio->cluster = UINT_MAX;
-	RB_CLEAR_NODE(&pio->node);
 }
 
 /* Get cluster related to pio sectors */
@@ -340,19 +340,15 @@ static void zero_fill_pio(struct pio *pio)
 	}
 }
 
-struct pio *find_pio_range(struct ploop *ploop, struct rb_root *root,
-			   unsigned int left, unsigned int right)
+struct pio *find_pio(struct hlist_head head[], u32 clu)
 {
-	struct rb_node *node = root->rb_node;
+	struct hlist_head *slot = ploop_htable_slot(head, clu);
 	struct pio *pio;
 
-	while (node) {
-		pio = rb_entry(node, struct pio, node);
-		if (right < pio->cluster)
-			node = node->rb_left;
-		else if (left > pio->cluster)
-			node = node->rb_right;
-		else
+	BUG_ON(!slot);
+
+	hlist_for_each_entry(pio, slot, hlist_node) {
+		if (pio->cluster == clu)
 			return pio;
 	}
 
@@ -362,13 +358,13 @@ struct pio *find_pio_range(struct ploop *ploop, struct rb_root *root,
 static struct pio *find_inflight_bio(struct ploop *ploop, unsigned int cluster)
 {
 	lockdep_assert_held(&ploop->inflight_lock);
-	return find_pio(ploop, &ploop->inflight_pios_rbtree, cluster);
+	return find_pio(ploop->inflight_pios, cluster);
 }
 
 struct pio *find_lk_of_cluster(struct ploop *ploop, unsigned int cluster)
 {
 	lockdep_assert_held(&ploop->deferred_lock);
-	return find_pio(ploop, &ploop->exclusive_bios_rbtree, cluster);
+	return find_pio(ploop->exclusive_pios, cluster);
 }
 
 static void add_endio_pio(struct pio *head, struct pio *pio)
@@ -404,37 +400,17 @@ static void dec_nr_inflight(struct ploop *ploop, struct pio *pio)
 	}
 }
 
-static void link_pio(struct ploop *ploop, struct pio *new, struct rb_root *root,
-		     unsigned int cluster, bool exclusive)
+static void link_pio(struct hlist_head head[], struct pio *pio,
+		     u32 clu, bool exclusive)
 {
-	struct rb_node *parent, **node = &root->rb_node;
-	struct pio *pio;
+	struct hlist_head *slot = ploop_htable_slot(head, clu);
 
-	BUG_ON(!RB_EMPTY_NODE(&new->node));
-	parent = NULL;
+	if (exclusive)
+		WARN_ON_ONCE(find_pio(head, clu) != NULL);
 
-	while (*node) {
-		pio = rb_entry(*node, struct pio, node);
-		parent = *node;
-		if (cluster < pio->cluster)
-			node = &parent->rb_left;
-		else if (cluster > pio->cluster)
-			node = &parent->rb_right;
-		else {
-			if (exclusive)
-				BUG();
-			if (new < pio)
-				node = &parent->rb_left;
-			else if (new > pio)
-				node = &parent->rb_right;
-			else
-				BUG();
-		}
-	}
-
-	new->cluster = cluster;
-	rb_link_node(&new->node, parent, node);
-	rb_insert_color(&new->node, root);
+	BUG_ON(!hlist_unhashed(&pio->hlist_node));
+	hlist_add_head(&pio->hlist_node, slot);
+	pio->cluster = clu;
 }
 
 /*
@@ -442,14 +418,12 @@ static void link_pio(struct ploop *ploop, struct pio *new, struct rb_root *root,
  * or from exclusive_bios_rbtree. BIOs from endio_list are requeued
  * to deferred_list.
  */
-static void unlink_pio(struct ploop *ploop, struct rb_root *root,
-		       struct pio *pio, struct list_head *pio_list)
+static void unlink_pio(struct ploop *ploop, struct pio *pio,
+		       struct list_head *pio_list)
 {
-	BUG_ON(RB_EMPTY_NODE(&pio->node));
+	BUG_ON(hlist_unhashed(&pio->hlist_node));
 
-	rb_erase(&pio->node, root);
-	RB_CLEAR_NODE(&pio->node);
-
+	hlist_del_init(&pio->hlist_node);
 	list_splice_tail_init(&pio->endio_list, pio_list);
 }
 
@@ -458,7 +432,7 @@ static void add_cluster_lk(struct ploop *ploop, struct pio *pio, u32 cluster)
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	link_pio(ploop, pio, &ploop->exclusive_bios_rbtree, cluster, true);
+	link_pio(ploop->exclusive_pios, pio, cluster, true);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 }
 static void del_cluster_lk(struct ploop *ploop, struct pio *pio)
@@ -468,7 +442,7 @@ static void del_cluster_lk(struct ploop *ploop, struct pio *pio)
 	bool queue = false;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	unlink_pio(ploop, &ploop->exclusive_bios_rbtree, pio, &pio_list);
+	unlink_pio(ploop, pio, &pio_list);
 	if (!list_empty(&pio_list)) {
 		list_splice_tail(&pio_list, &ploop->deferred_pios);
 		queue = true;
@@ -489,7 +463,7 @@ static void maybe_link_submitting_pio(struct ploop *ploop, struct pio *pio,
 		return;
 
 	spin_lock_irqsave(&ploop->inflight_lock, flags);
-	link_pio(ploop, pio, &ploop->inflight_pios_rbtree, cluster, false);
+	link_pio(ploop->inflight_pios, pio, cluster, false);
 	spin_unlock_irqrestore(&ploop->inflight_lock, flags);
 }
 static void maybe_unlink_completed_pio(struct ploop *ploop, struct pio *pio)
@@ -497,11 +471,11 @@ static void maybe_unlink_completed_pio(struct ploop *ploop, struct pio *pio)
 	LIST_HEAD(pio_list);
 	unsigned long flags;
 
-	if (likely(RB_EMPTY_NODE(&pio->node)))
+	if (likely(hlist_unhashed(&pio->hlist_node)))
 		return;
 
 	spin_lock_irqsave(&ploop->inflight_lock, flags);
-	unlink_pio(ploop, &ploop->inflight_pios_rbtree, pio, &pio_list);
+	unlink_pio(ploop, pio, &pio_list);
 	spin_unlock_irqrestore(&ploop->inflight_lock, flags);
 
 	if (!list_empty(&pio_list)) {
