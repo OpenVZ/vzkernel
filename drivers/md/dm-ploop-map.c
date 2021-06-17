@@ -1022,7 +1022,7 @@ static void data_rw_complete(struct pio *pio)
 	pio_endio(pio);
 }
 
-void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level)
+void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level)
 {
 	unsigned int rw, nr_segs;
 	struct bio_vec *bvec;
@@ -1058,7 +1058,7 @@ static void initiate_delta_read(struct ploop *ploop, unsigned int level,
 		return;
 	}
 
-	submit_rw_mapped(ploop, dst_cluster, pio, level);
+	map_and_submit_rw(ploop, dst_cluster, pio, level);
 }
 
 static void ploop_cow_endio(struct pio *cluster_pio, void *data, blk_status_t bi_status)
@@ -1115,7 +1115,7 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	add_cluster_lk(ploop, &cow->aux_pio, cluster);
 
 	/* Stage #0: read secondary delta full cluster */
-	submit_rw_mapped(ploop, dst_cluster, pio, level);
+	map_and_submit_rw(ploop, dst_cluster, pio, level);
 	return 0;
 err:
 	if (pio)
@@ -1165,7 +1165,7 @@ static void submit_cluster_write(struct ploop_cow *cow)
 	pio->endio_cb = ploop_cow_endio;
 	pio->endio_cb_data = cow;
 
-	submit_rw_mapped(ploop, dst_cluster, pio, top_level(ploop));
+	map_and_submit_rw(ploop, dst_cluster, pio, top_level(ploop));
 	return;
 error:
 	complete_cow(cow, BLK_STS_IOERR);
@@ -1374,7 +1374,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 queue:
 	link_submitting_pio(ploop, pio, cluster);
 
-	submit_rw_mapped(ploop, dst_cluster, pio, top_level(ploop));
+	map_and_submit_rw(ploop, dst_cluster, pio, top_level(ploop));
 out:
 	return 0;
 }

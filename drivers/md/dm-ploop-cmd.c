@@ -224,7 +224,7 @@ static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
 	pio->endio_cb = wake_completion;
 	pio->endio_cb_data = &completion;
 
-	submit_rw_mapped(ploop, dst_cluster, pio, top_level(ploop));
+	map_and_submit_rw(ploop, dst_cluster, pio, top_level(ploop));
 	wait_for_completion(&completion);
 
 	if (pio->bi_status)
@@ -250,7 +250,7 @@ static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 	pio->endio_cb = wake_completion;
 	pio->endio_cb_data = &completion;
 
-	submit_rw_mapped(ploop, dst_cluster, pio, top_level(ploop));
+	map_and_submit_rw(ploop, dst_cluster, pio, top_level(ploop));
 	wait_for_completion(&completion);
 
 	if (pio->bi_status)
