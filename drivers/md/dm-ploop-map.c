@@ -340,20 +340,20 @@ static void zero_fill_pio(struct pio *pio)
 	}
 }
 
-struct pio *find_endio_hook_range(struct ploop *ploop, struct rb_root *root,
-				  unsigned int left, unsigned int right)
+struct pio *find_pio_range(struct ploop *ploop, struct rb_root *root,
+			   unsigned int left, unsigned int right)
 {
 	struct rb_node *node = root->rb_node;
-	struct pio *h;
+	struct pio *pio;
 
 	while (node) {
-		h = rb_entry(node, struct pio, node);
-		if (right < h->cluster)
+		pio = rb_entry(node, struct pio, node);
+		if (right < pio->cluster)
 			node = node->rb_left;
-		else if (left > h->cluster)
+		else if (left > pio->cluster)
 			node = node->rb_right;
 		else
-			return h;
+			return pio;
 	}
 
 	return NULL;
@@ -362,13 +362,13 @@ struct pio *find_endio_hook_range(struct ploop *ploop, struct rb_root *root,
 static struct pio *find_inflight_bio(struct ploop *ploop, unsigned int cluster)
 {
 	lockdep_assert_held(&ploop->deferred_lock);
-	return find_endio_hook(ploop, &ploop->inflight_bios_rbtree, cluster);
+	return find_pio(ploop, &ploop->inflight_bios_rbtree, cluster);
 }
 
 struct pio *find_lk_of_cluster(struct ploop *ploop, unsigned int cluster)
 {
 	lockdep_assert_held(&ploop->deferred_lock);
-	return find_endio_hook(ploop, &ploop->exclusive_bios_rbtree, cluster);
+	return find_pio(ploop, &ploop->exclusive_bios_rbtree, cluster);
 }
 
 static void add_endio_pio(struct pio *head, struct pio *pio)
@@ -404,28 +404,28 @@ static void dec_nr_inflight(struct ploop *ploop, struct pio *pio)
 	}
 }
 
-static void link_endio_hook(struct ploop *ploop, struct pio *new, struct rb_root *root,
-			    unsigned int cluster, bool exclusive)
+static void link_pio(struct ploop *ploop, struct pio *new, struct rb_root *root,
+		     unsigned int cluster, bool exclusive)
 {
 	struct rb_node *parent, **node = &root->rb_node;
-	struct pio *h;
+	struct pio *pio;
 
 	BUG_ON(!RB_EMPTY_NODE(&new->node));
 	parent = NULL;
 
 	while (*node) {
-		h = rb_entry(*node, struct pio, node);
+		pio = rb_entry(*node, struct pio, node);
 		parent = *node;
-		if (cluster < h->cluster)
+		if (cluster < pio->cluster)
 			node = &parent->rb_left;
-		else if (cluster > h->cluster)
+		else if (cluster > pio->cluster)
 			node = &parent->rb_right;
 		else {
 			if (exclusive)
 				BUG();
-			if (new < h)
+			if (new < pio)
 				node = &parent->rb_left;
-			else if (new > h)
+			else if (new > pio)
 				node = &parent->rb_right;
 			else
 				BUG();
@@ -438,37 +438,37 @@ static void link_endio_hook(struct ploop *ploop, struct pio *new, struct rb_root
 }
 
 /*
- * Removes endio hook of completed bio either from inflight_bios_rbtree
+ * Removes @pio of completed bio either from inflight_bios_rbtree
  * or from exclusive_bios_rbtree. BIOs from endio_list are requeued
  * to deferred_list.
  */
-static void unlink_endio_hook(struct ploop *ploop, struct rb_root *root,
-			      struct pio *h, struct list_head *pio_list)
+static void unlink_pio(struct ploop *ploop, struct rb_root *root,
+		       struct pio *pio, struct list_head *pio_list)
 {
-	BUG_ON(RB_EMPTY_NODE(&h->node));
+	BUG_ON(RB_EMPTY_NODE(&pio->node));
 
-	rb_erase(&h->node, root);
-	RB_CLEAR_NODE(&h->node);
+	rb_erase(&pio->node, root);
+	RB_CLEAR_NODE(&pio->node);
 
-	list_splice_tail_init(&h->endio_list, pio_list);
+	list_splice_tail_init(&pio->endio_list, pio_list);
 }
 
-static void add_cluster_lk(struct ploop *ploop, struct pio *h, u32 cluster)
+static void add_cluster_lk(struct ploop *ploop, struct pio *pio, u32 cluster)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	link_endio_hook(ploop, h, &ploop->exclusive_bios_rbtree, cluster, true);
+	link_pio(ploop, pio, &ploop->exclusive_bios_rbtree, cluster, true);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 }
-static void del_cluster_lk(struct ploop *ploop, struct pio *h)
+static void del_cluster_lk(struct ploop *ploop, struct pio *pio)
 {
 	LIST_HEAD(pio_list);
 	unsigned long flags;
 	bool queue = false;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	unlink_endio_hook(ploop, &ploop->exclusive_bios_rbtree, h, &pio_list);
+	unlink_pio(ploop, &ploop->exclusive_bios_rbtree, pio, &pio_list);
 	if (!list_empty(&pio_list)) {
 		list_splice_tail(&pio_list, &ploop->deferred_pios);
 		queue = true;
@@ -480,7 +480,7 @@ static void del_cluster_lk(struct ploop *ploop, struct pio *h)
 
 }
 
-static void maybe_link_submitting_pio(struct ploop *ploop, struct pio *h,
+static void maybe_link_submitting_pio(struct ploop *ploop, struct pio *pio,
 				      unsigned int cluster)
 {
 	unsigned long flags;
@@ -489,7 +489,7 @@ static void maybe_link_submitting_pio(struct ploop *ploop, struct pio *h,
 		return;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	link_endio_hook(ploop, h, &ploop->inflight_bios_rbtree, cluster, false);
+	link_pio(ploop, pio, &ploop->inflight_bios_rbtree, cluster, false);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 }
 static void maybe_unlink_completed_pio(struct ploop *ploop, struct pio *pio)
@@ -502,7 +502,7 @@ static void maybe_unlink_completed_pio(struct ploop *ploop, struct pio *pio)
 		return;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	unlink_endio_hook(ploop, &ploop->inflight_bios_rbtree, pio, &pio_list);
+	unlink_pio(ploop, &ploop->inflight_bios_rbtree, pio, &pio_list);
 	if (!list_empty(&pio_list)) {
 		list_splice_tail(&pio_list, &ploop->deferred_pios);
 		queue = true;
@@ -637,12 +637,12 @@ static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 	struct pio *cluster_pio = cow->cluster_pio;
 	struct ploop *ploop = cow->ploop;
 	unsigned long flags;
-	struct pio *h;
+	struct pio *aux_pio;
 
 	WARN_ON_ONCE(!list_empty(&cluster_pio->list));
-	h = &cow->hook;
+	aux_pio = &cow->aux_pio;
 
-	del_cluster_lk(ploop, h);
+	del_cluster_lk(ploop, aux_pio);
 
 	if (dst_cluster != BAT_ENTRY_NONE && bi_status != BLK_STS_OK) {
 		read_lock_irqsave(&ploop->bat_rwlock, flags);
@@ -1050,14 +1050,14 @@ static bool ploop_data_pio_end(struct pio *pio)
 	return completed;
 }
 
-static bool ploop_attach_end_action(struct pio *h, struct ploop_index_wb *piwb)
+static bool ploop_attach_end_action(struct pio *pio, struct ploop_index_wb *piwb)
 {
 	/* Currently this can't fail. */
 	if (!atomic_inc_not_zero(&piwb->count))
 		return false;
 
-	h->is_data_alloc = true;
-	h->piwb = piwb;
+	pio->is_data_alloc = true;
+	pio->piwb = piwb;
 
 	return true;
 }
@@ -1195,7 +1195,7 @@ static void ploop_cow_endio(struct pio *cluster_pio, void *data, blk_status_t bi
 	list_add_tail(&cluster_pio->list, &ploop->delta_cow_action_list);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
-	dec_nr_inflight(ploop, &cow->hook);
+	dec_nr_inflight(ploop, &cow->aux_pio);
 	queue_work(ploop->wq, &ploop->worker);
 }
 
@@ -1236,8 +1236,8 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	cow->end_fn = end_fn;
 	cow->data = data;
 
-	init_pio(ploop, REQ_OP_WRITE, &cow->hook);
-	add_cluster_lk(ploop, &cow->hook, cluster);
+	init_pio(ploop, REQ_OP_WRITE, &cow->aux_pio);
+	add_cluster_lk(ploop, &cow->aux_pio, cluster);
 
 	/* Stage #0: read secondary delta full cluster */
 	submit_delta_read(ploop, level, dst_cluster, pio);
@@ -1288,7 +1288,7 @@ static void submit_cluster_write(struct ploop_cow *cow)
 
 	BUG_ON(irqs_disabled());
 	read_lock_irq(&ploop->bat_rwlock);
-	inc_nr_inflight(ploop, &cow->hook);
+	inc_nr_inflight(ploop, &cow->aux_pio);
 	read_unlock_irq(&ploop->bat_rwlock);
 	pio->endio_cb = ploop_cow_endio;
 	pio->endio_cb_data = cow;
@@ -1302,8 +1302,8 @@ error:
 static void submit_cow_index_wb(struct ploop_cow *cow,
 				struct ploop_index_wb *piwb)
 {
-	struct pio *h = &cow->hook;
-	unsigned int cluster = h->cluster;
+	struct pio *aux_pio = &cow->aux_pio;
+	unsigned int cluster = aux_pio->cluster;
 	struct ploop *ploop = cow->ploop;
 	unsigned int page_nr;
 	map_index_t *to;

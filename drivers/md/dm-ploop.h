@@ -274,7 +274,7 @@ struct ploop_cow {
 	struct pio *cluster_pio;
 	unsigned int dst_cluster;
 
-	struct pio hook;
+	struct pio aux_pio;
 
 	void (*end_fn)(struct ploop *, int, void *);
 	void *data; /* Second argument of end_fn */
@@ -480,13 +480,13 @@ static inline void track_pio(struct ploop *ploop, struct pio *pio)
 		__track_pio(ploop, pio);
 }
 
-extern struct pio *find_endio_hook_range(struct ploop *ploop, struct rb_root *root,
-					 unsigned int l, unsigned int r);
+extern struct pio *find_pio_range(struct ploop *ploop, struct rb_root *root,
+				  unsigned int l, unsigned int r);
 
-static inline struct pio *find_endio_hook(struct ploop *ploop, struct rb_root *root,
+static inline struct pio *find_pio(struct ploop *ploop, struct rb_root *root,
 					  unsigned int cluster)
 {
-	return find_endio_hook_range(ploop, root, cluster, cluster);
+	return find_pio_range(ploop, root, cluster, cluster);
 }
 
 extern int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
