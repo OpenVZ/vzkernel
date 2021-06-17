@@ -287,6 +287,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 {
 	percpu_ref_func_t *release;
 	struct ploop *ploop;
+	unsigned int flags;
 	int i, ret;
 
 	if (argc < 2)
@@ -333,7 +334,8 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		}
 	}
 
-	ploop->wq = alloc_ordered_workqueue("dm-" DM_MSG_PREFIX, WQ_MEM_RECLAIM);
+	flags = WQ_MEM_RECLAIM|WQ_HIGHPRI|WQ_UNBOUND;
+	ploop->wq = alloc_workqueue("dm-" DM_MSG_PREFIX, flags, 0);
 	if (!ploop->wq) {
 		ret = -ENOMEM;
 		goto err;
