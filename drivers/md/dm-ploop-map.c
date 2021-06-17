@@ -981,8 +981,6 @@ static bool ploop_data_pio_end(struct pio *pio)
 	unsigned long flags;
 	bool completed;
 
-	dec_nr_inflight(piwb->ploop, pio);
-
 	spin_lock_irqsave(&piwb->lock, flags);
 	completed = piwb->completed;
 	if (!completed)
@@ -1141,7 +1139,6 @@ static void ploop_cow_endio(struct pio *cluster_pio, void *data, blk_status_t bi
 	list_add_tail(&cluster_pio->list, &ploop->delta_cow_action_list);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
-	dec_nr_inflight(ploop, &cow->aux_pio);
 	queue_work(ploop->wq, &ploop->worker);
 }
 
@@ -1233,9 +1230,6 @@ static void submit_cluster_write(struct ploop_cow *cow)
 	pio_prepare_offsets(ploop, pio, dst_cluster);
 
 	BUG_ON(irqs_disabled());
-	read_lock_irq(&ploop->bat_rwlock);
-	inc_nr_inflight(ploop, &cow->aux_pio);
-	read_unlock_irq(&ploop->bat_rwlock);
 	pio->endio_cb = ploop_cow_endio;
 	pio->endio_cb_data = cow;
 
@@ -1446,11 +1440,6 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 	if (!ret)
 		goto out;
 queue:
-	/* To improve: read lock may be avoided */
-	read_lock_irq(&ploop->bat_rwlock);
-	inc_nr_inflight(ploop, pio);
-	read_unlock_irq(&ploop->bat_rwlock);
-
 	link_submitting_pio(ploop, pio, cluster);
 
 	submit_rw_mapped(ploop, dst_cluster, pio);
@@ -1637,11 +1626,12 @@ out:
 	return bvec;
 }
 
-static noinline void submit_pio(struct ploop *ploop, struct pio *pio)
+static void submit_pio(struct ploop *ploop, struct pio *pio)
 {
 	struct list_head *queue_list;
 	struct work_struct *worker;
 	unsigned long flags;
+	bool queue = true;
 	LIST_HEAD(list);
 	int ret;
 
@@ -1668,14 +1658,32 @@ static noinline void submit_pio(struct ploop *ploop, struct pio *pio)
 	list_add(&pio->list, &list);
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
+	if (unlikely(ploop->stop_submitting_pios)) {
+		list_splice_tail(&list, &ploop->delayed_pios);
+		queue = false;
+		goto unlock;
+	}
+
+	inc_nr_inflight(ploop, pio);
 	list_splice_tail(&list, queue_list);
+unlock:
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
-	queue_work(ploop->wq, worker);
+
+	if (queue)
+		queue_work(ploop->wq, worker);
 	return;
 kill:
 	pio->bi_status = BLK_STS_IOERR;
 endio:
 	pio_endio(pio);
+}
+
+void submit_pios(struct ploop *ploop, struct list_head *list)
+{
+        struct pio *pio;
+
+        while ((pio = pio_list_pop(list)) != NULL)
+                submit_pio(ploop, pio);
 }
 
 int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
