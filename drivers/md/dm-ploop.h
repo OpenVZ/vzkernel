@@ -244,12 +244,6 @@ struct pio {
 	void *data;
 };
 
-struct ploop_iocb {
-	struct kiocb iocb;
-	struct pio *pio;
-	atomic_t count;
-};
-
 /* Delta COW private */
 struct ploop_cow {
 	struct ploop *ploop;
@@ -263,7 +257,6 @@ struct ploop_cow {
 };
 
 extern bool ignore_signature_disk_in_use;
-extern struct kmem_cache *piocb_cache;
 extern struct kmem_cache *cow_cache;
 
 #define ploop_for_each_md_page(ploop, md, node)		\

@@ -1006,26 +1006,6 @@ static bool ploop_attach_end_action(struct pio *pio, struct ploop_index_wb *piwb
 	return true;
 }
 
-static void ploop_read_aio_do_completion(struct ploop_iocb *piocb)
-{
-	struct pio *pio = piocb->pio;
-
-	if (!atomic_dec_and_test(&piocb->count))
-		return;
-	pio_endio(pio);
-	kmem_cache_free(piocb_cache, piocb);
-}
-
-static void ploop_read_aio_complete(struct kiocb *iocb, long ret, long ret2)
-{
-        struct ploop_iocb *piocb = container_of(iocb, struct ploop_iocb, iocb);
-	struct pio *pio = piocb->pio;
-
-	if (ret != pio->bi_iter.bi_size)
-		pio->bi_status = BLK_STS_IOERR;
-        ploop_read_aio_do_completion(piocb);
-}
-
 static void data_rw_complete(struct pio *pio)
 {
 	bool completed;
@@ -1072,22 +1052,13 @@ void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio)
 static void submit_delta_read(struct ploop *ploop, unsigned int level,
 			    unsigned int dst_cluster, struct pio *pio)
 {
-	unsigned int flags, offset;
-	struct ploop_iocb *piocb;
 	struct bio_vec *bvec;
 	struct iov_iter iter;
+	unsigned int offset;
 	struct file *file;
 	loff_t pos;
-	int ret;
 
-	piocb = kmem_cache_zalloc(piocb_cache, GFP_NOIO);
-	if (!piocb) {
-		pio->bi_status = BLK_STS_RESOURCE;
-		pio_endio(pio);
-		return;
-	}
-	atomic_set(&piocb->count, 2);
-	piocb->pio = pio;
+	pio->complete = data_rw_complete;
 
 	remap_to_cluster(ploop, pio, dst_cluster);
 
@@ -1100,20 +1071,7 @@ static void submit_delta_read(struct ploop *ploop, unsigned int level,
 	pos = (pio->bi_iter.bi_sector << SECTOR_SHIFT);
 	file = ploop->deltas[level].file;
 
-	piocb->iocb.ki_pos = pos;
-	piocb->iocb.ki_filp = file;
-	piocb->iocb.ki_complete = ploop_read_aio_complete;
-	piocb->iocb.ki_flags = IOCB_DIRECT;
-	piocb->iocb.ki_ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0);
-
-	flags = memalloc_noio_save();
-	ret = call_read_iter(file, &piocb->iocb, &iter);
-	memalloc_noio_restore(flags);
-
-	ploop_read_aio_do_completion(piocb);
-
-	if (ret != -EIOCBQUEUED)
-		piocb->iocb.ki_complete(&piocb->iocb, ret, 0);
+	ploop_call_rw_iter(file, pos, READ, &iter, pio);
 }
 
 static void initiate_delta_read(struct ploop *ploop, unsigned int level,
