@@ -294,10 +294,8 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		return -EINVAL;
 
 	ploop = kzalloc(sizeof(*ploop), GFP_KERNEL);
-	if (!ploop) {
-		ti->error = "Error allocating ploop structure";
+	if (!ploop)
 		return -ENOMEM;
-	}
 
 	ploop->exclusive_pios = kcalloc(PLOOP_HASH_TABLE_SIZE,
 					sizeof(struct hlist_head),
@@ -332,9 +330,14 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		if (percpu_ref_init(&ploop->inflight_bios_ref[i], release,
 				    PERCPU_REF_ALLOW_REINIT, GFP_KERNEL)) {
 			ret = -ENOMEM;
-			ti->error = "could not alloc percpu_ref";
 			goto err;
 		}
+	}
+
+	ploop->wq = alloc_ordered_workqueue("dm-" DM_MSG_PREFIX, WQ_MEM_RECLAIM);
+	if (!ploop->wq) {
+		ret = -ENOMEM;
+		goto err;
 	}
 
 	ti->private = ploop;
@@ -348,13 +351,6 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ret = dm_set_target_max_io_len(ti, CLU_TO_SEC(ploop, 1));
 	if (ret) {
 		ti->error = "could not set max_io_len";
-		goto err;
-	}
-
-	ploop->wq = alloc_ordered_workqueue("dm-" DM_MSG_PREFIX, WQ_MEM_RECLAIM);
-	if (!ploop->wq) {
-		ti->error = "could not create workqueue for metadata object";
-		ret = -ENOMEM;
 		goto err;
 	}
 
