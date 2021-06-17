@@ -361,7 +361,7 @@ struct pio *find_pio_range(struct ploop *ploop, struct rb_root *root,
 
 static struct pio *find_inflight_bio(struct ploop *ploop, unsigned int cluster)
 {
-	lockdep_assert_held(&ploop->deferred_lock);
+	lockdep_assert_held(&ploop->inflight_lock);
 	return find_pio(ploop, &ploop->inflight_pios_rbtree, cluster);
 }
 
@@ -488,29 +488,29 @@ static void maybe_link_submitting_pio(struct ploop *ploop, struct pio *pio,
 	if (!ploop->force_rbtree_for_inflight)
 		return;
 
-	spin_lock_irqsave(&ploop->deferred_lock, flags);
+	spin_lock_irqsave(&ploop->inflight_lock, flags);
 	link_pio(ploop, pio, &ploop->inflight_pios_rbtree, cluster, false);
-	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+	spin_unlock_irqrestore(&ploop->inflight_lock, flags);
 }
 static void maybe_unlink_completed_pio(struct ploop *ploop, struct pio *pio)
 {
 	LIST_HEAD(pio_list);
 	unsigned long flags;
-	bool queue = false;
 
 	if (likely(RB_EMPTY_NODE(&pio->node)))
 		return;
 
-	spin_lock_irqsave(&ploop->deferred_lock, flags);
+	spin_lock_irqsave(&ploop->inflight_lock, flags);
 	unlink_pio(ploop, &ploop->inflight_pios_rbtree, pio, &pio_list);
-	if (!list_empty(&pio_list)) {
-		list_splice_tail(&pio_list, &ploop->deferred_pios);
-		queue = true;
-	}
-	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+	spin_unlock_irqrestore(&ploop->inflight_lock, flags);
 
-	if (queue)
+	if (!list_empty(&pio_list)) {
+		spin_lock_irqsave(&ploop->deferred_lock, flags);
+		list_splice_tail(&pio_list, &ploop->deferred_pios);
+		spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+
 		queue_work(ploop->wq, &ploop->worker);
+	}
 }
 
 static bool pio_endio_if_all_zeros(struct pio *pio)
@@ -591,11 +591,11 @@ static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 		}
 	}
 
-	spin_lock_irqsave(&ploop->deferred_lock, flags);
+	spin_lock_irqsave(&ploop->inflight_lock, flags);
 	inflight_h = find_inflight_bio(ploop, cluster);
 	if (inflight_h)
 		add_endio_pio(inflight_h, pio);
-	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+	spin_unlock_irqrestore(&ploop->inflight_lock, flags);
 
 	if (inflight_h) {
 		/* @pio will be requeued on inflight_h's pio end */

@@ -299,6 +299,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	rwlock_init(&ploop->bat_rwlock);
 	init_rwsem(&ploop->ctl_rwsem);
+	spin_lock_init(&ploop->inflight_lock);
 	spin_lock_init(&ploop->deferred_lock);
 
 	INIT_LIST_HEAD(&ploop->deferred_pios);
