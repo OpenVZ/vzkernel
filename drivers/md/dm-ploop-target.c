@@ -419,6 +419,25 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 	read_unlock_irq(&ploop->bat_rwlock);
 }
 
+static void ploop_set_suspended(struct dm_target *ti, bool suspended)
+{
+	struct ploop *ploop = ti->private;
+
+	down_read(&ploop->ctl_rwsem);
+	ploop->suspended = suspended;
+	up_read(&ploop->ctl_rwsem);
+}
+
+static void ploop_presuspend(struct dm_target *ti)
+{
+}
+static void ploop_presuspend_undo(struct dm_target *ti)
+{
+}
+static void ploop_postsuspend(struct dm_target *ti)
+{
+	ploop_set_suspended(ti, true);
+}
 static int ploop_preresume(struct dm_target *ti)
 {
 	struct ploop *ploop = ti->private;
@@ -428,7 +447,18 @@ static int ploop_preresume(struct dm_target *ti)
 	if (ploop->noresume)
 		ret = -EAGAIN;
 	up_read(&ploop->ctl_rwsem);
+
+	if (ret == 0) {
+		/*
+		 * We are singleton target. There will be
+		 * no more reasons to break resume.
+		 */
+		ploop_set_suspended(ti, false);
+	}
 	return ret;
+}
+static void ploop_resume(struct dm_target *ti)
+{
 }
 
 /*----------------------------------------------------------------*/
@@ -442,7 +472,11 @@ static struct target_type ploop_target = {
 	.dtr = ploop_dtr,
 	.message = ploop_message,
 	.io_hints = ploop_io_hints,
+	.presuspend = ploop_presuspend,
+	.presuspend_undo = ploop_presuspend_undo,
+	.postsuspend = ploop_postsuspend,
 	.preresume = ploop_preresume,
+	.resume = ploop_resume,
 	.clone_and_map_rq = ploop_clone_and_map,
 	.status = ploop_status,
 };

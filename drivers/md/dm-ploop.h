@@ -192,6 +192,8 @@ struct ploop {
 
 	/* Resume is prohibited */
 	bool noresume;
+	/* Device is suspended */
+	bool suspended;
 
 	/* Maintaince in process */
 	bool maintaince;
