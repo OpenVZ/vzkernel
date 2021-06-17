@@ -224,6 +224,7 @@ struct pio {
 	void *endio_cb_data;
 
 	unsigned int cluster;
+	u8 level;
 
 	bool is_data_alloc:1;
 	bool wants_discard_index_cleanup:1;
@@ -305,6 +306,7 @@ static inline struct pio *map_info_to_pio(union map_info *info)
 }
 
 #define BAT_LEVEL_MAX		(U8_MAX - 1)
+#define BAT_LEVEL_INVALID	U8_MAX
 static inline u8 top_level(struct ploop *ploop)
 {
 	return ploop->nr_deltas - 1;
