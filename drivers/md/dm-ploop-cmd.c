@@ -100,7 +100,7 @@ static int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable)
 	unsigned int index = ploop->inflight_bios_ref_index;
 	int ret;
 
-	WARN_ON_ONCE(!(current->flags & PF_WQ_WORKER));
+	WARN_ON_ONCE(current->flags & PF_WQ_WORKER);
 
 	if (ploop->inflight_ref_comp_pending) {
 		/* Previous completion was interrupted */
@@ -113,9 +113,9 @@ static int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable)
 
 	init_completion(comp);
 
-	write_lock_irq(&ploop->bat_rwlock);
+	spin_lock_irq(&ploop->deferred_lock);
 	ploop->inflight_bios_ref_index = !index;
-	write_unlock_irq(&ploop->bat_rwlock);
+	spin_unlock_irq(&ploop->deferred_lock);
 
 	percpu_ref_kill(&ploop->inflight_bios_ref[index]);
 
@@ -127,6 +127,29 @@ static int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable)
 
 	percpu_ref_reinit(&ploop->inflight_bios_ref[index]);
 	return 0;
+}
+
+static int ploop_suspend_submitting_pios(struct ploop *ploop)
+{
+	spin_lock_irq(&ploop->deferred_lock);
+	WARN_ON_ONCE(ploop->stop_submitting_pios);
+	ploop->stop_submitting_pios = true;
+	spin_unlock_irq(&ploop->deferred_lock);
+
+	return ploop_inflight_bios_ref_switch(ploop, true);
+}
+
+static void ploop_resume_submitting_pios(struct ploop *ploop)
+{
+	LIST_HEAD(list);
+
+	spin_lock_irq(&ploop->deferred_lock);
+	WARN_ON_ONCE(!ploop->stop_submitting_pios);
+	ploop->stop_submitting_pios = false;
+	list_splice_tail_init(&ploop->delayed_pios, &list);
+	spin_unlock_irq(&ploop->deferred_lock);
+
+	submit_pios(ploop, &list);
 }
 
 /* Find existing BAT cluster pointing to dst_cluster */
@@ -269,23 +292,14 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	if (cluster == UINT_MAX || is_locked) {
 		/* dst_cluster in top delta is not occupied? */
 		if (!test_bit(dst_cluster, ploop->holes_bitmap) || is_locked) {
-			/*
-			 * No. Maybe, it's under COW. Try again later.
-			 * FIXME: implement a wait list-like thing for
-			 * clusters under COW and queue commands there.
-			 */
-			schedule_timeout(HZ/10);
+			WARN_ON_ONCE(1);
+			ret = -EIO;
 			goto out;
 		}
 		/* Cluster is free, occupy it. Skip relocaton */
 		ploop_hole_clear_bit(dst_cluster, ploop);
 		goto not_occupied;
 	}
-
-	/* Wait inflights, which may use @cluster */
-	ret = ploop_inflight_bios_ref_switch(ploop, true);
-	if (ret < 0)
-		goto out;
 
 	/* Read full cluster sync */
 	ret = ploop_read_cluster_sync(ploop, pio, dst_cluster);
@@ -563,9 +577,13 @@ static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 	cmd.type = PLOOP_CMD_RESIZE;
 	cmd.ploop = ploop;
 
+	ploop_suspend_submitting_pios(ploop);
+	/* FIXME: Avoid using work */
 	init_completion(&cmd.comp);
 	ploop_queue_deferred_cmd(ploop, &cmd);
 	wait_for_completion(&cmd.comp);
+
+	ploop_resume_submitting_pios(ploop);
 
 	ret = cmd.retval;
 err:
@@ -633,8 +651,6 @@ static void process_merge_latest_snapshot_cmd(struct ploop *ploop,
 {
 	unsigned int dst_cluster, *cluster = &cmd->merge.cluster;
 	u8 level;
-	struct file *file;
-	int ret;
 
 	if (cmd->retval)
 		goto out;
@@ -671,28 +687,14 @@ out:
 		return;
 	}
 
-	if (cmd->retval == 0 && !cmd->merge.do_repeat) {
-		/* Delta merged. Release delta's file */
-		ret = ploop_inflight_bios_ref_switch(ploop, true);
-		if (ret) {
-			cmd->retval = ret;
-			goto complete;
-		}
-		write_lock_irq(&ploop->bat_rwlock);
-		level = ploop->nr_deltas - 2;
-		file = ploop->deltas[level].file;
-		ploop->deltas[level] = ploop->deltas[level + 1];
-		ploop->nr_deltas--;
-		write_unlock_irq(&ploop->bat_rwlock);
-		fput(file);
-	}
-complete:
 	complete(&cmd->comp); /* Last touch of cmd memory */
 }
 
 static int ploop_merge_latest_snapshot(struct ploop *ploop)
 {
 	struct ploop_cmd cmd;
+	struct file *file;
+	u8 level;
 	int ret;
 
 	if (ploop->maintaince)
@@ -719,28 +721,37 @@ again:
 		wait_for_completion(&cmd.comp);
 	}
 
-	if (cmd.retval == 0 && cmd.merge.do_repeat)
+	if (cmd.retval)
+		goto out;
+
+	if (cmd.merge.do_repeat)
 		goto again;
 
+	/* Delta merged. Release delta's file */
+	cmd.retval = ploop_suspend_submitting_pios(ploop);
+	if (cmd.retval)
+		goto out;
+
+	write_lock_irq(&ploop->bat_rwlock);
+	level = ploop->nr_deltas - 2;
+	file = ploop->deltas[level].file;
+	ploop->deltas[level] = ploop->deltas[level + 1];
+	ploop->nr_deltas--;
+	write_unlock_irq(&ploop->bat_rwlock);
+	fput(file);
+
+	ploop_resume_submitting_pios(ploop);
+out:
 	return cmd.retval;
 }
 
-static void process_notify_delta_merged(struct ploop *ploop,
-					struct ploop_cmd *cmd)
+static void notify_delta_merged(struct ploop *ploop, u8 level,
+				void *hdr, bool forward)
 {
 	unsigned int i, end, *bat_entries, *delta_bat_entries;
-	void *hdr = cmd->notify_delta_merged.hdr;
-	u8 level = cmd->notify_delta_merged.level;
 	struct rb_node *node;
 	struct md_page *md;
 	struct file *file;
-	int ret;
-
-	ret = ploop_inflight_bios_ref_switch(ploop, true);
-	if (ret) {
-		cmd->retval = ret;
-		goto out;
-	}
 
 	/* Points to hdr since md_page[0] also contains hdr. */
 	delta_bat_entries = (map_index_t *)hdr;
@@ -768,7 +779,7 @@ static void process_notify_delta_merged(struct ploop *ploop,
 			 */
 			bat_entries[i] = delta_bat_entries[i];
 			WARN_ON(bat_entries[i] == BAT_ENTRY_NONE);
-			if (!cmd->notify_delta_merged.forward)
+			if (!forward)
 				md->bat_levels[i]--;
 		}
 		kunmap_atomic(bat_entries);
@@ -782,22 +793,13 @@ static void process_notify_delta_merged(struct ploop *ploop,
 	ploop->deltas[--ploop->nr_deltas].file = NULL;
 	write_unlock_irq(&ploop->bat_rwlock);
 	fput(file);
-	cmd->retval = 0;
-out:
-	complete(&cmd->comp); /* Last touch of cmd memory */
 }
 
-static void process_update_delta_index(struct ploop *ploop,
-				       struct ploop_cmd *cmd)
+static int process_update_delta_index(struct ploop *ploop, u8 level,
+				      const char *map)
 {
-	const char *map = cmd->update_delta_index.map;
-	u8 level = cmd->update_delta_index.level;
 	unsigned int cluster, dst_cluster, n;
 	int ret;
-
-	ret = ploop_inflight_bios_ref_switch(ploop, true);
-	if (ret)
-		goto out;
 
 	write_lock_irq(&ploop->bat_rwlock);
 	/* Check all */
@@ -813,7 +815,6 @@ static void process_update_delta_index(struct ploop *ploop,
 		goto unlock;
 	}
 	/* Commit all */
-	map = cmd->update_delta_index.map;
 	while (sscanf(map, "%u:%u;%n", &cluster, &dst_cluster, &n) == 2) {
 		try_update_bat_entry(ploop, cluster, level, dst_cluster);
 		map += n;
@@ -821,15 +822,12 @@ static void process_update_delta_index(struct ploop *ploop,
 	ret = 0;
 unlock:
 	write_unlock_irq(&ploop->bat_rwlock);
-out:
-	cmd->retval = ret;
-	complete(&cmd->comp); /* Last touch of cmd memory */
+	return ret;
 }
 
 static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 				       bool forward)
 {
-	struct ploop_cmd cmd = { {0} };
 	void *d_hdr = NULL;
 	struct file *file;
 	int ret;
@@ -841,16 +839,14 @@ static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 	if (ret)
 		goto out;
 
-	cmd.notify_delta_merged.level = level;
-	cmd.notify_delta_merged.hdr = d_hdr;
-	cmd.notify_delta_merged.forward = forward;
-	cmd.type = PLOOP_CMD_NOTIFY_DELTA_MERGED;
-	cmd.ploop = ploop;
+	ret = ploop_suspend_submitting_pios(ploop);
+	if (ret)
+		goto out;
 
-	init_completion(&cmd.comp);
-	ploop_queue_deferred_cmd(ploop, &cmd);
-	wait_for_completion(&cmd.comp);
-	ret = cmd.retval;
+	notify_delta_merged(ploop, level, d_hdr, forward);
+
+	ploop_resume_submitting_pios(ploop);
+	ret = 0;
 out:
 	vfree(d_hdr);
 	return ret;
@@ -923,25 +919,25 @@ out:
 static int ploop_update_delta_index(struct ploop *ploop, unsigned int level,
 				    const char *map)
 {
-	struct ploop_cmd cmd = { {0} };
+	int ret;
 
 	if (ploop->maintaince)
 		return -EBUSY;
 	if (level >= top_level(ploop))
 		return -ENOENT;
 
-	cmd.update_delta_index.level = level;
-	cmd.update_delta_index.map = map;
-	cmd.type = PLOOP_CMD_UPDATE_DELTA_INDEX;
-	cmd.ploop = ploop;
+	ret = ploop_suspend_submitting_pios(ploop);
+	if (ret)
+		goto out;
 
-	init_completion(&cmd.comp);
-	ploop_queue_deferred_cmd(ploop, &cmd);
-	wait_for_completion(&cmd.comp);
-	return cmd.retval;
+	ret = process_update_delta_index(ploop, level, map);
+
+	ploop_resume_submitting_pios(ploop);
+out:
+	return ret;
 }
 
-static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd)
+static int process_flip_upper_deltas(struct ploop *ploop)
 {
 	unsigned int i, size, end, bat_clusters, hb_nr, *bat_entries;
 	void *holes_bitmap = ploop->holes_bitmap;
@@ -981,37 +977,21 @@ static void process_flip_upper_deltas(struct ploop *ploop, struct ploop_cmd *cmd
 	/* FIXME */
 	swap(ploop->deltas[level], ploop->deltas[level+1]);
 	write_unlock_irq(&ploop->bat_rwlock);
-	/* Device is suspended, but anyway... */
-	ploop_inflight_bios_ref_switch(ploop, false);
-
-	cmd->retval = 0;
-	complete(&cmd->comp); /* Last touch of cmd memory */
+	return 0;
 }
 
-static void process_tracking_start(struct ploop *ploop, struct ploop_cmd *cmd)
+static int process_tracking_start(struct ploop *ploop, void *tracking_bitmap,
+				  u32 tb_nr)
 {
-	unsigned int i, nr_pages, end, *bat_entries, dst_cluster, tb_nr, nr;
-	void *tracking_bitmap = cmd->tracking_start.tracking_bitmap;
+	unsigned int i, nr_pages, end, *bat_entries, dst_cluster, nr;
 	struct rb_node *node;
 	struct md_page *md;
 	int ret = 0;
 
-	tb_nr = cmd->tracking_start.tb_nr;
-
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop->tracking_bitmap = tracking_bitmap;
 	ploop->tb_nr = tb_nr;
-	write_unlock_irq(&ploop->bat_rwlock);
 
-	/*
-	 * Here we care about ploop_map() sees ploop->tracking_bitmap,
-	 * since the rest of submitting are made from *this* kwork.
-	 */
-	ret = ploop_inflight_bios_ref_switch(ploop, true);
-	if (ret)
-		goto out;
-
-	write_lock_irq(&ploop->bat_rwlock);
 	for_each_clear_bit(i, ploop->holes_bitmap, ploop->hb_nr)
 		set_bit(i, tracking_bitmap);
 	nr_pages = bat_clu_to_page_nr(ploop->nr_bat_entries - 1) + 1;
@@ -1037,10 +1017,9 @@ static void process_tracking_start(struct ploop *ploop, struct ploop_cmd *cmd)
 		nr++;
 	}
 	write_unlock_irq(&ploop->bat_rwlock);
+
 	BUG_ON(ret == 0 && nr != nr_pages);
-out:
-	cmd->retval = ret;
-	complete(&cmd->comp); /* Last touch of cmd memory */
+	return ret;
 }
 
 static int tracking_get_next(struct ploop *ploop, char *result,
@@ -1100,7 +1079,6 @@ static unsigned int max_dst_cluster_in_top_delta(struct ploop *ploop)
 static int ploop_tracking_cmd(struct ploop *ploop, const char *suffix,
 			      char *result, unsigned int maxlen)
 {
-	struct ploop_cmd cmd = { {0} };
 	void *tracking_bitmap = NULL;
 	unsigned int tb_nr, size;
 	int ret = 0;
@@ -1135,16 +1113,15 @@ static int ploop_tracking_cmd(struct ploop *ploop, const char *suffix,
 			return -ENOMEM;
 		ploop->tb_cursor = tb_nr - 1;
 
-		cmd.type = PLOOP_CMD_TRACKING_START;
-		cmd.ploop = ploop;
-		cmd.tracking_start.tracking_bitmap = tracking_bitmap;
-		cmd.tracking_start.tb_nr = tb_nr;
+		ret = ploop_suspend_submitting_pios(ploop);
+		if (ret)
+			return ret;
 
-		init_completion(&cmd.comp);
-		ploop_queue_deferred_cmd(ploop, &cmd);
-		wait_for_completion(&cmd.comp);
 		ploop->maintaince = true;
-		ret = cmd.retval;
+		ret = process_tracking_start(ploop, tracking_bitmap, tb_nr);
+
+		ploop_resume_submitting_pios(ploop);
+
 		if (ret)
 			goto stop;
 	} else if (!strcmp(suffix, "stop")) {
@@ -1184,11 +1161,7 @@ static int ploop_set_noresume(struct ploop *ploop, char *mode)
 static int ploop_flip_upper_deltas(struct ploop *ploop)
 {
 	struct dm_target *ti = ploop->ti;
-	struct ploop_cmd cmd = { {0} };
 	struct file *file;
-
-	cmd.type = PLOOP_CMD_FLIP_UPPER_DELTAS;
-	cmd.ploop = ploop;
 
 	if (!dm_suspended(ti) || !ploop->noresume || ploop->maintaince)
 		return -EBUSY;
@@ -1202,11 +1175,7 @@ static int ploop_flip_upper_deltas(struct ploop *ploop)
         if (!(file->f_mode & FMODE_WRITE))
 		return -EACCES;
 
-	init_completion(&cmd.comp);
-	ploop_queue_deferred_cmd(ploop, &cmd);
-	wait_for_completion(&cmd.comp);
-
-	return cmd.retval;
+	return process_flip_upper_deltas(ploop);
 }
 
 /* Handle user commands requested via "message" interface */
@@ -1229,14 +1198,6 @@ void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 		process_resize_cmd(ploop, piwb, cmd);
 	} else if (cmd->type == PLOOP_CMD_MERGE_SNAPSHOT) {
 		process_merge_latest_snapshot_cmd(ploop, cmd);
-	} else if (cmd->type == PLOOP_CMD_NOTIFY_DELTA_MERGED) {
-		process_notify_delta_merged(ploop, cmd);
-	} else if (cmd->type == PLOOP_CMD_UPDATE_DELTA_INDEX) {
-		process_update_delta_index(ploop, cmd);
-	} else if (cmd->type == PLOOP_CMD_TRACKING_START) {
-		process_tracking_start(ploop, cmd);
-	} else if (cmd->type == PLOOP_CMD_FLIP_UPPER_DELTAS) {
-		process_flip_upper_deltas(ploop, cmd);
 	} else {
 		cmd->retval = -EINVAL;
 		complete(&cmd->comp);

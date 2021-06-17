@@ -50,10 +50,6 @@ struct ploop_delta {
 struct ploop_cmd {
 #define PLOOP_CMD_RESIZE		1
 #define PLOOP_CMD_MERGE_SNAPSHOT	3
-#define PLOOP_CMD_NOTIFY_DELTA_MERGED	4
-#define PLOOP_CMD_UPDATE_DELTA_INDEX	6
-#define PLOOP_CMD_TRACKING_START	7
-#define PLOOP_CMD_FLIP_UPPER_DELTAS	8
 	struct completion comp;
 	struct ploop *ploop;
 	unsigned int type;
@@ -80,19 +76,6 @@ struct ploop_cmd {
 			unsigned int cluster; /* Currently iterated cluster */
 			bool do_repeat;
 		} merge;
-		struct {
-			void *hdr; /* hdr and bat_entries consequentially */
-			u8 level;
-			bool forward;
-		} notify_delta_merged;
-		struct {
-			u8 level;
-			const char *map;
-		} update_delta_index;
-		struct {
-			void *tracking_bitmap;
-			unsigned int tb_nr;
-		} tracking_start;
 	};
 };
 
@@ -185,6 +168,9 @@ struct ploop {
 	struct percpu_ref inflight_bios_ref[2];
 	bool inflight_ref_comp_pending;
 	unsigned int inflight_bios_ref_index:1;
+
+	struct list_head delayed_pios;
+	bool stop_submitting_pios;
 
 	spinlock_t inflight_lock;
 	spinlock_t deferred_lock;
@@ -511,6 +497,7 @@ extern bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
 extern int convert_bat_entries(u32 *bat_entries, u32 count);
 
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
+extern void submit_pios(struct ploop *ploop, struct list_head *list);
 extern void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list);
 extern void do_ploop_work(struct work_struct *ws);
 extern void do_ploop_fsync_work(struct work_struct *ws);
