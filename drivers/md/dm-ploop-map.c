@@ -1048,36 +1048,6 @@ void submit_rw_mapped(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 leve
 	ploop_call_rw_iter(file, pos, rw, &iter, pio);
 }
 
-/*
- * Read cluster or its part from secondary delta.
- * Note, that nr inflight is not incremented here, so delegate this to caller
- * (if you need).
- */
-static void submit_delta_read(struct ploop *ploop, unsigned int level,
-			    unsigned int dst_cluster, struct pio *pio)
-{
-	struct bio_vec *bvec;
-	struct iov_iter iter;
-	unsigned int offset;
-	struct file *file;
-	loff_t pos;
-
-	pio->complete = data_rw_complete;
-
-	remap_to_cluster(ploop, pio, dst_cluster);
-
-	bvec = __bvec_iter_bvec(pio->bi_io_vec, pio->bi_iter);
-	offset = pio->bi_iter.bi_bvec_done;
-
-	iov_iter_bvec(&iter, READ, bvec, 1, pio->bi_iter.bi_size);
-	iter.iov_offset = offset;
-
-	pos = (pio->bi_iter.bi_sector << SECTOR_SHIFT);
-	file = ploop->deltas[level].file;
-
-	ploop_call_rw_iter(file, pos, READ, &iter, pio);
-}
-
 static void initiate_delta_read(struct ploop *ploop, unsigned int level,
 				unsigned int dst_cluster, struct pio *pio)
 {
@@ -1088,7 +1058,7 @@ static void initiate_delta_read(struct ploop *ploop, unsigned int level,
 		return;
 	}
 
-	submit_delta_read(ploop, level, dst_cluster, pio);
+	submit_rw_mapped(ploop, dst_cluster, pio, level);
 }
 
 static void ploop_cow_endio(struct pio *cluster_pio, void *data, blk_status_t bi_status)
@@ -1145,7 +1115,7 @@ int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	add_cluster_lk(ploop, &cow->aux_pio, cluster);
 
 	/* Stage #0: read secondary delta full cluster */
-	submit_delta_read(ploop, level, dst_cluster, pio);
+	submit_rw_mapped(ploop, dst_cluster, pio, level);
 	return 0;
 err:
 	if (pio)
