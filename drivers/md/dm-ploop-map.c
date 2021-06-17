@@ -32,7 +32,7 @@
  *
  * Discard begins from switching ploop in a special mode, when all requests
  * are managed by kwork, while all not-exclusive bios (e.g., READ or simple
- * WRITE) are linked to inflight_bios_rbtree. Discard bios are linked into
+ * WRITE) are linked to inflight_pios_rbtree. Discard bios are linked into
  * exclusive_bios_rbtree, but their start is delayed till all not-exclusive
  * bios going into the same cluster are finished. After exclusive bio is
  * started, the corresponding cluster becomes "locked", and all further bios
@@ -362,7 +362,7 @@ struct pio *find_pio_range(struct ploop *ploop, struct rb_root *root,
 static struct pio *find_inflight_bio(struct ploop *ploop, unsigned int cluster)
 {
 	lockdep_assert_held(&ploop->deferred_lock);
-	return find_pio(ploop, &ploop->inflight_bios_rbtree, cluster);
+	return find_pio(ploop, &ploop->inflight_pios_rbtree, cluster);
 }
 
 struct pio *find_lk_of_cluster(struct ploop *ploop, unsigned int cluster)
@@ -438,7 +438,7 @@ static void link_pio(struct ploop *ploop, struct pio *new, struct rb_root *root,
 }
 
 /*
- * Removes @pio of completed bio either from inflight_bios_rbtree
+ * Removes @pio of completed bio either from inflight_pios_rbtree
  * or from exclusive_bios_rbtree. BIOs from endio_list are requeued
  * to deferred_list.
  */
@@ -485,11 +485,11 @@ static void maybe_link_submitting_pio(struct ploop *ploop, struct pio *pio,
 {
 	unsigned long flags;
 
-	if (!ploop->force_link_inflight_bios)
+	if (!ploop->force_rbtree_for_inflight)
 		return;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	link_pio(ploop, pio, &ploop->inflight_bios_rbtree, cluster, false);
+	link_pio(ploop, pio, &ploop->inflight_pios_rbtree, cluster, false);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 }
 static void maybe_unlink_completed_pio(struct ploop *ploop, struct pio *pio)
@@ -502,7 +502,7 @@ static void maybe_unlink_completed_pio(struct ploop *ploop, struct pio *pio)
 		return;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	unlink_pio(ploop, &ploop->inflight_bios_rbtree, pio, &pio_list);
+	unlink_pio(ploop, &ploop->inflight_pios_rbtree, pio, &pio_list);
 	if (!list_empty(&pio_list)) {
 		list_splice_tail(&pio_list, &ploop->deferred_pios);
 		queue = true;
@@ -572,20 +572,20 @@ static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 	if (ploop->nr_deltas != 1)
 		goto punch_hole;
 
-	if (!ploop->force_link_inflight_bios) {
+	if (!ploop->force_rbtree_for_inflight) {
 		/*
 		 * Force all not exclusive inflight bios to link into
-		 * inflight_bios_rbtree. Note, that this does not wait
+		 * inflight_pios_rbtree. Note, that this does not wait
 		 * completion of two-stages requests (currently, these
 		 * may be only cow, which take cluster lk, so we are
 		 * safe with them).
 		 */
-		ploop->force_link_inflight_bios = true;
+		ploop->force_rbtree_for_inflight = true;
 		ret = ploop_inflight_bios_ref_switch(ploop, true);
 		if (ret) {
 			pr_err_ratelimited("ploop: discard ignored by err=%d\n",
 					ret);
-			ploop->force_link_inflight_bios = false;
+			ploop->force_rbtree_for_inflight = false;
 			pio->bi_status = BLK_STS_IOERR;
 			pio_endio(pio);
 		}
@@ -1593,19 +1593,19 @@ static void do_discard_cleanup(struct ploop *ploop)
 {
 	unsigned long cleanup_jiffies;
 
-	if (ploop->force_link_inflight_bios &&
+	if (ploop->force_rbtree_for_inflight &&
 	    !atomic_read(&ploop->nr_discard_bios)) {
 		/* Pairs with barrier in ploop_discard_index_pio_end() */
 		smp_rmb();
 		cleanup_jiffies = READ_ONCE(ploop->pending_discard_cleanup);
 
 		if (time_after(jiffies, cleanup_jiffies + CLEANUP_DELAY * HZ))
-			ploop->force_link_inflight_bios = false;
+			ploop->force_rbtree_for_inflight = false;
 	}
 }
 
 /*
- * This switches the device back in !force_link_inflight_bios mode
+ * This switches the device back in !force_rbtree_for_inflight mode
  * after cleanup timeout has expired.
  */
 static void process_discard_pios(struct ploop *ploop, struct list_head *pios,

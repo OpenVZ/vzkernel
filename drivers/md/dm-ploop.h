@@ -165,14 +165,14 @@ struct ploop {
 	unsigned int tb_nr; /* tracking_bitmap size in bits */
 	unsigned int tb_cursor;
 
-	bool force_link_inflight_bios;
+	bool force_rbtree_for_inflight;
 	/*
-	 * Hash table to link non-exclusive submitted bios.
+	 * RBtree to link non-exclusive submitted bios.
 	 * This is needed for discard to check, nobody uses
 	 * the discarding cluster. Only made when the above
-	 * force_link_inflight_bios is enabled.
+	 * force_rbtree_for_inflight is enabled.
 	 */
-	struct rb_root inflight_bios_rbtree;
+	struct rb_root inflight_pios_rbtree;
 	/*
 	 * Hash table to link exclusive submitted bios.
 	 * This allows to delay bios going in some cluster.
