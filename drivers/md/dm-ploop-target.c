@@ -329,12 +329,15 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	INIT_LIST_HEAD(&ploop->flush_pios);
 	INIT_LIST_HEAD(&ploop->discard_pios);
 	INIT_LIST_HEAD(&ploop->resubmit_pios);
+	INIT_LIST_HEAD(&ploop->enospc_pios);
 	INIT_LIST_HEAD(&ploop->cluster_lk_list);
 	INIT_LIST_HEAD(&ploop->delta_cow_action_list);
 	ploop->bat_entries = RB_ROOT;
+	timer_setup(&ploop->enospc_timer, ploop_enospc_timer, 0);
 
 	INIT_WORK(&ploop->worker, do_ploop_work);
 	INIT_WORK(&ploop->fsync_worker, do_ploop_fsync_work);
+	INIT_WORK(&ploop->event_work, ploop_event_work);
 	init_completion(&ploop->inflight_bios_ref_comp);
 
 	for (i = 0; i < 2; i++) {
@@ -419,6 +422,14 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 	read_unlock_irq(&ploop->bat_rwlock);
 }
 
+static void ploop_set_wants_suspend(struct dm_target *ti, bool wants)
+{
+	struct ploop *ploop = ti->private;
+
+	spin_lock_irq(&ploop->deferred_lock);
+	ploop->wants_suspend = wants;
+	spin_unlock_irq(&ploop->deferred_lock);
+}
 static void ploop_set_suspended(struct dm_target *ti, bool suspended)
 {
 	struct ploop *ploop = ti->private;
@@ -430,9 +441,19 @@ static void ploop_set_suspended(struct dm_target *ti, bool suspended)
 
 static void ploop_presuspend(struct dm_target *ti)
 {
+	struct ploop *ploop = ti->private;
+	/*
+	 * For pending enospc requests. Otherwise,
+	 * we may never be able to suspend this target.
+	 */
+	ploop_set_wants_suspend(ti, true);
+	flush_work(&ploop->event_work);
+	del_timer_sync(&ploop->enospc_timer);
+	ploop_enospc_timer(&ploop->enospc_timer);
 }
 static void ploop_presuspend_undo(struct dm_target *ti)
 {
+	ploop_set_wants_suspend(ti, false);
 }
 static void ploop_postsuspend(struct dm_target *ti)
 {
@@ -454,6 +475,7 @@ static int ploop_preresume(struct dm_target *ti)
 		 * no more reasons to break resume.
 		 */
 		ploop_set_suspended(ti, false);
+		ploop_set_wants_suspend(ti, false);
 	}
 	return ret;
 }
