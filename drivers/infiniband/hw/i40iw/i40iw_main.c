@@ -1026,7 +1026,7 @@ static void i40iw_del_init_mem(struct i40iw_device *iwdev)
 	i40iw_free_dma_mem(&iwdev->hw, &iwdev->obj_mem);
 	kfree(dev->hmc_info->sd_table.sd_entry);
 	dev->hmc_info->sd_table.sd_entry = NULL;
-	kfree(iwdev->mem_resources);
+	kvfree(iwdev->mem_resources);
 	iwdev->mem_resources = NULL;
 	kfree(iwdev->ceqlist);
 	iwdev->ceqlist = NULL;

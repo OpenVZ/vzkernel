@@ -70,7 +70,7 @@ u32 i40iw_initialize_hw_resources(struct i40iw_device *iwdev)
 	resources_size += sizeof(unsigned long) * BITS_TO_LONGS(num_pds);
 	resources_size += sizeof(unsigned long) * BITS_TO_LONGS(arp_table_size);
 	resources_size += sizeof(struct i40iw_qp **) * max_qp;
-	iwdev->mem_resources = kzalloc(resources_size, GFP_KERNEL);
+	iwdev->mem_resources = kvzalloc(resources_size, GFP_KERNEL);
 
 	if (!iwdev->mem_resources)
 		return -ENOMEM;
