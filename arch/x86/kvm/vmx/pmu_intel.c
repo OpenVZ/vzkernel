@@ -333,6 +333,11 @@ static void intel_pmu_refresh(struct kvm_vcpu *vcpu)
 	pmu->version = 0;
 	pmu->reserved_bits = 0xffffffff00200000ull;
 
+	entry = kvm_find_cpuid_entry(vcpu, 1, 0);
+	if (entry)
+		intel_pmu_lbr_fill(&pmu->lbr,
+			x86_family(entry->eax), x86_model(entry->eax));
+
 	entry = kvm_find_cpuid_entry(vcpu, 0xa, 0);
 	if (!entry)
 		return;
@@ -383,11 +388,6 @@ static void intel_pmu_refresh(struct kvm_vcpu *vcpu)
 		INTEL_PMC_MAX_GENERIC, pmu->nr_arch_fixed_counters);
 
 	nested_vmx_pmu_entry_exit_ctls_update(vcpu);
-
-	entry = kvm_find_cpuid_entry(vcpu, 1, 0);
-	if (entry)
-		intel_pmu_lbr_fill(&pmu->lbr,
-			x86_family(entry->eax), x86_model(entry->eax));
 }
 
 static void intel_pmu_init(struct kvm_vcpu *vcpu)
