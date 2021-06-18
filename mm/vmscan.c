@@ -561,6 +561,8 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 		};
 		struct shrinker *shrinker;
 
+		cond_resched();
+
 		shrinker = idr_find(&shrinker_idr, i);
 		if (unlikely(!shrinker || shrinker == SHRINKER_REGISTERING)) {
 			if (!shrinker)
