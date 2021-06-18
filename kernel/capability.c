@@ -417,8 +417,21 @@ bool ve_capable(int cap)
 
 	return ret;
 }
+
+bool feature_capable(int feature, int cap)
+{
+	if (get_exec_env()->features & feature)
+		return ve_capable(cap);
+	else
+		return capable(cap);
+}
 #else
 bool ve_capable(int cap)
+{
+	return capable(cap);
+}
+
+bool feature_capable(int feature, int cap)
 {
 	return capable(cap);
 }
