@@ -1099,9 +1099,6 @@ update_stats_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	if ((flags & DEQUEUE_SLEEP) && entity_is_task(se)) {
 		struct task_struct *tsk = task_of(se);
 
-		if (tsk->in_iowait)
-			cfs_rq->nr_iowait++;
-
 		if (tsk->state & TASK_INTERRUPTIBLE)
 			__schedstat_set(se->statistics.sleep_start,
 				      rq_clock(rq_of(cfs_rq)));
@@ -4185,6 +4182,13 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	dequeue_runnable_load_avg(cfs_rq, se);
 
 	update_stats_dequeue(cfs_rq, se, flags);
+
+	if ((flags & DEQUEUE_SLEEP) && entity_is_task(se)) {
+		struct task_struct *tsk = task_of(se);
+
+		if (tsk->in_iowait)
+			cfs_rq->nr_iowait++;
+	}
 
 	clear_buddies(cfs_rq, se);
 
