@@ -1,0 +1,22 @@
+# CONFIG_INTEL_TCC_COOLING:
+# 
+# Enable this to support system cooling by adjusting the effective TCC
+# activation temperature via the TCC Offset register, which is widely
+# supported on modern Intel platforms.
+# Note that, on different platforms, the behavior might be different
+# on how fast the setting takes effect, and how much the CPU frequency
+# is reduced.
+# 
+# Symbol: INTEL_TCC_COOLING [=n]
+# Type  : tristate
+# Defined at drivers/thermal/intel/Kconfig:83
+#   Prompt: Intel TCC offset cooling Driver
+#   Depends on: THERMAL [=y] && (X86 [=y] || X86_INTEL_QUARK [=n] || COMPILE_TEST [=n]) && X86 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Thermal drivers (THERMAL [=y])
+#         -> Intel thermal drivers
+# 
+# 
+# 
+CONFIG_INTEL_TCC_COOLING=m

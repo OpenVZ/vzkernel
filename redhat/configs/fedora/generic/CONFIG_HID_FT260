@@ -1,0 +1,23 @@
+# CONFIG_HID_FT260:
+# 
+# Provides I2C host adapter functionality over USB-HID through FT260
+# device. The customizable USB descriptor fields are exposed as sysfs
+# attributes.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called hid-ft260.
+# 
+# Symbol: HID_FT260 [=n]
+# Type  : tristate
+# Defined at drivers/hid/Kconfig:354
+#   Prompt: FTDI FT260 USB HID to I2C host support
+#   Depends on: INPUT [=y] && HID [=y] && USB_HID [=y] && HIDRAW [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> HID support
+#         -> HID bus support (HID [=y])
+#           -> Special HID drivers
+# 
+# 
+# 
+CONFIG_HID_FT260=m
