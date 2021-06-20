@@ -3910,6 +3910,7 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 	int err;
 	int npages = 0;
 	int allocated = 0;
+	int out_size;
 
 	err = 0;
 	spin_lock(&fi->lock);
@@ -3987,8 +3988,10 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 	}
 
 	err = fuse_simple_request(fc, &ap.args);
-	if (err)
+	if (err < 0)
 		goto out;
+	out_size = err;
+	err = 0;
 
 	if (cur_max == 0) {
 		dest->fi_extents_mapped += ofiemap.fm_mapped_extents;
@@ -4004,6 +4007,11 @@ static int fuse_request_fiemap(struct inode *inode, u32 cur_max,
 		int i;
 
 		if (ofiemap.fm_mapped_extents > cur_max) {
+			err = -EIO;
+			goto out;
+		}
+
+		if (ofiemap.fm_mapped_extents * sizeof(struct fiemap_extent) > out_size) {
 			err = -EIO;
 			goto out;
 		}
