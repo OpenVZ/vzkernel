@@ -15,4 +15,4 @@
 # 
 # 
 # 
-CONFIG_DRM_XEN_FRONTEND=m
+# CONFIG_DRM_XEN_FRONTEND is not set
