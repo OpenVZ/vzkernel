@@ -4000,6 +4000,7 @@ out:
 		__free_page(ap.pages[allocated]);
 		ap.pages[allocated] = NULL;
 	}
+	kfree(ap.pages);
 	fuse_release_ff(inode, ff);
 	return err;
 }
