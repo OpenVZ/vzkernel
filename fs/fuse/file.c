@@ -2103,6 +2103,9 @@ int fuse_write_inode(struct inode *inode, struct writeback_control *wbc)
 	int err;
 
 	ff = fuse_write_file_get(fc, fi);
+	if (!ff && fc->close_wait)
+		return 0;
+
 	err = fuse_flush_times(inode, ff);
 	if (ff)
 		fuse_file_put(ff, false, false);
