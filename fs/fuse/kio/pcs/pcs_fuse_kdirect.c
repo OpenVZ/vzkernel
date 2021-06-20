@@ -602,6 +602,8 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 	ia->ioctl.ctx = reply_work;
 	ia->ap.args.end = pcs_fuse_reply_handle;
 	ia->ap.args.nonblocking = true;
+	ia->ap.args.force = true;
+	ia->ap.args.nocreds = true;
 
 	err = fuse_simple_background(fm, &ia->ap.args, GFP_NOIO);
 	if (err)
