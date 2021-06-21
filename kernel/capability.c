@@ -418,6 +418,23 @@ bool ve_capable(int cap)
 	return ret;
 }
 
+bool ve_capable_noaudit(int cap)
+{
+	struct cred *cred;
+	bool ret;
+
+	rcu_read_lock();
+	cred = get_exec_env()->init_cred;
+
+	if (cred == NULL) /* ve isn't running */
+		cred = ve0.init_cred;
+
+	ret = ns_capable_noaudit(cred->user_ns, cap);
+	rcu_read_unlock();
+
+	return ret;
+}
+
 bool feature_capable(int feature, int cap)
 {
 	if (get_exec_env()->features & feature)
@@ -431,12 +448,18 @@ bool ve_capable(int cap)
 	return capable(cap);
 }
 
+bool ve_capable_noaudit(int cap)
+{
+	return ns_capable_noaudit(&init_user_ns, cap);
+}
+
 bool feature_capable(int feature, int cap)
 {
 	return capable(cap);
 }
 #endif
 EXPORT_SYMBOL_GPL(ve_capable);
+EXPORT_SYMBOL_GPL(ve_capable_noaudit);
 
 /**
  * ns_capable_noaudit - Determine if the current task has a superior capability
