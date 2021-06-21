@@ -1,3 +1,12 @@
+/*
+ *  include/linux/kstat.h
+ *
+ *  Copyright (c) 2000-2008 SWsoft
+ *  Copyright (c) 2009-2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef __LINUX_KSTAT_H
 #define __LINUX_KSTAT_H
 
