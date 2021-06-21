@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/pcs_prot_types.h
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef _PCS_PROT_TYPES_H_
 #define _PCS_PROT_TYPES_H_ 1
 
