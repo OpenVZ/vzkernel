@@ -1,3 +1,10 @@
+/*
+ *  drivers/md/dm-ploop-map.c
+ *
+ *  Copyright (c) 2020-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #include <linux/buffer_head.h>
 #include <linux/dm-io.h>
 #include <linux/dm-kcopyd.h>

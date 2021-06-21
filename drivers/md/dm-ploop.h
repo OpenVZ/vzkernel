@@ -1,3 +1,10 @@
+/*
+ *  drivers/md/dm-ploop.h
+ *
+ *  Copyright (c) 2020-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef __DM_PLOOP_H
 #define __DM_PLOOP_H
 

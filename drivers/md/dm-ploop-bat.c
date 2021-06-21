@@ -1,3 +1,10 @@
+/*
+ *  drivers/md/dm-ploop-bat.c
+ *
+ *  Copyright (c) 2020-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #include <linux/init.h>
 #include <linux/file.h>
 #include <linux/uio.h>

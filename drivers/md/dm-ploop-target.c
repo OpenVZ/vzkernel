@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
+/*
+ *  drivers/md/dm-ploop-target.c
+ *
+ *  Copyright (c) 2020-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #include "dm.h"
 #include <linux/buffer_head.h>
 #include <linux/rbtree.h>

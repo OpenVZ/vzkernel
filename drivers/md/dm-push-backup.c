@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 /*
- * Copyright (C) 2020-2021 Virtuozzo International GmbH.
+ *  drivers/md/dm-push-backup.c
+ *
+ *  Copyright (c) 2020-2021 Virtuozzo International GmbH. All rights reserved.
+ *
  */
+
 #include "dm.h"
 #include <linux/init.h>
 #include <linux/module.h>
