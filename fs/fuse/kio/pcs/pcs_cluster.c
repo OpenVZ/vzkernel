@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/pcs_cluster.c
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #include <net/sock.h>
 #include <linux/net.h>
 #include <linux/kthread.h>
