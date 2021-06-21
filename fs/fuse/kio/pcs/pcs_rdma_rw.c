@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/pcs_rdma_rw.c
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/highmem.h>
