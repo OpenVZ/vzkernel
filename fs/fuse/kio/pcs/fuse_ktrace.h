@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/fuse_ktrace.h
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef _FUSE_KTRACE_H_
 #define _FUSE_KTRACE_H_ 1
 
