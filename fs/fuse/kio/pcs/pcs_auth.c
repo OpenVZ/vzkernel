@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/pcs_auth.c
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #include <linux/fs.h>
 #include <linux/types.h>
 
