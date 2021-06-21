@@ -1,8 +1,7 @@
 /*
  *  include/linux/kernfs-ve.h
  *
- *  Copyright (c) 2000-2017 Virtuozzo International GmbH.
- *  All rights reserved.
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
  *
  */
 
