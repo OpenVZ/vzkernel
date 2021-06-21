@@ -2,7 +2,7 @@
  *  block/blk-cbt.c
  *
  *  Copyright (c) 2010-2015 Parallels IP Holdings GmbH
- *  Copyright (c) 2017-2019 Virtuozzo International GmbH. All rights reserved.
+ *  Copyright (c) 2017-2021 Virtuozzo International GmbH. All rights reserved.
  *
  */
 
