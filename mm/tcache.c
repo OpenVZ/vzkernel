@@ -1,3 +1,11 @@
+/*
+ *  mm/tcache.c
+ *
+ *  Copyright (c) 2015 Parallels IP Holdings GmbH
+ *  Copyright (c) 2017-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
