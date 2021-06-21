@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/pcs_sock_io.c
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #include <net/sock.h>
 #include <net/tcp.h>
 #include <linux/net.h>
