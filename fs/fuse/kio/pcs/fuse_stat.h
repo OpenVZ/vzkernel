@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/fuse_stat.h
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef _FUSE_STAT_H_
 #define _FUSE_STAT_H_ 1
 
