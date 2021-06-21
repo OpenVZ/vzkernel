@@ -1,4 +1,11 @@
 /*
+ *  fs/fuse/kio/pcs/pcs_fuse_kdirect.c
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
+/*
  * Implement kdirect API for PCS cluster client kernel implementation
  */
 #include "../../fuse_i.h"
