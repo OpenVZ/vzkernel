@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/pcs_align.h
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef __PCS_ALIGN_H__
 #define __PCS_ALIGN_H__
 
