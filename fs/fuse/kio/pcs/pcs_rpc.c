@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/pcs_rpc.c
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 /* An attempt of universal rpc layer.
  *
  * All the components (except for MDS) used to assume asymmetrical communication:
