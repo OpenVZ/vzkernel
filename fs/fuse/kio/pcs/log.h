@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/log.h
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef __PCSLOG_H__
 #define __PCSLOG_H__
 
