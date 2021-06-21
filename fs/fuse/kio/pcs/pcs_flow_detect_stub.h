@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/pcs_flow_detect_stub.h
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef _PCS_FLOW_DETECT_STUB_H_
 #define _PCS_FLOW_DETECT_STUB_H_ 1
 
