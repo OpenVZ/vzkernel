@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/pcs_error.h
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef _PCS_ERROR_H_
 #define _PCS_ERROR_H_ 1
 
