@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/pcs_cs_prot.h
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef _PCS_CS_PROT_H_
 #define _PCS_CS_PROT_H_ 1
 
