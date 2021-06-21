@@ -1,3 +1,10 @@
+/*
+ *  fs/fuse/kio/pcs/fuse_prometheus.h
+ *
+ *  Copyright (c) 2018-2021 Virtuozzo International GmbH. All rights reserved.
+ *
+ */
+
 #ifndef __FUSE_PROMETHEUS_H__
 #define __FUSE_PROMETHEUS_H__ 1
 
