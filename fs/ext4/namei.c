@@ -3452,18 +3452,18 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
 	retval = 0;
 
 end_rename:
-	if (handle)
-		ext4_journal_stop(handle);
-out_release:
-	brelse(old.dir_bh);
-	brelse(old.bh);
-	brelse(new.bh);
 	if (whiteout) {
 		if (retval)
 			drop_nlink(whiteout);
 		unlock_new_inode(whiteout);
 		iput(whiteout);
 	}
+	if (handle)
+		ext4_journal_stop(handle);
+out_release:
+	brelse(old.dir_bh);
+	brelse(old.bh);
+	brelse(new.bh);
 	return retval;
 }
 
