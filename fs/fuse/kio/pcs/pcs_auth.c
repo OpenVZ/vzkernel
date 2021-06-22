@@ -288,6 +288,7 @@ static int send_auth_msg(struct pcs_rpc *ep, void *data, size_t size, int state)
 		.cluster_id = eng->cluster_id,
 		.sender_id = eng->local_id,
 		.recipient_id = ep->peer_id,
+		.sender_role = PCS_NODE_ROLE_CN,
 		.recipient_role = ep->peer_role,
 		.version = PCS_VERSION_CURRENT,
 		.state = state,
