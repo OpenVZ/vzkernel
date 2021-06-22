@@ -4290,19 +4290,19 @@ static const unsigned int memcg1_events[] = {
 	PSWPOUT,
 };
 
-static void accumulate_ooms(struct mem_cgroup *memcg, unsigned long *total_oom,
-			unsigned long *total_oom_kill)
+static void accumulate_ooms(struct mem_cgroup *memcg, unsigned long *oom,
+			unsigned long *kill)
 {
 	struct mem_cgroup *mi;
-
-	total_oom_kill = total_oom = 0;
+	unsigned long total_oom_kill = 0, total_oom = 0;
 
 	for_each_mem_cgroup_tree(mi, memcg) {
 		total_oom += atomic_long_read(&mi->memory_events[MEMCG_OOM]);
 		total_oom_kill += atomic_long_read(&mi->memory_events[MEMCG_OOM_KILL]);
-
-		cond_resched();
 	}
+
+	*oom = total_oom;
+	*kill = total_oom_kill;
 }
 
 static int memcg_stat_show(struct seq_file *m, void *v)
