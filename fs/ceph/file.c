@@ -75,7 +75,7 @@ static __le32 ceph_flags_sys2wire(u32 flags)
 static size_t dio_get_pagev_size(const struct iov_iter *it)
 {
     const struct iovec *iov = iov_iter_iovec(it);
-    size_t total = iov_iter_count(it);
+    const struct iovec *iovend = iov + it->nr_segs;
     size_t size;
 
     size = iov->iov_len - it->iov_offset;
@@ -84,10 +84,8 @@ static size_t dio_get_pagev_size(const struct iov_iter *it)
      * and the next base are page aligned.
      */
     while (PAGE_ALIGNED((iov->iov_base + iov->iov_len)) &&
-           PAGE_ALIGNED(((iov++)->iov_base))) {
-	    size_t n =  min(iov->iov_len, total);
-	    size += n;
-	    total -= n;
+           (++iov < iovend && PAGE_ALIGNED((iov->iov_base)))) {
+        size += iov->iov_len;
     }
     dout("dio_get_pagevlen len = %zu\n", size);
     return size;
