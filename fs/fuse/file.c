@@ -324,7 +324,7 @@ int fuse_open_common(struct inode *inode, struct file *file, bool isdir)
 		inode_unlock(inode);
 
 		if (err) {
-			fuse_release_common(file, FUSE_RELEASE);
+			fuse_release_common(file, false);
 			return err;
 		}
 	}
