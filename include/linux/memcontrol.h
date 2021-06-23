@@ -103,6 +103,7 @@ struct RH_KABI_RENAME(mem_cgroup_stat_cpu, memcg_vmstats_percpu) {
 	unsigned long events[NR_VM_EVENT_ITEMS];
 	unsigned long nr_page_events;
 	unsigned long targets[MEM_CGROUP_NTARGETS];
+	unsigned long nr_dentry_neg;
 };
 
 struct mem_cgroup_reclaim_iter {
@@ -1004,6 +1005,9 @@ static inline void memcg_memory_event_mm(struct mm_struct *mm,
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 void mem_cgroup_split_huge_fixup(struct page *head);
 #endif
+
+void memcg_neg_dentry_inc(struct dentry *dentry);
+void memcg_neg_dentry_dec(struct dentry *dentry);
 
 void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi);
 
