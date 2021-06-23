@@ -995,6 +995,40 @@ struct mem_cgroup *get_mem_cgroup_from_page(struct page *page)
 }
 EXPORT_SYMBOL(get_mem_cgroup_from_page);
 
+static inline unsigned long
+mem_cgroup_read_nd(struct mem_cgroup *memcg)
+{
+	long val = 0;
+	int cpu;
+
+	/* Per-cpu values can be negative, use a signed accumulator */
+	for_each_possible_cpu(cpu)
+		val += per_cpu(memcg->vmstats_percpu->nr_dentry_neg, cpu);
+	/*
+	 * Summing races with updates, so val may be negative.  Avoid exposing
+	 * transient negative values.
+	 */
+	if (val < 0)
+		val = 0;
+	return val;
+}
+
+void memcg_neg_dentry_inc(struct dentry *dentry)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_obj(dentry);
+
+	if (memcg)
+		__this_cpu_inc(memcg->vmstats_percpu->nr_dentry_neg);
+}
+
+void memcg_neg_dentry_dec(struct dentry *dentry)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_obj(dentry);
+
+	if (memcg)
+		__this_cpu_dec(memcg->vmstats_percpu->nr_dentry_neg);
+}
+
 /**
  * If current->active_memcg is non-NULL, do not fallback to current->mm->memcg.
  */
@@ -4340,6 +4374,7 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 	else
 		seq_printf(m, "oom %lu\n",
 			atomic_long_read(&memcg->memory_events[MEMCG_OOM]));
+	seq_printf(m, "negative_dentries %lu\n", mem_cgroup_read_nd(memcg));
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
 		seq_printf(m, "%s %lu\n", lru_list_name(i),
