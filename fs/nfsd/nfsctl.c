@@ -1392,8 +1392,6 @@ static struct dentry *nfsd_mount(struct file_system_type *fs_type,
 
 	if (!(get_exec_env()->features & VE_FEATURE_NFSD))
 		return ERR_PTR(-ENODEV);
-	if (!current_user_ns_initial())
-		return ERR_PTR(-EPERM);
 
 	return mount_ns(fs_type, flags, data, net, net->user_ns, nfsd_fill_super);
 }
@@ -1411,7 +1409,7 @@ static struct file_system_type nfsd_fs_type = {
 	.name		= "nfsd",
 	.mount		= nfsd_mount,
 	.kill_sb	= nfsd_umount,
-	.fs_flags	= FS_VIRTUALIZED,
+	.fs_flags	= FS_VIRTUALIZED | FS_VE_MOUNT,
 };
 MODULE_ALIAS_FS("nfsd");
 
