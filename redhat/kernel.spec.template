@@ -704,7 +704,7 @@ Source13: redhatsecureboot003.cer
 
 Source22: mod-extra.list.rhel
 Source16: mod-extra.list.fedora
-Source17: mod-blacklist.sh
+Source17: mod-denylist.sh
 Source18: mod-sign.sh
 Source79: parallel_xz.sh
 

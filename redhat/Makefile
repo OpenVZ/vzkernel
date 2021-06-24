@@ -263,7 +263,7 @@ sources-rh: $(TARBALL) generate-testpatch-tmp setup-source dist-configs-check
 		rpminspect.yaml \
 		update_scripts.sh \
 		kvm_stat.logrotate \
-		mod-blacklist.sh \
+		mod-denylist.sh \
 		mod-internal.list \
 		mod-sign.sh \
 		configs/flavors \
