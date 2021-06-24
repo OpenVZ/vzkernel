@@ -47,12 +47,10 @@ struct ploop_delta {
 	bool is_raw;
 };
 
+#define MERGE_PIOS_MAX			64
+
 struct ploop_cmd {
-#define PLOOP_CMD_MERGE_SNAPSHOT	3
 	struct completion comp;
-	struct ploop *ploop;
-	unsigned int type;
-	int retval;
 	union {
 		struct {
 			sector_t new_sectors;
@@ -69,12 +67,6 @@ struct ploop_cmd {
 			unsigned int cluster, dst_cluster;
 			struct pio *pio;
 		} resize;
-		struct {
-#define NR_MERGE_BIOS			64
-			atomic_t nr_available;
-			unsigned int cluster; /* Currently iterated cluster */
-			bool do_repeat;
-		} merge;
 	};
 };
 
@@ -180,8 +172,11 @@ struct ploop {
 	struct list_head resubmit_pios; /* After partial IO */
 	struct list_head enospc_pios; /* Delayed after ENOSPC */
 
+	atomic_t service_pios;
+	struct wait_queue_head service_wq;
+
+	spinlock_t err_status_lock;
 	struct rw_semaphore ctl_rwsem;
-	struct ploop_cmd *deferred_cmd;
 
 	/*
 	 * List of locked clusters (no write is possible).
@@ -237,6 +232,7 @@ struct pio {
 
 	bool is_data_alloc:1;
 	bool wants_discard_index_cleanup:1;
+	bool is_fake_merge:1;
 	bool free_on_endio:1;
 	/*
 	 * 0 and 1 are related to inflight_bios_ref[],
@@ -493,6 +489,16 @@ static inline struct hlist_head *ploop_htable_slot(struct hlist_head head[], u32
 	return &head[hash_32(clu, PLOOP_HASH_TABLE_BITS)];
 }
 
+static inline bool fake_merge_pio(struct pio *pio)
+{
+	if (pio->is_fake_merge) {
+		WARN_ON_ONCE(pio->bi_iter.bi_size ||
+			     pio->bi_op != REQ_OP_WRITE);
+		return true;
+	}
+	return false;
+}
+
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);
 extern void ploop_free_md_page(struct md_page *md);
 extern void free_md_pages_tree(struct rb_root *root);
@@ -506,7 +512,6 @@ extern void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *p
 extern void do_ploop_work(struct work_struct *ws);
 extern void do_ploop_fsync_work(struct work_struct *ws);
 extern void ploop_event_work(struct work_struct *work);
-extern void process_deferred_cmd(struct ploop *ploop);
 extern int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 		    union map_info *map_context, struct request **clone);
 extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
@@ -521,9 +526,6 @@ extern void ploop_reset_bat_update(struct ploop_index_wb *);
 extern void ploop_submit_index_wb_sync(struct ploop *, struct ploop_index_wb *);
 extern int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 			 char *result, unsigned int maxlen);
-extern int submit_cluster_cow(struct ploop *ploop, unsigned int level,
-			      unsigned int cluster, unsigned int dst_cluster,
-			      void (*end_fn)(struct ploop *, int, void *), void *data);
 
 extern struct pio * alloc_pio_with_pages(struct ploop *ploop);
 extern void free_pio_with_pages(struct ploop *ploop, struct pio *pio);
