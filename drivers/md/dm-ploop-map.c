@@ -853,7 +853,7 @@ static int truncate_prealloc_safe(struct ploop_delta *delta, loff_t len, const c
 		return 0;
 	new_len = ALIGN(new_len, PREALLOC_SIZE);
 
-	ret = vfs_truncate(&file->f_path, new_len);
+	ret = vfs_truncate2(&file->f_path, new_len, file);
 	if (ret) {
 		pr_err("ploop: %s->truncate(): %d\n", func, ret);
 		return ret;
