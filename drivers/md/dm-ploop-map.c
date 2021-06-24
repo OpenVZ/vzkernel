@@ -826,8 +826,6 @@ static int find_dst_cluster_bit(struct ploop *ploop,
 {
 	unsigned int dst_cluster;
 
-	WARN_ON_ONCE(!(current->flags & PF_WQ_WORKER));
-
 	/* Find empty cluster */
 	dst_cluster = find_first_bit(ploop->holes_bitmap, ploop->hb_nr);
 	if (dst_cluster >= ploop->hb_nr)

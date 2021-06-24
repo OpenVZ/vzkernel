@@ -48,7 +48,6 @@ struct ploop_delta {
 };
 
 struct ploop_cmd {
-#define PLOOP_CMD_RESIZE		1
 #define PLOOP_CMD_MERGE_SNAPSHOT	3
 	struct completion comp;
 	struct ploop *ploop;

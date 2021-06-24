@@ -401,11 +401,8 @@ static void ploop_add_md_pages(struct ploop *ploop, struct rb_root *from)
  * of disk after resize. For user they look as already written to disk,
  * so be careful(!) and protective. Update indexes only after cluster
  * data is written to disk.
- *
- * This is called from deferred work -- the only place we alloc clusters.
- * So, nobody can reallocate clusters updated in ploop_grow_relocate_cluster().
  */
-static void process_resize_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
+static int process_resize_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 {
 	struct ploop_index_wb piwb;
 	unsigned int dst_cluster;
@@ -413,25 +410,17 @@ static void process_resize_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 
 	ploop_index_wb_init(&piwb, ploop);
 
-	/*
-	 *  Update memory arrays and hb_nr, but do not update nr_bat_entries.
-	 *  This is noop except first enter to this function.
-	 */
+	/* Update memory arrays and hb_nr, but do not update nr_bat_entries. */
 	ploop_advance_holes_bitmap(ploop, cmd);
 
-	if (cmd->resize.dst_cluster <= cmd->resize.end_dst_cluster) {
+	while (cmd->resize.dst_cluster <= cmd->resize.end_dst_cluster) {
 		ret = ploop_grow_relocate_cluster(ploop, &piwb, cmd);
 		if (ret)
 			goto out;
-
-		/* Move one cluster per cmd to allow other requests. */
-		ploop_queue_deferred_cmd(ploop, cmd);
-		return;
-	} else {
-		/* Update header metadata */
-		ret = ploop_grow_update_header(ploop, &piwb, cmd);
 	}
 
+	/* Update header metadata */
+	ret = ploop_grow_update_header(ploop, &piwb, cmd);
 out:
 	write_lock_irq(&ploop->bat_rwlock);
 	if (ret) {
@@ -449,8 +438,7 @@ out:
 	}
 	write_unlock_irq(&ploop->bat_rwlock);
 
-	cmd->retval = ret;
-	complete(&cmd->comp); /* Last touch of cmd memory */
+	return ret;
 }
 
 struct pio *alloc_pio_with_pages(struct ploop *ploop)
@@ -504,6 +492,7 @@ void free_pio_with_pages(struct ploop *ploop, struct pio *pio)
 }
 
 /* @new_size is in sectors */
+/* TODO: we may delegate this to userspace */
 static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 {
 	unsigned int nr_bat_entries, nr_old_bat_clusters, nr_bat_clusters;
@@ -576,18 +565,11 @@ static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 	cmd.resize.new_sectors = new_sectors;
 	cmd.resize.md0 = md0;
 	cmd.retval = 0;
-	cmd.type = PLOOP_CMD_RESIZE;
 	cmd.ploop = ploop;
 
 	ploop_suspend_submitting_pios(ploop);
-	/* FIXME: Avoid using work */
-	init_completion(&cmd.comp);
-	ploop_queue_deferred_cmd(ploop, &cmd);
-	wait_for_completion(&cmd.comp);
-
+	ret = process_resize_cmd(ploop, &cmd);
 	ploop_resume_submitting_pios(ploop);
-
-	ret = cmd.retval;
 err:
 	if (cmd.resize.pio)
 		free_pio_with_pages(ploop, cmd.resize.pio);
@@ -1192,9 +1174,7 @@ void process_deferred_cmd(struct ploop *ploop)
 	ploop->deferred_cmd = NULL;
 	spin_unlock_irq(&ploop->deferred_lock);
 
-	if (cmd->type == PLOOP_CMD_RESIZE) {
-		process_resize_cmd(ploop, cmd);
-	} else if (cmd->type == PLOOP_CMD_MERGE_SNAPSHOT) {
+	if (cmd->type == PLOOP_CMD_MERGE_SNAPSHOT) {
 		process_merge_latest_snapshot_cmd(ploop, cmd);
 	} else {
 		cmd->retval = -EINVAL;
