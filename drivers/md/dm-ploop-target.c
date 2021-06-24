@@ -131,10 +131,9 @@ void free_md_pages_tree(struct rb_root *root)
 
 static bool ploop_has_pending_activity(struct ploop *ploop)
 {
-	bool has;
+	bool has = false;
 
 	spin_lock_irq(&ploop->deferred_lock);
-	has = ploop->deferred_cmd;
 	has |= !list_empty(&ploop->deferred_pios);
 	has |= !list_empty(&ploop->discard_pios);
 	has |= !list_empty(&ploop->delta_cow_action_list);
@@ -320,7 +319,9 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	}
 
 	rwlock_init(&ploop->bat_rwlock);
+	spin_lock_init(&ploop->err_status_lock);
 	init_rwsem(&ploop->ctl_rwsem);
+	init_waitqueue_head(&ploop->service_wq);
 	spin_lock_init(&ploop->inflight_lock);
 	spin_lock_init(&ploop->deferred_lock);
 

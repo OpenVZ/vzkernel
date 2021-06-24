@@ -77,6 +77,7 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 	pio->bi_op = bi_op;
 	pio->wants_discard_index_cleanup = false;
 	pio->is_data_alloc = false;
+	pio->is_fake_merge = false;
 	pio->free_on_endio = false;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
 	pio->bi_status = BLK_STS_OK;
@@ -481,6 +482,14 @@ static bool pio_endio_if_all_zeros(struct pio *pio)
 			return false;
 	}
 
+	pio_endio(pio);
+	return true;
+}
+
+static bool pio_endio_if_merge_fake_pio(struct pio *pio)
+{
+	if (likely(!fake_merge_pio(pio)))
+		return false;
 	pio_endio(pio);
 	return true;
 }
@@ -1143,9 +1152,9 @@ static bool postpone_if_cluster_locked(struct ploop *ploop, struct pio *pio,
 	return e_h != NULL;
 }
 
-int submit_cluster_cow(struct ploop *ploop, unsigned int level,
-		       unsigned int cluster, unsigned int dst_cluster,
-		       void (*end_fn)(struct ploop *, int, void *), void *data)
+static int submit_cluster_cow(struct ploop *ploop, unsigned int level,
+			      unsigned int cluster, unsigned int dst_cluster,
+			      void (*end_fn)(struct ploop *, int, void *), void *data)
 {
 	struct ploop_cow *cow = NULL;
 	struct pio *pio = NULL;
@@ -1399,6 +1408,8 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 
 	if (cluster_is_in_top_delta(ploop, cluster)) {
 		/* Already mapped */
+		if (pio_endio_if_merge_fake_pio(pio))
+			goto out;
 		goto queue;
 	} else if (!op_is_write(pio->bi_op)) {
 		/*
@@ -1545,13 +1556,10 @@ void do_ploop_work(struct work_struct *ws)
 	 *
 	 * Currenly, it's impossible to submit two bat pages update
 	 * in parallel, since the update uses global ploop->bat_page.
-	 * Note, that process_deferred_cmd() expects there is no
-	 * pending index wb.
 	 */
 	ploop_index_wb_init(&piwb, ploop);
 
 	spin_lock_irq(&ploop->deferred_lock);
-	process_deferred_cmd(ploop);
 	process_delta_wb(ploop, &piwb);
 
 	list_splice_init(&ploop->deferred_pios, &deferred_pios);

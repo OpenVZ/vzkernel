@@ -10,20 +10,10 @@
 #include <linux/uio.h>
 #include <linux/ctype.h>
 #include <linux/umh.h>
+#include <linux/sched/signal.h>
 #include "dm-ploop.h"
 
 #define DM_MSG_PREFIX "ploop"
-
-static void ploop_queue_deferred_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	BUG_ON(ploop->deferred_cmd && ploop->deferred_cmd != cmd);
-	ploop->deferred_cmd = cmd;
-	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
-	queue_work(ploop->wq, &ploop->worker);
-}
 
 /*
  * Assign newly allocated memory for BAT array and holes_bitmap
@@ -564,8 +554,6 @@ static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 	cmd.resize.hb_nr = hb_nr;
 	cmd.resize.new_sectors = new_sectors;
 	cmd.resize.md0 = md0;
-	cmd.retval = 0;
-	cmd.ploop = ploop;
 
 	ploop_suspend_submitting_pios(ploop);
 	ret = process_resize_cmd(ploop, &cmd);
@@ -577,106 +565,75 @@ err:
 	free_md_pages_tree(&cmd.resize.md_pages_root);
 	return ret;
 }
-
-static void ploop_queue_deferred_cmd_wrapper(struct ploop *ploop,
-					     int ret, void *data)
+static void service_pio_endio(struct pio *pio, void *data, blk_status_t status)
 {
-	struct ploop_cmd *cmd = data;
+	struct ploop *ploop = pio->ploop;
+	blk_status_t *status_ptr = data;
+	unsigned long flags;
 
-	if (ret) {
-		/* kwork will see this at next time it is on cpu */
-		WRITE_ONCE(cmd->retval, ret);
+	if (unlikely(status)) {
+		spin_lock_irqsave(&ploop->err_status_lock, flags);
+		*status_ptr = status;
+		spin_unlock_irqrestore(&ploop->err_status_lock, flags);
 	}
-	atomic_inc(&cmd->merge.nr_available);
-	ploop_queue_deferred_cmd(cmd->ploop, cmd);
+
+	if (atomic_dec_return(&ploop->service_pios) < MERGE_PIOS_MAX / 2)
+		wake_up(&ploop->service_wq);
 }
 
-/* Find mergeable cluster and return it in cmd->merge.cluster */
-static bool iter_delta_clusters(struct ploop *ploop, struct ploop_cmd *cmd)
+static int process_merge_latest_snapshot(struct ploop *ploop)
 {
-	unsigned int dst_cluster, *cluster = &cmd->merge.cluster;
-	u8 level;
-	bool skip;
+	static blk_status_t service_status;
+	struct bio_vec bvec = {0};
+	struct pio *pio;
+	int ret = 0;
+	u32 clu;
 
-	BUG_ON(cmd->type != PLOOP_CMD_MERGE_SNAPSHOT);
+	for (clu = 0; clu < ploop->nr_bat_entries; clu++) {
+		if (fatal_signal_pending(current)) {
+			ret = -EINTR;
+			break;
+		}
+		pio = kmalloc(sizeof(*pio), GFP_KERNEL);
+		if (!pio) {
+			ret = -ENOMEM;
+			break;
+		}
+		init_pio(ploop, REQ_OP_WRITE, pio);
+		pio->free_on_endio = true;
+		pio->bi_io_vec = &bvec;
+		pio->bi_iter.bi_sector = CLU_TO_SEC(ploop, clu);
+		pio->bi_iter.bi_size = 0;
+		pio->bi_iter.bi_idx = 0;
+		pio->bi_iter.bi_bvec_done = 0;
+		pio->endio_cb = service_pio_endio;
+		pio->endio_cb_data = &service_status;
+		pio->is_fake_merge = true;
+		WARN_ON_ONCE(!fake_merge_pio(pio));
 
-	for (; *cluster < ploop->nr_bat_entries; ++*cluster) {
-		/*
-		 * Check *cluster is provided by the merged delta.
-		 * We are in kwork, so bat_rwlock is not needed
-		 * (see comment in process_one_deferred_bio()).
-		 */
-		/* FIXME: Optimize this. ploop_bat_entries() is overkill */
-		dst_cluster = ploop_bat_entries(ploop, *cluster, &level);
-		if (dst_cluster == BAT_ENTRY_NONE ||
-		    level != ploop->nr_deltas - 2)
-			continue;
+		defer_pios(ploop, pio, NULL);
 
-		spin_lock_irq(&ploop->deferred_lock);
-		skip = find_lk_of_cluster(ploop, *cluster);
-		spin_unlock_irq(&ploop->deferred_lock);
-		if (skip) {
-			/*
-			 * Cluster is locked (maybe, under COW).
-			 * Skip it and try to repeat later.
-			 */
-			cmd->merge.do_repeat = true;
-			continue;
+		if (atomic_inc_return(&ploop->service_pios) == MERGE_PIOS_MAX) {
+			wait_event(ploop->service_wq,
+					atomic_read(&ploop->service_pios) < MERGE_PIOS_MAX);
 		}
 
-		return true;
+		if (unlikely(READ_ONCE(service_status)))
+			break;
 	}
 
-	return false;
-}
-
-static void process_merge_latest_snapshot_cmd(struct ploop *ploop,
-					      struct ploop_cmd *cmd)
-{
-	unsigned int dst_cluster, *cluster = &cmd->merge.cluster;
-	u8 level;
-
-	if (cmd->retval)
-		goto out;
-
-	while (iter_delta_clusters(ploop, cmd)) {
-		/*
-		 * We are in kwork, so bat_rwlock is not needed
-		 * (we can't race with changing BAT, since cmds
-		 *  are processed before bios and piwb is sync).
-		 */
-		/* FIXME: Optimize this: ploop_bat_entries() is overkill */
-		dst_cluster = ploop_bat_entries(ploop, *cluster, &level);
-
-		/* Check we can submit one more cow in parallel */
-		if (!atomic_add_unless(&cmd->merge.nr_available, -1, 0))
-			return;
-		/*
-		 * This adds cluster lk. Further write bios to *cluster will go
-		 * from ploop_map to kwork (because bat_levels[*cluster] is not
-		 * top_level()), so they will see the lk.
-		 */
-		if (submit_cluster_cow(ploop, level, *cluster, dst_cluster,
-				    ploop_queue_deferred_cmd_wrapper, cmd)) {
-			atomic_inc(&cmd->merge.nr_available);
-			cmd->retval = -ENOMEM;
-			goto out;
-		}
-
-		++*cluster;
-	}
-out:
-	if (atomic_read(&cmd->merge.nr_available) != NR_MERGE_BIOS) {
-		/* Wait till last COW queues us */
-		return;
+	wait_event(ploop->service_wq, !atomic_read(&ploop->service_pios));
+	if (!ret) {
+		spin_lock_irq(&ploop->err_status_lock);
+		ret = blk_status_to_errno(service_status);
+		spin_unlock_irq(&ploop->err_status_lock);
 	}
 
-	complete(&cmd->comp); /* Last touch of cmd memory */
+	return ret;
 }
 
 static int ploop_merge_latest_snapshot(struct ploop *ploop)
 {
-	struct ploop_cmd cmd;
 	struct file *file;
 	u8 level;
 	int ret;
@@ -687,33 +644,14 @@ static int ploop_merge_latest_snapshot(struct ploop *ploop)
 		return -EROFS;
 	if (ploop->nr_deltas < 2)
 		return -ENOENT;
-again:
-	memset(&cmd, 0, sizeof(cmd));
-	cmd.type = PLOOP_CMD_MERGE_SNAPSHOT;
-	cmd.ploop = ploop;
-	atomic_set(&cmd.merge.nr_available, NR_MERGE_BIOS);
 
-	init_completion(&cmd.comp);
-	ploop_queue_deferred_cmd(ploop, &cmd);
-	ret = wait_for_completion_interruptible(&cmd.comp);
-	if (ret) {
-		/*
-		 * process_merge_latest_snapshot_cmd() will see this
-		 * later or earlier. Take a lock if you want earlier.
-		 */
-		WRITE_ONCE(cmd.retval, -EINTR);
-		wait_for_completion(&cmd.comp);
-	}
-
-	if (cmd.retval)
+	ret = process_merge_latest_snapshot(ploop);
+	if (ret)
 		goto out;
 
-	if (cmd.merge.do_repeat)
-		goto again;
-
 	/* Delta merged. Release delta's file */
-	cmd.retval = ploop_suspend_submitting_pios(ploop);
-	if (cmd.retval)
+	ret = ploop_suspend_submitting_pios(ploop);
+	if (ret)
 		goto out;
 
 	write_lock_irq(&ploop->bat_rwlock);
@@ -726,7 +664,7 @@ again:
 
 	ploop_resume_submitting_pios(ploop);
 out:
-	return cmd.retval;
+	return ret;
 }
 
 static void notify_delta_merged(struct ploop *ploop, u8 level,
@@ -1159,28 +1097,6 @@ static int ploop_flip_upper_deltas(struct ploop *ploop)
 		return -EACCES;
 
 	return process_flip_upper_deltas(ploop);
-}
-
-/* Handle user commands requested via "message" interface */
-void process_deferred_cmd(struct ploop *ploop)
-	__releases(&ploop->deferred_lock)
-	__acquires(&ploop->deferred_lock)
-{
-	struct ploop_cmd *cmd = ploop->deferred_cmd;
-
-	if (likely(!cmd))
-		return;
-
-	ploop->deferred_cmd = NULL;
-	spin_unlock_irq(&ploop->deferred_lock);
-
-	if (cmd->type == PLOOP_CMD_MERGE_SNAPSHOT) {
-		process_merge_latest_snapshot_cmd(ploop, cmd);
-	} else {
-		cmd->retval = -EINVAL;
-		complete(&cmd->comp);
-	}
-	spin_lock_irq(&ploop->deferred_lock);
 }
 
 static int ploop_get_event(struct ploop *ploop, char *result, unsigned int maxlen)
