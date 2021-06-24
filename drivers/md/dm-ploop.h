@@ -507,8 +507,7 @@ extern void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *p
 extern void do_ploop_work(struct work_struct *ws);
 extern void do_ploop_fsync_work(struct work_struct *ws);
 extern void ploop_event_work(struct work_struct *work);
-extern void process_deferred_cmd(struct ploop *ploop,
-			struct ploop_index_wb *piwb);
+extern void process_deferred_cmd(struct ploop *ploop);
 extern int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 		    union map_info *map_context, struct request **clone);
 extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
@@ -534,6 +533,7 @@ extern void pio_prepare_offsets(struct ploop *, struct pio *, unsigned int);
 extern int ploop_setup_metadata(struct ploop *ploop, struct page *page);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 				     void **d_hdr);
+extern void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop);
 extern void ploop_call_rw_iter(struct file *file, loff_t pos, unsigned rw,
 			       struct iov_iter *iter, struct pio *pio);
 extern void ploop_enospc_timer(struct timer_list *timer);

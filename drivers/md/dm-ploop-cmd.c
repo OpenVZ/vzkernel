@@ -405,11 +405,13 @@ static void ploop_add_md_pages(struct ploop *ploop, struct rb_root *from)
  * This is called from deferred work -- the only place we alloc clusters.
  * So, nobody can reallocate clusters updated in ploop_grow_relocate_cluster().
  */
-static void process_resize_cmd(struct ploop *ploop, struct ploop_index_wb *piwb,
-			       struct ploop_cmd *cmd)
+static void process_resize_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 {
+	struct ploop_index_wb piwb;
 	unsigned int dst_cluster;
 	int ret = 0;
+
+	ploop_index_wb_init(&piwb, ploop);
 
 	/*
 	 *  Update memory arrays and hb_nr, but do not update nr_bat_entries.
@@ -418,7 +420,7 @@ static void process_resize_cmd(struct ploop *ploop, struct ploop_index_wb *piwb,
 	ploop_advance_holes_bitmap(ploop, cmd);
 
 	if (cmd->resize.dst_cluster <= cmd->resize.end_dst_cluster) {
-		ret = ploop_grow_relocate_cluster(ploop, piwb, cmd);
+		ret = ploop_grow_relocate_cluster(ploop, &piwb, cmd);
 		if (ret)
 			goto out;
 
@@ -427,7 +429,7 @@ static void process_resize_cmd(struct ploop *ploop, struct ploop_index_wb *piwb,
 		return;
 	} else {
 		/* Update header metadata */
-		ret = ploop_grow_update_header(ploop, piwb, cmd);
+		ret = ploop_grow_update_header(ploop, &piwb, cmd);
 	}
 
 out:
@@ -1178,7 +1180,7 @@ static int ploop_flip_upper_deltas(struct ploop *ploop)
 }
 
 /* Handle user commands requested via "message" interface */
-void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
+void process_deferred_cmd(struct ploop *ploop)
 	__releases(&ploop->deferred_lock)
 	__acquires(&ploop->deferred_lock)
 {
@@ -1190,11 +1192,8 @@ void process_deferred_cmd(struct ploop *ploop, struct ploop_index_wb *piwb)
 	ploop->deferred_cmd = NULL;
 	spin_unlock_irq(&ploop->deferred_lock);
 
-	/* There must not be a pending index wb */
-	WARN_ON(piwb->page_nr != PAGE_NR_NONE);
-
 	if (cmd->type == PLOOP_CMD_RESIZE) {
-		process_resize_cmd(ploop, piwb, cmd);
+		process_resize_cmd(ploop, cmd);
 	} else if (cmd->type == PLOOP_CMD_MERGE_SNAPSHOT) {
 		process_merge_latest_snapshot_cmd(ploop, cmd);
 	} else {

@@ -55,7 +55,7 @@ static unsigned int pio_nr_segs(struct pio *pio)
         return nr_segs;
 }
 
-static void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop)
+void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop)
 {
 	piwb->ploop = ploop;
 	init_completion(&piwb->comp);
@@ -1553,7 +1553,7 @@ void do_ploop_work(struct work_struct *ws)
 	ploop_index_wb_init(&piwb, ploop);
 
 	spin_lock_irq(&ploop->deferred_lock);
-	process_deferred_cmd(ploop, &piwb);
+	process_deferred_cmd(ploop);
 	process_delta_wb(ploop, &piwb);
 
 	list_splice_init(&ploop->deferred_pios, &deferred_pios);
