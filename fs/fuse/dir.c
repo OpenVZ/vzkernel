@@ -855,7 +855,8 @@ void fuse_update_ctime(struct inode *inode)
 {
 	if (!IS_NOCMTIME(inode)) {
 		inode->i_ctime = current_time(inode);
-		mark_inode_dirty_sync(inode);
+		if (!get_fuse_conn(inode)->close_wait)
+			mark_inode_dirty_sync(inode);
 	}
 }
 
