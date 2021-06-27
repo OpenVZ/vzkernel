@@ -15,4 +15,4 @@
 # 
 # 
 # 
-# CONFIG_SND_VIRTIO is not set
+CONFIG_SND_VIRTIO=m

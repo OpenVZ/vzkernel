@@ -23,4 +23,4 @@
 # 
 # 
 # 
-# CONFIG_NETFS_STATS is not set
+CONFIG_NETFS_STATS=y

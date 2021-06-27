@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_MICROSOFT_MANA is not set
+CONFIG_MICROSOFT_MANA=m
