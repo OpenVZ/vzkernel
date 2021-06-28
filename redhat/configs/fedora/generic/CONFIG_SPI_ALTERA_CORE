@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_SPI_ALTERA_CORE is not set
+CONFIG_SPI_ALTERA_CORE=m

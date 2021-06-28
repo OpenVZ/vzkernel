@@ -23,4 +23,4 @@
 # 
 # 
 # 
-# CONFIG_UIO_DFL is not set
+CONFIG_UIO_DFL=m

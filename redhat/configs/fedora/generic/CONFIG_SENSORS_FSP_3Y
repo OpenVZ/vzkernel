@@ -19,4 +19,4 @@
 # 
 # 
 # 
-# CONFIG_SENSORS_FSP_3Y is not set
+CONFIG_SENSORS_FSP_3Y=m
