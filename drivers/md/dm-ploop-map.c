@@ -563,18 +563,31 @@ static void ploop_discard_index_pio_end(struct ploop *ploop, struct pio *pio)
 	del_cluster_lk(ploop, pio);
 }
 
+static void queue_or_fail(struct ploop *ploop, int err, void *data)
+{
+	struct pio *pio = data;
+
+	/* FIXME: do we use BLK_STS_AGAIN? */
+	if (err && err != BLK_STS_AGAIN) {
+		pio->bi_status = errno_to_blk_status(err);
+		pio_endio(pio);
+	} else {
+		defer_pios(ploop, pio, NULL);
+	}
+}
+
 static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 {
 	unsigned int dst_cluster = cow->dst_cluster;
 	struct pio *cluster_pio = cow->cluster_pio;
 	struct ploop *ploop = cow->ploop;
 	unsigned long flags;
-	struct pio *aux_pio;
+	struct pio *cow_pio;
 
 	WARN_ON_ONCE(!list_empty(&cluster_pio->list));
-	aux_pio = &cow->aux_pio;
+	cow_pio = cow->cow_pio;
 
-	del_cluster_lk(ploop, aux_pio);
+	del_cluster_lk(ploop, cow_pio);
 
 	if (dst_cluster != BAT_ENTRY_NONE && bi_status != BLK_STS_OK) {
 		read_lock_irqsave(&ploop->bat_rwlock, flags);
@@ -582,8 +595,7 @@ static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 		read_unlock_irqrestore(&ploop->bat_rwlock, flags);
 	}
 
-	if (cow->end_fn)
-		cow->end_fn(ploop, blk_status_to_errno(bi_status), cow->data);
+	queue_or_fail(ploop, blk_status_to_errno(bi_status), cow_pio);
 
 	queue_work(ploop->wq, &ploop->worker);
 	free_pio_with_pages(ploop, cow->cluster_pio);
@@ -1154,7 +1166,7 @@ static bool postpone_if_cluster_locked(struct ploop *ploop, struct pio *pio,
 
 static int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 			      unsigned int cluster, unsigned int dst_cluster,
-			      void (*end_fn)(struct ploop *, int, void *), void *data)
+			      struct pio *cow_pio)
 {
 	struct ploop_cow *cow = NULL;
 	struct pio *pio = NULL;
@@ -1172,11 +1184,9 @@ static int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	cow->ploop = ploop;
 	cow->dst_cluster = BAT_ENTRY_NONE;
 	cow->cluster_pio = pio;
-	cow->end_fn = end_fn;
-	cow->data = data;
+	cow->cow_pio = cow_pio;
 
-	init_pio(ploop, REQ_OP_WRITE, &cow->aux_pio);
-	add_cluster_lk(ploop, &cow->aux_pio, cluster);
+	add_cluster_lk(ploop, cow_pio, cluster);
 
 	/* Stage #0: read secondary delta full cluster */
 	map_and_submit_rw(ploop, dst_cluster, pio, level);
@@ -1188,24 +1198,10 @@ err:
 	return -ENOMEM;
 }
 
-static void queue_or_fail(struct ploop *ploop, int err, void *data)
-{
-	struct pio *pio = data;
-
-	/* FIXME: do we use BLK_STS_AGAIN? */
-	if (err && err != BLK_STS_AGAIN) {
-		pio->bi_status = errno_to_blk_status(err);
-		pio_endio(pio);
-	} else {
-		defer_pios(ploop, pio, NULL);
-	}
-}
-
 static void initiate_cluster_cow(struct ploop *ploop, unsigned int level,
 		unsigned int cluster, unsigned int dst_cluster, struct pio *pio)
 {
-	if (!submit_cluster_cow(ploop, level, cluster, dst_cluster,
-				queue_or_fail, pio))
+	if (!submit_cluster_cow(ploop, level, cluster, dst_cluster, pio))
 		return;
 
 	pio->bi_status = BLK_STS_RESOURCE;
@@ -1238,8 +1234,8 @@ error:
 static void submit_cow_index_wb(struct ploop_cow *cow,
 				struct ploop_index_wb *piwb)
 {
-	struct pio *aux_pio = &cow->aux_pio;
-	unsigned int cluster = aux_pio->cluster;
+	struct pio *cow_pio = cow->cow_pio;
+	unsigned int cluster = cow_pio->cluster;
 	struct ploop *ploop = cow->ploop;
 	unsigned int page_nr;
 	map_index_t *to;
