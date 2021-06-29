@@ -111,6 +111,7 @@ struct md_page {
 	unsigned int id; /* Number of this page starting from hdr */
 	struct page *page;
 	u8 *bat_levels;
+	struct list_head wait_list;
 };
 
 enum {
