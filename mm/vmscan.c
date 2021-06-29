@@ -348,6 +348,13 @@ int prealloc_shrinker(struct shrinker *shrinker)
 	if (!shrinker->nr_deferred)
 		return -ENOMEM;
 
+	/*
+	 * Shrinker is not yet visible through shrinker_idr or shrinker_list,
+	 * so no locks required for initialization.
+	 */
+	refcount_set(&shrinker->refcnt, 1);
+	init_waitqueue_head(&shrinker->wq);
+
 	if (shrinker->flags & SHRINKER_MEMCG_AWARE) {
 		if (prealloc_memcg_shrinker(shrinker))
 			goto free_deferred;
@@ -402,6 +409,14 @@ void unregister_shrinker(struct shrinker *shrinker)
 {
 	if (!shrinker->nr_deferred)
 		return;
+
+	/*
+	 * If refcnt is not zero we need to wait these shrinker to finish all
+	 * it's do_shrink_slab() calls.
+	 */
+	if (!refcount_dec_and_test(&shrinker->refcnt))
+		wait_event(shrinker->wq, (refcount_read(&shrinker->refcnt) == 0));
+
 	if (shrinker->flags & SHRINKER_MEMCG_AWARE)
 		unregister_memcg_shrinker(shrinker);
 	down_write(&shrinker_rwsem);
@@ -409,6 +424,9 @@ void unregister_shrinker(struct shrinker *shrinker)
 	up_write(&shrinker_rwsem);
 	kfree(shrinker->nr_deferred);
 	shrinker->nr_deferred = NULL;
+
+	/* Pairs with rcu_read_lock in put_shrinker() */
+	synchronize_rcu();
 }
 EXPORT_SYMBOL(unregister_shrinker);
 
@@ -534,6 +552,50 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 	return freed;
 }
 
+unsigned long super_cache_scan(struct shrinker *shrink,
+				      struct shrink_control *sc);
+
+static inline bool is_nfs_shrinker(struct shrinker *shrinker)
+{
+	struct super_block *sb = container_of(shrinker,
+		struct super_block, s_shrink);
+
+	if (shrinker->scan_objects == &super_cache_scan)
+		return sb->s_magic == NFS_SUPER_MAGIC;
+
+	return false;
+}
+
+struct shrinker *get_shrinker(struct shrinker *shrinker)
+{
+	/*
+	 * Pairs with refcnt dec in unregister_shrinker(), if refcnt is zero
+	 * these shrinker is already in the middle of unregister_shrinker() and
+	 * we can't use it.
+	 */
+	if (!refcount_inc_not_zero(&shrinker->refcnt))
+		shrinker = NULL;
+	return shrinker;
+}
+
+void put_shrinker(struct shrinker *shrinker)
+{
+	/*
+	 * If refcnt becomes zero, we already have an unregister_shrinker()
+	 * waiting for us to finish. The rcu_read_lock pairs with
+	 * synchronize_rcu() in unregister_shrinker(), so that the shrinker is
+	 * not freed before wake_up.
+	 */
+	rcu_read_lock();
+	if (refcount_dec_and_test(&shrinker->refcnt)) {
+		/* Pairs with smp_mb in wait_event()->prepare_to_wait() */
+		smp_mb();
+		if (waitqueue_active(&shrinker->wq))
+			wake_up(&shrinker->wq);
+	}
+	rcu_read_unlock();
+}
+
 #ifdef CONFIG_MEMCG_KMEM
 static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 			struct mem_cgroup *memcg, int priority)
@@ -560,6 +622,7 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 			.memcg = memcg,
 		};
 		struct shrinker *shrinker;
+		bool is_nfs;
 
 		cond_resched();
 
@@ -570,9 +633,31 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 			continue;
 		}
 
+		is_nfs = is_nfs_shrinker(shrinker);
+
+		/*
+		 * Take a refcnt on a shrinker so that it can't be freed or
+		 * removed from shrinker_idr (and shrinker_list). These way we
+		 * can safely release shrinker_rwsem.
+		 *
+		 * We need to release shrinker_rwsem here as do_shrink_slab can
+		 * take too much time to finish (e.g. on nfs). And holding
+		 * global shrinker_rwsem can block registring and unregistring
+		 * of shrinkers.
+		 *
+		 * The up_read logic should only be executed for nfs shrinker
+		 * path, because it has proven to hang. For others it should be
+		 * skipped to reduce performance penalties.
+		 */
+		if (is_nfs) {
+			if (!get_shrinker(shrinker))
+				continue;
+			up_read(&shrinker_rwsem);
+		}
+
 		ret = do_shrink_slab(&sc, shrinker, priority);
 		if (ret == SHRINK_EMPTY) {
-			clear_bit(i, map->map);
+			memcg_clear_shrinker_bit(memcg, nid, i);
 			/*
 			 * After the shrinker reported that it had no objects to
 			 * free, but before we cleared the corresponding bit in
@@ -597,7 +682,23 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
 		}
 		freed += ret;
 
-		if (rwsem_is_contended(&shrinker_rwsem)) {
+		if (is_nfs) {
+			/*
+			 * Re-aquire shrinker_rwsem, put refcount and reload
+			 * shrinker_map as it can be modified in
+			 * memcg_expand_one_shrinker_map if new shrinkers
+			 * were registred in the meanwhile.
+			 */
+
+			if (!down_read_trylock(&shrinker_rwsem)) {
+				freed = freed ? : 1;
+				put_shrinker(shrinker);
+				return freed;
+			}
+			put_shrinker(shrinker);
+			map = rcu_dereference_protected(memcg->nodeinfo[nid]->shrinker_map,
+				true);
+		} else if (rwsem_is_contended(&shrinker_rwsem)) {
 			freed = freed ? : 1;
 			break;
 		}
@@ -665,16 +766,40 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 			.for_drop_caches = for_drop_caches,
 		};
 
+		bool is_nfs = is_nfs_shrinker(shrinker);
+
+		/* See comment in shrink_slab_memcg. */
+		if (is_nfs) {
+			if (!get_shrinker(shrinker))
+				continue;
+			up_read(&shrinker_rwsem);
+		}
+
 		ret = do_shrink_slab(&sc, shrinker, priority);
 		if (ret == SHRINK_EMPTY)
 			ret = 0;
 		freed += ret;
-		/*
-		 * Bail out if someone want to register a new shrinker to
-		 * prevent the regsitration from being stalled for long periods
-		 * by parallel ongoing shrinking.
-		 */
-		if (rwsem_is_contended(&shrinker_rwsem)) {
+
+		if (is_nfs) {
+			/*
+			 * We can safely continue traverse of the
+			 * shrinker_list as our shrinker is still on the list
+			 * due to refcount.
+			 */
+
+			if (!down_read_trylock(&shrinker_rwsem)) {
+				freed = freed ? : 1;
+				put_shrinker(shrinker);
+				goto out;
+			}
+			put_shrinker(shrinker);
+		} else if (rwsem_is_contended(&shrinker_rwsem)) {
+			/*
+			 * Bail out if someone want to register a new shrinker
+			 * to prevent the regsitration from being stalled for
+			 * long periods by parallel ongoing shrinking.
+			 */
+
 			freed = freed ? : 1;
 			break;
 		}
