@@ -1,0 +1,16 @@
+# CONFIG_IMA_DISABLE_HTABLE:
+# 
+# This option disables htable to allow measurement of duplicate records.
+# 
+# Symbol: IMA_DISABLE_HTABLE [=n]
+# Type  : bool
+# Defined at security/integrity/ima/Kconfig:338
+#   Prompt: Disable htable to allow measurement of duplicate records
+#   Depends on: INTEGRITY [=y] && IMA [=y]
+#   Location:
+#     -> Security options
+#       -> Integrity subsystem (INTEGRITY [=y])
+# 
+# 
+# 
+# CONFIG_IMA_DISABLE_HTABLE is not set

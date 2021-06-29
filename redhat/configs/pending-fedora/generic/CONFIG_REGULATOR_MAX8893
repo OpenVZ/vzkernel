@@ -1,0 +1,18 @@
+# CONFIG_REGULATOR_MAX8893:
+# 
+# This driver controls a Maxim 8893 voltage output
+# regulator via I2C bus.
+# 
+# Symbol: REGULATOR_MAX8893 [=n]
+# Type  : tristate
+# Defined at drivers/regulator/Kconfig:581
+#   Prompt: Maxim 8893 voltage regulator
+#   Depends on: REGULATOR [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Voltage and Current Regulator Support (REGULATOR [=y])
+# Selects: REGMAP_I2C [=y]
+# 
+# 
+# 
+# CONFIG_REGULATOR_MAX8893 is not set

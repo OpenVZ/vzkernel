@@ -1,0 +1,21 @@
+# CONFIG_CRYPTO_DEV_QCE_ENABLE_AEAD:
+# 
+# Enable AEAD algorithms only:
+#       - authenc()
+#       - ccm(aes)
+#       - rfc4309(ccm(aes))
+# Symbol: CRYPTO_DEV_QCE_ENABLE_AEAD [=n]
+# Type  : bool
+# Defined at drivers/crypto/Kconfig:708
+#   Prompt: AEAD algorithms only
+#   Depends on: <choice>
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#       -> Hardware crypto devices (CRYPTO_HW [=y])
+#         -> Qualcomm crypto engine accelerator (CRYPTO_DEV_QCE [=m])
+#           -> Algorithms enabled for QCE acceleration (<choice> [=y])
+# Selects: CRYPTO_DEV_QCE_AEAD [=y]
+# 
+# 
+# 
+# CONFIG_CRYPTO_DEV_QCE_ENABLE_AEAD is not set

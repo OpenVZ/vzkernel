@@ -1,0 +1,19 @@
+# CONFIG_REGULATOR_RT6245:
+# 
+# This adds supprot for Richtek RT6245 voltage regulator.
+# It can support up to 14A output current and adjustable output voltage
+# from 0.4375V to 1.3875V, per step 12.5mV.
+# 
+# Symbol: REGULATOR_RT6245 [=n]
+# Type  : tristate
+# Defined at drivers/regulator/Kconfig:1051
+#   Prompt: Richtek RT6245 voltage regulator
+#   Depends on: REGULATOR [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Voltage and Current Regulator Support (REGULATOR [=y])
+# Selects: REGMAP_I2C [=y]
+# 
+# 
+# 
+# CONFIG_REGULATOR_RT6245 is not set

@@ -1,0 +1,28 @@
+# CONFIG_SCHED_CORE:
+# 
+# This option permits Core Scheduling, a means of coordinated task
+# selection across SMT siblings. When enabled -- see
+# prctl(PR_SCHED_CORE) -- task selection ensures that all SMT siblings
+# will execute a task from the same 'core group', forcing idle when no
+# matching task is found.
+# 
+# Use of this feature includes:
+#  - mitigation of some (not all) SMT side channels;
+#  - limiting SMT interference to improve determinism and/or performance.
+# 
+# SCHED_CORE is default enabled when SCHED_SMT is enabled -- when
+# unused there should be no impact on performance.
+# 
+# 
+# 
+# Symbol: SCHED_CORE [=y]
+# Type  : bool
+# Defined at kernel/Kconfig.preempt:103
+#   Prompt: Core Scheduling for SMT
+#   Depends on: SCHED_SMT [=y]
+#   Location:
+#     -> General setup
+# 
+# 
+# 
+CONFIG_SCHED_CORE=y

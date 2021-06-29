@@ -1,0 +1,25 @@
+# CONFIG_ARM64_PTR_AUTH_KERNEL:
+# 
+# If the compiler supports the -mbranch-protection or
+# -msign-return-address flag (e.g. GCC 7 or later), then this option
+# will cause the kernel itself to be compiled with return address
+# protection. In this case, and if the target hardware is known to
+# support pointer authentication, then CONFIG_STACKPROTECTOR can be
+# disabled with minimal loss of protection.
+# 
+# This feature works with FUNCTION_GRAPH_TRACER option only if
+# DYNAMIC_FTRACE_WITH_REGS is enabled.
+# 
+# Symbol: ARM64_PTR_AUTH_KERNEL [=y]
+# Type  : bool
+# Defined at arch/arm64/Kconfig:1506
+#   Prompt: Use pointer authentication for kernel
+#   Depends on: ARM64_PTR_AUTH [=y] && (CC_HAS_SIGN_RETURN_ADDRESS [=y] || CC_HAS_BRANCH_PROT_PAC_RET [=y]) && AS_HAS_PAC [=y] && (LD_IS_LLD [=n] || LD_VERSION [=25000]>=23301 || CC_IS_GCC [=y] && GCC_VERSION [=200000]<90100) && (!CC_IS_CLANG [=n] || AS_HAS_CFI_NEGATE_RA_STATE [=y]) && (!FUNCTION_GRAPH_TRACER [=y] || DYNAMIC_FTRACE_WITH_REGS [=y])
+#   Location:
+#     -> Kernel Features
+#       -> ARMv8.3 architectural features
+#         -> Enable support for pointer authentication (ARM64_PTR_AUTH [=y])
+# 
+# 
+# 
+CONFIG_ARM64_PTR_AUTH_KERNEL=y
