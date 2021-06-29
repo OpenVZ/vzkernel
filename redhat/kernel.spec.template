@@ -281,10 +281,6 @@ Summary: The Linux kernel
 %define debugbuildsenabled 1
 %endif
 
-%if !%{debugbuildsenabled}
-%define with_debug 0
-%endif
-
 %if !%{with_debuginfo}
 %define _enable_debug_packages 0
 %endif
@@ -507,6 +503,18 @@ Summary: The Linux kernel
 %else
 %define _use_vdso 0
 %endif
+
+# If build of debug packages is disabled, we need to know if we want to create
+# meta debug packages or not, after we define with_debug for all specific cases
+# above. So this must be at the end here, after all cases of with_debug or not.
+%define with_debug_meta 0
+%if !%{debugbuildsenabled}
+%if %{with_debug}
+%define with_debug_meta 1
+%endif
+%define with_debug 0
+%endif
+
 
 #
 # Packages that need to be installed before the kernel is, because the %%post
@@ -2856,7 +2864,7 @@ fi
 
 %kernel_variant_files %{_use_vdso} %{with_up}
 %kernel_variant_files %{_use_vdso} %{with_debug} debug
-%if !%{debugbuildsenabled}
+%if %{with_debug_meta}
 %files debug
 %files debug-core
 %files debug-devel
