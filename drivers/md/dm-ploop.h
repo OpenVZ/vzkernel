@@ -256,10 +256,7 @@ struct ploop_cow {
 	struct pio *cluster_pio;
 	unsigned int dst_cluster;
 
-	struct pio aux_pio;
-
-	void (*end_fn)(struct ploop *, int, void *);
-	void *data; /* Second argument of end_fn */
+	struct pio *cow_pio;
 };
 
 extern bool ignore_signature_disk_in_use;
