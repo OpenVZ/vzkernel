@@ -86,29 +86,29 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 	INIT_LIST_HEAD(&pio->list);
 	INIT_HLIST_NODE(&pio->hlist_node);
 	INIT_LIST_HEAD(&pio->endio_list);
-	/* FIXME: assign real cluster? */
-	pio->cluster = UINT_MAX;
+	/* FIXME: assign real clu? */
+	pio->clu = UINT_MAX;
 	pio->level = BAT_LEVEL_INVALID;
 }
 
-/* Get cluster related to pio sectors */
+/* Get clu related to pio sectors */
 static int ploop_pio_valid(struct ploop *ploop, struct pio *pio)
 {
 	sector_t sector = pio->bi_iter.bi_sector;
-	unsigned int end_cluster;
+	unsigned int end_clu;
 	loff_t end_byte;
 
 	end_byte = to_bytes(sector) + pio->bi_iter.bi_size - 1;
-	end_cluster = POS_TO_CLU(ploop, end_byte);
+	end_clu = POS_TO_CLU(ploop, end_byte);
 
-	if (unlikely(end_cluster >= ploop->nr_bat_entries)) {
+	if (unlikely(end_clu >= ploop->nr_bat_entries)) {
 		/*
 		 * This mustn't happen, since we set max_io_len
 		 * via dm_set_target_max_io_len().
 		 */
 		WARN_ONCE(1, "sec=%llu, size=%u, end_clu=%u, nr=%u\n",
 			  sector, pio->bi_iter.bi_size,
-			  end_cluster, ploop->nr_bat_entries);
+			  end_clu, ploop->nr_bat_entries);
 		return -EINVAL;
 	}
 
@@ -256,7 +256,7 @@ void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list
 	queue_work(ploop->wq, &ploop->worker);
 }
 
-void track_dst_cluster(struct ploop *ploop, u32 dst_cluster)
+void track_dst_cluster(struct ploop *ploop, u32 dst_clu)
 {
 	unsigned long flags;
 
@@ -264,8 +264,8 @@ void track_dst_cluster(struct ploop *ploop, u32 dst_cluster)
 		return;
 
 	read_lock_irqsave(&ploop->bat_rwlock, flags);
-	if (ploop->tracking_bitmap && !WARN_ON(dst_cluster >= ploop->tb_nr))
-		set_bit(dst_cluster, ploop->tracking_bitmap);
+	if (ploop->tracking_bitmap && !WARN_ON(dst_clu >= ploop->tb_nr))
+		set_bit(dst_clu, ploop->tracking_bitmap);
 	read_unlock_irqrestore(&ploop->bat_rwlock, flags);
 }
 
@@ -279,12 +279,12 @@ void track_dst_cluster(struct ploop *ploop, u32 dst_cluster)
  */
 void __track_pio(struct ploop *ploop, struct pio *pio)
 {
-	unsigned int dst_cluster = SEC_TO_CLU(ploop, pio->bi_iter.bi_sector);
+	unsigned int dst_clu = SEC_TO_CLU(ploop, pio->bi_iter.bi_sector);
 
 	if (!op_is_write(pio->bi_op) || !bvec_iter_sectors((pio)->bi_iter))
 		return;
 
-	track_dst_cluster(ploop, dst_cluster);
+	track_dst_cluster(ploop, dst_clu);
 }
 
 static void queue_discard_index_wb(struct ploop *ploop, struct pio *pio)
@@ -326,23 +326,23 @@ struct pio *find_pio(struct hlist_head head[], u32 clu)
 	BUG_ON(!slot);
 
 	hlist_for_each_entry(pio, slot, hlist_node) {
-		if (pio->cluster == clu)
+		if (pio->clu == clu)
 			return pio;
 	}
 
 	return NULL;
 }
 
-static struct pio *find_inflight_bio(struct ploop *ploop, unsigned int cluster)
+static struct pio *find_inflight_bio(struct ploop *ploop, unsigned int clu)
 {
 	lockdep_assert_held(&ploop->inflight_lock);
-	return find_pio(ploop->inflight_pios, cluster);
+	return find_pio(ploop->inflight_pios, clu);
 }
 
-struct pio *find_lk_of_cluster(struct ploop *ploop, unsigned int cluster)
+struct pio *find_lk_of_cluster(struct ploop *ploop, unsigned int clu)
 {
 	lockdep_assert_held(&ploop->deferred_lock);
-	return find_pio(ploop->exclusive_pios, cluster);
+	return find_pio(ploop->exclusive_pios, clu);
 }
 
 static void add_endio_pio(struct pio *head, struct pio *pio)
@@ -388,7 +388,7 @@ static void link_pio(struct hlist_head head[], struct pio *pio,
 
 	BUG_ON(!hlist_unhashed(&pio->hlist_node));
 	hlist_add_head(&pio->hlist_node, slot);
-	pio->cluster = clu;
+	pio->clu = clu;
 }
 
 /*
@@ -405,12 +405,12 @@ static void unlink_pio(struct ploop *ploop, struct pio *pio,
 	list_splice_tail_init(&pio->endio_list, pio_list);
 }
 
-static void add_cluster_lk(struct ploop *ploop, struct pio *pio, u32 cluster)
+static void add_cluster_lk(struct ploop *ploop, struct pio *pio, u32 clu)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	link_pio(ploop->exclusive_pios, pio, cluster, true);
+	link_pio(ploop->exclusive_pios, pio, clu, true);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 }
 static void del_cluster_lk(struct ploop *ploop, struct pio *pio)
@@ -433,12 +433,12 @@ static void del_cluster_lk(struct ploop *ploop, struct pio *pio)
 }
 
 static void link_submitting_pio(struct ploop *ploop, struct pio *pio,
-				unsigned int cluster)
+				unsigned int clu)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->inflight_lock, flags);
-	link_pio(ploop->inflight_pios, pio, cluster, false);
+	link_pio(ploop->inflight_pios, pio, clu, false);
 	spin_unlock_irqrestore(&ploop->inflight_lock, flags);
 }
 static void unlink_completed_pio(struct ploop *ploop, struct pio *pio)
@@ -501,7 +501,7 @@ static int punch_hole(struct file *file, loff_t pos, loff_t len)
 }
 
 static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
-		     unsigned int cluster, unsigned int dst_cluster)
+		     unsigned int clu, unsigned int dst_clu)
 {
 	struct pio *inflight_h;
 	unsigned long flags;
@@ -520,7 +520,7 @@ static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 		return;
 	}
 
-	if (!cluster_is_in_top_delta(ploop, cluster)) {
+	if (!cluster_is_in_top_delta(ploop, clu)) {
 		pio_endio(pio);
 		return;
 	}
@@ -530,7 +530,7 @@ static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 		goto punch_hole;
 
 	spin_lock_irqsave(&ploop->inflight_lock, flags);
-	inflight_h = find_inflight_bio(ploop, cluster);
+	inflight_h = find_inflight_bio(ploop, clu);
 	if (inflight_h)
 		add_endio_pio(inflight_h, pio);
 	spin_unlock_irqrestore(&ploop->inflight_lock, flags);
@@ -541,11 +541,11 @@ static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 		return;
 	}
 
-	add_cluster_lk(ploop, pio, cluster);
+	add_cluster_lk(ploop, pio, clu);
 	pio->wants_discard_index_cleanup = true;
 
 punch_hole:
-	remap_to_cluster(ploop, pio, dst_cluster);
+	remap_to_cluster(ploop, pio, dst_clu);
 	pos = to_bytes(pio->bi_iter.bi_sector);
 	ret = punch_hole(top_delta(ploop)->file, pos, pio->bi_iter.bi_size);
 	if (ret || ploop->nr_deltas != 1) {
@@ -578,7 +578,7 @@ static void queue_or_fail(struct ploop *ploop, int err, void *data)
 
 static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 {
-	unsigned int dst_cluster = cow->dst_cluster;
+	unsigned int dst_clu = cow->dst_clu;
 	struct pio *aux_pio = cow->aux_pio;
 	struct ploop *ploop = cow->ploop;
 	unsigned long flags;
@@ -589,9 +589,9 @@ static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 
 	del_cluster_lk(ploop, cow_pio);
 
-	if (dst_cluster != BAT_ENTRY_NONE && bi_status != BLK_STS_OK) {
+	if (dst_clu != BAT_ENTRY_NONE && bi_status != BLK_STS_OK) {
 		read_lock_irqsave(&ploop->bat_rwlock, flags);
-		ploop_hole_set_bit(dst_cluster, ploop);
+		ploop_hole_set_bit(dst_clu, ploop);
 		read_unlock_irqrestore(&ploop->bat_rwlock, flags);
 	}
 
@@ -603,38 +603,38 @@ static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 }
 
 static void ploop_release_cluster(struct ploop *ploop,
-				  unsigned int cluster)
+				  unsigned int clu)
 {
-	unsigned int id, *bat_entries, dst_cluster;
+	unsigned int id, *bat_entries, dst_clu;
 	struct md_page *md;
 
 	lockdep_assert_held(&ploop->bat_rwlock);
 
-	id = bat_clu_to_page_nr(cluster);
+	id = bat_clu_to_page_nr(clu);
         md = md_page_find(ploop, id);
         BUG_ON(!md);
 
-	cluster = bat_clu_idx_in_page(cluster); /* relative to page */
+	clu = bat_clu_idx_in_page(clu); /* relative to page */
 
 	bat_entries = kmap_atomic(md->page);
-	dst_cluster = bat_entries[cluster];
-	bat_entries[cluster] = BAT_ENTRY_NONE;
-	md->bat_levels[cluster] = 0;
+	dst_clu = bat_entries[clu];
+	bat_entries[clu] = BAT_ENTRY_NONE;
+	md->bat_levels[clu] = 0;
 	kunmap_atomic(bat_entries);
 
-	ploop_hole_set_bit(dst_cluster, ploop);
+	ploop_hole_set_bit(dst_clu, ploop);
 }
 
 static void piwb_discard_completed(struct ploop *ploop, bool success,
-		  unsigned int cluster, unsigned int new_dst_cluster)
+		  unsigned int clu, unsigned int new_dst_clu)
 {
-	if (new_dst_cluster)
+	if (new_dst_clu)
 		return;
 
-	if (cluster_is_in_top_delta(ploop, cluster)) {
+	if (cluster_is_in_top_delta(ploop, clu)) {
 		WARN_ON_ONCE(ploop->nr_deltas != 1);
 		if (success)
-			ploop_release_cluster(ploop, cluster);
+			ploop_release_cluster(ploop, clu);
 	}
 }
 
@@ -650,7 +650,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 {
 	struct md_page *md = md_page_find(ploop, piwb->page_nr);
 	unsigned int i, last, *bat_entries;
-	map_index_t *dst_cluster, off;
+	map_index_t *dst_clu, off;
 	unsigned long flags;
 
 	BUG_ON(!md);
@@ -668,25 +668,25 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 	if (!piwb->page_nr)
 		i = PLOOP_MAP_OFFSET;
 
-	dst_cluster = kmap_atomic(piwb->bat_page);
+	dst_clu = kmap_atomic(piwb->bat_page);
 	ploop_bat_lock(ploop, success, flags);
 
 	for (; i < last; i++) {
 		if (piwb->type == PIWB_TYPE_DISCARD) {
-			piwb_discard_completed(ploop, success, i + off, dst_cluster[i]);
+			piwb_discard_completed(ploop, success, i + off, dst_clu[i]);
 			continue;
 		}
 
-		if (!dst_cluster[i])
+		if (!dst_clu[i])
 			continue;
 
 		if (cluster_is_in_top_delta(ploop, i + off) && piwb->type == PIWB_TYPE_ALLOC) {
-			WARN_ON(bat_entries[i] != dst_cluster[i]);
+			WARN_ON(bat_entries[i] != dst_clu[i]);
 			continue;
 		}
 
 		if (success) {
-			bat_entries[i] = dst_cluster[i];
+			bat_entries[i] = dst_clu[i];
 			md->bat_levels[i] = top_level(ploop);
 		} else {
 			/*
@@ -700,7 +700,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 	}
 
 	ploop_bat_unlock(ploop, success, flags);
-	kunmap_atomic(dst_cluster);
+	kunmap_atomic(dst_clu);
 	kunmap_atomic(bat_entries);
 }
 
@@ -830,28 +830,28 @@ void ploop_reset_bat_update(struct ploop_index_wb *piwb)
 
 static void ploop_bat_page_zero_cluster(struct ploop *ploop,
 					struct ploop_index_wb *piwb,
-					unsigned int cluster)
+					unsigned int clu)
 {
 	map_index_t *to;
 
 	/* Cluster index related to the page[page_nr] start */
-	cluster = bat_clu_idx_in_page(cluster);
+	clu = bat_clu_idx_in_page(clu);
 
 	to = kmap_atomic(piwb->bat_page);
-	to[cluster] = 0;
+	to[clu] = 0;
 	kunmap_atomic(to);
 }
 
-static int find_dst_cluster_bit(struct ploop *ploop,
-		      unsigned int *ret_dst_cluster)
+static int find_dst_clu_bit(struct ploop *ploop,
+		      unsigned int *ret_dst_clu)
 {
-	unsigned int dst_cluster;
+	unsigned int dst_clu;
 
-	/* Find empty cluster */
-	dst_cluster = find_first_bit(ploop->holes_bitmap, ploop->hb_nr);
-	if (dst_cluster >= ploop->hb_nr)
+	/* Find empty clu */
+	dst_clu = find_first_bit(ploop->holes_bitmap, ploop->hb_nr);
+	if (dst_clu >= ploop->hb_nr)
 		return -EIO;
-	*ret_dst_cluster = dst_cluster;
+	*ret_dst_clu = dst_clu;
 	return 0;
 }
 
@@ -882,7 +882,7 @@ static int truncate_prealloc_safe(struct ploop_delta *delta, loff_t len, const c
 	return 0;
 }
 
-static int allocate_cluster(struct ploop *ploop, unsigned int *dst_cluster)
+static int allocate_cluster(struct ploop *ploop, unsigned int *dst_clu)
 {
 	struct ploop_delta *top = top_delta(ploop);
 	u32 clu_size = CLU_SIZE(ploop);
@@ -890,10 +890,10 @@ static int allocate_cluster(struct ploop *ploop, unsigned int *dst_cluster)
 	struct file *file = top->file;
 	int ret;
 
-	if (find_dst_cluster_bit(ploop, dst_cluster) < 0)
+	if (find_dst_clu_bit(ploop, dst_clu) < 0)
 		return -EIO;
 
-	pos = CLU_TO_POS(ploop, *dst_cluster);
+	pos = CLU_TO_POS(ploop, *dst_clu);
 	end = pos + clu_size;
 	old_size = top->file_size;
 
@@ -925,20 +925,20 @@ static int allocate_cluster(struct ploop *ploop, unsigned int *dst_cluster)
 	if (end > top->file_preallocated_area_start)
 		top->file_preallocated_area_start = end;
 	/*
-	 * Mark cluster as used. Find & clear bit is unlocked,
+	 * Mark clu as used. Find & clear bit is unlocked,
 	 * since currently this may be called only from deferred
 	 * kwork. Note, that set_bit may be made from many places.
 	 */
-	ploop_hole_clear_bit(*dst_cluster, ploop);
+	ploop_hole_clear_bit(*dst_clu, ploop);
 	return 0;
 }
 
 /*
- * This finds a free dst_cluster on origin device, and reflects this
+ * This finds a free dst_clu on origin device, and reflects this
  * in ploop->holes_bitmap and bat_page.
  */
 static int ploop_alloc_cluster(struct ploop *ploop, struct ploop_index_wb *piwb,
-			       unsigned int cluster, unsigned int *dst_cluster)
+			       unsigned int clu, unsigned int *dst_clu)
 {
 	struct page *page = piwb->bat_page;
 	bool already_alloced = false;
@@ -946,12 +946,12 @@ static int ploop_alloc_cluster(struct ploop *ploop, struct ploop_index_wb *piwb,
 	int ret = 0;
 
 	/* Cluster index related to the page[page_nr] start */
-	cluster -= piwb->page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
+	clu -= piwb->page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 
 	to = kmap_atomic(page);
-	if (to[cluster]) {
+	if (to[clu]) {
 		/* Already mapped by one of previous bios */
-		*dst_cluster = to[cluster];
+		*dst_clu = to[clu];
 		already_alloced = true;
 	}
 	kunmap_atomic(to);
@@ -959,13 +959,13 @@ static int ploop_alloc_cluster(struct ploop *ploop, struct ploop_index_wb *piwb,
 	if (already_alloced)
 		goto out;
 
-	if (allocate_cluster(ploop, dst_cluster) < 0) {
+	if (allocate_cluster(ploop, dst_clu) < 0) {
 		ret = -EIO;
 		goto out;
 	}
 
 	to = kmap_atomic(page);
-	to[cluster] = *dst_cluster;
+	to[clu] = *dst_clu;
 	kunmap_atomic(to);
 out:
 	return ret;
@@ -1125,16 +1125,16 @@ void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 lev
 }
 
 static void initiate_delta_read(struct ploop *ploop, unsigned int level,
-				unsigned int dst_cluster, struct pio *pio)
+				unsigned int dst_clu, struct pio *pio)
 {
-	if (dst_cluster == BAT_ENTRY_NONE) {
-		/* No one delta contains dst_cluster. */
+	if (dst_clu == BAT_ENTRY_NONE) {
+		/* No one delta contains dst_clu. */
 		zero_fill_pio(pio);
 		pio_endio(pio);
 		return;
 	}
 
-	map_and_submit_rw(ploop, dst_cluster, pio, level);
+	map_and_submit_rw(ploop, dst_clu, pio, level);
 }
 
 static void ploop_cow_endio(struct pio *aux_pio, void *data, blk_status_t bi_status)
@@ -1151,12 +1151,12 @@ static void ploop_cow_endio(struct pio *aux_pio, void *data, blk_status_t bi_sta
 }
 
 static bool postpone_if_cluster_locked(struct ploop *ploop, struct pio *pio,
-				       unsigned int cluster)
+				       unsigned int clu)
 {
 	struct pio *e_h; /* Exclusively locked */
 
 	spin_lock_irq(&ploop->deferred_lock);
-	e_h = find_lk_of_cluster(ploop, cluster);
+	e_h = find_lk_of_cluster(ploop, clu);
 	if (e_h)
 		add_endio_pio(e_h, pio);
 	spin_unlock_irq(&ploop->deferred_lock);
@@ -1165,7 +1165,7 @@ static bool postpone_if_cluster_locked(struct ploop *ploop, struct pio *pio,
 }
 
 static int submit_cluster_cow(struct ploop *ploop, unsigned int level,
-			      unsigned int cluster, unsigned int dst_cluster,
+			      unsigned int clu, unsigned int dst_clu,
 			      struct pio *cow_pio)
 {
 	struct ploop_cow *cow = NULL;
@@ -1177,19 +1177,19 @@ static int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	if (!aux_pio || !cow)
 		goto err;
 	init_pio(ploop, REQ_OP_READ, aux_pio);
-	pio_prepare_offsets(ploop, aux_pio, cluster);
+	pio_prepare_offsets(ploop, aux_pio, clu);
 	aux_pio->endio_cb = ploop_cow_endio;
 	aux_pio->endio_cb_data = cow;
 
 	cow->ploop = ploop;
-	cow->dst_cluster = BAT_ENTRY_NONE;
+	cow->dst_clu = BAT_ENTRY_NONE;
 	cow->aux_pio = aux_pio;
 	cow->cow_pio = cow_pio;
 
-	add_cluster_lk(ploop, cow_pio, cluster);
+	add_cluster_lk(ploop, cow_pio, clu);
 
-	/* Stage #0: read secondary delta full cluster */
-	map_and_submit_rw(ploop, dst_cluster, aux_pio, level);
+	/* Stage #0: read secondary delta full clu */
+	map_and_submit_rw(ploop, dst_clu, aux_pio, level);
 	return 0;
 err:
 	if (aux_pio)
@@ -1199,9 +1199,9 @@ err:
 }
 
 static void initiate_cluster_cow(struct ploop *ploop, unsigned int level,
-		unsigned int cluster, unsigned int dst_cluster, struct pio *pio)
+		unsigned int clu, unsigned int dst_clu, struct pio *pio)
 {
-	if (!submit_cluster_cow(ploop, level, cluster, dst_cluster, pio))
+	if (!submit_cluster_cow(ploop, level, clu, dst_clu, pio))
 		return;
 
 	pio->bi_status = BLK_STS_RESOURCE;
@@ -1212,20 +1212,20 @@ static void submit_cluster_write(struct ploop_cow *cow)
 {
 	struct pio *pio = cow->aux_pio;
 	struct ploop *ploop = cow->ploop;
-	unsigned int dst_cluster;
+	unsigned int dst_clu;
 
-	if (allocate_cluster(ploop, &dst_cluster) < 0)
+	if (allocate_cluster(ploop, &dst_clu) < 0)
 		goto error;
-	cow->dst_cluster = dst_cluster;
+	cow->dst_clu = dst_clu;
 
 	init_pio(ploop, REQ_OP_WRITE, pio);
-	pio_prepare_offsets(ploop, pio, dst_cluster);
+	pio_prepare_offsets(ploop, pio, dst_clu);
 
 	BUG_ON(irqs_disabled());
 	pio->endio_cb = ploop_cow_endio;
 	pio->endio_cb_data = cow;
 
-	map_and_submit_rw(ploop, dst_cluster, pio, top_level(ploop));
+	map_and_submit_rw(ploop, dst_clu, pio, top_level(ploop));
 	return;
 error:
 	complete_cow(cow, BLK_STS_IOERR);
@@ -1235,12 +1235,12 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 				struct ploop_index_wb *piwb)
 {
 	struct pio *cow_pio = cow->cow_pio;
-	unsigned int cluster = cow_pio->cluster;
+	unsigned int clu = cow_pio->clu;
 	struct ploop *ploop = cow->ploop;
 	unsigned int page_nr;
 	map_index_t *to;
 
-	page_nr = bat_clu_to_page_nr(cluster);
+	page_nr = bat_clu_to_page_nr(clu);
 
 	if (piwb->page_nr == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
@@ -1258,15 +1258,15 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 		goto out;
 	}
 
-	cluster -= page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
+	clu -= page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 
 	to = kmap_atomic(piwb->bat_page);
-	WARN_ON(to[cluster]);
-	to[cluster] = cow->dst_cluster;
+	WARN_ON(to[clu]);
+	to[clu] = cow->dst_clu;
 	kunmap_atomic(to);
 
 	/* Prevent double clearing of holes_bitmap bit on complete_cow() */
-	cow->dst_cluster = BAT_ENTRY_NONE;
+	cow->dst_clu = BAT_ENTRY_NONE;
 	spin_lock_irq(&ploop->deferred_lock);
 	list_add_tail(&cow->aux_pio->list, &piwb->cow_list);
 	spin_unlock_irq(&ploop->deferred_lock);
@@ -1294,9 +1294,9 @@ static void process_delta_wb(struct ploop *ploop, struct ploop_index_wb *piwb)
 			continue;
 		}
 
-		if (cow->dst_cluster == BAT_ENTRY_NONE) {
+		if (cow->dst_clu == BAT_ENTRY_NONE) {
 			/*
-			 * Stage #1: assign dst_cluster and write data
+			 * Stage #1: assign dst_clu and write data
 			 * to top delta.
 			 */
 			submit_cluster_write(cow);
@@ -1313,7 +1313,7 @@ static void process_delta_wb(struct ploop *ploop, struct ploop_index_wb *piwb)
 }
 
 /*
- * This allocates a new cluster (if cluster wb is not pending yet),
+ * This allocates a new clu (if clu wb is not pending yet),
  * or tries to attach a bio to a planned page index wb.
  *
  * We want to update BAT indexes in batch, but we don't want to delay data
@@ -1323,20 +1323,20 @@ static void process_delta_wb(struct ploop *ploop, struct ploop_index_wb *piwb)
  * Original bio->bi_end_io mustn't be called before index wb is completed.
  * We handle this in ploop_attach_end_action() by specific callback
  * for ploop_data_pio_end().
- * Note: cluster newer becomes locked here, since index update is called
+ * Note: clu newer becomes locked here, since index update is called
  * synchronously. Keep in mind this in case you make it async.
  */
 static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 					      struct ploop_index_wb *piwb,
-					      unsigned int cluster,
-					      unsigned int *dst_cluster,
+					      unsigned int clu,
+					      unsigned int *dst_clu,
 					      struct pio *pio)
 {
 	bool bat_update_prepared = false;
 	bool attached = false;
 	unsigned int page_nr;
 
-	page_nr = bat_clu_to_page_nr(cluster);
+	page_nr = bat_clu_to_page_nr(clu);
 
 	if (piwb->page_nr == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
@@ -1353,7 +1353,7 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 		goto out;
 	}
 
-	if (ploop_alloc_cluster(ploop, piwb, cluster, dst_cluster)) {
+	if (ploop_alloc_cluster(ploop, piwb, clu, dst_clu)) {
 		pio->bi_status = BLK_STS_IOERR;
 		goto error;
 	}
@@ -1362,7 +1362,7 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 	if (!attached) {
 		/*
 		 * Could not prepare data pio to be submitted before index wb
-		 * batch? Delay submitting. Good thing, that cluster allocation
+		 * batch? Delay submitting. Good thing, that clu allocation
 		 * has already made, and it goes in the batch.
 		 */
 		defer_pios(ploop, pio, NULL);
@@ -1381,7 +1381,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 				    struct ploop_index_wb *piwb)
 {
 	sector_t sector = pio->bi_iter.bi_sector;
-	unsigned int cluster, dst_cluster;
+	unsigned int clu, dst_clu;
 	u8 level;
 	bool ret;
 
@@ -1391,18 +1391,18 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 	 * ploop_advance_local_after_bat_wb(), which we start
 	 * and wait synchronously from *this* kwork.
 	 */
-	cluster = SEC_TO_CLU(ploop, sector);
-	dst_cluster = ploop_bat_entries(ploop, cluster, &level);
+	clu = SEC_TO_CLU(ploop, sector);
+	dst_clu = ploop_bat_entries(ploop, clu, &level);
 
-	if (postpone_if_cluster_locked(ploop, pio, cluster))
+	if (postpone_if_cluster_locked(ploop, pio, clu))
 		goto out;
 
 	if (op_is_discard(pio->bi_op)) {
-		handle_discard_pio(ploop, pio, cluster, dst_cluster);
+		handle_discard_pio(ploop, pio, clu, dst_clu);
 		goto out;
 	}
 
-	if (cluster_is_in_top_delta(ploop, cluster)) {
+	if (cluster_is_in_top_delta(ploop, clu)) {
 		/* Already mapped */
 		if (pio_endio_if_merge_fake_pio(pio))
 			goto out;
@@ -1410,18 +1410,18 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 	} else if (!op_is_write(pio->bi_op)) {
 		/*
 		 * Simple read from secondary delta. May fail.
-		 * (Also handles the case dst_cluster == BAT_ENTRY_NONE).
+		 * (Also handles the case dst_clu == BAT_ENTRY_NONE).
 		 */
-		initiate_delta_read(ploop, level, dst_cluster, pio);
+		initiate_delta_read(ploop, level, dst_clu, pio);
 		goto out;
-	} else if (dst_cluster != BAT_ENTRY_NONE) {
+	} else if (dst_clu != BAT_ENTRY_NONE) {
 		/*
 		 * Read secondary delta and write to top delta. May fail.
-		 * Yes, we can optimize the whole-cluster-write case and
+		 * Yes, we can optimize the whole-clu-write case and
 		 * a lot of other corner cases, but we don't do that as
 		 * snapshots are used and COW occurs very rare.
 		 */
-		initiate_cluster_cow(ploop, level, cluster, dst_cluster, pio);
+		initiate_cluster_cow(ploop, level, clu, dst_clu, pio);
 		goto out;
 	}
 
@@ -1429,14 +1429,14 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 		goto out;
 
 	/* Cluster exists nowhere. Allocate it and setup pio as outrunning */
-	ret = locate_new_cluster_and_attach_pio(ploop, piwb, cluster,
-						&dst_cluster, pio);
+	ret = locate_new_cluster_and_attach_pio(ploop, piwb, clu,
+						&dst_clu, pio);
 	if (!ret)
 		goto out;
 queue:
-	link_submitting_pio(ploop, pio, cluster);
+	link_submitting_pio(ploop, pio, clu);
 
-	map_and_submit_rw(ploop, dst_cluster, pio, top_level(ploop));
+	map_and_submit_rw(ploop, dst_clu, pio, top_level(ploop));
 out:
 	return 0;
 }
@@ -1445,7 +1445,7 @@ void ploop_submit_index_wb_sync(struct ploop *ploop,
 				struct ploop_index_wb *piwb)
 {
 	blk_status_t status = BLK_STS_OK;
-	u32 dst_cluster;
+	u32 dst_clu;
 	int ret;
 
 	/* track_bio() will be called in ploop_bat_write_complete() */
@@ -1455,8 +1455,8 @@ void ploop_submit_index_wb_sync(struct ploop *ploop,
 	if (ret)
 		status = errno_to_blk_status(ret);
 
-	dst_cluster = ((u64)piwb->page_nr << PAGE_SHIFT) / CLU_SIZE(ploop);
-	track_dst_cluster(ploop, dst_cluster);
+	dst_clu = ((u64)piwb->page_nr << PAGE_SHIFT) / CLU_SIZE(ploop);
+	track_dst_cluster(ploop, dst_clu);
 
 	ploop_bat_write_complete(piwb, status);
 	wait_for_completion(&piwb->comp);
@@ -1474,14 +1474,14 @@ static void process_deferred_pios(struct ploop *ploop, struct list_head *pios,
 static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 				   struct ploop_index_wb *piwb)
 {
-	unsigned int page_nr, cluster;
+	unsigned int page_nr, clu;
 	bool bat_update_prepared;
 	map_index_t *to;
 
 	WARN_ON(ploop->nr_deltas != 1);
 
-	cluster = pio->cluster;
-	page_nr = bat_clu_to_page_nr(cluster);
+	clu = pio->clu;
+	page_nr = bat_clu_to_page_nr(clu);
 	bat_update_prepared = false;
 
 	if (piwb->page_nr == PAGE_NR_NONE) {
@@ -1501,16 +1501,16 @@ static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 	}
 
 	/* Cluster index related to the page[page_nr] start */
-	cluster -= piwb->page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
+	clu -= piwb->page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 
 	to = kmap_atomic(piwb->bat_page);
-	if (WARN_ON_ONCE(!to[cluster])) {
+	if (WARN_ON_ONCE(!to[clu])) {
 		pio->bi_status = BLK_STS_IOERR;
 		pio_endio(pio);
 		if (bat_update_prepared)
 			ploop_reset_bat_update(piwb);
 	} else {
-		to[cluster] = 0;
+		to[clu] = 0;
 		list_add_tail(&pio->list, &piwb->ready_data_pios);
 	}
 	kunmap_atomic(to);
@@ -1758,31 +1758,31 @@ static void handle_cleanup(struct ploop *ploop, struct pio *pio)
 
 /*
  * Prepare simple index writeback without attached data bios.
- * In case of @dst_cluster is passed, this tryes to allocate
+ * In case of @dst_clu is passed, this tryes to allocate
  * another index instead of existing. If so, management of
- * old bat_entries[@cluster] and of related holes_bitmap bit
+ * old bat_entries[@clu] and of related holes_bitmap bit
  * is caller duty.
  */
 int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 				 struct ploop_index_wb *piwb,
-				 unsigned int cluster,
-				 unsigned int *dst_cluster)
+				 unsigned int clu,
+				 unsigned int *dst_clu)
 {
-	unsigned int page_nr = bat_clu_to_page_nr(cluster);
+	unsigned int page_nr = bat_clu_to_page_nr(clu);
 
 	if (piwb->page_nr != PAGE_NR_NONE ||
 	    ploop_prepare_bat_update(ploop, page_nr, piwb))
 		goto out_eio;
-	if (dst_cluster) {
+	if (dst_clu) {
 		/*
 		 * For ploop_advance_local_after_bat_wb(): do not concern
-		 * about bat_cluster[@cluster] is set. Zero bat_page[@cluster],
-		 * to make ploop_alloc_cluster() allocate new dst_cluster from
+		 * about bat_cluster[@clu] is set. Zero bat_page[@clu],
+		 * to make ploop_alloc_cluster() allocate new dst_clu from
 		 * holes_bitmap.
 		 */
 		piwb->type = PIWB_TYPE_RELOC;
-		ploop_bat_page_zero_cluster(ploop, piwb, cluster);
-		if (ploop_alloc_cluster(ploop, piwb, cluster, dst_cluster))
+		ploop_bat_page_zero_cluster(ploop, piwb, clu);
+		if (ploop_alloc_cluster(ploop, piwb, clu, dst_clu))
 			goto out_reset;
 	}
 

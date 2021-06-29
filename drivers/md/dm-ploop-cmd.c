@@ -22,7 +22,7 @@
 static void ploop_advance_holes_bitmap(struct ploop *ploop,
 				       struct ploop_cmd *cmd)
 {
-	unsigned int i, end, size, dst_cluster, *bat_entries;
+	unsigned int i, end, size, dst_clu, *bat_entries;
 	struct rb_node *node;
 	struct md_page *md;
 
@@ -45,11 +45,11 @@ static void ploop_advance_holes_bitmap(struct ploop *ploop,
 		for (; i <= end; i++) {
 			if (!md_page_cluster_is_in_top_delta(ploop, md, i))
 				continue;
-			dst_cluster = bat_entries[i];
+			dst_clu = bat_entries[i];
 			/* This may happen after grow->shrink->(now) grow */
-			if (dst_cluster < ploop->hb_nr &&
-			    test_bit(dst_cluster, ploop->holes_bitmap)) {
-				ploop_hole_clear_bit(dst_cluster, ploop);
+			if (dst_clu < ploop->hb_nr &&
+			    test_bit(dst_clu, ploop->holes_bitmap)) {
+				ploop_hole_clear_bit(dst_clu, ploop);
 			}
 		}
 		kunmap_atomic(bat_entries);
@@ -80,7 +80,7 @@ static int wait_for_completion_maybe_killable(struct completion *comp,
  * bios are completed. This waits for completion of simple submitted
  * action like write to origin_dev or read from delta, but it never
  * guarantees completion of complex actions like "data write + index
- * writeback" (for index protection look at cluster locks). This is
+ * writeback" (for index protection look at clu locks). This is
  * weaker, than "dmsetup suspend".
  * It is called from kwork only, so this can't be executed in parallel.
  */
@@ -142,12 +142,12 @@ static void ploop_resume_submitting_pios(struct ploop *ploop)
 	submit_pios(ploop, &list);
 }
 
-/* Find existing BAT cluster pointing to dst_cluster */
+/* Find existing BAT clu pointing to dst_clu */
 static unsigned int ploop_find_bat_entry(struct ploop *ploop,
-					 unsigned int dst_cluster,
+					 unsigned int dst_clu,
 					 bool *is_locked)
 {
-	unsigned int i, end, *bat_entries, cluster = UINT_MAX;
+	unsigned int i, end, *bat_entries, clu = UINT_MAX;
 	struct rb_node *node;
 	struct md_page *md;
 
@@ -156,31 +156,31 @@ static unsigned int ploop_find_bat_entry(struct ploop *ploop,
 		init_bat_entries_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
-			if (bat_entries[i] != dst_cluster)
+			if (bat_entries[i] != dst_clu)
 				continue;
 			if (md_page_cluster_is_in_top_delta(ploop, md, i)) {
-				cluster = page_clu_idx_to_bat_clu(md->id, i);
+				clu = page_clu_idx_to_bat_clu(md->id, i);
 				break;
 			}
 		}
 		kunmap_atomic(bat_entries);
-		if (cluster != UINT_MAX)
+		if (clu != UINT_MAX)
 			break;
 	}
 	read_unlock_irq(&ploop->bat_rwlock);
 
 	*is_locked = false;
-	if (cluster != UINT_MAX) {
+	if (clu != UINT_MAX) {
 		spin_lock_irq(&ploop->deferred_lock);
-		*is_locked = find_lk_of_cluster(ploop, cluster);
+		*is_locked = find_lk_of_cluster(ploop, clu);
 		spin_unlock_irq(&ploop->deferred_lock);
 	}
 
-	return cluster;
+	return clu;
 }
 
 void pio_prepare_offsets(struct ploop *ploop, struct pio *pio,
-			 unsigned int cluster)
+			 unsigned int clu)
 {
 	int i, nr_pages = nr_pages_in_cluster(ploop);
 
@@ -192,7 +192,7 @@ void pio_prepare_offsets(struct ploop *ploop, struct pio *pio,
 		pio->bi_io_vec[i].bv_offset = 0;
 		pio->bi_io_vec[i].bv_len = PAGE_SIZE;
 	}
-	pio->bi_iter.bi_sector = CLU_TO_SEC(ploop, cluster);
+	pio->bi_iter.bi_sector = CLU_TO_SEC(ploop, clu);
 	pio->bi_iter.bi_size = CLU_SIZE(ploop);
 }
 
@@ -204,17 +204,17 @@ static void wake_completion(struct pio *pio, void *data, blk_status_t status)
 }
 
 static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
-				   unsigned int dst_cluster)
+				   unsigned int dst_clu)
 {
 	DECLARE_COMPLETION(completion);
 
 	init_pio(ploop, REQ_OP_READ, pio);
-	pio_prepare_offsets(ploop, pio, dst_cluster);
+	pio_prepare_offsets(ploop, pio, dst_clu);
 
 	pio->endio_cb = wake_completion;
 	pio->endio_cb_data = &completion;
 
-	map_and_submit_rw(ploop, dst_cluster, pio, top_level(ploop));
+	map_and_submit_rw(ploop, dst_clu, pio, top_level(ploop));
 	wait_for_completion(&completion);
 
 	if (pio->bi_status)
@@ -224,7 +224,7 @@ static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
 }
 
 static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
-				    unsigned int dst_cluster)
+				    unsigned int dst_clu)
 {
 	struct file *file = top_delta(ploop)->file;
 	DECLARE_COMPLETION(completion);
@@ -235,12 +235,12 @@ static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 		return ret;
 
 	init_pio(ploop, REQ_OP_WRITE, pio);
-	pio_prepare_offsets(ploop, pio, dst_cluster);
+	pio_prepare_offsets(ploop, pio, dst_clu);
 
 	pio->endio_cb = wake_completion;
 	pio->endio_cb_data = &completion;
 
-	map_and_submit_rw(ploop, dst_cluster, pio, top_level(ploop));
+	map_and_submit_rw(ploop, dst_clu, pio, top_level(ploop));
 	wait_for_completion(&completion);
 
 	if (pio->bi_status)
@@ -252,7 +252,7 @@ static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 
 static int ploop_write_zero_cluster_sync(struct ploop *ploop,
 					 struct pio *pio,
-					 unsigned int cluster)
+					 unsigned int clu)
 {
 	void *data;
 	int i;
@@ -263,45 +263,45 @@ static int ploop_write_zero_cluster_sync(struct ploop *ploop,
 		kunmap_atomic(data);
 	}
 
-	return ploop_write_cluster_sync(ploop, pio, cluster);
+	return ploop_write_cluster_sync(ploop, pio, clu);
 }
 
 static int ploop_grow_relocate_cluster(struct ploop *ploop,
 				       struct ploop_index_wb *piwb,
 				       struct ploop_cmd *cmd)
 {
-	unsigned int new_dst, cluster, dst_cluster;
+	unsigned int new_dst, clu, dst_clu;
 	struct pio *pio = cmd->resize.pio;
 	bool is_locked;
 	int ret = 0;
 
-	dst_cluster = cmd->resize.dst_cluster;
+	dst_clu = cmd->resize.dst_clu;
 
-	/* Relocate cluster and update index */
-	cluster = ploop_find_bat_entry(ploop, dst_cluster, &is_locked);
-	if (cluster == UINT_MAX || is_locked) {
-		/* dst_cluster in top delta is not occupied? */
-		if (!test_bit(dst_cluster, ploop->holes_bitmap) || is_locked) {
+	/* Relocate clu and update index */
+	clu = ploop_find_bat_entry(ploop, dst_clu, &is_locked);
+	if (clu == UINT_MAX || is_locked) {
+		/* dst_clu in top delta is not occupied? */
+		if (!test_bit(dst_clu, ploop->holes_bitmap) || is_locked) {
 			WARN_ON_ONCE(1);
 			ret = -EIO;
 			goto out;
 		}
 		/* Cluster is free, occupy it. Skip relocaton */
-		ploop_hole_clear_bit(dst_cluster, ploop);
+		ploop_hole_clear_bit(dst_clu, ploop);
 		goto not_occupied;
 	}
 
-	/* Read full cluster sync */
-	ret = ploop_read_cluster_sync(ploop, pio, dst_cluster);
+	/* Read full clu sync */
+	ret = ploop_read_cluster_sync(ploop, pio, dst_clu);
 	if (ret < 0)
 		goto out;
 
-	ret = ploop_prepare_reloc_index_wb(ploop, piwb, cluster,
+	ret = ploop_prepare_reloc_index_wb(ploop, piwb, clu,
 					   &new_dst);
 	if (ret < 0)
 		goto out;
 
-	/* Write cluster to new destination */
+	/* Write clu to new destination */
 	ret = ploop_write_cluster_sync(ploop, pio, new_dst);
 	if (ret) {
 		ploop_reset_bat_update(piwb);
@@ -317,18 +317,18 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 
 	/* Update local BAT copy */
 	write_lock_irq(&ploop->bat_rwlock);
-	WARN_ON(!try_update_bat_entry(ploop, cluster, top_level(ploop), new_dst));
+	WARN_ON(!try_update_bat_entry(ploop, clu, top_level(ploop), new_dst));
 	write_unlock_irq(&ploop->bat_rwlock);
 not_occupied:
 	/*
-	 * Now dst_cluster is not referenced in BAT, so increase the value
+	 * Now dst_clu is not referenced in BAT, so increase the value
 	 * for next iteration. The place we do this is significant: caller
 	 * makes rollback based on this.
 	 */
-	cmd->resize.dst_cluster++;
+	cmd->resize.dst_clu++;
 
 	/* Zero new BAT entries on disk. */
-	ret = ploop_write_zero_cluster_sync(ploop, pio, dst_cluster);
+	ret = ploop_write_zero_cluster_sync(ploop, pio, dst_clu);
 out:
 	return ret;
 }
@@ -389,13 +389,13 @@ static void ploop_add_md_pages(struct ploop *ploop, struct rb_root *from)
 /*
  * Here we relocate data clusters, which may intersect with BAT area
  * of disk after resize. For user they look as already written to disk,
- * so be careful(!) and protective. Update indexes only after cluster
+ * so be careful(!) and protective. Update indexes only after clu
  * data is written to disk.
  */
 static int process_resize_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 {
 	struct ploop_index_wb piwb;
-	unsigned int dst_cluster;
+	unsigned int dst_clu;
 	int ret = 0;
 
 	ploop_index_wb_init(&piwb, ploop);
@@ -403,7 +403,7 @@ static int process_resize_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 	/* Update memory arrays and hb_nr, but do not update nr_bat_entries. */
 	ploop_advance_holes_bitmap(ploop, cmd);
 
-	while (cmd->resize.dst_cluster <= cmd->resize.end_dst_cluster) {
+	while (cmd->resize.dst_clu <= cmd->resize.end_dst_clu) {
 		ret = ploop_grow_relocate_cluster(ploop, &piwb, cmd);
 		if (ret)
 			goto out;
@@ -415,11 +415,11 @@ out:
 	write_lock_irq(&ploop->bat_rwlock);
 	if (ret) {
 		/* Cleanup: mark new BAT overages as free clusters */
-		dst_cluster = cmd->resize.dst_cluster - 1;
+		dst_clu = cmd->resize.dst_clu - 1;
 
-		while (dst_cluster >= cmd->resize.nr_old_bat_clu) {
-			ploop_hole_set_bit(dst_cluster, ploop);
-			dst_cluster--;
+		while (dst_clu >= cmd->resize.nr_old_bat_clu) {
+			ploop_hole_set_bit(dst_clu, ploop);
+			dst_clu--;
 		}
 		swap(ploop->hb_nr, cmd->resize.hb_nr);
 	} else {
@@ -546,9 +546,9 @@ static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 	if (!cmd.resize.pio)
 		goto err;
 
-	cmd.resize.cluster = UINT_MAX;
-	cmd.resize.dst_cluster = nr_old_bat_clusters;
-	cmd.resize.end_dst_cluster = nr_bat_clusters - 1;
+	cmd.resize.clu = UINT_MAX;
+	cmd.resize.dst_clu = nr_old_bat_clusters;
+	cmd.resize.end_dst_clu = nr_bat_clusters - 1;
 	cmd.resize.nr_old_bat_clu = nr_old_bat_clusters;
 	cmd.resize.nr_bat_entries = nr_bat_entries;
 	cmd.resize.hb_nr = hb_nr;
@@ -720,15 +720,15 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 static int process_update_delta_index(struct ploop *ploop, u8 level,
 				      const char *map)
 {
-	unsigned int cluster, dst_cluster, n;
+	unsigned int clu, dst_clu, n;
 	int ret;
 
 	write_lock_irq(&ploop->bat_rwlock);
 	/* Check all */
-	while (sscanf(map, "%u:%u;%n", &cluster, &dst_cluster, &n) == 2) {
-		if (cluster >= ploop->nr_bat_entries)
+	while (sscanf(map, "%u:%u;%n", &clu, &dst_clu, &n) == 2) {
+		if (clu >= ploop->nr_bat_entries)
 			break;
-		if (ploop_bat_entries(ploop, cluster, NULL) == BAT_ENTRY_NONE)
+		if (ploop_bat_entries(ploop, clu, NULL) == BAT_ENTRY_NONE)
 			break;
 		map += n;
 	}
@@ -737,8 +737,8 @@ static int process_update_delta_index(struct ploop *ploop, u8 level,
 		goto unlock;
 	}
 	/* Commit all */
-	while (sscanf(map, "%u:%u;%n", &cluster, &dst_cluster, &n) == 2) {
-		try_update_bat_entry(ploop, cluster, level, dst_cluster);
+	while (sscanf(map, "%u:%u;%n", &clu, &dst_clu, &n) == 2) {
+		try_update_bat_entry(ploop, clu, level, dst_clu);
 		map += n;
 	}
 	ret = 0;
@@ -905,7 +905,7 @@ static int process_flip_upper_deltas(struct ploop *ploop)
 static int process_tracking_start(struct ploop *ploop, void *tracking_bitmap,
 				  u32 tb_nr)
 {
-	unsigned int i, nr_pages, end, *bat_entries, dst_cluster, nr;
+	unsigned int i, nr_pages, end, *bat_entries, dst_clu, nr;
 	struct rb_node *node;
 	struct md_page *md;
 	int ret = 0;
@@ -923,15 +923,15 @@ static int process_tracking_start(struct ploop *ploop, void *tracking_bitmap,
 		init_bat_entries_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
-			dst_cluster = bat_entries[i];
-			if (dst_cluster == BAT_ENTRY_NONE ||
+			dst_clu = bat_entries[i];
+			if (dst_clu == BAT_ENTRY_NONE ||
 			    md->bat_levels[i] != top_level(ploop))
 				continue;
-			if (WARN_ON(dst_cluster >= tb_nr)) {
+			if (WARN_ON(dst_clu >= tb_nr)) {
 				ret = -EIO;
 				break;
 			}
-			set_bit(dst_cluster, tracking_bitmap);
+			set_bit(dst_clu, tracking_bitmap);
 		}
 		kunmap_atomic(bat_entries);
 		if (ret)
@@ -972,9 +972,9 @@ unlock:
 	return ret;
 }
 
-static unsigned int max_dst_cluster_in_top_delta(struct ploop *ploop)
+static unsigned int max_dst_clu_in_top_delta(struct ploop *ploop)
 {
-	unsigned int i, nr_pages, nr = 0, end, *bat_entries, dst_cluster = 0;
+	unsigned int i, nr_pages, nr = 0, end, *bat_entries, dst_clu = 0;
 	struct rb_node *node;
 	struct md_page *md;
 
@@ -985,9 +985,9 @@ static unsigned int max_dst_cluster_in_top_delta(struct ploop *ploop)
 		init_bat_entries_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
-			if (dst_cluster < bat_entries[i] &&
+			if (dst_clu < bat_entries[i] &&
 			    md->bat_levels[i] == top_level(ploop))
-				dst_cluster = bat_entries[i];
+				dst_clu = bat_entries[i];
 		}
 		kunmap_atomic(bat_entries);
 		nr++;
@@ -995,7 +995,7 @@ static unsigned int max_dst_cluster_in_top_delta(struct ploop *ploop)
 	read_unlock_irq(&ploop->bat_rwlock);
 
 	BUG_ON(nr != nr_pages);
-	return dst_cluster;
+	return dst_clu;
 }
 
 static int ploop_tracking_cmd(struct ploop *ploop, const char *suffix,
@@ -1019,12 +1019,12 @@ static int ploop_tracking_cmd(struct ploop *ploop, const char *suffix,
 			return -EEXIST;
 		if (ploop->maintaince)
 			return -EBUSY;
-		/* max_dst_cluster_in_top_delta() may be above hb_nr */
-		tb_nr = max_dst_cluster_in_top_delta(ploop) + 1;
+		/* max_dst_clu_in_top_delta() may be above hb_nr */
+		tb_nr = max_dst_clu_in_top_delta(ploop) + 1;
 		if (tb_nr < ploop->hb_nr)
 			tb_nr = ploop->hb_nr;
 		/*
-		 * After max_dst_cluster_in_top_delta() unlocks the lock,
+		 * After max_dst_clu_in_top_delta() unlocks the lock,
 		 * new entries above tb_nr can't occur, since we always
 		 * alloc clusters from holes_bitmap (and they nr < hb_nr).
 		 */
