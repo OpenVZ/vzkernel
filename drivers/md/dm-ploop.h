@@ -114,6 +114,15 @@ struct md_page {
 	u8 *bat_levels;
 };
 
+enum {
+	PLOOP_LIST_DEFERRED = 0,
+	PLOOP_LIST_DISCARD,
+	PLOOP_LIST_COW,
+
+	PLOOP_LIST_COUNT,
+	PLOOP_LIST_INVALID = PLOOP_LIST_COUNT,
+};
+
 struct ploop {
 	struct dm_target *ti;
 
@@ -166,9 +175,10 @@ struct ploop {
 
 	spinlock_t inflight_lock;
 	spinlock_t deferred_lock;
-	struct list_head deferred_pios;
+
+	struct list_head pios[PLOOP_LIST_COUNT];
+
 	struct list_head flush_pios;
-	struct list_head discard_pios;
 	struct list_head resubmit_pios; /* After partial IO */
 	struct list_head enospc_pios; /* Delayed after ENOSPC */
 
@@ -183,9 +193,6 @@ struct ploop {
 	 * Make @cluster_lk_list hash table or smth like this.
 	 */
 	struct list_head cluster_lk_list;
-
-	/* List of COW requests requiring action. */
-	struct list_head delta_cow_action_list;
 
 	/* Resume is prohibited */
 	bool noresume;
