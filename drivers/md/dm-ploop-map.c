@@ -23,22 +23,6 @@ static void handle_cleanup(struct ploop *ploop, struct pio *pio);
 
 #define DM_MSG_PREFIX "ploop"
 
-#define ploop_bat_lock(ploop, exclusive, flags)					\
-	do {									\
-		if (exclusive)							\
-			write_lock_irqsave(&ploop->bat_rwlock, flags);		\
-		else								\
-			read_lock_irqsave(&ploop->bat_rwlock, flags);		\
-	} while (0)
-
-#define ploop_bat_unlock(ploop, exclusive, flags)				\
-	do {									\
-		if (exclusive)							\
-			write_unlock_irqrestore(&ploop->bat_rwlock, flags);	\
-		else								\
-			read_unlock_irqrestore(&ploop->bat_rwlock, flags);	\
-	} while (0)
-
 static unsigned int pio_nr_segs(struct pio *pio)
 {
 	struct bvec_iter bi = {
@@ -268,6 +252,18 @@ void dispatch_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_l
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
 	queue_work(ploop->wq, &ploop->worker);
+}
+
+/* FIXME: check wb, make bool ... */
+static void delay_on_md_busy(struct ploop *ploop, struct md_page *md, struct pio *pio)
+{
+	unsigned long flags;
+
+	WARN_ON_ONCE(!list_empty(&pio->list));
+
+	write_lock_irqsave(&ploop->bat_rwlock, flags);
+	list_add_tail(&pio->list, &md->wait_list);
+	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
 }
 
 void track_dst_cluster(struct ploop *ploop, u32 dst_clu)
@@ -650,6 +646,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 	unsigned int i, last, *bat_entries;
 	map_index_t *dst_clu, off;
 	unsigned long flags;
+	LIST_HEAD(list);
 
 	BUG_ON(!md);
 	bat_entries = kmap_atomic(md->page);
@@ -667,7 +664,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 		i = PLOOP_MAP_OFFSET;
 
 	dst_clu = kmap_atomic(piwb->bat_page);
-	ploop_bat_lock(ploop, success, flags);
+	write_lock_irqsave(&ploop->bat_rwlock, flags);
 
 	for (; i < last; i++) {
 		if (piwb->type == PIWB_TYPE_DISCARD) {
@@ -697,9 +694,13 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 		}
 	}
 
-	ploop_bat_unlock(ploop, success, flags);
+	list_splice_tail_init(&md->wait_list, &list);
+	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
 	kunmap_atomic(dst_clu);
 	kunmap_atomic(bat_entries);
+
+	if (!list_empty(&list))
+		dispatch_pios(ploop, NULL, &list);
 }
 
 static void put_piwb(struct ploop_index_wb *piwb)
@@ -1230,6 +1231,7 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 	unsigned int clu = cow_pio->clu;
 	struct ploop *ploop = cow->ploop;
 	unsigned int page_id;
+	struct md_page *md;
 	map_index_t *to;
 
 	page_id = bat_clu_to_page_nr(clu);
@@ -1242,8 +1244,9 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 
 	if (piwb->page_id != page_id || piwb->type != PIWB_TYPE_ALLOC) {
 		/* Another BAT page wb is in process */
-		cow->aux_pio->queue_list_id = PLOOP_LIST_COW;
-		dispatch_pios(ploop, cow->aux_pio, NULL);
+		WARN_ON_ONCE(cow->aux_pio->queue_list_id != PLOOP_LIST_COW);
+		md = md_page_find(ploop, piwb->page_id);
+		delay_on_md_busy(ploop, md, cow->aux_pio);
 		goto out;
 	}
 
@@ -1320,6 +1323,7 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 	bool bat_update_prepared = false;
 	bool attached = false;
 	unsigned int page_id;
+	struct md_page *md;
 
 	page_id = bat_clu_to_page_nr(clu);
 
@@ -1334,7 +1338,9 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 
 	if (piwb->page_id != page_id || piwb->type != PIWB_TYPE_ALLOC) {
 		/* Another BAT page wb is in process */
-		dispatch_pios(ploop, pio, NULL);
+		WARN_ON_ONCE(pio->queue_list_id != PLOOP_LIST_DEFERRED);
+		md = md_page_find(ploop, piwb->page_id);
+		delay_on_md_busy(ploop, md, pio);
 		goto out;
 	}
 
@@ -1455,6 +1461,7 @@ static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 {
 	unsigned int page_id, clu;
 	bool bat_update_prepared;
+	struct md_page *md;
 	map_index_t *to;
 
 	WARN_ON(ploop->nr_deltas != 1);
@@ -1475,7 +1482,9 @@ static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 	}
 
 	if (piwb->page_id != page_id || piwb->type != PIWB_TYPE_DISCARD) {
-		queue_discard_index_wb(ploop, pio);
+		WARN_ON_ONCE(pio->queue_list_id != PLOOP_LIST_DISCARD);
+		md = md_page_find(ploop, piwb->page_id);
+		delay_on_md_busy(ploop, md, pio);
 		goto out;
 	}
 

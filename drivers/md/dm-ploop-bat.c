@@ -78,6 +78,7 @@ static struct md_page * alloc_md_page(unsigned int id)
 	page = alloc_page(GFP_KERNEL);
 	if (!page)
 		goto err_page;
+	INIT_LIST_HEAD(&md->wait_list);
 
 	md->bat_levels = levels;
 	md->page = page;
