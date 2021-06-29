@@ -611,7 +611,7 @@ static int process_merge_latest_snapshot(struct ploop *ploop)
 		pio->is_fake_merge = true;
 		WARN_ON_ONCE(!fake_merge_pio(pio));
 
-		defer_pios(ploop, pio, NULL);
+		dispatch_pios(ploop, pio, NULL);
 
 		if (atomic_inc_return(&ploop->service_pios) == MERGE_PIOS_MAX) {
 			wait_event(ploop->service_wq,
