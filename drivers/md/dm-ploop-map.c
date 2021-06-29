@@ -1269,19 +1269,16 @@ err_resource:
 	complete_cow(cow, BLK_STS_RESOURCE);
 }
 
-static void process_delta_wb(struct ploop *ploop, struct ploop_index_wb *piwb)
+static void process_delta_wb(struct ploop *ploop, struct list_head *cow_list,
+			     struct ploop_index_wb *piwb)
 {
-	struct list_head *list = &ploop->pios[PLOOP_LIST_COW];
-	struct pio *aux_pio;
 	struct ploop_cow *cow;
-	LIST_HEAD(cow_list);
+	struct pio *aux_pio;
 
-	if (list_empty(list))
+	if (list_empty(cow_list))
 		return;
-	list_splice_tail_init(list, &cow_list);
-	spin_unlock_irq(&ploop->deferred_lock);
 
-	while ((aux_pio = pio_list_pop(&cow_list)) != NULL) {
+	while ((aux_pio = pio_list_pop(cow_list)) != NULL) {
 		cow = aux_pio->endio_cb_data;
 		if (unlikely(aux_pio->bi_status != BLK_STS_OK)) {
 			complete_cow(cow, aux_pio->bi_status);
@@ -1302,8 +1299,6 @@ static void process_delta_wb(struct ploop *ploop, struct ploop_index_wb *piwb)
 			submit_cow_index_wb(cow, piwb);
 		}
 	}
-
-	spin_lock_irq(&ploop->deferred_lock);
 }
 
 /*
@@ -1537,6 +1532,7 @@ void do_ploop_work(struct work_struct *ws)
 	struct ploop_index_wb piwb;
 	LIST_HEAD(deferred_pios);
 	LIST_HEAD(discard_pios);
+	LIST_HEAD(cow_pios);
 	unsigned int pf_io_thread = (current->flags & PF_IO_THREAD);
 
 	current->flags |= PF_IO_THREAD;
@@ -1552,14 +1548,14 @@ void do_ploop_work(struct work_struct *ws)
 	ploop_index_wb_init(&piwb, ploop);
 
 	spin_lock_irq(&ploop->deferred_lock);
-	process_delta_wb(ploop, &piwb);
-
 	list_splice_init(&ploop->pios[PLOOP_LIST_DEFERRED], &deferred_pios);
 	list_splice_init(&ploop->pios[PLOOP_LIST_DISCARD], &discard_pios);
+	list_splice_init(&ploop->pios[PLOOP_LIST_COW], &cow_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	process_deferred_pios(ploop, &deferred_pios, &piwb);
 	process_discard_pios(ploop, &discard_pios, &piwb);
+	process_delta_wb(ploop, &cow_pios, &piwb);
 
 	if (piwb.page_nr != PAGE_NR_NONE) {
 		/* Index wb was prepared -- submit and wait it */
