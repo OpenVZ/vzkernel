@@ -248,6 +248,8 @@ struct pio {
 #define PLOOP_REF_INDEX_INVALID	2
 	unsigned int ref_index:2;
 
+	u8 queue_list_id:2; /* id in ploop->pios */
+
 	struct ploop_index_wb *piwb;
 
 	struct kiocb iocb;
@@ -512,7 +514,7 @@ extern int convert_bat_entries(u32 *bat_entries, u32 count);
 
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
 extern void submit_pios(struct ploop *ploop, struct list_head *list);
-extern void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list);
+extern void dispatch_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list);
 extern void do_ploop_work(struct work_struct *ws);
 extern void do_ploop_fsync_work(struct work_struct *ws);
 extern void ploop_event_work(struct work_struct *work);

@@ -80,6 +80,7 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 	pio->is_fake_merge = false;
 	pio->free_on_endio = false;
 	pio->ref_index = PLOOP_REF_INDEX_INVALID;
+	pio->queue_list_id = PLOOP_LIST_DEFERRED;
 	pio->bi_status = BLK_STS_OK;
 	atomic_set(&pio->remaining, 1);
 	pio->piwb = NULL;
@@ -196,6 +197,7 @@ static struct pio * split_and_chain_pio(struct ploop *ploop,
 		return NULL;
 
 	init_pio(ploop, pio->bi_op, split);
+	split->queue_list_id = pio->queue_list_id;
 	split->free_on_endio = true;
 	split->bi_io_vec = pio->bi_io_vec;
 	split->bi_iter = pio->bi_iter;
@@ -242,16 +244,27 @@ err:
 	return -ENOMEM;
 }
 
-void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list)
+static void dispatch_pio(struct ploop *ploop, struct pio *pio)
 {
-	struct list_head *list = &ploop->pios[PLOOP_LIST_DEFERRED];
+	struct list_head *list = &ploop->pios[pio->queue_list_id];
+
+	lockdep_assert_held(&ploop->deferred_lock);
+	WARN_ON_ONCE(pio->queue_list_id >= PLOOP_LIST_COUNT);
+
+	list_add_tail(&pio->list, list);
+}
+
+void dispatch_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list)
+{
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	if (pio)
-		list_add_tail(&pio->list, list);
-	if (pio_list)
-		list_splice_tail_init(pio_list, list);
+		dispatch_pio(ploop, pio);
+	if (pio_list) {
+		while ((pio = pio_list_pop(pio_list)) != NULL)
+			dispatch_pio(ploop, pio);
+	}
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
 	queue_work(ploop->wq, &ploop->worker);
@@ -290,14 +303,8 @@ void __track_pio(struct ploop *ploop, struct pio *pio)
 
 static void queue_discard_index_wb(struct ploop *ploop, struct pio *pio)
 {
-	struct list_head *list = &ploop->pios[PLOOP_LIST_DISCARD];
-	unsigned long flags;
-
-	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	list_add_tail(&pio->list, list);
-	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
-
-	queue_work(ploop->wq, &ploop->worker);
+	pio->queue_list_id = PLOOP_LIST_DISCARD;
+	dispatch_pios(ploop, pio, NULL);
 }
 
 /* Zero @count bytes of @qio->bi_io_vec since @from byte */
@@ -425,7 +432,7 @@ static void del_cluster_lk(struct ploop *ploop, struct pio *pio)
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
 	if (!list_empty(&pio_list))
-		defer_pios(ploop, NULL, &pio_list);
+		dispatch_pios(ploop, NULL, &pio_list);
 }
 
 static void link_submitting_pio(struct ploop *ploop, struct pio *pio,
@@ -450,7 +457,7 @@ static void unlink_completed_pio(struct ploop *ploop, struct pio *pio)
 	spin_unlock_irqrestore(&ploop->inflight_lock, flags);
 
 	if (!list_empty(&pio_list))
-		defer_pios(ploop, NULL, &pio_list);
+		dispatch_pios(ploop, NULL, &pio_list);
 }
 
 static bool pio_endio_if_all_zeros(struct pio *pio)
@@ -563,7 +570,7 @@ static void queue_or_fail(struct ploop *ploop, int err, void *data)
 		pio->bi_status = errno_to_blk_status(err);
 		pio_endio(pio);
 	} else {
-		defer_pios(ploop, pio, NULL);
+		dispatch_pios(ploop, pio, NULL);
 	}
 }
 
@@ -998,6 +1005,8 @@ static void ploop_queue_resubmit(struct pio *pio)
 	struct ploop *ploop = pio->ploop;
 	unsigned long flags;
 
+	pio->queue_list_id = PLOOP_LIST_INVALID;
+
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	list_add_tail(&pio->list, &ploop->resubmit_pios);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
@@ -1132,13 +1141,9 @@ static void ploop_cow_endio(struct pio *aux_pio, void *data, blk_status_t bi_sta
 {
 	struct ploop_cow *cow = data;
 	struct ploop *ploop = cow->ploop;
-	unsigned long flags;
 
-	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	list_add_tail(&aux_pio->list, &ploop->pios[PLOOP_LIST_COW]);
-	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
-
-	queue_work(ploop->wq, &ploop->worker);
+	aux_pio->queue_list_id = PLOOP_LIST_COW;
+	dispatch_pios(ploop, aux_pio, NULL);
 }
 
 static bool postpone_if_cluster_locked(struct ploop *ploop, struct pio *pio,
@@ -1241,11 +1246,8 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 
 	if (piwb->page_nr != page_nr || piwb->type != PIWB_TYPE_ALLOC) {
 		/* Another BAT page wb is in process */
-		spin_lock_irq(&ploop->deferred_lock);
-		list_add_tail(&cow->aux_pio->list,
-			      &ploop->pios[PLOOP_LIST_COW]);
-		spin_unlock_irq(&ploop->deferred_lock);
-		queue_work(ploop->wq, &ploop->worker);
+		cow->aux_pio->queue_list_id = PLOOP_LIST_COW;
+		dispatch_pios(ploop, cow->aux_pio, NULL);
 		goto out;
 	}
 
@@ -1341,7 +1343,7 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 
 	if (piwb->page_nr != page_nr || piwb->type != PIWB_TYPE_ALLOC) {
 		/* Another BAT page wb is in process */
-		defer_pios(ploop, pio, NULL);
+		dispatch_pios(ploop, pio, NULL);
 		goto out;
 	}
 
@@ -1357,7 +1359,7 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 		 * batch? Delay submitting. Good thing, that clu allocation
 		 * has already made, and it goes in the batch.
 		 */
-		defer_pios(ploop, pio, NULL);
+		dispatch_pios(ploop, pio, NULL);
 	}
 out:
 	return attached;
@@ -1523,8 +1525,10 @@ static void process_resubmit_pios(struct ploop *ploop, struct list_head *pios)
 {
 	struct pio *pio;
 
-	while ((pio = pio_list_pop(pios)) != NULL)
+	while ((pio = pio_list_pop(pios)) != NULL) {
+		pio->queue_list_id = PLOOP_LIST_INVALID;
 		submit_rw_mapped(ploop, pio);
+	}
 }
 
 void do_ploop_work(struct work_struct *ws)
