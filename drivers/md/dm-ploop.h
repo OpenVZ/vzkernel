@@ -102,7 +102,7 @@ struct ploop_index_wb {
 	atomic_t count;
 	bool completed;
 	int bi_status;
-	unsigned int page_nr;
+	unsigned int page_id;
 };
 
 /* Metadata page */
@@ -395,7 +395,7 @@ static inline unsigned int ploop_bat_entries(struct ploop *ploop,
 	md = md_page_find(ploop, id);
 	BUG_ON(!md);
 
-	/* Cluster index related to the page[page_nr] start */
+	/* Cluster index related to the page[page_id] start */
 	clu = bat_clu_idx_in_page(clu);
 
 	if (bat_level)

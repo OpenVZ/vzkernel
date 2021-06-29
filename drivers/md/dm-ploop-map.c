@@ -67,7 +67,7 @@ void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop)
 	/* For ploop_bat_write_complete() */
 	atomic_set(&piwb->count, 1);
 	piwb->completed = false;
-	piwb->page_nr = PAGE_NR_NONE;
+	piwb->page_id = PAGE_NR_NONE;
 	piwb->type = PIWB_TYPE_ALLOC;
 }
 
@@ -646,7 +646,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 					     struct ploop_index_wb *piwb,
 					     bool success)
 {
-	struct md_page *md = md_page_find(ploop, piwb->page_nr);
+	struct md_page *md = md_page_find(ploop, piwb->page_id);
 	unsigned int i, last, *bat_entries;
 	map_index_t *dst_clu, off;
 	unsigned long flags;
@@ -655,7 +655,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 	bat_entries = kmap_atomic(md->page);
 
 	/* Absolute number of first index in page (negative for page#0) */
-	off = piwb->page_nr * PAGE_SIZE / sizeof(map_index_t);
+	off = piwb->page_id * PAGE_SIZE / sizeof(map_index_t);
 	off -= PLOOP_MAP_OFFSET;
 
 	/* Last and first index in copied page */
@@ -663,7 +663,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 	if (last > PAGE_SIZE / sizeof(map_index_t))
 		last = PAGE_SIZE / sizeof(map_index_t);
 	i = 0;
-	if (!piwb->page_nr)
+	if (!piwb->page_id)
 		i = PLOOP_MAP_OFFSET;
 
 	dst_clu = kmap_atomic(piwb->bat_page);
@@ -766,7 +766,7 @@ static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 	put_piwb(piwb);
 }
 
-static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
+static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_id,
 				    struct ploop_index_wb *piwb)
 {
 	unsigned int i, off, last, *bat_entries;
@@ -779,16 +779,16 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
 	if (!page)
 		return -ENOMEM;
 
-	md = md_page_find(ploop, page_nr);
+	md = md_page_find(ploop, page_id);
 	BUG_ON(!md);
 	bat_entries = kmap_atomic(md->page);
 
-	piwb->page_nr = page_nr;
+	piwb->page_id = page_id;
 	to = kmap_atomic(page);
 	memcpy((void *)to, bat_entries, PAGE_SIZE);
 
 	/* Absolute number of first index in page (negative for page#0) */
-	off = page_nr * PAGE_SIZE / sizeof(map_index_t);
+	off = page_id * PAGE_SIZE / sizeof(map_index_t);
 	off -= PLOOP_MAP_OFFSET;
 
 	/* Last and first index in copied page */
@@ -798,7 +798,7 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_nr,
 		is_last_page = false;
 	}
 	i = 0;
-	if (!page_nr)
+	if (!page_id)
 		i = PLOOP_MAP_OFFSET;
 
 	/* Copy BAT (BAT goes right after hdr, see .ctr) */
@@ -832,7 +832,7 @@ static void ploop_bat_page_zero_cluster(struct ploop *ploop,
 {
 	map_index_t *to;
 
-	/* Cluster index related to the page[page_nr] start */
+	/* Cluster index related to the page[page_id] start */
 	clu = bat_clu_idx_in_page(clu);
 
 	to = kmap_atomic(piwb->bat_page);
@@ -943,8 +943,8 @@ static int ploop_alloc_cluster(struct ploop *ploop, struct ploop_index_wb *piwb,
 	map_index_t *to;
 	int ret = 0;
 
-	/* Cluster index related to the page[page_nr] start */
-	clu -= piwb->page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
+	/* Cluster index related to the page[page_id] start */
+	clu -= piwb->page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 
 	to = kmap_atomic(page);
 	if (to[clu]) {
@@ -1233,25 +1233,25 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 	struct pio *cow_pio = cow->cow_pio;
 	unsigned int clu = cow_pio->clu;
 	struct ploop *ploop = cow->ploop;
-	unsigned int page_nr;
+	unsigned int page_id;
 	map_index_t *to;
 
-	page_nr = bat_clu_to_page_nr(clu);
+	page_id = bat_clu_to_page_nr(clu);
 
-	if (piwb->page_nr == PAGE_NR_NONE) {
+	if (piwb->page_id == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
-		if (ploop_prepare_bat_update(ploop, page_nr, piwb) < 0)
+		if (ploop_prepare_bat_update(ploop, page_id, piwb) < 0)
 			goto err_resource;
 	}
 
-	if (piwb->page_nr != page_nr || piwb->type != PIWB_TYPE_ALLOC) {
+	if (piwb->page_id != page_id || piwb->type != PIWB_TYPE_ALLOC) {
 		/* Another BAT page wb is in process */
 		cow->aux_pio->queue_list_id = PLOOP_LIST_COW;
 		dispatch_pios(ploop, cow->aux_pio, NULL);
 		goto out;
 	}
 
-	clu -= page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
+	clu -= page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 
 	to = kmap_atomic(piwb->bat_page);
 	WARN_ON(to[clu]);
@@ -1323,20 +1323,20 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 {
 	bool bat_update_prepared = false;
 	bool attached = false;
-	unsigned int page_nr;
+	unsigned int page_id;
 
-	page_nr = bat_clu_to_page_nr(clu);
+	page_id = bat_clu_to_page_nr(clu);
 
-	if (piwb->page_nr == PAGE_NR_NONE) {
+	if (piwb->page_id == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
-		if (ploop_prepare_bat_update(ploop, page_nr, piwb) < 0) {
+		if (ploop_prepare_bat_update(ploop, page_id, piwb) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto error;
 		}
 		bat_update_prepared = true;
 	}
 
-	if (piwb->page_nr != page_nr || piwb->type != PIWB_TYPE_ALLOC) {
+	if (piwb->page_id != page_id || piwb->type != PIWB_TYPE_ALLOC) {
 		/* Another BAT page wb is in process */
 		dispatch_pios(ploop, pio, NULL);
 		goto out;
@@ -1440,11 +1440,11 @@ void ploop_submit_index_wb_sync(struct ploop *ploop,
 	/* track_bio() will be called in ploop_bat_write_complete() */
 
 	ret = ploop_rw_page_sync(WRITE, top_delta(ploop)->file,
-				 piwb->page_nr, piwb->bat_page);
+				 piwb->page_id, piwb->bat_page);
 	if (ret)
 		status = errno_to_blk_status(ret);
 
-	dst_clu = ((u64)piwb->page_nr << PAGE_SHIFT) / CLU_SIZE(ploop);
+	dst_clu = ((u64)piwb->page_id << PAGE_SHIFT) / CLU_SIZE(ploop);
 	track_dst_cluster(ploop, dst_clu);
 
 	ploop_bat_write_complete(piwb, status);
@@ -1463,19 +1463,19 @@ static void process_deferred_pios(struct ploop *ploop, struct list_head *pios,
 static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 				   struct ploop_index_wb *piwb)
 {
-	unsigned int page_nr, clu;
+	unsigned int page_id, clu;
 	bool bat_update_prepared;
 	map_index_t *to;
 
 	WARN_ON(ploop->nr_deltas != 1);
 
 	clu = pio->clu;
-	page_nr = bat_clu_to_page_nr(clu);
+	page_id = bat_clu_to_page_nr(clu);
 	bat_update_prepared = false;
 
-	if (piwb->page_nr == PAGE_NR_NONE) {
+	if (piwb->page_id == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
-		if (ploop_prepare_bat_update(ploop, page_nr, piwb) < 0) {
+		if (ploop_prepare_bat_update(ploop, page_id, piwb) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			pio_endio(pio);
 			goto out;
@@ -1484,13 +1484,13 @@ static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 		bat_update_prepared = true;
 	}
 
-	if (piwb->page_nr != page_nr || piwb->type != PIWB_TYPE_DISCARD) {
+	if (piwb->page_id != page_id || piwb->type != PIWB_TYPE_DISCARD) {
 		queue_discard_index_wb(ploop, pio);
 		goto out;
 	}
 
-	/* Cluster index related to the page[page_nr] start */
-	clu -= piwb->page_nr * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
+	/* Cluster index related to the page[page_id] start */
+	clu -= piwb->page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 
 	to = kmap_atomic(piwb->bat_page);
 	if (WARN_ON_ONCE(!to[clu])) {
@@ -1557,7 +1557,7 @@ void do_ploop_work(struct work_struct *ws)
 	process_discard_pios(ploop, &discard_pios, &piwb);
 	process_delta_wb(ploop, &cow_pios, &piwb);
 
-	if (piwb.page_nr != PAGE_NR_NONE) {
+	if (piwb.page_id != PAGE_NR_NONE) {
 		/* Index wb was prepared -- submit and wait it */
 		ploop_submit_index_wb_sync(ploop, &piwb);
 		ploop_reset_bat_update(&piwb);
@@ -1760,10 +1760,10 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 				 unsigned int clu,
 				 unsigned int *dst_clu)
 {
-	unsigned int page_nr = bat_clu_to_page_nr(clu);
+	unsigned int page_id = bat_clu_to_page_nr(clu);
 
-	if (piwb->page_nr != PAGE_NR_NONE ||
-	    ploop_prepare_bat_update(ploop, page_nr, piwb))
+	if (piwb->page_id != PAGE_NR_NONE ||
+	    ploop_prepare_bat_update(ploop, page_id, piwb))
 		goto out_eio;
 	if (dst_clu) {
 		/*
