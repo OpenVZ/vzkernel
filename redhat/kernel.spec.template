@@ -545,7 +545,9 @@ BuildRequires: net-tools, hostname, bc, elfutils-devel
 BuildRequires: dwarves
 BuildRequires: python3-devel
 BuildRequires: gcc-plugin-devel
+%ifnarch %{nobuildarches}
 BuildRequires: bpftool
+%endif
 %if %{with_headers}
 BuildRequires: rsync
 %endif
