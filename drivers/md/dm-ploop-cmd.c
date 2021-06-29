@@ -1118,8 +1118,7 @@ static int ploop_get_event(struct ploop *ploop, char *result, unsigned int maxle
 static bool msg_wants_down_read(const char *cmd)
 {
 	/* TODO: kill get_delta_name */
-	if (!strcmp(cmd, "get_delta_name") ||
-	    !strcmp(cmd, "get_img_name"))
+	if (!strcmp(cmd, "get_img_name"))
 		return true;
 
 	return false;
@@ -1167,8 +1166,7 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 		if (argc != 2 || kstrtou64(argv[1], 10, &val) < 0)
 			goto unlock;
 		ret = ploop_notify_merged(ploop, val, forward);
-	} else if (!strcmp(argv[0], "get_delta_name") ||
-		   !strcmp(argv[0], "get_img_name")) {
+	} else if (!strcmp(argv[0], "get_img_name")) {
 		if (argc != 2 || kstrtou64(argv[1], 10, &val) < 0)
 			goto unlock;
 		ret = ploop_get_delta_name_cmd(ploop, (u8)val, result, maxlen);
