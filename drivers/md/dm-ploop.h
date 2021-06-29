@@ -386,7 +386,8 @@ extern struct md_page * md_page_find(struct ploop *ploop, unsigned int id);
  */
 static inline unsigned int ploop_bat_entries(struct ploop *ploop,
 					     unsigned int clu,
-					     u8 *bat_level)
+					     u8 *bat_level,
+					     struct md_page **md_ret)
 {
 	unsigned int *bat_entries, dst_clu, id;
 	struct md_page *md;
@@ -400,6 +401,8 @@ static inline unsigned int ploop_bat_entries(struct ploop *ploop,
 
 	if (bat_level)
 		*bat_level = md->bat_levels[clu];
+	if (md_ret)
+		*md_ret = md;
 
 	bat_entries = kmap_atomic(md->page);
 	dst_clu = bat_entries[clu];
@@ -415,7 +418,7 @@ static inline bool cluster_is_in_top_delta(struct ploop *ploop,
 
 	if (WARN_ON(clu >= ploop->nr_bat_entries))
 		return false;
-	dst_clu = ploop_bat_entries(ploop, clu, &level);
+	dst_clu = ploop_bat_entries(ploop, clu, &level, NULL);
 
 	if (dst_clu == BAT_ENTRY_NONE || level < top_level(ploop))
 		return false;

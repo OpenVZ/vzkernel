@@ -1371,6 +1371,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 {
 	sector_t sector = pio->bi_iter.bi_sector;
 	unsigned int clu, dst_clu;
+	struct md_page *md;
 	u8 level;
 	bool ret;
 
@@ -1381,7 +1382,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 	 * and wait synchronously from *this* kwork.
 	 */
 	clu = SEC_TO_CLU(ploop, sector);
-	dst_clu = ploop_bat_entries(ploop, clu, &level);
+	dst_clu = ploop_bat_entries(ploop, clu, &level, &md);
 
 	if (postpone_if_cluster_locked(ploop, pio, clu))
 		goto out;

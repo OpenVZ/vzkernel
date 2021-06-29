@@ -728,7 +728,7 @@ static int process_update_delta_index(struct ploop *ploop, u8 level,
 	while (sscanf(map, "%u:%u;%n", &clu, &dst_clu, &n) == 2) {
 		if (clu >= ploop->nr_bat_entries)
 			break;
-		if (ploop_bat_entries(ploop, clu, NULL) == BAT_ENTRY_NONE)
+		if (ploop_bat_entries(ploop, clu, NULL, NULL) == BAT_ENTRY_NONE)
 			break;
 		map += n;
 	}
