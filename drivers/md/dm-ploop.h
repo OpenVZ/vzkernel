@@ -50,7 +50,6 @@ struct ploop_delta {
 #define MERGE_PIOS_MAX			64
 
 struct ploop_cmd {
-	struct completion comp;
 	union {
 		struct {
 			sector_t new_sectors;
