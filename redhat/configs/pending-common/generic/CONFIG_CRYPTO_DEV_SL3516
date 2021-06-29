@@ -1,0 +1,17 @@
+# CONFIG_CRYPTO_DEV_SL3516:
+# 
+# This option allows you to have support for SL3516 crypto offloader.
+# 
+# Symbol: CRYPTO_DEV_SL3516 [=n]
+# Type  : tristate
+# Defined at drivers/crypto/Kconfig:269
+#   Prompt: Stormlink SL3516 crypto offloader
+#   Depends on: CRYPTO [=y] && CRYPTO_HW [=y] && HAS_IOMEM [=y] && PM [=y]
+#   Location:
+#     -> Cryptographic API (CRYPTO [=y])
+#       -> Hardware crypto devices (CRYPTO_HW [=y])
+# Selects: CRYPTO_SKCIPHER [=y] && CRYPTO_ENGINE [=n] && CRYPTO_ECB [=y] && CRYPTO_AES [=y] && HW_RANDOM [=y]
+# 
+# 
+# 
+# CONFIG_CRYPTO_DEV_SL3516 is not set
