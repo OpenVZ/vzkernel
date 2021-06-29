@@ -988,16 +988,12 @@ static bool ploop_data_pio_end(struct pio *pio)
 	return completed;
 }
 
-static bool ploop_attach_end_action(struct pio *pio, struct ploop_index_wb *piwb)
+static void ploop_attach_end_action(struct pio *pio, struct ploop_index_wb *piwb)
 {
-	/* Currently this can't fail. */
-	if (!atomic_inc_not_zero(&piwb->count))
-		return false;
-
 	pio->is_data_alloc = true;
 	pio->piwb = piwb;
 
-	return true;
+	atomic_inc(&piwb->count);
 }
 
 static void ploop_queue_resubmit(struct pio *pio)
@@ -1347,15 +1343,8 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 		goto error;
 	}
 
-	attached = ploop_attach_end_action(pio, piwb);
-	if (!attached) {
-		/*
-		 * Could not prepare data pio to be submitted before index wb
-		 * batch? Delay submitting. Good thing, that clu allocation
-		 * has already made, and it goes in the batch.
-		 */
-		dispatch_pios(ploop, pio, NULL);
-	}
+	ploop_attach_end_action(pio, piwb);
+	attached = true;
 out:
 	return attached;
 error:
