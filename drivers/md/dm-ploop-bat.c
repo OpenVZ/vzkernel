@@ -123,10 +123,10 @@ int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
 	return 0;
 }
 
-bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
-			  u8 level, unsigned int dst_cluster)
+bool try_update_bat_entry(struct ploop *ploop, unsigned int clu,
+			  u8 level, unsigned int dst_clu)
 {
-	unsigned int *bat_entries, id = bat_clu_to_page_nr(cluster);
+	unsigned int *bat_entries, id = bat_clu_to_page_nr(clu);
 	struct md_page *md = md_page_find(ploop, id);
 
 	lockdep_assert_held(&ploop->bat_rwlock);
@@ -134,11 +134,11 @@ bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
 	if (!md)
 		return false;
 
-	cluster = bat_clu_idx_in_page(cluster); /* relative offset */
+	clu = bat_clu_idx_in_page(clu); /* relative offset */
 
-	if (md->bat_levels[cluster] == level) {
+	if (md->bat_levels[clu] == level) {
 		bat_entries = kmap_atomic(md->page);
-		bat_entries[cluster] = dst_cluster;
+		bat_entries[clu] = dst_clu;
 		kunmap_atomic(bat_entries);
 		return true;
 	}
@@ -177,13 +177,13 @@ static int parse_bat_entries(struct ploop *ploop, map_index_t *bat_entries,
 }
 
 /*
- * Read from disk and fill bat_entries. Note, that on enter here, cluster #0
+ * Read from disk and fill bat_entries. Note, that on enter here, clu #0
  * is already read from disk (with header) -- just parse bio pages content.
  */
 int ploop_read_bat(struct ploop *ploop, struct bio *bio, u8 nr_deltas)
 {
 	unsigned int id, entries_per_page, nr_copy, nr_all, page, i = 0;
-	map_index_t *from, *to, cluster = 0;
+	map_index_t *from, *to, clu = 0;
 	struct md_page *md;
 	int ret = 0;
 
@@ -223,7 +223,7 @@ int ploop_read_bat(struct ploop *ploop, struct bio *bio, u8 nr_deltas)
 				goto out;
 		}
 
-		ret = ploop_read_cluster_sync(ploop, bio, ++cluster);
+		ret = ploop_read_cluster_sync(ploop, bio, ++clu);
 		if (ret)
 			goto out;
 
@@ -425,11 +425,11 @@ out_put_page:
 	return ret;
 }
 
-static void ploop_set_not_hole(struct ploop *ploop, u32 dst_cluster)
+static void ploop_set_not_hole(struct ploop *ploop, u32 dst_clu)
 {
 	/* Cluster may refer out holes_bitmap after shrinking */
-	if (dst_cluster < ploop->hb_nr)
-		ploop_hole_clear_bit(dst_cluster, ploop);
+	if (dst_clu < ploop->hb_nr)
+		ploop_hole_clear_bit(dst_clu, ploop);
 }
 
 /*
@@ -444,7 +444,7 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 {
 	map_index_t *bat_entries, *delta_bat_entries;
 	bool is_top_level, is_raw, stop = false;
-	unsigned int i, end, dst_cluster, clu;
+	unsigned int i, end, dst_clu, clu;
 	struct rb_node *node;
 	struct md_page *md;
 
@@ -479,16 +479,16 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 			}
 
 			if (!is_raw)
-				dst_cluster = delta_bat_entries[i];
+				dst_clu = delta_bat_entries[i];
 			else {
-				dst_cluster = clu;
-				if (dst_cluster >= size_in_clus)
-					dst_cluster = BAT_ENTRY_NONE;
+				dst_clu = clu;
+				if (dst_clu >= size_in_clus)
+					dst_clu = BAT_ENTRY_NONE;
 			}
-			if (dst_cluster == BAT_ENTRY_NONE)
+			if (dst_clu == BAT_ENTRY_NONE)
 				continue;
 			md->bat_levels[i] = level;
-			bat_entries[i] = dst_cluster;
+			bat_entries[i] = dst_clu;
 set_not_hole:
 			if (is_top_level)
 				ploop_set_not_hole(ploop, bat_entries[i]);

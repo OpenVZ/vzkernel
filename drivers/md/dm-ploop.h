@@ -62,16 +62,16 @@ struct ploop_cmd {
 			unsigned int stage;
 			unsigned int nr_bat_entries;
 			unsigned int hb_nr;
-			unsigned int end_dst_cluster;
+			unsigned int end_dst_clu;
 			unsigned int nr_old_bat_clu;
-			unsigned int cluster, dst_cluster;
+			unsigned int clu, dst_clu;
 			struct pio *pio;
 		} resize;
 	};
 };
 
 #define PAGE_NR_NONE		UINT_MAX
-/* We can't use 0 for unmapped clusters, since RAW image references 0 cluster */
+/* We can't use 0 for unmapped clusters, since RAW image references 0 clu */
 #define BAT_ENTRY_NONE		UINT_MAX
 
 #define PLOOP_INFLIGHT_TIMEOUT	(60 * HZ)
@@ -88,7 +88,7 @@ struct ploop_cmd {
 
 enum piwb_type {
 	PIWB_TYPE_ALLOC = 0,	/* Allocation of new clusters */
-	PIWB_TYPE_RELOC,	/* Relocation of cluster (on BAT grow) */
+	PIWB_TYPE_RELOC,	/* Relocation of clu (on BAT grow) */
 	PIWB_TYPE_DISCARD,	/* Zeroing index on discard */
 };
 
@@ -142,12 +142,12 @@ struct ploop {
 	/*
 	 * Hash table to link non-exclusive submitted bios.
 	 * This is needed for discard to check, nobody uses
-	 * the discarding cluster.
+	 * the discarding clu.
 	 */
 	struct hlist_head *inflight_pios;
 	/*
 	 * Hash table to link exclusive submitted bios.
-	 * This allows to delay bios going in some cluster.
+	 * This allows to delay bios going in some clu.
 	 */
 	struct hlist_head *exclusive_pios;
 
@@ -227,7 +227,7 @@ struct pio {
 	ploop_endio_t endio_cb;
 	void *endio_cb_data;
 
-	unsigned int cluster;
+	unsigned int clu;
 	u8 level;
 
 	bool is_data_alloc:1;
@@ -254,7 +254,7 @@ struct pio {
 struct ploop_cow {
 	struct ploop *ploop;
 	struct pio *aux_pio;
-	unsigned int dst_cluster;
+	unsigned int dst_clu;
 
 	struct pio *cow_pio;
 };
@@ -275,10 +275,10 @@ static inline bool ploop_is_ro(struct ploop *ploop)
 }
 
 static inline void remap_to_cluster(struct ploop *ploop, struct pio *pio,
-				    unsigned int cluster)
+				    unsigned int clu)
 {
 	pio->bi_iter.bi_sector &= ((1 << ploop->cluster_log) - 1);
-	pio->bi_iter.bi_sector |= (cluster << ploop->cluster_log);
+	pio->bi_iter.bi_sector |= (clu << ploop->cluster_log);
 }
 
 static inline bool whole_cluster(struct ploop *ploop, struct pio *pio)
@@ -348,17 +348,17 @@ static inline unsigned int ploop_nr_bat_clusters(struct ploop *ploop,
 	return bat_clusters;
 }
 
-static inline unsigned int bat_clu_to_page_nr(unsigned int cluster)
+static inline unsigned int bat_clu_to_page_nr(unsigned int clu)
 {
 	unsigned int byte;
 
-	byte = (cluster + PLOOP_MAP_OFFSET) * sizeof(map_index_t);
+	byte = (clu + PLOOP_MAP_OFFSET) * sizeof(map_index_t);
 	return byte >> PAGE_SHIFT;
 }
 
-static inline unsigned int bat_clu_idx_in_page(unsigned int cluster)
+static inline unsigned int bat_clu_idx_in_page(unsigned int clu)
 {
-	return (cluster + PLOOP_MAP_OFFSET) % (PAGE_SIZE / sizeof(map_index_t));
+	return (clu + PLOOP_MAP_OFFSET) % (PAGE_SIZE / sizeof(map_index_t));
 }
 
 static inline unsigned int page_clu_idx_to_bat_clu(unsigned int page_id,
@@ -373,63 +373,63 @@ extern struct md_page * md_page_find(struct ploop *ploop, unsigned int id);
 
 /*
  * This should be called in very rare cases. Avoid this function
- * in cycles by cluster, use ploop_for_each_md_page()-based
+ * in cycles by clu, use ploop_for_each_md_page()-based
  * iterations instead.
  */
 static inline unsigned int ploop_bat_entries(struct ploop *ploop,
-					     unsigned int cluster,
+					     unsigned int clu,
 					     u8 *bat_level)
 {
-	unsigned int *bat_entries, dst_cluster, id;
+	unsigned int *bat_entries, dst_clu, id;
 	struct md_page *md;
 
-	id = bat_clu_to_page_nr(cluster);
+	id = bat_clu_to_page_nr(clu);
 	md = md_page_find(ploop, id);
 	BUG_ON(!md);
 
 	/* Cluster index related to the page[page_nr] start */
-	cluster = bat_clu_idx_in_page(cluster);
+	clu = bat_clu_idx_in_page(clu);
 
 	if (bat_level)
-		*bat_level = md->bat_levels[cluster];
+		*bat_level = md->bat_levels[clu];
 
 	bat_entries = kmap_atomic(md->page);
-	dst_cluster = bat_entries[cluster];
+	dst_clu = bat_entries[clu];
 	kunmap_atomic(bat_entries);
-	return dst_cluster;
+	return dst_clu;
 }
 
 static inline bool cluster_is_in_top_delta(struct ploop *ploop,
-					   unsigned int cluster)
+					   unsigned int clu)
 {
-	unsigned int dst_cluster;
+	unsigned int dst_clu;
 	u8 level;
 
-	if (WARN_ON(cluster >= ploop->nr_bat_entries))
+	if (WARN_ON(clu >= ploop->nr_bat_entries))
 		return false;
-	dst_cluster = ploop_bat_entries(ploop, cluster, &level);
+	dst_clu = ploop_bat_entries(ploop, clu, &level);
 
-	if (dst_cluster == BAT_ENTRY_NONE || level < top_level(ploop))
+	if (dst_clu == BAT_ENTRY_NONE || level < top_level(ploop))
 		return false;
 	return true;
 }
 
 static inline bool md_page_cluster_is_in_top_delta(struct ploop *ploop,
-			      struct md_page *md, unsigned int cluster)
+			      struct md_page *md, unsigned int clu)
 {
 	unsigned int count, *bat_entries;
 	bool ret = true;
 
 	count = PAGE_SIZE / sizeof(map_index_t);
-	if ((cluster + 1) * sizeof(u8) > ksize(md->bat_levels) ||
-	    cluster >= count) {
-		WARN_ONCE(1, "cluster=%u count=%u\n", cluster, count);
+	if ((clu + 1) * sizeof(u8) > ksize(md->bat_levels) ||
+	    clu >= count) {
+		WARN_ONCE(1, "clu=%u count=%u\n", clu, count);
 		return false;
 	}
 
 	bat_entries = kmap_atomic(md->page);
-	if (bat_entries[cluster] == BAT_ENTRY_NONE ||
-	    md->bat_levels[cluster] < top_level(ploop))
+	if (bat_entries[clu] == BAT_ENTRY_NONE ||
+	    md->bat_levels[clu] < top_level(ploop))
 		ret = false;
 	kunmap_atomic(bat_entries);
 	return ret;
@@ -499,8 +499,8 @@ static inline bool fake_merge_pio(struct pio *pio)
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);
 extern void ploop_free_md_page(struct md_page *md);
 extern void free_md_pages_tree(struct rb_root *root);
-extern bool try_update_bat_entry(struct ploop *ploop, unsigned int cluster,
-				 u8 level, unsigned int dst_cluster);
+extern bool try_update_bat_entry(struct ploop *ploop, unsigned int clu,
+				 u8 level, unsigned int dst_clu);
 extern int convert_bat_entries(u32 *bat_entries, u32 count);
 
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
@@ -511,7 +511,7 @@ extern void do_ploop_fsync_work(struct work_struct *ws);
 extern void ploop_event_work(struct work_struct *work);
 extern int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 		    union map_info *map_context, struct request **clone);
-extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 cluster);
+extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 clu);
 extern void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio);
 extern int ploop_rw_page_sync(unsigned rw, struct file *file,
 			      u64 index, struct page *page);
