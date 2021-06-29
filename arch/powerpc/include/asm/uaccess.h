@@ -63,8 +63,8 @@ static inline int __access_ok(unsigned long addr, unsigned long size,
 
 #endif
 
-#define access_ok(type, addr, size)		\
-	(__chk_user_ptr(addr),			\
+#define access_ok(addr, size)		\
+	(__chk_user_ptr(addr),		\
 	 __access_ok((__force unsigned long)(addr), (size), get_fs()))
 
 /*
@@ -100,6 +100,51 @@ static inline int __access_ok(unsigned long addr, unsigned long size,
 	__get_user_nosleep((x), (ptr), sizeof(*(ptr)))
 #define __put_user_inatomic(x, ptr) \
 	__put_user_nosleep((__typeof__(*(ptr)))(x), (ptr), sizeof(*(ptr)))
+
+#ifdef CONFIG_PPC64
+
+#define ___get_user_instr(gu_op, dest, ptr)				\
+({									\
+	long __gui_ret = 0;						\
+	unsigned long __gui_ptr = (unsigned long)ptr;			\
+	struct ppc_inst __gui_inst;					\
+	unsigned int __prefix, __suffix;				\
+	__gui_ret = gu_op(__prefix, (unsigned int __user *)__gui_ptr);	\
+	if (__gui_ret == 0) {						\
+		if ((__prefix >> 26) == OP_PREFIX) {			\
+			__gui_ret = gu_op(__suffix,			\
+				(unsigned int __user *)__gui_ptr + 1);	\
+			__gui_inst = ppc_inst_prefix(__prefix,		\
+						     __suffix);		\
+		} else {						\
+			__gui_inst = ppc_inst(__prefix);		\
+		}							\
+		if (__gui_ret == 0)					\
+			(dest) = __gui_inst;				\
+	}								\
+	__gui_ret;							\
+})
+
+#define get_user_instr(x, ptr) \
+	___get_user_instr(get_user, x, ptr)
+
+#define __get_user_instr(x, ptr) \
+	___get_user_instr(__get_user, x, ptr)
+
+#define __get_user_instr_inatomic(x, ptr) \
+	___get_user_instr(__get_user_inatomic, x, ptr)
+
+#else /* !CONFIG_PPC64 */
+#define get_user_instr(x, ptr) \
+	get_user((x).val, (u32 __user *)(ptr))
+
+#define __get_user_instr(x, ptr) \
+	__get_user_nocheck((x).val, (u32 __user *)(ptr), sizeof(u32), true)
+
+#define __get_user_instr_inatomic(x, ptr) \
+	__get_user_nosleep((x).val, (u32 __user *)(ptr), sizeof(u32))
+
+#endif /* CONFIG_PPC64 */
 
 extern long __put_user_bad(void);
 
@@ -167,7 +212,7 @@ do {								\
 	long __pu_err = -EFAULT;					\
 	__typeof__(*(ptr)) __user *__pu_addr = (ptr);			\
 	might_fault();							\
-	if (access_ok(VERIFY_WRITE, __pu_addr, size))			\
+	if (access_ok(__pu_addr, size))			\
 		__put_user_size((x), __pu_addr, (size), __pu_err);	\
 	__pu_err;							\
 })
@@ -270,7 +315,7 @@ do {								\
 	unsigned long  __gu_val = 0;					\
 	const __typeof__(*(ptr)) __user *__gu_addr = (ptr);		\
 	might_fault();							\
-	if (access_ok(VERIFY_READ, __gu_addr, (size))) {		\
+	if (access_ok(__gu_addr, (size))) {		\
 		barrier_nospec();					\
 		__get_user_size(__gu_val, __gu_addr, (size), __gu_err);	\
 	}								\
@@ -363,12 +408,23 @@ static inline unsigned long raw_copy_to_user(void __user *to,
 	return __copy_tofrom_user(to, (__force const void __user *)from, n);
 }
 
+static __always_inline unsigned long __must_check
+copy_to_user_mcsafe(void __user *to, const void *from, unsigned long n)
+{
+	if (likely(check_copy_size(from, n, true))) {
+		if (access_ok(to, n))
+			n = memcpy_mcsafe((void *)to, from, n);
+	}
+
+	return n;
+}
+
 extern unsigned long __clear_user(void __user *addr, unsigned long size);
 
 static inline unsigned long clear_user(void __user *addr, unsigned long size)
 {
 	might_fault();
-	if (likely(access_ok(VERIFY_WRITE, addr, size)))
+	if (likely(access_ok(addr, size)))
 		return __clear_user(addr, size);
 	return size;
 }

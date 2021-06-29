@@ -18,6 +18,10 @@
 #include <linux/dma-direct.h>
 #include <linux/swiotlb.h>
 #include <linux/mem_encrypt.h>
+#include <linux/device.h>
+#include <linux/kernel.h>
+#include <linux/bitops.h>
+#include <linux/dma-mapping.h>
 
 #include <asm/tlbflush.h>
 #include <asm/fixmap.h>
@@ -37,6 +41,8 @@
  * section is later cleared.
  */
 u64 sme_me_mask __section(.data) = 0;
+u64 sev_status __section(.data) = 0;
+u64 sev_check_data __section(.data) = 0;
 EXPORT_SYMBOL(sme_me_mask);
 DEFINE_STATIC_KEY_FALSE(sev_enable_key);
 EXPORT_SYMBOL_GPL(sev_enable_key);
@@ -301,9 +307,13 @@ static int __init early_set_memory_enc_dec(unsigned long vaddr,
 		else
 			split_page_size_mask = 1 << PG_LEVEL_2M;
 
-		kernel_physical_mapping_init(__pa(vaddr & pmask),
-					     __pa((vaddr_end & pmask) + psize),
-					     split_page_size_mask);
+		/*
+		 * kernel_physical_mapping_change() does not flush the TLBs, so
+		 * a TLB flush is required after we exit from the for loop.
+		 */
+		kernel_physical_mapping_change(__pa(vaddr & pmask),
+					       __pa((vaddr_end & pmask) + psize),
+					       split_page_size_mask);
 	}
 
 	ret = 0;
@@ -343,11 +353,91 @@ EXPORT_SYMBOL(sme_active);
 
 bool sev_active(void)
 {
-	return sme_me_mask && sev_enabled;
+	return sev_status & MSR_AMD64_SEV_ENABLED;
 }
-EXPORT_SYMBOL(sev_active);
+
+/* Needs to be called from non-instrumentable code */
+bool noinstr sev_es_active(void)
+{
+	return sev_status & MSR_AMD64_SEV_ES_ENABLED;
+}
+
+/* Override for DMA direct allocation check - ARCH_HAS_FORCE_DMA_UNENCRYPTED */
+bool force_dma_unencrypted(struct device *dev)
+{
+	/*
+	 * For SEV, all DMA must be to unencrypted addresses.
+	 */
+	if (sev_active())
+		return true;
+
+	/*
+	 * For SME, all DMA must be to unencrypted addresses if the
+	 * device does not support DMA to addresses that include the
+	 * encryption mask.
+	 */
+	if (sme_active()) {
+		u64 dma_enc_mask = DMA_BIT_MASK(__ffs64(sme_me_mask));
+		u64 dma_dev_mask = min_not_zero(dev->coherent_dma_mask,
+						dev->bus_dma_limit);
+
+		if (dma_dev_mask <= dma_enc_mask)
+			return true;
+	}
+
+	return false;
+}
 
 /* Architecture __weak replacement functions */
+void __init mem_encrypt_free_decrypted_mem(void)
+{
+	unsigned long vaddr, vaddr_end, npages;
+	int r;
+
+	vaddr = (unsigned long)__start_bss_decrypted_unused;
+	vaddr_end = (unsigned long)__end_bss_decrypted;
+	npages = (vaddr_end - vaddr) >> PAGE_SHIFT;
+
+	/*
+	 * The unused memory range was mapped decrypted, change the encryption
+	 * attribute from decrypted to encrypted before freeing it.
+	 */
+	if (mem_encrypt_active()) {
+		r = set_memory_encrypted(vaddr, npages);
+		if (r) {
+			pr_warn("failed to free unused decrypted pages\n");
+			return;
+		}
+	}
+
+	free_init_pages("unused decrypted", vaddr, vaddr_end);
+}
+
+static void print_mem_encrypt_feature_info(void)
+{
+	pr_info("AMD Memory Encryption Features active:");
+
+	/* Secure Memory Encryption */
+	if (sme_active()) {
+		/*
+		 * SME is mutually exclusive with any of the SEV
+		 * features below.
+		 */
+		pr_cont(" SME\n");
+		return;
+	}
+
+	/* Secure Encrypted Virtualization */
+	if (sev_active())
+		pr_cont(" SEV");
+
+	/* Encrypted Register State */
+	if (sev_es_active())
+		pr_cont(" SEV-ES");
+
+	pr_cont("\n");
+}
+
 void __init mem_encrypt_init(void)
 {
 	if (!sme_me_mask)
@@ -357,20 +447,11 @@ void __init mem_encrypt_init(void)
 	swiotlb_update_mem_attributes();
 
 	/*
-	 * With SEV, DMA operations cannot use encryption, we need to use
-	 * SWIOTLB to bounce buffer DMA operation.
-	 */
-	if (sev_active())
-		dma_ops = &swiotlb_dma_ops;
-
-	/*
 	 * With SEV, we need to unroll the rep string I/O instructions.
 	 */
 	if (sev_active())
 		static_branch_enable(&sev_enable_key);
 
-	pr_info("AMD %s active\n",
-		sev_active() ? "Secure Encrypted Virtualization (SEV)"
-			     : "Secure Memory Encryption (SME)");
+	print_mem_encrypt_feature_info();
 }
 

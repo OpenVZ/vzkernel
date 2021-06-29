@@ -21,13 +21,20 @@ Core utilities
    local_ops
    workqueue
    genericirq
+   xarray
    flexible-arrays
    librs
+   dma-api
+   dma-api-howto
+   dma-attributes
+   dma-isa-lpc
    genalloc
    errseq
    printk-formats
    circular-buffers
+   pin_user_pages
    gfp_mask-from-fs-io
+   padata
 
 Interfaces for kernel debugging
 ===============================

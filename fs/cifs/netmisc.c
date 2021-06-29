@@ -130,10 +130,6 @@ static const struct smb_to_posix_error mapping_table_ERRSRV[] = {
 	{0, 0}
 };
 
-static const struct smb_to_posix_error mapping_table_ERRHRD[] = {
-	{0, 0}
-};
-
 /*
  * Convert a string containing text IPv4 or IPv6 address to binary form.
  *
@@ -898,6 +894,33 @@ map_smb_to_linux_error(char *buf, bool logErr)
 	return rc;
 }
 
+int
+map_and_check_smb_error(struct mid_q_entry *mid, bool logErr)
+{
+	int rc;
+	struct smb_hdr *smb = (struct smb_hdr *)mid->resp_buf;
+
+	rc = map_smb_to_linux_error((char *)smb, logErr);
+	if (rc == -EACCES && !(smb->Flags2 & SMBFLG2_ERR_STATUS)) {
+		/* possible ERRBaduid */
+		__u8 class = smb->Status.DosError.ErrorClass;
+		__u16 code = le16_to_cpu(smb->Status.DosError.Error);
+
+		/* switch can be used to handle different errors */
+		if (class == ERRSRV && code == ERRbaduid) {
+			cifs_dbg(FYI, "Server returned 0x%x, reconnecting session...\n",
+				code);
+			spin_lock(&GlobalMid_Lock);
+			if (mid->server->tcpStatus != CifsExiting)
+				mid->server->tcpStatus = CifsNeedReconnect;
+			spin_unlock(&GlobalMid_Lock);
+		}
+	}
+
+	return rc;
+}
+
+
 /*
  * calculate the size of the SMB message based on the fixed header
  * portion, the number of word parameters and the data portion of the message
@@ -918,10 +941,10 @@ smbCalcSize(void *buf, struct TCP_Server_Info *server)
  * Convert the NT UTC (based 1601-01-01, in hundred nanosecond units)
  * into Unix UTC (based 1970-01-01, in seconds).
  */
-struct timespec
+struct timespec64
 cifs_NTtimeToUnix(__le64 ntutc)
 {
-	struct timespec ts;
+	struct timespec64 ts;
 	/* BB what about the timezone? BB */
 
 	/* Subtract the NTFS time offset, then convert to 1s intervals. */
@@ -935,12 +958,12 @@ cifs_NTtimeToUnix(__le64 ntutc)
 	 */
 	if (t < 0) {
 		abs_t = -t;
-		ts.tv_nsec = (long)(do_div(abs_t, 10000000) * 100);
+		ts.tv_nsec = (time64_t)(do_div(abs_t, 10000000) * 100);
 		ts.tv_nsec = -ts.tv_nsec;
 		ts.tv_sec = -abs_t;
 	} else {
 		abs_t = t;
-		ts.tv_nsec = (long)do_div(abs_t, 10000000) * 100;
+		ts.tv_nsec = (time64_t)do_div(abs_t, 10000000) * 100;
 		ts.tv_sec = abs_t;
 	}
 
@@ -949,7 +972,7 @@ cifs_NTtimeToUnix(__le64 ntutc)
 
 /* Convert the Unix UTC into NT UTC. */
 u64
-cifs_UnixTimeToNT(struct timespec t)
+cifs_UnixTimeToNT(struct timespec64 t)
 {
 	/* Convert to 100ns intervals and then add the NTFS time offset. */
 	return (u64) t.tv_sec * 10000000 + t.tv_nsec/100 + NTFS_TIME_OFFSET;
@@ -959,10 +982,11 @@ static const int total_days_of_prev_months[] = {
 	0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
 };
 
-struct timespec cnvrtDosUnixTm(__le16 le_date, __le16 le_time, int offset)
+struct timespec64 cnvrtDosUnixTm(__le16 le_date, __le16 le_time, int offset)
 {
-	struct timespec ts;
-	int sec, min, days, month, year;
+	struct timespec64 ts;
+	time64_t sec, days;
+	int min, day, month, year;
 	u16 date = le16_to_cpu(le_date);
 	u16 time = le16_to_cpu(le_time);
 	SMB_TIME *st = (SMB_TIME *)&time;
@@ -973,20 +997,20 @@ struct timespec cnvrtDosUnixTm(__le16 le_date, __le16 le_time, int offset)
 	sec = 2 * st->TwoSeconds;
 	min = st->Minutes;
 	if ((sec > 59) || (min > 59))
-		cifs_dbg(VFS, "illegal time min %d sec %d\n", min, sec);
+		cifs_dbg(VFS, "Invalid time min %d sec %lld\n", min, sec);
 	sec += (min * 60);
 	sec += 60 * 60 * st->Hours;
 	if (st->Hours > 24)
-		cifs_dbg(VFS, "illegal hours %d\n", st->Hours);
-	days = sd->Day;
+		cifs_dbg(VFS, "Invalid hours %d\n", st->Hours);
+	day = sd->Day;
 	month = sd->Month;
-	if (days < 1 || days > 31 || month < 1 || month > 12) {
-		cifs_dbg(VFS, "illegal date, month %d day: %d\n", month, days);
-		days = clamp(days, 1, 31);
+	if (day < 1 || day > 31 || month < 1 || month > 12) {
+		cifs_dbg(VFS, "Invalid date, month %d day: %d\n", month, day);
+		day = clamp(day, 1, 31);
 		month = clamp(month, 1, 12);
 	}
 	month -= 1;
-	days += total_days_of_prev_months[month];
+	days = day + total_days_of_prev_months[month];
 	days += 3652; /* account for difference in days between 1980 and 1970 */
 	year = sd->Year;
 	days += year * 365;

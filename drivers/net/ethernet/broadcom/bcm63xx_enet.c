@@ -35,7 +35,6 @@
 #include "bcm63xx_enet.h"
 
 static char bcm_enet_driver_name[] = "bcm63xx_enet";
-static char bcm_enet_driver_version[] = "1.0";
 
 static int copybreak __read_mostly = 128;
 module_param(copybreak, int, 0);
@@ -890,19 +889,10 @@ static int bcm_enet_open(struct net_device *dev)
 		}
 
 		/* mask with MAC supported features */
-		phydev->supported &= (SUPPORTED_10baseT_Half |
-				      SUPPORTED_10baseT_Full |
-				      SUPPORTED_100baseT_Half |
-				      SUPPORTED_100baseT_Full |
-				      SUPPORTED_Autoneg |
-				      SUPPORTED_Pause |
-				      SUPPORTED_MII);
-		phydev->advertising = phydev->supported;
-
-		if (priv->pause_auto && priv->pause_rx && priv->pause_tx)
-			phydev->advertising |= SUPPORTED_Pause;
-		else
-			phydev->advertising &= ~SUPPORTED_Pause;
+		phy_support_sym_pause(phydev);
+		phy_set_max_speed(phydev, SPEED_100);
+		phy_set_sym_pause(phydev, priv->pause_rx, priv->pause_rx,
+				  priv->pause_auto);
 
 		phy_attached_info(phydev);
 
@@ -1325,8 +1315,6 @@ static void bcm_enet_get_drvinfo(struct net_device *netdev,
 				 struct ethtool_drvinfo *drvinfo)
 {
 	strlcpy(drvinfo->driver, bcm_enet_driver_name, sizeof(drvinfo->driver));
-	strlcpy(drvinfo->version, bcm_enet_driver_version,
-		sizeof(drvinfo->version));
 	strlcpy(drvinfo->fw_version, "N/A", sizeof(drvinfo->fw_version));
 	strlcpy(drvinfo->bus_info, "bcm63xx", sizeof(drvinfo->bus_info));
 }
@@ -2551,10 +2539,9 @@ static int bcm_enetsw_get_sset_count(struct net_device *netdev,
 static void bcm_enetsw_get_drvinfo(struct net_device *netdev,
 				   struct ethtool_drvinfo *drvinfo)
 {
-	strncpy(drvinfo->driver, bcm_enet_driver_name, 32);
-	strncpy(drvinfo->version, bcm_enet_driver_version, 32);
+	strncpy(drvinfo->driver, bcm_enet_driver_name, sizeof(drvinfo->driver));
 	strncpy(drvinfo->fw_version, "N/A", 32);
-	strncpy(drvinfo->bus_info, "bcm63xx", 32);
+	strncpy(drvinfo->bus_info, "bcm63xx", sizeof(drvinfo->bus_info));
 }
 
 static void bcm_enetsw_get_ethtool_stats(struct net_device *netdev,

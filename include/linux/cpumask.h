@@ -115,12 +115,17 @@ extern struct cpumask __cpu_active_mask;
 #define cpu_active(cpu)		((cpu) == 0)
 #endif
 
+static inline void cpu_max_bits_warn(unsigned int cpu, unsigned int bits)
+{
+#ifdef CONFIG_DEBUG_PER_CPU_MAPS
+	WARN_ON_ONCE(cpu >= bits);
+#endif /* CONFIG_DEBUG_PER_CPU_MAPS */
+}
+
 /* verify cpu argument to cpumask_* operators */
 static inline unsigned int cpumask_check(unsigned int cpu)
 {
-#ifdef CONFIG_DEBUG_PER_CPU_MAPS
-	WARN_ON_ONCE(cpu >= nr_cpumask_bits);
-#endif /* CONFIG_DEBUG_PER_CPU_MAPS */
+	cpu_max_bits_warn(cpu, nr_cpumask_bits);
 	return cpu;
 }
 
@@ -154,6 +159,13 @@ static inline unsigned int cpumask_next_and(int n,
 	return n+1;
 }
 
+static inline unsigned int cpumask_next_wrap(int n, const struct cpumask *mask,
+					     int start, bool wrap)
+{
+	/* cpu0 unless stop condition, wrap and at cpu0, then nr_cpumask_bits */
+	return (wrap && n == 0);
+}
+
 /* cpu must be a valid cpu, ie 0, so there's no other choice. */
 static inline unsigned int cpumask_any_but(const struct cpumask *mask,
 					   unsigned int cpu)
@@ -164,6 +176,11 @@ static inline unsigned int cpumask_any_but(const struct cpumask *mask,
 static inline unsigned int cpumask_local_spread(unsigned int i, int node)
 {
 	return 0;
+}
+
+static inline int cpumask_any_and_distribute(const struct cpumask *src1p,
+					     const struct cpumask *src2p) {
+	return cpumask_next_and(-1, src1p, src2p);
 }
 
 #define for_each_cpu(cpu, mask)			\
@@ -217,6 +234,8 @@ static inline unsigned int cpumask_next_zero(int n, const struct cpumask *srcp)
 int cpumask_next_and(int n, const struct cpumask *, const struct cpumask *);
 int cpumask_any_but(const struct cpumask *mask, unsigned int cpu);
 unsigned int cpumask_local_spread(unsigned int i, int node);
+int cpumask_any_and_distribute(const struct cpumask *src1p,
+			       const struct cpumask *src2p);
 
 /**
  * for_each_cpu - iterate over every cpu in a mask

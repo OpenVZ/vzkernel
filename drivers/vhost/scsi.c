@@ -46,7 +46,6 @@
 #include <linux/virtio_scsi.h>
 #include <linux/llist.h>
 #include <linux/bitmap.h>
-#include <linux/percpu_ida.h>
 
 #include "vhost.h"
 
@@ -57,6 +56,12 @@
 #define VHOST_SCSI_PREALLOC_SGLS 2048
 #define VHOST_SCSI_PREALLOC_UPAGES 2048
 #define VHOST_SCSI_PREALLOC_PROT_SGLS 512
+
+/* Max number of requests before requeueing the job.
+ * Using this limit prevents one virtqueue from starving others with
+ * request.
+ */
+#define VHOST_SCSI_WEIGHT 256
 
 struct vhost_scsi_inflight {
 	/* Wait for the flush operation to finish */
@@ -273,11 +278,6 @@ static int vhost_scsi_check_false(struct se_portal_group *se_tpg)
 	return 0;
 }
 
-static char *vhost_scsi_get_fabric_name(void)
-{
-	return "vhost";
-}
-
 static char *vhost_scsi_get_fabric_wwn(struct se_portal_group *se_tpg)
 {
 	struct vhost_scsi_tpg *tpg = container_of(se_tpg,
@@ -324,7 +324,7 @@ static void vhost_scsi_release_cmd(struct se_cmd *se_cmd)
 	}
 
 	vhost_scsi_put_inflight(tv_cmd->inflight);
-	percpu_ida_free(&se_sess->sess_tag_pool, se_cmd->map_tag);
+	target_free_tag(se_sess, se_cmd);
 }
 
 static u32 vhost_scsi_sess_get_index(struct se_session *se_sess)
@@ -336,11 +336,6 @@ static int vhost_scsi_write_pending(struct se_cmd *se_cmd)
 {
 	/* Go ahead and process the write immediately */
 	target_execute_cmd(se_cmd);
-	return 0;
-}
-
-static int vhost_scsi_write_pending_status(struct se_cmd *se_cmd)
-{
 	return 0;
 }
 
@@ -567,7 +562,7 @@ vhost_scsi_get_tag(struct vhost_virtqueue *vq, struct vhost_scsi_tpg *tpg,
 	struct se_session *se_sess;
 	struct scatterlist *sg, *prot_sg;
 	struct page **pages;
-	int tag;
+	int tag, cpu;
 
 	tv_nexus = tpg->tpg_nexus;
 	if (!tv_nexus) {
@@ -576,7 +571,7 @@ vhost_scsi_get_tag(struct vhost_virtqueue *vq, struct vhost_scsi_tpg *tpg,
 	}
 	se_sess = tv_nexus->tvn_se_sess;
 
-	tag = percpu_ida_alloc(&se_sess->sess_tag_pool, TASK_RUNNING);
+	tag = sbitmap_queue_get(&se_sess->sess_tag_pool, &cpu);
 	if (tag < 0) {
 		pr_err("Unable to obtain tag for vhost_scsi_cmd\n");
 		return ERR_PTR(-ENOMEM);
@@ -591,6 +586,7 @@ vhost_scsi_get_tag(struct vhost_virtqueue *vq, struct vhost_scsi_tpg *tpg,
 	cmd->tvc_prot_sgl = prot_sg;
 	cmd->tvc_upages = pages;
 	cmd->tvc_se_cmd.map_tag = tag;
+	cmd->tvc_se_cmd.map_cpu = cpu;
 	cmd->tvc_tag = scsi_tag;
 	cmd->tvc_lun = lun;
 	cmd->tvc_task_attr = task_attr;
@@ -1396,7 +1392,8 @@ static int vhost_scsi_open(struct inode *inode, struct file *f)
 		vqs[i] = &vs->vqs[i].vq;
 		vs->vqs[i].vq.handle_kick = vhost_scsi_handle_kick;
 	}
-	vhost_dev_init(&vs->dev, vqs, VHOST_SCSI_MAX_VQ);
+	vhost_dev_init(&vs->dev, vqs, VHOST_SCSI_MAX_VQ, UIO_MAXIOV,
+		       VHOST_SCSI_WEIGHT, 0, NULL);
 
 	vhost_scsi_init_inflight(vs, NULL);
 
@@ -1495,21 +1492,11 @@ vhost_scsi_ioctl(struct file *f,
 	}
 }
 
-#ifdef CONFIG_COMPAT
-static long vhost_scsi_compat_ioctl(struct file *f, unsigned int ioctl,
-				unsigned long arg)
-{
-	return vhost_scsi_ioctl(f, ioctl, (unsigned long)compat_ptr(arg));
-}
-#endif
-
 static const struct file_operations vhost_scsi_fops = {
 	.owner          = THIS_MODULE,
 	.release        = vhost_scsi_release,
 	.unlocked_ioctl = vhost_scsi_ioctl,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl	= vhost_scsi_compat_ioctl,
-#endif
+	.compat_ioctl	= compat_ptr_ioctl,
 	.open           = vhost_scsi_open,
 	.llseek		= noop_llseek,
 };
@@ -1738,7 +1725,7 @@ static int vhost_scsi_make_nexus(struct vhost_scsi_tpg *tpg,
 	 * struct se_node_acl for the vhost_scsi struct se_portal_group with
 	 * the SCSI Initiator port name of the passed configfs group 'name'.
 	 */
-	tv_nexus->tvn_se_sess = target_alloc_session(&tpg->se_tpg,
+	tv_nexus->tvn_se_sess = target_setup_session(&tpg->se_tpg,
 					VHOST_SCSI_DEFAULT_TAGS,
 					sizeof(struct vhost_scsi_cmd),
 					TARGET_PROT_DIN_PASS | TARGET_PROT_DOUT_PASS,
@@ -1797,7 +1784,7 @@ static int vhost_scsi_drop_nexus(struct vhost_scsi_tpg *tpg)
 	/*
 	 * Release the SCSI I_T Nexus to the emulated vhost Target Port
 	 */
-	transport_deregister_session(tv_nexus->tvn_se_sess);
+	target_remove_session(se_sess);
 	tpg->tpg_nexus = NULL;
 	mutex_unlock(&tpg->tv_tpg_mutex);
 
@@ -1912,9 +1899,7 @@ static struct configfs_attribute *vhost_scsi_tpg_attrs[] = {
 };
 
 static struct se_portal_group *
-vhost_scsi_make_tpg(struct se_wwn *wwn,
-		   struct config_group *group,
-		   const char *name)
+vhost_scsi_make_tpg(struct se_wwn *wwn, const char *name)
 {
 	struct vhost_scsi_tport *tport = container_of(wwn,
 			struct vhost_scsi_tport, tport_wwn);
@@ -2059,8 +2044,7 @@ static struct configfs_attribute *vhost_scsi_wwn_attrs[] = {
 
 static const struct target_core_fabric_ops vhost_scsi_ops = {
 	.module				= THIS_MODULE,
-	.name				= "vhost",
-	.get_fabric_name		= vhost_scsi_get_fabric_name,
+	.fabric_name			= "vhost",
 	.tpg_get_wwn			= vhost_scsi_get_fabric_wwn,
 	.tpg_get_tag			= vhost_scsi_get_tpgt,
 	.tpg_check_demo_mode		= vhost_scsi_check_true,
@@ -2074,7 +2058,6 @@ static const struct target_core_fabric_ops vhost_scsi_ops = {
 	.sess_get_index			= vhost_scsi_sess_get_index,
 	.sess_get_initiator_sid		= NULL,
 	.write_pending			= vhost_scsi_write_pending,
-	.write_pending_status		= vhost_scsi_write_pending_status,
 	.set_default_node_attributes	= vhost_scsi_set_default_node_attrs,
 	.get_cmd_state			= vhost_scsi_get_cmd_state,
 	.queue_data_in			= vhost_scsi_queue_data_in,

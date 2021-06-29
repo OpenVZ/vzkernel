@@ -7290,7 +7290,7 @@ static int ufshcd_set_dev_pwr_mode(struct ufs_hba *hba,
 		sdev_printk(KERN_WARNING, sdp,
 			    "START_STOP failed for power mode: %d, result %x\n",
 			    pwr_mode, ret);
-		if (driver_byte(ret) & DRIVER_SENSE)
+		if (driver_byte(ret) == DRIVER_SENSE)
 			scsi_print_sense_hdr(sdp, NULL, &sshdr);
 	}
 
@@ -7926,6 +7926,7 @@ int ufshcd_alloc_host(struct device *dev, struct ufs_hba **hba_handle)
 		err = -ENOMEM;
 		goto out_error;
 	}
+
 	hba = shost_priv(host);
 	hba->host = host;
 	hba->dev = dev;

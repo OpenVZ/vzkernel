@@ -24,7 +24,7 @@
 #include <linux/root_dev.h>
 #include <linux/console.h>
 #include <linux/export.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 
 #include <asm/machdep.h>
 #include <asm/firmware.h>
@@ -126,7 +126,10 @@ static void __init prealloc(struct ps3_prealloc *p)
 	if (!p->size)
 		return;
 
-	p->address = memblock_virt_alloc(p->size, p->align);
+	p->address = memblock_alloc(p->size, p->align);
+	if (!p->address)
+		panic("%s: Failed to allocate %lu bytes align=0x%lx\n",
+		      __func__, p->size, p->align);
 
 	printk(KERN_INFO "%s: %lu bytes at %p\n", p->name, p->size,
 	       p->address);
@@ -147,7 +150,7 @@ static int __init early_parse_ps3fb(char *p)
 	if (!p)
 		return 1;
 
-	ps3fb_videomemory.size = _ALIGN_UP(memparse(p, &p),
+	ps3fb_videomemory.size = ALIGN(memparse(p, &p),
 					   ps3fb_videomemory.align);
 	return 0;
 }

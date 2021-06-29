@@ -73,9 +73,6 @@ static void req_retry(struct rxe_qp *qp)
 	int npsn;
 	int first = 1;
 
-	wqe = queue_head(qp->sq.queue);
-	npsn = (qp->comp.psn - wqe->first_psn) & BTH_PSN_MASK;
-
 	qp->req.wqe_index	= consumer_index(qp->sq.queue);
 	qp->req.psn		= qp->comp.psn;
 	qp->req.opcode		= -1;
@@ -107,11 +104,17 @@ static void req_retry(struct rxe_qp *qp)
 		if (first) {
 			first = 0;
 
-			if (mask & WR_WRITE_OR_SEND_MASK)
+			if (mask & WR_WRITE_OR_SEND_MASK) {
+				npsn = (qp->comp.psn - wqe->first_psn) &
+					BTH_PSN_MASK;
 				retry_first_write_send(qp, wqe, mask, npsn);
+			}
 
-			if (mask & WR_READ_MASK)
+			if (mask & WR_READ_MASK) {
+				npsn = (wqe->dma.length - wqe->dma.resid) /
+					qp->mtu;
 				wqe->iova += npsn * qp->mtu;
+			}
 		}
 
 		wqe->state = wqe_state_posted;
@@ -378,7 +381,6 @@ static struct sk_buff *init_req_packet(struct rxe_qp *qp,
 				       struct rxe_pkt_info *pkt)
 {
 	struct rxe_dev		*rxe = to_rdev(qp->ibqp.device);
-	struct rxe_port		*port = &rxe->port;
 	struct sk_buff		*skb;
 	struct rxe_send_wr	*ibwr = &wqe->wr;
 	struct rxe_av		*av;
@@ -416,9 +418,7 @@ static struct sk_buff *init_req_packet(struct rxe_qp *qp,
 			(pkt->mask & (RXE_WRITE_MASK | RXE_IMMDT_MASK)) ==
 			(RXE_WRITE_MASK | RXE_IMMDT_MASK));
 
-	pkey = (qp_type(qp) == IB_QPT_GSI) ?
-		 port->pkey_tbl[ibwr->wr.ud.pkey_index] :
-		 port->pkey_tbl[qp->attr.pkey_index];
+	pkey = IB_DEFAULT_PKEY_FULL;
 
 	qp_num = (pkt->mask & RXE_DETH_MASK) ? ibwr->wr.ud.remote_qpn :
 					 qp->attr.dest_qp_num;
@@ -435,7 +435,7 @@ static struct sk_buff *init_req_packet(struct rxe_qp *qp,
 	if (pkt->mask & RXE_RETH_MASK) {
 		reth_set_rkey(pkt, ibwr->wr.rdma.rkey);
 		reth_set_va(pkt, wqe->iova);
-		reth_set_len(pkt, wqe->dma.length);
+		reth_set_len(pkt, wqe->dma.resid);
 	}
 
 	if (pkt->mask & RXE_IMMDT_MASK)
@@ -476,7 +476,7 @@ static int fill_packet(struct rxe_qp *qp, struct rxe_send_wqe *wqe,
 	u32 *p;
 	int err;
 
-	err = rxe_prepare(rxe, pkt, skb, &crc);
+	err = rxe_prepare(pkt, skb, &crc);
 	if (err)
 		return err;
 
@@ -496,6 +496,12 @@ static int fill_packet(struct rxe_qp *qp, struct rxe_send_wqe *wqe,
 					&crc);
 			if (err)
 				return err;
+		}
+		if (bth_pad(pkt)) {
+			u8 *pad = payload_addr(pkt) + paylen;
+
+			memset(pad, 0, bth_pad(pkt));
+			crc = rxe_crc32(rxe, crc, pad, bth_pad(pkt));
 		}
 	}
 	p = payload_addr(pkt) + paylen + bth_pad(pkt);
@@ -640,6 +646,7 @@ next_wqe:
 			rmr->access = wqe->wr.wr.reg.access;
 			rmr->lkey = wqe->wr.wr.reg.key;
 			rmr->rkey = wqe->wr.wr.reg.key;
+			rmr->iova = wqe->wr.wr.reg.mr->iova;
 			wqe->state = wqe_state_done;
 			wqe->status = IB_WC_SUCCESS;
 		} else {
@@ -725,7 +732,7 @@ next_wqe:
 	save_state(wqe, qp, &rollback_wqe, &rollback_psn);
 	update_wqe_state(qp, wqe, &pkt);
 	update_wqe_psn(qp, wqe, &pkt, payload);
-	ret = rxe_xmit_packet(to_rdev(qp->ibqp.device), qp, &pkt, skb);
+	ret = rxe_xmit_packet(qp, &pkt, skb);
 	if (ret) {
 		qp->need_req_skb = 1;
 

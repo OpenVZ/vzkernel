@@ -120,6 +120,7 @@ static int gue_udp_recv(struct sock *sk, struct sk_buff *skb)
 	struct guehdr *guehdr;
 	void *data;
 	u16 doffset = 0;
+	u8 proto_ctype;
 
 	if (!fou)
 		return 1;
@@ -211,27 +212,28 @@ static int gue_udp_recv(struct sock *sk, struct sk_buff *skb)
 	if (unlikely(guehdr->control))
 		return gue_control_message(skb, guehdr);
 
+	proto_ctype = guehdr->proto_ctype;
 	__skb_pull(skb, sizeof(struct udphdr) + hdrlen);
 	skb_reset_transport_header(skb);
 
 	if (iptunnel_pull_offloads(skb))
 		goto drop;
 
-	return -guehdr->proto_ctype;
+	return -proto_ctype;
 
 drop:
 	kfree_skb(skb);
 	return 0;
 }
 
-static struct sk_buff **fou_gro_receive(struct sock *sk,
-					struct sk_buff **head,
-					struct sk_buff *skb)
+static struct sk_buff *fou_gro_receive(struct sock *sk,
+				       struct list_head *head,
+				       struct sk_buff *skb)
 {
-	const struct net_offload *ops;
-	struct sk_buff **pp = NULL;
 	u8 proto = fou_from_sock(sk)->protocol;
 	const struct net_offload **offloads;
+	const struct net_offload *ops;
+	struct sk_buff *pp = NULL;
 
 	/* We can clear the encap_mark for FOU as we are essentially doing
 	 * one of two possible things.  We are either adding an L4 tunnel
@@ -305,13 +307,13 @@ static struct guehdr *gue_gro_remcsum(struct sk_buff *skb, unsigned int off,
 	return guehdr;
 }
 
-static struct sk_buff **gue_gro_receive(struct sock *sk,
-					struct sk_buff **head,
-					struct sk_buff *skb)
+static struct sk_buff *gue_gro_receive(struct sock *sk,
+				       struct list_head *head,
+				       struct sk_buff *skb)
 {
 	const struct net_offload **offloads;
 	const struct net_offload *ops;
-	struct sk_buff **pp = NULL;
+	struct sk_buff *pp = NULL;
 	struct sk_buff *p;
 	struct guehdr *guehdr;
 	size_t len, optlen, hdrlen, off;
@@ -397,7 +399,7 @@ static struct sk_buff **gue_gro_receive(struct sock *sk,
 
 	skb_gro_pull(skb, hdrlen);
 
-	for (p = *head; p; p = p->next) {
+	list_for_each_entry(p, head, list) {
 		const struct guehdr *guehdr2;
 
 		if (!NAPI_GRO_CB(p)->same_flow)
@@ -806,21 +808,21 @@ static int fou_nl_dump(struct sk_buff *skb, struct netlink_callback *cb)
 static const struct genl_ops fou_nl_ops[] = {
 	{
 		.cmd = FOU_CMD_ADD,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = fou_nl_cmd_add_port,
-		.policy = fou_nl_policy,
 		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = FOU_CMD_DEL,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = fou_nl_cmd_rm_port,
-		.policy = fou_nl_policy,
 		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = FOU_CMD_GET,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = fou_nl_cmd_get_port,
 		.dumpit = fou_nl_dump,
-		.policy = fou_nl_policy,
 	},
 };
 
@@ -829,6 +831,7 @@ static struct genl_family fou_nl_family __ro_after_init = {
 	.name		= FOU_GENL_NAME,
 	.version	= FOU_GENL_VERSION,
 	.maxattr	= FOU_ATTR_MAX,
+	.policy = fou_nl_policy,
 	.netnsok	= true,
 	.module		= THIS_MODULE,
 	.ops		= fou_nl_ops,

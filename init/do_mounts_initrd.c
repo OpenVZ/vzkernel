@@ -18,6 +18,7 @@
 #include <linux/sched.h>
 #include <linux/freezer.h>
 #include <linux/kmod.h>
+#include <uapi/linux/mount.h>
 
 #include "do_mounts.h"
 
@@ -62,9 +63,6 @@ static void __init handle_initrd(void)
 	mount_block_root("/dev/root.old", root_mountflags & ~MS_RDONLY);
 	ksys_mkdir("/old", 0700);
 	ksys_chdir("/old");
-
-	/* try loading default modules from initrd */
-	load_default_modules();
 
 	/*
 	 * In case that a resume from disk is carried out by linuxrc or one of

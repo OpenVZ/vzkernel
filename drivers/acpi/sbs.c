@@ -41,9 +41,6 @@
 #define ACPI_SBS_CLASS			"sbs"
 #define ACPI_AC_CLASS			"ac_adapter"
 #define ACPI_SBS_DEVICE_NAME		"Smart Battery System"
-#define ACPI_SBS_FILE_INFO		"info"
-#define ACPI_SBS_FILE_STATE		"state"
-#define ACPI_SBS_FILE_ALARM		"alarm"
 #define ACPI_BATTERY_DIR_NAME		"BAT%i"
 #define ACPI_AC_DIR_NAME		"AC0"
 
@@ -382,7 +379,7 @@ static int acpi_battery_get_state(struct acpi_battery *battery)
 					 state_readers[i].mode,
 					 ACPI_SBS_BATTERY,
 					 state_readers[i].command,
-				         (u8 *)battery +
+					 (u8 *)battery +
 						state_readers[i].offset);
 		if (result)
 			goto end;
@@ -441,9 +438,13 @@ static int acpi_ac_get_present(struct acpi_sbs *sbs)
 
 	/*
 	 * The spec requires that bit 4 always be 1. If it's not set, assume
-	 * that the implementation doesn't support an SBS charger
+	 * that the implementation doesn't support an SBS charger.
+	 *
+	 * And on some MacBooks a status of 0xffff is always returned, no
+	 * matter whether the charger is plugged in or not, which is also
+	 * wrong, so ignore the SBS charger for those too.
 	 */
-	if (!((status >> 4) & 0x1))
+	if (!((status >> 4) & 0x1) || status == 0xffff)
 		return -ENODEV;
 
 	sbs->charger_present = (status >> 15) & 0x1;

@@ -20,6 +20,8 @@
 #include <linux/percpu.h>
 #include <linux/slab.h>
 #include <asm/prom.h>
+#include <asm/cputhreads.h>
+#include <asm/smp.h>
 
 #include "cacheinfo.h"
 
@@ -627,24 +629,75 @@ static ssize_t level_show(struct kobject *k, struct kobj_attribute *attr, char *
 static struct kobj_attribute cache_level_attr =
 	__ATTR(level, 0444, level_show, NULL);
 
-static ssize_t shared_cpu_map_show(struct kobject *k, struct kobj_attribute *attr, char *buf)
+static unsigned int index_dir_to_cpu(struct cache_index_dir *index)
+{
+	struct kobject *index_dir_kobj = &index->kobj;
+	struct kobject *cache_dir_kobj = index_dir_kobj->parent;
+	struct kobject *cpu_dev_kobj = cache_dir_kobj->parent;
+	struct device *dev = kobj_to_dev(cpu_dev_kobj);
+
+	return dev->id;
+}
+
+/*
+ * On big-core systems, each core has two groups of CPUs each of which
+ * has its own L1-cache. The thread-siblings which share l1-cache with
+ * @cpu can be obtained via cpu_smallcore_mask().
+ *
+ * On some big-core systems, the L2 cache is shared only between some
+ * groups of siblings. This is already parsed and encoded in
+ * cpu_l2_cache_mask().
+ *
+ * TODO: cache_lookup_or_instantiate() needs to be made aware of the
+ *       "ibm,thread-groups" property so that cache->shared_cpu_map
+ *       reflects the correct siblings on platforms that have this
+ *       device-tree property. This helper function is only a stop-gap
+ *       solution so that we report the correct siblings to the
+ *       userspace via sysfs.
+ */
+static const struct cpumask *get_shared_cpu_map(struct cache_index_dir *index, struct cache *cache)
+{
+	if (has_big_cores) {
+		int cpu = index_dir_to_cpu(index);
+		if (cache->level == 1)
+			return cpu_smallcore_mask(cpu);
+		if (cache->level == 2 && thread_group_shares_l2)
+			return cpu_l2_cache_mask(cpu);
+	}
+
+	return &cache->shared_cpu_map;
+}
+
+static ssize_t
+show_shared_cpumap(struct kobject *k, struct kobj_attribute *attr, char *buf, bool list)
 {
 	struct cache_index_dir *index;
 	struct cache *cache;
-	int ret;
+	const struct cpumask *mask;
 
 	index = kobj_to_cache_index_dir(k);
 	cache = index->cache;
 
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%*pb\n",
-			cpumask_pr_args(&cache->shared_cpu_map));
-	buf[ret++] = '\n';
-	buf[ret] = '\0';
-	return ret;
+	mask = get_shared_cpu_map(index, cache);
+
+	return cpumap_print_to_pagebuf(list, buf, mask);
+}
+
+static ssize_t shared_cpu_map_show(struct kobject *k, struct kobj_attribute *attr, char *buf)
+{
+	return show_shared_cpumap(k, attr, buf, false);
+}
+
+static ssize_t shared_cpu_list_show(struct kobject *k, struct kobj_attribute *attr, char *buf)
+{
+	return show_shared_cpumap(k, attr, buf, true);
 }
 
 static struct kobj_attribute cache_shared_cpu_map_attr =
 	__ATTR(shared_cpu_map, 0444, shared_cpu_map_show, NULL);
+
+static struct kobj_attribute cache_shared_cpu_list_attr =
+	__ATTR(shared_cpu_list, 0444, shared_cpu_list_show, NULL);
 
 /* Attributes which should always be created -- the kobject/sysfs core
  * does this automatically via kobj_type->default_attrs.  This is the
@@ -654,6 +707,7 @@ static struct attribute *cache_index_default_attrs[] = {
 	&cache_type_attr.attr,
 	&cache_level_attr.attr,
 	&cache_shared_cpu_map_attr.attr,
+	&cache_shared_cpu_list_attr.attr,
 	NULL,
 };
 
@@ -865,4 +919,25 @@ void cacheinfo_cpu_offline(unsigned int cpu_id)
 	if (cache)
 		cache_cpu_clear(cache, cpu_id);
 }
+
+void cacheinfo_teardown(void)
+{
+	unsigned int cpu;
+
+	lockdep_assert_cpus_held();
+
+	for_each_online_cpu(cpu)
+		cacheinfo_cpu_offline(cpu);
+}
+
+void cacheinfo_rebuild(void)
+{
+	unsigned int cpu;
+
+	lockdep_assert_cpus_held();
+
+	for_each_online_cpu(cpu)
+		cacheinfo_cpu_online(cpu);
+}
+
 #endif /* (CONFIG_PPC_PSERIES && CONFIG_SUSPEND) || CONFIG_HOTPLUG_CPU */

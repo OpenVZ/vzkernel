@@ -188,7 +188,7 @@ static int acpi_pci_irq_check_entry(acpi_handle handle, struct pci_dev *dev,
 	 * configure the IRQ assigned to this slot|dev|pin.  The 'source_index'
 	 * indicates which resource descriptor in the resource template (of
 	 * the link device) this interrupt is allocated from.
-	 * 
+	 *
 	 * NOTE: Don't query the Link Device for IRQ information at this time
 	 *       because Link Device enumeration may not have occurred yet
 	 *       (e.g. exists somewhere 'below' this _PRT entry in the ACPI
@@ -462,8 +462,10 @@ int acpi_pci_irq_enable(struct pci_dev *dev)
 		 * No IRQ known to the ACPI subsystem - maybe the BIOS /
 		 * driver reported one, then use it. Exit in any case.
 		 */
-		if (!acpi_pci_irq_valid(dev, pin))
+		if (!acpi_pci_irq_valid(dev, pin)) {
+			kfree(entry);
 			return 0;
+		}
 
 		if (acpi_isa_register_gsi(dev))
 			dev_warn(&dev->dev, "PCI INT %c: no GSI\n",

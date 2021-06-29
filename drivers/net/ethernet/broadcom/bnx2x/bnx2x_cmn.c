@@ -27,7 +27,6 @@
 #include <net/tcp.h>
 #include <net/ipv6.h>
 #include <net/ip6_checksum.h>
-#include <net/busy_poll.h>
 #include <linux/prefetch.h>
 #include "bnx2x_cmn.h"
 #include "bnx2x_init.h"
@@ -285,6 +284,9 @@ int bnx2x_tx_int(struct bnx2x *bp, struct bnx2x_fp_txdata *txdata)
 	txq = netdev_get_tx_queue(bp->dev, txdata->txq_index);
 	hw_cons = le16_to_cpu(*txdata->tx_cons_sb);
 	sw_cons = txdata->tx_pkt_cons;
+
+	/* Ensure subsequent loads occur after hw_cons */
+	smp_rmb();
 
 	while (sw_cons != hw_cons) {
 		u16 pkt_cons;
@@ -1910,7 +1912,8 @@ void bnx2x_netif_stop(struct bnx2x *bp, int disable_hw)
 }
 
 u16 bnx2x_select_queue(struct net_device *dev, struct sk_buff *skb,
-		       void *accel_priv, select_queue_fallback_t fallback)
+		       struct net_device *sb_dev,
+		       select_queue_fallback_t fallback)
 {
 	struct bnx2x *bp = netdev_priv(dev);
 
@@ -1932,7 +1935,8 @@ u16 bnx2x_select_queue(struct net_device *dev, struct sk_buff *skb,
 	}
 
 	/* select a non-FCoE queue */
-	return fallback(dev, skb) % (BNX2X_NUM_ETH_QUEUES(bp) * bp->max_cos);
+	return fallback(dev, skb, NULL) %
+		(BNX2X_NUM_ETH_QUEUES(bp) * bp->max_cos);
 }
 
 void bnx2x_set_num_queues(struct bnx2x *bp)
@@ -2841,6 +2845,7 @@ int bnx2x_nic_load(struct bnx2x *bp, int load_mode)
 	bnx2x_set_rx_mode_inner(bp);
 
 	if (bp->flags & PTP_SUPPORTED) {
+		bnx2x_register_phc(bp);
 		bnx2x_init_ptp(bp);
 		bnx2x_configure_ptp_filters(bp);
 	}
@@ -3054,12 +3059,13 @@ int bnx2x_nic_unload(struct bnx2x *bp, int unload_mode, bool keep_link)
 	/* if VF indicate to PF this function is going down (PF will delete sp
 	 * elements and clear initializations
 	 */
-	if (IS_VF(bp))
+	if (IS_VF(bp)) {
+		bnx2x_clear_vlan_info(bp);
 		bnx2x_vfpf_close_vf(bp);
-	else if (unload_mode != UNLOAD_RECOVERY)
+	} else if (unload_mode != UNLOAD_RECOVERY) {
 		/* if this is a normal/close unload need to clean up chip*/
 		bnx2x_chip_cleanup(bp, unload_mode, keep_link);
-	else {
+	} else {
 		/* Send the UNLOAD_REQUEST to the MCP */
 		bnx2x_send_unload_req(bp, unload_mode);
 
@@ -3856,9 +3862,12 @@ netdev_tx_t bnx2x_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP)) {
 		if (!(bp->flags & TX_TIMESTAMPING_EN)) {
+			bp->eth_stats.ptp_skip_tx_ts++;
 			BNX2X_ERR("Tx timestamping was not enabled, this packet will not be timestamped\n");
 		} else if (bp->ptp_tx_skb) {
-			BNX2X_ERR("The device supports only a single outstanding packet to timestamp, this packet will not be timestamped\n");
+			bp->eth_stats.ptp_skip_tx_ts++;
+			netdev_err_once(bp->dev,
+					"Device supports only a single outstanding packet to timestamp, this packet won't be timestamped\n");
 		} else {
 			skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 			/* schedule check for Tx timestamp */
@@ -4163,8 +4172,6 @@ netdev_tx_t bnx2x_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	wmb();
 
 	DOORBELL_RELAXED(bp, txdata->cid, txdata->tx_db.raw);
-
-	mmiowb();
 
 	txdata->tx_bd_prod += nbd;
 
@@ -4964,7 +4971,7 @@ int bnx2x_set_features(struct net_device *dev, netdev_features_t features)
 	return 0;
 }
 
-void bnx2x_tx_timeout(struct net_device *dev)
+void bnx2x_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct bnx2x *bp = netdev_priv(dev);
 
@@ -4982,8 +4989,9 @@ void bnx2x_tx_timeout(struct net_device *dev)
 	bnx2x_schedule_sp_rtnl(bp, BNX2X_SP_RTNL_TX_TIMEOUT, 0);
 }
 
-int bnx2x_suspend(struct pci_dev *pdev, pm_message_t state)
+static int __maybe_unused bnx2x_suspend(struct device *dev_d)
 {
+	struct pci_dev *pdev = to_pci_dev(dev_d);
 	struct net_device *dev = pci_get_drvdata(pdev);
 	struct bnx2x *bp;
 
@@ -4995,8 +5003,6 @@ int bnx2x_suspend(struct pci_dev *pdev, pm_message_t state)
 
 	rtnl_lock();
 
-	pci_save_state(pdev);
-
 	if (!netif_running(dev)) {
 		rtnl_unlock();
 		return 0;
@@ -5006,15 +5012,14 @@ int bnx2x_suspend(struct pci_dev *pdev, pm_message_t state)
 
 	bnx2x_nic_unload(bp, UNLOAD_CLOSE, false);
 
-	bnx2x_set_power_state(bp, pci_choose_state(pdev, state));
-
 	rtnl_unlock();
 
 	return 0;
 }
 
-int bnx2x_resume(struct pci_dev *pdev)
+static int __maybe_unused bnx2x_resume(struct device *dev_d)
 {
+	struct pci_dev *pdev = to_pci_dev(dev_d);
 	struct net_device *dev = pci_get_drvdata(pdev);
 	struct bnx2x *bp;
 	int rc;
@@ -5032,14 +5037,11 @@ int bnx2x_resume(struct pci_dev *pdev)
 
 	rtnl_lock();
 
-	pci_restore_state(pdev);
-
 	if (!netif_running(dev)) {
 		rtnl_unlock();
 		return 0;
 	}
 
-	bnx2x_set_power_state(bp, PCI_D0);
 	netif_device_attach(dev);
 
 	rc = bnx2x_nic_load(bp, LOAD_OPEN);
@@ -5048,6 +5050,8 @@ int bnx2x_resume(struct pci_dev *pdev)
 
 	return rc;
 }
+
+SIMPLE_DEV_PM_OPS(bnx2x_pm_ops, bnx2x_suspend, bnx2x_resume);
 
 void bnx2x_set_ctx_validation(struct bnx2x *bp, struct eth_context *cxt,
 			      u32 cid)

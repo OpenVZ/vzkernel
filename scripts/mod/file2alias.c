@@ -1300,15 +1300,19 @@ static int do_hda_entry(const char *filename, void *symval, char *alias)
 }
 ADD_TO_DEVTABLE("hdaudio", hda_device_id, do_hda_entry);
 
-/* Looks like: sdw:mNpN */
+/* Looks like: sdw:mNpNvNcN */
 static int do_sdw_entry(const char *filename, void *symval, char *alias)
 {
 	DEF_FIELD(symval, sdw_device_id, mfg_id);
 	DEF_FIELD(symval, sdw_device_id, part_id);
+	DEF_FIELD(symval, sdw_device_id, sdw_version);
+	DEF_FIELD(symval, sdw_device_id, class_id);
 
 	strcpy(alias, "sdw:");
 	ADD(alias, "m", mfg_id != 0, mfg_id);
 	ADD(alias, "p", part_id != 0, part_id);
+	ADD(alias, "v", sdw_version != 0, sdw_version);
+	ADD(alias, "c", class_id != 0, class_id);
 
 	add_wildcard(alias);
 	return 1;
@@ -1351,6 +1355,19 @@ static int do_tbsvc_entry(const char *filename, void *symval, char *alias)
 	return 1;
 }
 ADD_TO_DEVTABLE("tbsvc", tb_service_id, do_tbsvc_entry);
+
+/* Looks like: typec:idNmN */
+static int do_typec_entry(const char *filename, void *symval, char *alias)
+{
+	DEF_FIELD(symval, typec_device_id, svid);
+	DEF_FIELD(symval, typec_device_id, mode);
+
+	sprintf(alias, "typec:id%04X", svid);
+	ADD(alias, "m", mode != TYPEC_ANY_MODE, mode);
+
+	return 1;
+}
+ADD_TO_DEVTABLE("typec", typec_device_id, do_typec_entry);
 
 /* Does namelen bytes of name exactly match the symbol? */
 static bool sym_is(const char *name, unsigned namelen, const char *symbol)

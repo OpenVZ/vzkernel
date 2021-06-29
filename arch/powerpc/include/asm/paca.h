@@ -16,6 +16,7 @@
 
 #ifdef CONFIG_PPC64
 
+#include <linux/rh_kabi.h>
 #include <linux/string.h>
 #include <asm/types.h>
 #include <asm/lppaca.h>
@@ -33,6 +34,8 @@
 #include <asm/hmi.h>
 #include <asm/cpuidle.h>
 #include <asm/atomic.h>
+
+#include <asm-generic/mmiowb_types.h>
 
 register struct paca_struct *local_paca asm("r13");
 
@@ -54,6 +57,7 @@ extern unsigned int debug_smp_processor_id(void); /* from linux/smp.h */
 #define get_slb_shadow()	(get_paca()->slb_shadow_ptr)
 
 struct task_struct;
+struct rtas_args;
 
 /*
  * Defines the layout of the paca.
@@ -166,9 +170,7 @@ struct paca_struct {
 	u16 trap_save;			/* Used when bad stack is encountered */
 	u8 irq_soft_mask;		/* mask for irq soft masking */
 	u8 irq_happened;		/* irq happened while soft-disabled */
-	u8 io_sync;			/* writel() needs spin_unlock sync */
 	u8 irq_work_pending;		/* IRQ_WORK interrupt while soft-disable */
-	u8 nap_state_lost;		/* NV GPR values lost in power7_idle */
 #ifdef CONFIG_KVM_BOOK3S_HV_POSSIBLE
 	u8 pmcregs_in_use;		/* pseries puts this in lppaca */
 #endif
@@ -178,28 +180,28 @@ struct paca_struct {
 #endif
 
 #ifdef CONFIG_PPC_POWERNV
-	/* Per-core mask tracking idle threads and a lock bit-[L][TTTTTTTT] */
-	u32 *core_idle_state_ptr;
-	u8 thread_idle_state;		/* PNV_THREAD_RUNNING/NAP/SLEEP	*/
-	/* Mask to indicate thread id in core */
-	u8 thread_mask;
-	/* Mask to denote subcore sibling threads */
-	u8 subcore_sibling_mask;
-	/* Flag to request this thread not to stop */
-	atomic_t dont_stop;
-	/*
-	 * Pointer to an array which contains pointer
-	 * to the sibling threads' paca.
-	 */
-	struct paca_struct **thread_sibling_pacas;
-	/* The PSSCR value that the kernel requested before going to stop */
-	u64 requested_psscr;
+	/* PowerNV idle fields */
+	/* PNV_CORE_IDLE_* bits, all siblings work on thread 0 paca */
+	unsigned long idle_state;
+	union {
+		/* P7/P8 specific fields */
+		struct {
+			/* PNV_THREAD_RUNNING/NAP/SLEEP	*/
+			u8 thread_idle_state;
+			/* Mask to denote subcore sibling threads */
+			u8 subcore_sibling_mask;
+		};
 
-	/*
-	 * Save area for additional SPRs that need to be
-	 * saved/restored during cpuidle stop.
-	 */
-	struct stop_sprs stop_sprs;
+		/* P9 specific fields */
+		struct {
+#ifdef CONFIG_KVM_BOOK3S_HV_POSSIBLE
+			/* The PSSCR value that the kernel requested before going to stop */
+			u64 requested_psscr;
+			/* Flag to request this thread not to stop */
+			atomic_t dont_stop;
+#endif
+		};
+	};
 #endif
 
 #ifdef CONFIG_PPC_BOOK3S_64
@@ -221,6 +223,7 @@ struct paca_struct {
 	u16 in_mce;
 	u8 hmi_event_available;		/* HMI event is available */
 	u8 hmi_p9_special_emu;		/* HMI P9 special emulation */
+	u32 hmi_irqs;			/* HMI irq stat */
 #endif
 	u8 ftrace_enabled;		/* Hard disable ftrace */
 
@@ -251,6 +254,22 @@ struct paca_struct {
 	u64 exrfi[EX_SIZE] __aligned(0x80);
 	void *rfi_flush_fallback_area;
 	u64 l1d_flush_size;
+#endif
+#ifdef CONFIG_PPC_PSERIES
+	u8 *mce_data_buf;		/* buffer to hold per cpu rtas errlog */
+#endif /* CONFIG_PPC_PSERIES */
+
+#ifdef CONFIG_PPC_BOOK3S_64
+	/* Capture SLB related old contents in MCE handler. */
+	struct slb_entry *mce_faulty_slbs;
+	u16 slb_save_cache_ptr;
+#endif /* CONFIG_PPC_BOOK3S_64 */
+#ifdef CONFIG_MMIOWB
+	struct mmiowb_state mmiowb_state;
+#endif
+
+#ifdef CONFIG_STACKPROTECTOR
+	RH_KABI_EXTEND(unsigned long canary)
 #endif
 } ____cacheline_aligned;
 

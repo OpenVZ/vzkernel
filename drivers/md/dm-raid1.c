@@ -83,7 +83,7 @@ struct mirror_set {
 	struct work_struct trigger_event;
 
 	unsigned nr_mirrors;
-	struct mirror mirror[0];
+	struct mirror mirror[];
 };
 
 DECLARE_DM_KCOPYD_THROTTLE_WITH_MODULE_PARM(raid1_resync_throttle,
@@ -326,9 +326,8 @@ static void recovery_complete(int read_err, unsigned long write_err,
 	dm_rh_recovery_end(reg, !(read_err || write_err));
 }
 
-static int recover(struct mirror_set *ms, struct dm_region *reg)
+static void recover(struct mirror_set *ms, struct dm_region *reg)
 {
-	int r;
 	unsigned i;
 	struct dm_io_region from, to[DM_KCOPYD_MAX_REGIONS], *dest;
 	struct mirror *m;
@@ -367,10 +366,8 @@ static int recover(struct mirror_set *ms, struct dm_region *reg)
 	if (!errors_handled(ms))
 		set_bit(DM_KCOPYD_IGNORE_ERROR, &flags);
 
-	r = dm_kcopyd_copy(ms->kcopyd_client, &from, ms->nr_mirrors - 1, to,
-			   flags, recovery_complete, reg);
-
-	return r;
+	dm_kcopyd_copy(ms->kcopyd_client, &from, ms->nr_mirrors - 1, to,
+		       flags, recovery_complete, reg);
 }
 
 static void reset_ms_flags(struct mirror_set *ms)
@@ -388,7 +385,6 @@ static void do_recovery(struct mirror_set *ms)
 {
 	struct dm_region *reg;
 	struct dm_dirty_log *log = dm_rh_dirty_log(ms->rh);
-	int r;
 
 	/*
 	 * Start quiescing some regions.
@@ -398,11 +394,8 @@ static void do_recovery(struct mirror_set *ms)
 	/*
 	 * Copy any already quiesced regions.
 	 */
-	while ((reg = dm_rh_recovery_start(ms->rh))) {
-		r = recover(ms, reg);
-		if (r)
-			dm_rh_recovery_end(reg, 0);
-	}
+	while ((reg = dm_rh_recovery_start(ms->rh)))
+		recover(ms, reg);
 
 	/*
 	 * Update the in sync flag.
@@ -885,12 +878,9 @@ static struct mirror_set *alloc_context(unsigned int nr_mirrors,
 					struct dm_target *ti,
 					struct dm_dirty_log *dl)
 {
-	size_t len;
-	struct mirror_set *ms = NULL;
+	struct mirror_set *ms =
+		kzalloc(struct_size(ms, mirror, nr_mirrors), GFP_KERNEL);
 
-	len = sizeof(*ms) + (sizeof(ms->mirror[0]) * nr_mirrors);
-
-	ms = kzalloc(len, GFP_KERNEL);
 	if (!ms) {
 		ti->error = "Cannot allocate mirror context";
 		return NULL;
@@ -950,7 +940,8 @@ static int get_mirror(struct mirror_set *ms, struct dm_target *ti,
 	char dummy;
 	int ret;
 
-	if (sscanf(argv[1], "%llu%c", &offset, &dummy) != 1) {
+	if (sscanf(argv[1], "%llu%c", &offset, &dummy) != 1 ||
+	    offset != (sector_t)offset) {
 		ti->error = "Invalid offset";
 		return -EINVAL;
 	}

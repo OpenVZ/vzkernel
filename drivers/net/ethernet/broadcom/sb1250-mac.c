@@ -307,7 +307,7 @@ static int sbmac_set_duplex(struct sbmac_softc *s, enum sbmac_duplex duplex,
 			    enum sbmac_fc fc);
 
 static int sbmac_open(struct net_device *dev);
-static void sbmac_tx_timeout (struct net_device *dev);
+static void sbmac_tx_timeout (struct net_device *dev, unsigned int txqueue);
 static void sbmac_set_rx_mode(struct net_device *dev);
 static int sbmac_mii_ioctl(struct net_device *dev, struct ifreq *rq, int cmd);
 static int sbmac_close(struct net_device *dev);
@@ -2357,20 +2357,10 @@ static int sbmac_mii_probe(struct net_device *dev)
 	}
 
 	/* Remove any features not supported by the controller */
-	phy_dev->supported &= SUPPORTED_10baseT_Half |
-			      SUPPORTED_10baseT_Full |
-			      SUPPORTED_100baseT_Half |
-			      SUPPORTED_100baseT_Full |
-			      SUPPORTED_1000baseT_Half |
-			      SUPPORTED_1000baseT_Full |
-			      SUPPORTED_Autoneg |
-			      SUPPORTED_MII |
-			      SUPPORTED_Pause |
-			      SUPPORTED_Asym_Pause;
+	phy_set_max_speed(phy_dev, SPEED_1000);
+	phy_support_asym_pause(phy_dev);
 
 	phy_attached_info(phy_dev);
-
-	phy_dev->advertising = phy_dev->supported;
 
 	sc->phy_dev = phy_dev;
 
@@ -2442,7 +2432,7 @@ static void sbmac_mii_poll(struct net_device *dev)
 }
 
 
-static void sbmac_tx_timeout (struct net_device *dev)
+static void sbmac_tx_timeout (struct net_device *dev, unsigned int txqueue)
 {
 	struct sbmac_softc *sc = netdev_priv(dev);
 	unsigned long flags;

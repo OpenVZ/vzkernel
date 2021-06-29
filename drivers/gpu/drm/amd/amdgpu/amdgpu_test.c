@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0 OR MIT
 /*
  * Copyright 2009 VMware, Inc.
  *
@@ -21,7 +22,7 @@
  *
  * Authors: Michel Dänzer
  */
-#include <drm/drmP.h>
+
 #include <drm/amdgpu_drm.h>
 #include "amdgpu.h"
 #include "amdgpu_uvd.h"
@@ -43,7 +44,7 @@ static void amdgpu_do_test_moves(struct amdgpu_device *adev)
 	/* Number of tests =
 	 * (Total GTT - IB pool - writeback page - ring buffers) / test size
 	 */
-	n = adev->gmc.gart_size - AMDGPU_IB_POOL_SIZE*64*1024;
+	n = adev->gmc.gart_size - AMDGPU_IB_POOL_SIZE;
 	for (i = 0; i < AMDGPU_MAX_RINGS; ++i)
 		if (adev->rings[i])
 			n -= adev->rings[i]->ring_size;
@@ -75,11 +76,12 @@ static void amdgpu_do_test_moves(struct amdgpu_device *adev)
 	r = amdgpu_bo_reserve(vram_obj, false);
 	if (unlikely(r != 0))
 		goto out_unref;
-	r = amdgpu_bo_pin(vram_obj, AMDGPU_GEM_DOMAIN_VRAM, &vram_addr);
+	r = amdgpu_bo_pin(vram_obj, AMDGPU_GEM_DOMAIN_VRAM);
 	if (r) {
 		DRM_ERROR("Failed to pin VRAM object\n");
 		goto out_unres;
 	}
+	vram_addr = amdgpu_bo_gpu_offset(vram_obj);
 	for (i = 0; i < n; i++) {
 		void *gtt_map, *vram_map;
 		void **gart_start, **gart_end;
@@ -96,11 +98,17 @@ static void amdgpu_do_test_moves(struct amdgpu_device *adev)
 		r = amdgpu_bo_reserve(gtt_obj[i], false);
 		if (unlikely(r != 0))
 			goto out_lclean_unref;
-		r = amdgpu_bo_pin(gtt_obj[i], AMDGPU_GEM_DOMAIN_GTT, &gart_addr);
+		r = amdgpu_bo_pin(gtt_obj[i], AMDGPU_GEM_DOMAIN_GTT);
 		if (r) {
 			DRM_ERROR("Failed to pin GTT object %d\n", i);
 			goto out_lclean_unres;
 		}
+		r = amdgpu_ttm_alloc_gart(&gtt_obj[i]->tbo);
+		if (r) {
+			DRM_ERROR("%p bind failed\n", gtt_obj[i]);
+			goto out_lclean_unpin;
+		}
+		gart_addr = amdgpu_bo_gpu_offset(gtt_obj[i]);
 
 		r = amdgpu_bo_kmap(gtt_obj[i], &gtt_map);
 		if (r) {
@@ -116,7 +124,7 @@ static void amdgpu_do_test_moves(struct amdgpu_device *adev)
 		amdgpu_bo_kunmap(gtt_obj[i]);
 
 		r = amdgpu_copy_buffer(ring, gart_addr, vram_addr,
-				       size, NULL, &fence, false, false);
+				       size, NULL, &fence, false, false, false);
 
 		if (r) {
 			DRM_ERROR("Failed GTT->VRAM copy %d\n", i);
@@ -130,6 +138,7 @@ static void amdgpu_do_test_moves(struct amdgpu_device *adev)
 		}
 
 		dma_fence_put(fence);
+		fence = NULL;
 
 		r = amdgpu_bo_kmap(vram_obj, &vram_map);
 		if (r) {
@@ -161,7 +170,7 @@ static void amdgpu_do_test_moves(struct amdgpu_device *adev)
 		amdgpu_bo_kunmap(vram_obj);
 
 		r = amdgpu_copy_buffer(ring, vram_addr, gart_addr,
-				       size, NULL, &fence, false, false);
+				       size, NULL, &fence, false, false, false);
 
 		if (r) {
 			DRM_ERROR("Failed VRAM->GTT copy %d\n", i);
@@ -175,6 +184,7 @@ static void amdgpu_do_test_moves(struct amdgpu_device *adev)
 		}
 
 		dma_fence_put(fence);
+		fence = NULL;
 
 		r = amdgpu_bo_kmap(gtt_obj[i], &gtt_map);
 		if (r) {

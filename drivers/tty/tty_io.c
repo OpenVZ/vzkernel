@@ -1376,7 +1376,13 @@ err_release_lock:
 	return ERR_PTR(retval);
 }
 
-static void tty_free_termios(struct tty_struct *tty)
+/**
+ * tty_save_termios() - save tty termios data in driver table
+ * @tty: tty whose termios data to save
+ *
+ * Locking: Caller guarantees serialisation with tty_init_termios().
+ */
+void tty_save_termios(struct tty_struct *tty)
 {
 	struct ktermios *tp;
 	int idx = tty->index;
@@ -1395,6 +1401,7 @@ static void tty_free_termios(struct tty_struct *tty)
 	}
 	*tp = tty->termios;
 }
+EXPORT_SYMBOL_GPL(tty_save_termios);
 
 /**
  *	tty_flush_works		-	flush all works of a tty/pty pair
@@ -1494,7 +1501,7 @@ static void release_tty(struct tty_struct *tty, int idx)
 	WARN_ON(!mutex_is_locked(&tty_mutex));
 	if (tty->ops->shutdown)
 		tty->ops->shutdown(tty);
-	tty_free_termios(tty);
+	tty_save_termios(tty);
 	tty_driver_remove_tty(tty->driver, tty);
 	tty->port->itty = NULL;
 	if (tty->link)
@@ -2122,7 +2129,7 @@ static int __tty_fasync(int fd, struct file *filp, int on)
 			type = PIDTYPE_PGID;
 		} else {
 			pid = task_pid(current);
-			type = PIDTYPE_PID;
+			type = PIDTYPE_TGID;
 		}
 		get_pid(pid);
 		spin_unlock_irqrestore(&tty->ctrl_lock, flags);
@@ -2492,22 +2499,40 @@ static int tty_tiocgicount(struct tty_struct *tty, void __user *arg)
 	return 0;
 }
 
-static void tty_warn_deprecated_flags(struct serial_struct __user *ss)
+static int tty_tiocsserial(struct tty_struct *tty, struct serial_struct __user *ss)
 {
 	static DEFINE_RATELIMIT_STATE(depr_flags,
 			DEFAULT_RATELIMIT_INTERVAL,
 			DEFAULT_RATELIMIT_BURST);
 	char comm[TASK_COMM_LEN];
+	struct serial_struct v;
 	int flags;
 
-	if (get_user(flags, &ss->flags))
-		return;
+	if (copy_from_user(&v, ss, sizeof(struct serial_struct)))
+		return -EFAULT;
 
-	flags &= ASYNC_DEPRECATED;
+	flags = v.flags & ASYNC_DEPRECATED;
 
 	if (flags && __ratelimit(&depr_flags))
 		pr_warn("%s: '%s' is using deprecated serial flags (with no effect): %.8x\n",
 			__func__, get_task_comm(comm, current), flags);
+	if (!tty->ops->set_serial)
+		return -ENOTTY;
+	return tty->ops->set_serial(tty, &v);
+}
+
+static int tty_tiocgserial(struct tty_struct *tty, struct serial_struct __user *ss)
+{
+	struct serial_struct v;
+	int err;
+
+	memset(&v, 0, sizeof(struct serial_struct));
+	if (!tty->ops->get_serial)
+		return -ENOTTY;
+	err = tty->ops->get_serial(tty, &v);
+	if (!err && copy_to_user(ss, &v, sizeof(struct serial_struct)))
+		err = -EFAULT;
+	return err;
 }
 
 /*
@@ -2641,8 +2666,9 @@ long tty_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case TIOCSSERIAL:
-		tty_warn_deprecated_flags(p);
-		break;
+		return tty_tiocsserial(tty, p);
+	case TIOCGSERIAL:
+		return tty_tiocgserial(tty, p);
 	case TIOCGPTPEER:
 		/* Special because the struct file is needed */
 		return ptm_open_peer(file, tty, (int)arg);
@@ -2747,7 +2773,7 @@ void __do_SAK(struct tty_struct *tty)
 	do_each_pid_task(session, PIDTYPE_SID, p) {
 		tty_notice(tty, "SAK: killed process %d (%s): by session\n",
 			   task_pid_nr(p), p->comm);
-		send_sig(SIGKILL, p, 1);
+		group_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_SID);
 	} while_each_pid_task(session, PIDTYPE_SID, p);
 
 	/* Now kill any processes that happen to have the tty open */
@@ -2755,7 +2781,7 @@ void __do_SAK(struct tty_struct *tty)
 		if (p->signal->tty == tty) {
 			tty_notice(tty, "SAK: killed process %d (%s): by controlling tty\n",
 				   task_pid_nr(p), p->comm);
-			send_sig(SIGKILL, p, 1);
+			group_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_SID);
 			continue;
 		}
 		task_lock(p);
@@ -2763,7 +2789,7 @@ void __do_SAK(struct tty_struct *tty)
 		if (i != 0) {
 			tty_notice(tty, "SAK: killed process %d (%s): by fd#%d\n",
 				   task_pid_nr(p), p->comm, i - 1);
-			force_sig(SIGKILL, p);
+			group_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_SID);
 		}
 		task_unlock(p);
 	} while_each_thread(g, p);
@@ -2793,17 +2819,11 @@ void do_SAK(struct tty_struct *tty)
 
 EXPORT_SYMBOL(do_SAK);
 
-static int dev_match_devt(struct device *dev, const void *data)
-{
-	const dev_t *devt = data;
-	return dev->devt == *devt;
-}
-
 /* Must put_device() after it's unused! */
 static struct device *tty_get_device(struct tty_struct *tty)
 {
 	dev_t devt = tty_devnum(tty);
-	return class_find_device(tty_class, NULL, &devt, dev_match_devt);
+	return class_find_device_by_devt(tty_class, devt);
 }
 
 

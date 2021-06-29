@@ -66,6 +66,7 @@ struct kfd_event {
 	/* type specific data */
 	union {
 		struct kfd_hsa_memory_exception_data memory_exception_data;
+		struct kfd_hsa_hw_exception_data hw_exception_data;
 	};
 };
 
@@ -78,7 +79,7 @@ struct kfd_event {
 #define KFD_EVENT_TYPE_DEBUG 5
 #define KFD_EVENT_TYPE_MEMORY 8
 
-extern void kfd_signal_event_interrupt(unsigned int pasid, uint32_t partial_id,
-					uint32_t valid_id_bits);
+extern void kfd_signal_event_interrupt(u32 pasid, uint32_t partial_id,
+				       uint32_t valid_id_bits);
 
 #endif

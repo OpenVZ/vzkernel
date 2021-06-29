@@ -17,6 +17,7 @@
 #include <linux/net.h>
 #include <linux/in6.h>
 #include <linux/slab.h>
+#include <linux/rhashtable.h>
 
 #include <net/ipv6.h>
 #include <net/protocol.h>
@@ -29,10 +30,11 @@
 #include <net/seg6_hmac.h>
 #endif
 
-bool seg6_validate_srh(struct ipv6_sr_hdr *srh, int len)
+bool seg6_validate_srh(struct ipv6_sr_hdr *srh, int len, bool reduced)
 {
-	int trailing;
 	unsigned int tlv_offset;
+	int max_last_entry;
+	int trailing;
 
 	if (srh->type != IPV6_SRCRT_TYPE_4)
 		return false;
@@ -40,8 +42,17 @@ bool seg6_validate_srh(struct ipv6_sr_hdr *srh, int len)
 	if (((srh->hdrlen + 1) << 3) != len)
 		return false;
 
-	if (srh->segments_left > srh->first_segment)
+	if (!reduced && srh->segments_left > srh->first_segment) {
 		return false;
+	} else {
+		max_last_entry = (srh->hdrlen / 2) - 1;
+
+		if (srh->first_segment > max_last_entry)
+			return false;
+
+		if (srh->segments_left > srh->first_segment + 1)
+			return false;
+	}
 
 	tlv_offset = sizeof(*srh) + ((srh->first_segment + 1) << 4);
 
@@ -220,9 +231,7 @@ static int seg6_genl_get_tunsrc(struct sk_buff *skb, struct genl_info *info)
 	rcu_read_unlock();
 
 	genlmsg_end(msg, hdr);
-	genlmsg_reply(msg, info);
-
-	return 0;
+	return genlmsg_reply(msg, info);
 
 nla_put_failure:
 	rcu_read_unlock();
@@ -399,28 +408,28 @@ static struct pernet_operations ip6_segments_ops = {
 static const struct genl_ops seg6_genl_ops[] = {
 	{
 		.cmd	= SEG6_CMD_SETHMAC,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit	= seg6_genl_sethmac,
-		.policy	= seg6_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 	{
 		.cmd	= SEG6_CMD_DUMPHMAC,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.start	= seg6_genl_dumphmac_start,
 		.dumpit	= seg6_genl_dumphmac,
 		.done	= seg6_genl_dumphmac_done,
-		.policy	= seg6_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 	{
 		.cmd	= SEG6_CMD_SET_TUNSRC,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit	= seg6_genl_set_tunsrc,
-		.policy	= seg6_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 	{
 		.cmd	= SEG6_CMD_GET_TUNSRC,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit	= seg6_genl_get_tunsrc,
-		.policy = seg6_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 };
@@ -430,6 +439,7 @@ static struct genl_family seg6_genl_family __ro_after_init = {
 	.name		= SEG6_GENL_NAME,
 	.version	= SEG6_GENL_VERSION,
 	.maxattr	= SEG6_ATTR_MAX,
+	.policy = seg6_genl_policy,
 	.netnsok	= true,
 	.parallel_ops	= true,
 	.ops		= seg6_genl_ops,

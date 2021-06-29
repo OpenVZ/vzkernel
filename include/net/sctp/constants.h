@@ -71,7 +71,7 @@ enum { SCTP_DEFAULT_INSTREAMS = SCTP_MAX_STREAM };
 					 SCTP_NUM_AUTH_CHUNK_TYPES)
 
 /* These are the different flavours of event.  */
-enum sctp_event {
+enum sctp_event_type {
 	SCTP_EVENT_T_CHUNK = 1,
 	SCTP_EVENT_T_TIMEOUT,
 	SCTP_EVENT_T_OTHER,
@@ -147,11 +147,6 @@ SCTP_SUBTYPE_CONSTRUCTOR(PRIMITIVE,	enum sctp_event_primitive, primitive)
 
 #define sctp_chunk_is_data(a) (a->chunk_hdr->type == SCTP_CID_DATA || \
 			       a->chunk_hdr->type == SCTP_CID_I_DATA)
-
-/* Calculate the actual data size in a data chunk */
-#define SCTP_DATA_SNDSIZE(c) ((int)((unsigned long)(c->chunk_end) - \
-				    (unsigned long)(c->chunk_hdr) - \
-				    sctp_datachk_len(&c->asoc->stream)))
 
 /* Internal error codes */
 enum sctp_ierror {
@@ -306,6 +301,18 @@ enum { SCTP_MAX_GABS = 16 };
 				 * functions simpler to write.
 				 */
 
+/* These are the values for pf exposure, UNUSED is to keep compatible with old
+ * applications by default.
+ */
+enum {
+	SCTP_PF_EXPOSE_UNSET,
+	SCTP_PF_EXPOSE_DISABLE,
+	SCTP_PF_EXPOSE_ENABLE,
+};
+#define SCTP_PF_EXPOSE_MAX	SCTP_PF_EXPOSE_ENABLE
+
+#define SCTP_PS_RETRANS_MAX	0xffff
+
 /* These return values describe the success or failure of a number of
  * routines which form the lower interface to SCTP_outqueue.
  */
@@ -361,11 +368,13 @@ enum {
 	 ipv4_is_anycast_6to4(a))
 
 /* Flags used for the bind address copy functions.  */
-#define SCTP_ADDR6_ALLOWED	0x00000001	/* IPv6 address is allowed by
+#define SCTP_ADDR4_ALLOWED	0x00000001	/* IPv4 address is allowed by
 						   local sock family */
-#define SCTP_ADDR4_PEERSUPP	0x00000002	/* IPv4 address is supported by
+#define SCTP_ADDR6_ALLOWED	0x00000002	/* IPv6 address is allowed by
+						   local sock family */
+#define SCTP_ADDR4_PEERSUPP	0x00000004	/* IPv4 address is supported by
 						   peer */
-#define SCTP_ADDR6_PEERSUPP	0x00000004	/* IPv6 address is supported by
+#define SCTP_ADDR6_PEERSUPP	0x00000008	/* IPv6 address is supported by
 						   peer */
 
 /* Reasons to retransmit. */

@@ -14,6 +14,7 @@
 #include <linux/types.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/notifier.h>
 #include <linux/err.h>
@@ -140,8 +141,13 @@ static void power_supply_deferred_register_work(struct work_struct *work)
 	struct power_supply *psy = container_of(work, struct power_supply,
 						deferred_register_work.work);
 
-	if (psy->dev.parent)
-		mutex_lock(&psy->dev.parent->mutex);
+	if (psy->dev.parent) {
+		while (!mutex_trylock(&psy->dev.parent->mutex)) {
+			if (psy->removing)
+				return;
+			msleep(10);
+		}
+	}
 
 	power_supply_changed(psy);
 
@@ -593,7 +599,7 @@ int power_supply_get_battery_info(struct power_supply *psy,
 
 	/* The property and field names below must correspond to elements
 	 * in enum power_supply_property. For reasoning, see
-	 * Documentation/power/power_supply_class.txt.
+	 * Documentation/power/power_supply_class.rst.
 	 */
 
 	of_property_read_u32(battery_np, "energy-full-design-microwatt-hours",
@@ -712,7 +718,7 @@ static struct thermal_zone_device_ops psy_tzd_ops = {
 
 static int psy_register_thermal(struct power_supply *psy)
 {
-	int i;
+	int i, ret;
 
 	if (psy->desc->no_thermal)
 		return 0;
@@ -722,7 +728,12 @@ static int psy_register_thermal(struct power_supply *psy)
 		if (psy->desc->properties[i] == POWER_SUPPLY_PROP_TEMP) {
 			psy->tzd = thermal_zone_device_register(psy->desc->name,
 					0, 0, psy, &psy_tzd_ops, NULL, 0, 0);
-			return PTR_ERR_OR_ZERO(psy->tzd);
+			if (IS_ERR(psy->tzd))
+				return PTR_ERR(psy->tzd);
+			ret = thermal_zone_device_enable(psy->tzd);
+			if (ret)
+				thermal_zone_device_unregister(psy->tzd);
+			return ret;
 		}
 	}
 	return 0;
@@ -1082,6 +1093,7 @@ EXPORT_SYMBOL_GPL(devm_power_supply_register_no_ws);
 void power_supply_unregister(struct power_supply *psy)
 {
 	WARN_ON(atomic_dec_return(&psy->use_cnt));
+	psy->removing = true;
 	cancel_work_sync(&psy->changed_work);
 	cancel_delayed_work_sync(&psy->deferred_register_work);
 	sysfs_remove_link(&psy->dev.kobj, "powers");

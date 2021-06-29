@@ -1844,13 +1844,14 @@ static int threedes_setkey(struct crypto_ablkcipher *cipher, const u8 *key,
 	struct iproc_ctx_s *ctx = crypto_ablkcipher_ctx(cipher);
 
 	if (keylen == (DES_KEY_SIZE * 3)) {
-		const u32 *K = (const u32 *)key;
-		u32 flags = CRYPTO_TFM_RES_BAD_KEY_SCHED;
+		u32 flags;
+		int ret;
 
-		if (!((K[0] ^ K[2]) | (K[1] ^ K[3])) ||
-		    !((K[2] ^ K[4]) | (K[3] ^ K[5]))) {
+		flags = crypto_ablkcipher_get_flags(cipher);
+		ret = __des3_verify_key(&flags, key);
+		if (unlikely(ret)) {
 			crypto_ablkcipher_set_flags(cipher, flags);
-			return -EINVAL;
+			return ret;
 		}
 
 		ctx->cipher_type = CIPHER_TYPE_3DES;
@@ -2905,13 +2906,13 @@ static int aead_authenc_setkey(struct crypto_aead *cipher,
 		break;
 	case CIPHER_ALG_3DES:
 		if (ctx->enckeylen == (DES_KEY_SIZE * 3)) {
-			const u32 *K = (const u32 *)key;
-			u32 flags = CRYPTO_TFM_RES_BAD_KEY_SCHED;
+			u32 flags;
 
-			if (!((K[0] ^ K[2]) | (K[1] ^ K[3])) ||
-			    !((K[2] ^ K[4]) | (K[3] ^ K[5]))) {
+			flags = crypto_aead_get_flags(cipher);
+			ret = __des3_verify_key(&flags, ctx->enckey);
+			if (unlikely(ret)) {
 				crypto_aead_set_flags(cipher, flags);
-				return -EINVAL;
+				return ret;
 			}
 
 			ctx->cipher_type = CIPHER_TYPE_3DES;
@@ -3002,7 +3003,6 @@ static int aead_gcm_ccm_setkey(struct crypto_aead *cipher,
 
 	ctx->enckeylen = keylen;
 	ctx->authkeylen = 0;
-	memcpy(ctx->enckey, key, ctx->enckeylen);
 
 	switch (ctx->enckeylen) {
 	case AES_KEYSIZE_128:
@@ -3017,6 +3017,8 @@ static int aead_gcm_ccm_setkey(struct crypto_aead *cipher,
 	default:
 		goto badkey;
 	}
+
+	memcpy(ctx->enckey, key, ctx->enckeylen);
 
 	flow_log("  enckeylen:%u authkeylen:%u\n", ctx->enckeylen,
 		 ctx->authkeylen);
@@ -3078,6 +3080,10 @@ static int aead_gcm_esp_setkey(struct crypto_aead *cipher,
 	struct iproc_ctx_s *ctx = crypto_aead_ctx(cipher);
 
 	flow_log("%s\n", __func__);
+
+	if (keylen < GCM_ESP_SALT_SIZE)
+		return -EINVAL;
+
 	ctx->salt_len = GCM_ESP_SALT_SIZE;
 	ctx->salt_offset = GCM_ESP_SALT_OFFSET;
 	memcpy(ctx->salt, key + keylen - GCM_ESP_SALT_SIZE, GCM_ESP_SALT_SIZE);
@@ -3106,6 +3112,10 @@ static int rfc4543_gcm_esp_setkey(struct crypto_aead *cipher,
 	struct iproc_ctx_s *ctx = crypto_aead_ctx(cipher);
 
 	flow_log("%s\n", __func__);
+
+	if (keylen < GCM_ESP_SALT_SIZE)
+		return -EINVAL;
+
 	ctx->salt_len = GCM_ESP_SALT_SIZE;
 	ctx->salt_offset = GCM_ESP_SALT_OFFSET;
 	memcpy(ctx->salt, key + keylen - GCM_ESP_SALT_SIZE, GCM_ESP_SALT_SIZE);
@@ -3135,6 +3145,10 @@ static int aead_ccm_esp_setkey(struct crypto_aead *cipher,
 	struct iproc_ctx_s *ctx = crypto_aead_ctx(cipher);
 
 	flow_log("%s\n", __func__);
+
+	if (keylen < CCM_ESP_SALT_SIZE)
+		return -EINVAL;
+
 	ctx->salt_len = CCM_ESP_SALT_SIZE;
 	ctx->salt_offset = CCM_ESP_SALT_OFFSET;
 	memcpy(ctx->salt, key + keylen - CCM_ESP_SALT_SIZE, CCM_ESP_SALT_SIZE);

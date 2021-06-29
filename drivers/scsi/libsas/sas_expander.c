@@ -48,17 +48,16 @@ static void smp_task_timedout(struct timer_list *t)
 	unsigned long flags;
 
 	spin_lock_irqsave(&task->task_state_lock, flags);
-	if (!(task->task_state_flags & SAS_TASK_STATE_DONE))
+	if (!(task->task_state_flags & SAS_TASK_STATE_DONE)) {
 		task->task_state_flags |= SAS_TASK_STATE_ABORTED;
+		complete(&task->slow_task->completion);
+	}
 	spin_unlock_irqrestore(&task->task_state_lock, flags);
-
-	complete(&task->slow_task->completion);
 }
 
 static void smp_task_done(struct sas_task *task)
 {
-	if (!del_timer(&task->slow_task->timer))
-		return;
+	del_timer(&task->slow_task->timer);
 	complete(&task->slow_task->completion);
 }
 
@@ -1128,7 +1127,7 @@ static int sas_find_sub_addr(struct domain_device *dev, u8 *sub_addr)
 		     phy->attached_dev_type == SAS_FANOUT_EXPANDER_DEVICE) &&
 		    phy->routing_attr == SUBTRACTIVE_ROUTING) {
 
-			memcpy(sub_addr, phy->attached_sas_addr,SAS_ADDR_SIZE);
+			memcpy(sub_addr, phy->attached_sas_addr, SAS_ADDR_SIZE);
 
 			return 1;
 		}
@@ -1140,7 +1139,7 @@ static int sas_check_level_subtractive_boundary(struct domain_device *dev)
 {
 	struct expander_device *ex = &dev->ex_dev;
 	struct domain_device *child;
-	u8 sub_addr[8] = {0, };
+	u8 sub_addr[SAS_ADDR_SIZE] = {0, };
 
 	list_for_each_entry(child, &ex->children, siblings) {
 		if (child->dev_type != SAS_EDGE_EXPANDER_DEVICE &&
@@ -1150,7 +1149,7 @@ static int sas_check_level_subtractive_boundary(struct domain_device *dev)
 			sas_find_sub_addr(child, sub_addr);
 			continue;
 		} else {
-			u8 s2[8];
+			u8 s2[SAS_ADDR_SIZE];
 
 			if (sas_find_sub_addr(child, s2) &&
 			    (SAS_ADDR(sub_addr) != SAS_ADDR(s2))) {
@@ -1747,10 +1746,11 @@ static int sas_get_phy_attached_dev(struct domain_device *dev, int phy_id,
 
 	res = sas_get_phy_discover(dev, phy_id, disc_resp);
 	if (res == 0) {
-		memcpy(sas_addr, disc_resp->disc.attached_sas_addr, 8);
+		memcpy(sas_addr, disc_resp->disc.attached_sas_addr,
+		       SAS_ADDR_SIZE);
 		*type = to_dev_type(dr);
 		if (*type == 0)
-			memset(sas_addr, 0, 8);
+			memset(sas_addr, 0, SAS_ADDR_SIZE);
 	}
 	kfree(disc_resp);
 	return res;
@@ -2014,10 +2014,10 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id, bool last)
 	struct expander_device *ex = &dev->ex_dev;
 	struct ex_phy *phy = &ex->ex_phy[phy_id];
 	enum sas_device_type type = SAS_PHY_UNUSED;
-	u8 sas_addr[8];
+	u8 sas_addr[SAS_ADDR_SIZE];
 	int res;
 
-	memset(sas_addr, 0, 8);
+	memset(sas_addr, 0, SAS_ADDR_SIZE);
 	res = sas_get_phy_attached_dev(dev, phy_id, sas_addr, &type);
 	switch (res) {
 	case SMP_RESP_NO_PHY:
@@ -2054,14 +2054,11 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id, bool last)
 		return res;
 	}
 
-	/* delete the old link */
-	if (SAS_ADDR(phy->attached_sas_addr) &&
-	    SAS_ADDR(sas_addr) != SAS_ADDR(phy->attached_sas_addr)) {
-		SAS_DPRINTK("ex %016llx phy 0x%x replace %016llx\n",
-			    SAS_ADDR(dev->sas_addr), phy_id,
-			    SAS_ADDR(phy->attached_sas_addr));
-		sas_unregister_devs_sas_addr(dev, phy_id, last);
-	}
+	/* we always have to delete the old device when we went here */
+	SAS_DPRINTK("ex %016llx phy 0x%x replace %016llx\n",
+		    SAS_ADDR(dev->sas_addr), phy_id,
+		    SAS_ADDR(phy->attached_sas_addr));
+	sas_unregister_devs_sas_addr(dev, phy_id, last);
 
 	return sas_discover_new(dev, phy_id);
 }

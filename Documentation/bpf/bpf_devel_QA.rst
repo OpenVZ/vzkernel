@@ -20,11 +20,11 @@ Reporting bugs
 Q: How do I report bugs for BPF kernel code?
 --------------------------------------------
 A: Since all BPF kernel development as well as bpftool and iproute2 BPF
-loader development happens through the netdev kernel mailing list,
+loader development happens through the bpf kernel mailing list,
 please report any found issues around BPF to the following mailing
 list:
 
- netdev@vger.kernel.org
+ bpf@vger.kernel.org
 
 This may also include issues related to XDP, BPF tracing, etc.
 
@@ -46,17 +46,12 @@ Submitting patches
 
 Q: To which mailing list do I need to submit my BPF patches?
 ------------------------------------------------------------
-A: Please submit your BPF patches to the netdev kernel mailing list:
+A: Please submit your BPF patches to the bpf kernel mailing list:
 
- netdev@vger.kernel.org
-
-Historically, BPF came out of networking and has always been maintained
-by the kernel networking community. Although these days BPF touches
-many other subsystems as well, the patches are still routed mainly
-through the networking community.
+ bpf@vger.kernel.org
 
 In case your patch has changes in various different subsystems (e.g.
-tracing, security, etc), make sure to Cc the related kernel mailing
+networking, tracing, security, etc), make sure to Cc the related kernel mailing
 lists and maintainers from there as well, so they are able to review
 the changes and provide their Acked-by's to the patches.
 
@@ -106,9 +101,9 @@ into the bpf-next tree will make their way into net-next tree. net and
 net-next are both run by David S. Miller. From there, they will go
 into the kernel mainline tree run by Linus Torvalds. To read up on the
 process of net and net-next being merged into the mainline tree, see
-the `netdev FAQ`_ under:
+the :ref:`netdev-FAQ`
 
- `Documentation/networking/netdev-FAQ.txt`_
+
 
 Occasionally, to prevent merge conflicts, we might send pull requests
 to other trees (e.g. tracing) with a small subset of the patches, but
@@ -125,8 +120,8 @@ request)::
 Q: How do I indicate which tree (bpf vs. bpf-next) my patch should be applied to?
 ---------------------------------------------------------------------------------
 
-A: The process is the very same as described in the `netdev FAQ`_, so
-please read up on it. The subject line must indicate whether the
+A: The process is the very same as described in the :ref:`netdev-FAQ`,
+so please read up on it. The subject line must indicate whether the
 patch is a fix or rather "next-like" content in order to let the
 maintainers know whether it is targeted at bpf or bpf-next.
 
@@ -168,7 +163,7 @@ a BPF point of view.
 Be aware that this is not a final verdict that the patch will
 automatically get accepted into net or net-next trees eventually:
 
-On the netdev kernel mailing list reviews can come in at any point
+On the bpf kernel mailing list reviews can come in at any point
 in time. If discussions around a patch conclude that they cannot
 get included as-is, we will either apply a follow-up fix or drop
 them from the trees entirely. Therefore, we also reserve to rebase
@@ -184,7 +179,7 @@ ii) run extensive BPF test suite and
 Once the BPF pull request was accepted by David S. Miller, then
 the patches end up in net or net-next tree, respectively, and
 make their way from there further into mainline. Again, see the
-`netdev FAQ`_ for additional information e.g. on how often they are
+:ref:`netdev-FAQ` for additional information e.g. on how often they are
 merged to mainline.
 
 Q: How long do I need to wait for feedback on my BPF patches?
@@ -208,7 +203,7 @@ Q: Are patches applied to bpf-next when the merge window is open?
 -----------------------------------------------------------------
 A: For the time when the merge window is open, bpf-next will not be
 processed. This is roughly analogous to net-next patch processing,
-so feel free to read up on the `netdev FAQ`_ about further details.
+so feel free to read up on the :ref:`netdev-FAQ` about further details.
 
 During those two weeks of merge window, we might ask you to resend
 your patch series once bpf-next is open again. Once Linus released
@@ -372,7 +367,7 @@ netdev kernel mailing list in Cc and ask for the fix to be queued up:
   netdev@vger.kernel.org
 
 The process in general is the same as on netdev itself, see also the
-`netdev FAQ`_ document.
+:ref:`netdev-FAQ`.
 
 Q: Do you also backport to kernels not currently maintained as stable?
 ----------------------------------------------------------------------
@@ -388,9 +383,7 @@ Q: The BPF patch I am about to submit needs to go to stable as well
 What should I do?
 
 A: The same rules apply as with netdev patch submissions in general, see
-`netdev FAQ`_ under:
-
-  `Documentation/networking/netdev-FAQ.txt`_
+the :ref:`netdev-FAQ`.
 
 Never add "``Cc: stable@vger.kernel.org``" to the patch description, but
 ask the BPF maintainers to queue the patches instead. This can be done
@@ -444,6 +437,21 @@ needed::
 See the kernels selftest `Documentation/dev-tools/kselftest.rst`_
 document for further documentation.
 
+To maximize the number of tests passing, the .config of the kernel
+under test should match the config file fragment in
+tools/testing/selftests/bpf as closely as possible.
+
+Finally to ensure support for latest BPF Type Format features -
+discussed in `Documentation/bpf/btf.rst`_ - pahole version 1.16
+is required for kernels built with CONFIG_DEBUG_INFO_BTF=y.
+pahole is delivered in the dwarves package or can be built
+from source at
+
+https://github.com/acmel/dwarves
+
+Some distros have pahole version 1.16 packaged already, e.g.
+Fedora, Gentoo.
+
 Q: Which BPF kernel selftests version should I run my kernel against?
 ---------------------------------------------------------------------
 A: If you run a kernel ``xyz``, then always run the BPF kernel selftests
@@ -496,15 +504,15 @@ A: You need cmake and gcc-c++ as build requisites for LLVM. Once you have
 that set up, proceed with building the latest LLVM and clang version
 from the git repositories::
 
-     $ git clone http://llvm.org/git/llvm.git
-     $ cd llvm/tools
-     $ git clone --depth 1 http://llvm.org/git/clang.git
-     $ cd ..; mkdir build; cd build
-     $ cmake .. -DLLVM_TARGETS_TO_BUILD="BPF;X86" \
+     $ git clone https://github.com/llvm/llvm-project.git
+     $ mkdir -p llvm-project/llvm/build/install
+     $ cd llvm-project/llvm/build
+     $ cmake .. -G "Ninja" -DLLVM_TARGETS_TO_BUILD="BPF;X86" \
+                -DLLVM_ENABLE_PROJECTS="clang"    \
                 -DBUILD_SHARED_LIBS=OFF           \
                 -DCMAKE_BUILD_TYPE=Release        \
                 -DLLVM_BUILD_RUNTIME=OFF
-     $ make -j $(getconf _NPROCESSORS_ONLN)
+     $ ninja
 
 The built binaries can then be found in the build/bin/ directory, where
 you can point the PATH variable to.
@@ -630,11 +638,11 @@ when:
 .. Links
 .. _Documentation/process/: https://www.kernel.org/doc/html/latest/process/
 .. _MAINTAINERS: ../../MAINTAINERS
-.. _Documentation/networking/netdev-FAQ.txt: ../networking/netdev-FAQ.txt
-.. _netdev FAQ: ../networking/netdev-FAQ.txt
+.. _netdev-FAQ: ../networking/netdev-FAQ.rst
 .. _samples/bpf/: ../../samples/bpf/
 .. _selftests: ../../tools/testing/selftests/bpf/
 .. _Documentation/dev-tools/kselftest.rst:
    https://www.kernel.org/doc/html/latest/dev-tools/kselftest.html
+.. _Documentation/bpf/btf.rst: btf.rst
 
 Happy BPF hacking!

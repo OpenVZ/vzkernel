@@ -90,6 +90,9 @@ enum hwtstamp_tx_types {
 	 * queue.
 	 */
 	HWTSTAMP_TX_ONESTEP_SYNC,
+
+	/* add new constants above here */
+	__HWTSTAMP_TX_CNT
 };
 
 /* possible values for hwtstamp_config->rx_filter */
@@ -132,6 +135,9 @@ enum hwtstamp_rx_filters {
 
 	/* NTP, UDP, all versions and packet modes */
 	HWTSTAMP_FILTER_NTP_ALL,
+
+	/* add new constants above here */
+	__HWTSTAMP_FILTER_CNT
 };
 
 /* SCM_TIMESTAMPING_PKTINFO control message */
@@ -139,6 +145,24 @@ struct scm_ts_pktinfo {
 	__u32 if_index;
 	__u32 pkt_length;
 	__u32 reserved[2];
+};
+
+/*
+ * SO_TXTIME gets a struct sock_txtime with flags being an integer bit
+ * field comprised of these values.
+ */
+enum txtime_flags {
+	SOF_TXTIME_DEADLINE_MODE = (1 << 0),
+	SOF_TXTIME_REPORT_ERRORS = (1 << 1),
+
+	SOF_TXTIME_FLAGS_LAST = SOF_TXTIME_REPORT_ERRORS,
+	SOF_TXTIME_FLAGS_MASK = (SOF_TXTIME_FLAGS_LAST - 1) |
+				 SOF_TXTIME_FLAGS_LAST
+};
+
+struct sock_txtime {
+	__kernel_clockid_t	clockid;/* reference clockid */
+	__u32			flags;	/* as defined by enum txtime_flags */
 };
 
 #endif /* _NET_TIMESTAMPING_H */

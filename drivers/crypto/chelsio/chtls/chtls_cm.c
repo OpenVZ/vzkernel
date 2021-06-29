@@ -23,6 +23,7 @@
 #include <linux/if_vlan.h>
 #include <net/tcp.h>
 #include <net/dst.h>
+#include <net/tls.h>
 
 #include "chtls.h"
 #include "chtls_cm.h"
@@ -617,7 +618,7 @@ int chtls_listen_start(struct chtls_dev *cdev, struct sock *sk)
 
 	pi = netdev_priv(ndev);
 	adap = pi->adapter;
-	if (!(adap->flags & FULL_INIT_DONE))
+	if (!(adap->flags & CXGB4_FULL_INIT_DONE))
 		return -EBADF;
 
 	if (listen_hash_find(cdev, sk) >= 0)   /* already have it */
@@ -1017,6 +1018,7 @@ static struct sock *chtls_recv_sock(struct sock *lsk,
 	const struct tcphdr *tcph;
 	struct inet_sock *newinet;
 	const struct iphdr *iph;
+	struct tls_context *ctx;
 	struct net_device *ndev;
 	struct chtls_sock *csk;
 	struct dst_entry *dst;
@@ -1066,6 +1068,8 @@ static struct sock *chtls_recv_sock(struct sock *lsk,
 
 	oreq->ts_recent = PASS_OPEN_TID_G(ntohl(req->tos_stid));
 	sk_setup_caps(newsk, dst);
+	ctx = tls_get_ctx(lsk);
+	newsk->sk_destruct = ctx->sk_destruct;
 	csk->sk = newsk;
 	csk->passive_reap_next = oreq;
 	csk->tx_chan = cxgb4_port_chan(ndev);
@@ -1079,8 +1083,7 @@ static struct sock *chtls_recv_sock(struct sock *lsk,
 	csk->txq_idx = (rxq_idx < cdev->lldi->ntxq) ? rxq_idx :
 			port_id * step;
 	csk->sndbuf = newsk->sk_sndbuf;
-	csk->smac_idx = cxgb4_tp_smt_idx(cdev->lldi->adapter_type,
-					 cxgb4_port_viid(ndev));
+	csk->smac_idx = ((struct port_info *)netdev_priv(ndev))->smt_idx;
 	tp->rcv_wnd = select_rcv_wnd(csk);
 	RCV_WSCALE(tp) = select_rcv_wscale(tcp_full_space(newsk),
 					   WSCALE_OK(tp),
@@ -1181,7 +1184,7 @@ static void chtls_pass_accept_request(struct sock *sk,
 
 	oreq->rsk_rcv_wnd = 0;
 	oreq->rsk_window_clamp = 0;
-	oreq->cookie_ts = 0;
+	oreq->syncookie = 0;
 	oreq->mss = 0;
 	oreq->ts_recent = 0;
 
@@ -1252,7 +1255,7 @@ static int chtls_pass_accept_req(struct chtls_dev *cdev, struct sk_buff *skb)
 	ctx = (struct listen_ctx *)data;
 	lsk = ctx->lsk;
 
-	if (unlikely(tid >= cdev->tids->ntids)) {
+	if (unlikely(tid_out_of_range(cdev->tids, tid))) {
 		pr_info("passive open TID %u too large\n", tid);
 		return 1;
 	}
@@ -1276,7 +1279,7 @@ static void make_established(struct sock *sk, u32 snd_isn, unsigned int opt)
 	tp->write_seq = snd_isn;
 	tp->snd_nxt = snd_isn;
 	tp->snd_una = snd_isn;
-	inet_sk(sk)->inet_id = tp->write_seq ^ jiffies;
+	inet_sk(sk)->inet_id = prandom_u32();
 	assign_rxopt(sk, opt);
 
 	if (tp->rcv_wnd > (RCV_BUFSIZ_M << 10))
@@ -1673,7 +1676,7 @@ static void chtls_timewait(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	tp->rcv_nxt++;
-	tp->rx_opt.ts_recent_stamp = get_seconds();
+	tp->rx_opt.ts_recent_stamp = ktime_get_seconds();
 	tp->srtt_us = 0;
 	tcp_time_wait(sk, TCP_TIME_WAIT, 0);
 }

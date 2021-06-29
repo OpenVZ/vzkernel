@@ -55,12 +55,10 @@
 # define __protected_by(x)       __attribute__((require_context(x,1,999,"rdwr")))
 # define __protected_read_by(x)  __attribute__((require_context(x,1,999,"read")))
 # define __protected_write_by(x) __attribute__((require_context(x,1,999,"write")))
-# define __must_hold(x)       __attribute__((context(x,1,1), require_context(x,1,999,"call")))
 #else
 # define __protected_by(x)
 # define __protected_read_by(x)
 # define __protected_write_by(x)
-# define __must_hold(x)
 #endif
 
 /* shared module parameters, defined in drbd_main.c */
@@ -431,7 +429,7 @@ enum {
 	__EE_CALL_AL_COMPLETE_IO,
 	__EE_MAY_SET_IN_SYNC,
 
-	/* is this a TRIM aka REQ_DISCARD? */
+	/* is this a TRIM aka REQ_OP_DISCARD? */
 	__EE_IS_TRIM,
 
 	/* In case a barrier failed,
@@ -631,7 +629,7 @@ struct fifo_buffer {
 	int total; /* sum of all values */
 	int values[0];
 };
-extern struct fifo_buffer *fifo_alloc(int fifo_size);
+extern struct fifo_buffer *fifo_alloc(unsigned int fifo_size);
 
 /* flag bits per connection */
 enum {
@@ -1314,10 +1312,6 @@ struct bm_extent {
 
 #define DRBD_MAX_SECTORS_FIXED_BM \
 	  ((MD_128MB_SECT - MD_32kB_SECT - MD_4kB_SECT) * (1LL<<(BM_EXT_SHIFT-9)))
-#if !defined(CONFIG_LBDAF) && BITS_PER_LONG == 32
-#define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_32
-#define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_32
-#else
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_FIXED_BM
 /* 16 TB in units of sectors */
 #if BITS_PER_LONG == 32
@@ -1329,7 +1323,6 @@ struct bm_extent {
 /* we allow up to 1 PiB now on 64bit architecture with "flexible" meta data */
 #define DRBD_MAX_SECTORS_FLEX (1UL << 51)
 /* corresponds to (1UL << 38) bits right now. */
-#endif
 #endif
 
 /* Estimate max bio size as 256 * PAGE_SIZE,
@@ -1592,13 +1585,6 @@ static inline void drbd_tcp_uncork(struct socket *sock)
 {
 	int val = 0;
 	(void) kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
-			(char*)&val, sizeof(val));
-}
-
-static inline void drbd_tcp_nodelay(struct socket *sock)
-{
-	int val = 1;
-	(void) kernel_setsockopt(sock, SOL_TCP, TCP_NODELAY,
 			(char*)&val, sizeof(val));
 }
 

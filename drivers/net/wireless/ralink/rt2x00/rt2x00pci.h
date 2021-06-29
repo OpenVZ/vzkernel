@@ -28,22 +28,11 @@
 #include <linux/pci.h>
 
 /*
- * This variable should be used with the
- * pci_driver structure initialization.
- */
-#define PCI_DEVICE_DATA(__ops)	.driver_data = (kernel_ulong_t)(__ops)
-
-/*
  * PCI driver handlers.
  */
 int rt2x00pci_probe(struct pci_dev *pci_dev, const struct rt2x00_ops *ops);
 void rt2x00pci_remove(struct pci_dev *pci_dev);
-#ifdef CONFIG_PM
-int rt2x00pci_suspend(struct pci_dev *pci_dev, pm_message_t state);
-int rt2x00pci_resume(struct pci_dev *pci_dev);
-#else
-#define rt2x00pci_suspend	NULL
-#define rt2x00pci_resume	NULL
-#endif /* CONFIG_PM */
+
+extern const struct dev_pm_ops rt2x00pci_pm_ops;
 
 #endif /* RT2X00PCI_H */

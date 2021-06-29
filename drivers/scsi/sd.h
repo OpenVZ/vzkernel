@@ -2,6 +2,8 @@
 #ifndef _SCSI_DISK_H
 #define _SCSI_DISK_H
 
+#include <linux/rh_kabi.h>
+
 /*
  * More than enough for everybody ;)  The huge number of majors
  * is a leftover from 16bit dev_t days, we don't really need that
@@ -67,16 +69,25 @@ enum {
 	SD_ZERO_WS10_UNMAP,	/* Use WRITE SAME(10) with UNMAP */
 };
 
+struct scsi_disk_aux {
+	u32		*zones_wp_offset;
+	spinlock_t	zones_wp_offset_lock;
+	u32		*rev_wp_offset;
+	struct mutex	rev_mutex;
+	struct work_struct zone_wp_offset_work;
+	char		*zone_wp_update_buf;
+	struct scsi_disk *sdkp;
+};
+
 struct scsi_disk {
 	struct scsi_driver *driver;	/* always &sd_template */
 	struct scsi_device *device;
 	struct device	dev;
 	struct gendisk	*disk;
 	struct opal_dev *opal_dev;
-#ifdef CONFIG_BLK_DEV_ZONED
+#if 1 /* CONFIG_BLK_DEV_ZONED */
 	u32		nr_zones;
 	u32		zone_blocks;
-	u32		zone_shift;
 	u32		zones_optimal_open;
 	u32		zones_optimal_nonseq;
 	u32		zones_max_open;
@@ -117,6 +128,15 @@ struct scsi_disk {
 	unsigned	urswrz : 1;
 	unsigned	security : 1;
 	unsigned	ignore_medium_access_errors : 1;
+
+	RH_KABI_USE(1, struct scsi_disk_aux *aux)
+
+	/* FOR RH USE ONLY
+	 *
+	 * The following padding has been inserted before ABI freeze to
+	 * allow extending the structure while preserving ABI.
+	 */
+	RH_KABI_RESERVE(2)
 };
 #define to_scsi_disk(obj) container_of(obj,struct scsi_disk,dev)
 
@@ -133,7 +153,7 @@ static inline struct scsi_disk *scsi_disk(struct gendisk *disk)
 
 #define sd_first_printk(prefix, sdsk, fmt, a...)			\
 	do {								\
-		if ((sdkp)->first_scan)					\
+		if ((sdsk)->first_scan)					\
 			sd_printk(prefix, sdsk, fmt, ##a);		\
 	} while (0)
 
@@ -254,19 +274,10 @@ static inline unsigned int sd_prot_flag_mask(unsigned int prot_op)
 #ifdef CONFIG_BLK_DEV_INTEGRITY
 
 extern void sd_dif_config_host(struct scsi_disk *);
-extern void sd_dif_prepare(struct scsi_cmnd *scmd);
-extern void sd_dif_complete(struct scsi_cmnd *, unsigned int);
 
 #else /* CONFIG_BLK_DEV_INTEGRITY */
 
 static inline void sd_dif_config_host(struct scsi_disk *disk)
-{
-}
-static inline int sd_dif_prepare(struct scsi_cmnd *scmd)
-{
-	return 0;
-}
-static inline void sd_dif_complete(struct scsi_cmnd *cmd, unsigned int a)
 {
 }
 
@@ -279,15 +290,28 @@ static inline int sd_is_zoned(struct scsi_disk *sdkp)
 
 #ifdef CONFIG_BLK_DEV_ZONED
 
+void sd_zbc_release_disk(struct scsi_disk *sdkp);
 extern int sd_zbc_read_zones(struct scsi_disk *sdkp, unsigned char *buffer);
-extern void sd_zbc_remove(struct scsi_disk *sdkp);
 extern void sd_zbc_print_zones(struct scsi_disk *sdkp);
-extern int sd_zbc_setup_report_cmnd(struct scsi_cmnd *cmd);
-extern int sd_zbc_setup_reset_cmnd(struct scsi_cmnd *cmd);
-extern void sd_zbc_complete(struct scsi_cmnd *cmd, unsigned int good_bytes,
-			    struct scsi_sense_hdr *sshdr);
+blk_status_t sd_zbc_setup_zone_mgmt_cmnd(struct scsi_cmnd *cmd,
+					 unsigned char op, bool all);
+unsigned int sd_zbc_complete(struct scsi_cmnd *cmd, unsigned int good_bytes,
+			     struct scsi_sense_hdr *sshdr);
+int sd_zbc_report_zones(struct gendisk *disk, sector_t sector,
+		unsigned int nr_zones, report_zones_cb cb, void *data);
+
+blk_status_t sd_zbc_prepare_zone_append(struct scsi_cmnd *cmd, sector_t *lba,
+				        unsigned int nr_blocks);
 
 #else /* CONFIG_BLK_DEV_ZONED */
+
+static inline int sd_zbc_init(void)
+{
+	return 0;
+}
+
+static inline void sd_zbc_exit(void) {}
+static inline void sd_zbc_release_disk(struct scsi_disk *sdkp) {}
 
 static inline int sd_zbc_read_zones(struct scsi_disk *sdkp,
 				    unsigned char *buf)
@@ -295,24 +319,33 @@ static inline int sd_zbc_read_zones(struct scsi_disk *sdkp,
 	return 0;
 }
 
-static inline void sd_zbc_remove(struct scsi_disk *sdkp) {}
-
 static inline void sd_zbc_print_zones(struct scsi_disk *sdkp) {}
 
-static inline int sd_zbc_setup_report_cmnd(struct scsi_cmnd *cmd)
+static inline blk_status_t sd_zbc_setup_zone_mgmt_cmnd(struct scsi_cmnd *cmd,
+						       unsigned char op,
+						       bool all)
 {
-	return BLKPREP_INVALID;
+	return BLK_STS_TARGET;
 }
 
-static inline int sd_zbc_setup_reset_cmnd(struct scsi_cmnd *cmd)
+static inline unsigned int sd_zbc_complete(struct scsi_cmnd *cmd,
+			unsigned int good_bytes, struct scsi_sense_hdr *sshdr)
 {
-	return BLKPREP_INVALID;
+	return 0;
 }
 
-static inline void sd_zbc_complete(struct scsi_cmnd *cmd,
-				   unsigned int good_bytes,
-				   struct scsi_sense_hdr *sshdr) {}
+static inline blk_status_t sd_zbc_prepare_zone_append(struct scsi_cmnd *cmd,
+						      sector_t *lba,
+						      unsigned int nr_blocks)
+{
+	return BLK_STS_TARGET;
+}
+
+#define sd_zbc_report_zones NULL
 
 #endif /* CONFIG_BLK_DEV_ZONED */
+
+void sd_print_sense_hdr(struct scsi_disk *sdkp, struct scsi_sense_hdr *sshdr);
+void sd_print_result(const struct scsi_disk *sdkp, const char *msg, int result);
 
 #endif /* _SCSI_DISK_H */

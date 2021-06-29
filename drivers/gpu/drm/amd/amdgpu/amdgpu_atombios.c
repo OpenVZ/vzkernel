@@ -23,12 +23,13 @@
  * Authors: Dave Airlie
  *          Alex Deucher
  */
-#include <drm/drmP.h>
+
 #include <drm/amdgpu_drm.h>
 #include "amdgpu.h"
 #include "amdgpu_atombios.h"
 #include "amdgpu_atomfirmware.h"
 #include "amdgpu_i2c.h"
+#include "amdgpu_display.h"
 
 #include "atom.h"
 #include "atom-bits.h"
@@ -337,17 +338,9 @@ bool amdgpu_atombios_get_connector_info_from_object_table(struct amdgpu_device *
 		path_size += le16_to_cpu(path->usSize);
 
 		if (device_support & le16_to_cpu(path->usDeviceTag)) {
-			uint8_t con_obj_id, con_obj_num, con_obj_type;
-
-			con_obj_id =
+			uint8_t con_obj_id =
 			    (le16_to_cpu(path->usConnObjectId) & OBJECT_ID_MASK)
 			    >> OBJECT_ID_SHIFT;
-			con_obj_num =
-			    (le16_to_cpu(path->usConnObjectId) & ENUM_ID_MASK)
-			    >> ENUM_ID_SHIFT;
-			con_obj_type =
-			    (le16_to_cpu(path->usConnObjectId) &
-			     OBJECT_TYPE_MASK) >> OBJECT_TYPE_SHIFT;
 
 			/* Skip TV/CV support */
 			if ((le16_to_cpu(path->usDeviceTag) ==
@@ -372,15 +365,7 @@ bool amdgpu_atombios_get_connector_info_from_object_table(struct amdgpu_device *
 			router.ddc_valid = false;
 			router.cd_valid = false;
 			for (j = 0; j < ((le16_to_cpu(path->usSize) - 8) / 2); j++) {
-				uint8_t grph_obj_id, grph_obj_num, grph_obj_type;
-
-				grph_obj_id =
-				    (le16_to_cpu(path->usGraphicObjIds[j]) &
-				     OBJECT_ID_MASK) >> OBJECT_ID_SHIFT;
-				grph_obj_num =
-				    (le16_to_cpu(path->usGraphicObjIds[j]) &
-				     ENUM_ID_MASK) >> ENUM_ID_SHIFT;
-				grph_obj_type =
+				uint8_t grph_obj_type =
 				    (le16_to_cpu(path->usGraphicObjIds[j]) &
 				     OBJECT_TYPE_MASK) >> OBJECT_TYPE_SHIFT;
 
@@ -2051,3 +2036,20 @@ int amdgpu_atombios_init(struct amdgpu_device *adev)
 	return 0;
 }
 
+int amdgpu_atombios_get_data_table(struct amdgpu_device *adev,
+				   uint32_t table,
+				   uint16_t *size,
+				   uint8_t *frev,
+				   uint8_t *crev,
+				   uint8_t **addr)
+{
+	uint16_t data_start;
+
+	if (!amdgpu_atom_parse_data_header(adev->mode_info.atom_context, table,
+					   size, frev, crev, &data_start))
+		return -EINVAL;
+
+	*addr = (uint8_t *)adev->mode_info.atom_context->bios + data_start;
+
+	return 0;
+}

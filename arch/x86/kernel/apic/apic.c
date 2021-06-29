@@ -20,7 +20,7 @@
 #include <linux/acpi_pmtmr.h>
 #include <linux/clockchips.h>
 #include <linux/interrupt.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/ftrace.h>
 #include <linux/ioport.h>
 #include <linux/export.h>
@@ -56,6 +56,7 @@
 #include <asm/hypervisor.h>
 #include <asm/cpu_device_id.h>
 #include <asm/intel-family.h>
+#include <asm/irq_regs.h>
 
 unsigned int num_processors;
 
@@ -89,6 +90,11 @@ static unsigned int disabled_cpu_apicid __read_mostly = BAD_APICID;
  * external NMIs are delivered only to the BSP.
  */
 static int apic_extnmi = APIC_EXTNMI_BSP;
+
+/*
+ * Hypervisor supports 15 bits of APIC ID in MSI Extended Destination ID
+ */
+static bool virt_ext_dest_id __ro_after_init;
 
 /*
  * Map cpu index to physical APIC ID
@@ -192,7 +198,7 @@ static struct resource lapic_resource = {
 	.flags = IORESOURCE_MEM | IORESOURCE_BUSY,
 };
 
-unsigned int lapic_timer_frequency = 0;
+unsigned int lapic_timer_period = 0;
 
 static void apic_pm_activate(void);
 
@@ -493,7 +499,7 @@ lapic_timer_set_periodic_oneshot(struct clock_event_device *evt, bool oneshot)
 	if (evt->features & CLOCK_EVT_FEAT_DUMMY)
 		return 0;
 
-	__setup_APIC_LVTT(lapic_timer_frequency, oneshot, 1);
+	__setup_APIC_LVTT(lapic_timer_period, oneshot, 1);
 	return 0;
 }
 
@@ -538,12 +544,6 @@ static struct clock_event_device lapic_clockevent = {
 };
 static DEFINE_PER_CPU(struct clock_event_device, lapic_events);
 
-#define DEADLINE_MODEL_MATCH_FUNC(model, func)	\
-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (unsigned long)&func }
-
-#define DEADLINE_MODEL_MATCH_REV(model, rev)	\
-	{ X86_VENDOR_INTEL, 6, model, X86_FEATURE_ANY, (unsigned long)rev }
-
 static u32 hsx_deadline_rev(void)
 {
 	switch (boot_cpu_data.x86_stepping) {
@@ -580,23 +580,23 @@ static u32 skx_deadline_rev(void)
 }
 
 static const struct x86_cpu_id deadline_match[] = {
-	DEADLINE_MODEL_MATCH_FUNC( INTEL_FAM6_HASWELL_X,	hsx_deadline_rev),
-	DEADLINE_MODEL_MATCH_REV ( INTEL_FAM6_BROADWELL_X,	0x0b000020),
-	DEADLINE_MODEL_MATCH_FUNC( INTEL_FAM6_BROADWELL_XEON_D,	bdx_deadline_rev),
-	DEADLINE_MODEL_MATCH_FUNC( INTEL_FAM6_SKYLAKE_X,	skx_deadline_rev),
+	X86_MATCH_INTEL_FAM6_MODEL( HASWELL_X,		&hsx_deadline_rev),
+	X86_MATCH_INTEL_FAM6_MODEL( BROADWELL_X,	0x0b000020),
+	X86_MATCH_INTEL_FAM6_MODEL( BROADWELL_D,	&bdx_deadline_rev),
+	X86_MATCH_INTEL_FAM6_MODEL( SKYLAKE_X,		&skx_deadline_rev),
 
-	DEADLINE_MODEL_MATCH_REV ( INTEL_FAM6_HASWELL_CORE,	0x22),
-	DEADLINE_MODEL_MATCH_REV ( INTEL_FAM6_HASWELL_ULT,	0x20),
-	DEADLINE_MODEL_MATCH_REV ( INTEL_FAM6_HASWELL_GT3E,	0x17),
+	X86_MATCH_INTEL_FAM6_MODEL( HASWELL,		0x22),
+	X86_MATCH_INTEL_FAM6_MODEL( HASWELL_L,		0x20),
+	X86_MATCH_INTEL_FAM6_MODEL( HASWELL_G,		0x17),
 
-	DEADLINE_MODEL_MATCH_REV ( INTEL_FAM6_BROADWELL_CORE,	0x25),
-	DEADLINE_MODEL_MATCH_REV ( INTEL_FAM6_BROADWELL_GT3E,	0x17),
+	X86_MATCH_INTEL_FAM6_MODEL( BROADWELL,		0x25),
+	X86_MATCH_INTEL_FAM6_MODEL( BROADWELL_G,	0x17),
 
-	DEADLINE_MODEL_MATCH_REV ( INTEL_FAM6_SKYLAKE_MOBILE,	0xb2),
-	DEADLINE_MODEL_MATCH_REV ( INTEL_FAM6_SKYLAKE_DESKTOP,	0xb2),
+	X86_MATCH_INTEL_FAM6_MODEL( SKYLAKE_L,		0xb2),
+	X86_MATCH_INTEL_FAM6_MODEL( SKYLAKE,		0xb2),
 
-	DEADLINE_MODEL_MATCH_REV ( INTEL_FAM6_KABYLAKE_MOBILE,	0x52),
-	DEADLINE_MODEL_MATCH_REV ( INTEL_FAM6_KABYLAKE_DESKTOP,	0x52),
+	X86_MATCH_INTEL_FAM6_MODEL( KABYLAKE_L,		0x52),
+	X86_MATCH_INTEL_FAM6_MODEL( KABYLAKE,		0x52),
 
 	{},
 };
@@ -795,6 +795,64 @@ calibrate_by_pmtimer(long deltapm, long *delta, long *deltatsc)
 	return 0;
 }
 
+static int __init lapic_init_clockevent(void)
+{
+	if (!lapic_timer_period)
+		return -1;
+
+	/* Calculate the scaled math multiplication factor */
+	lapic_clockevent.mult = div_sc(lapic_timer_period/APIC_DIVISOR,
+					TICK_NSEC, lapic_clockevent.shift);
+	lapic_clockevent.max_delta_ns =
+		clockevent_delta2ns(0x7FFFFFFF, &lapic_clockevent);
+	lapic_clockevent.max_delta_ticks = 0x7FFFFFFF;
+	lapic_clockevent.min_delta_ns =
+		clockevent_delta2ns(0xF, &lapic_clockevent);
+	lapic_clockevent.min_delta_ticks = 0xF;
+
+	return 0;
+}
+
+bool __init apic_needs_pit(void)
+{
+	/*
+	 * If the frequencies are not known, PIT is required for both TSC
+	 * and apic timer calibration.
+	 */
+	if (!tsc_khz || !cpu_khz)
+		return true;
+
+	/* Is there an APIC at all or is it disabled? */
+	if (!boot_cpu_has(X86_FEATURE_APIC) || disable_apic)
+		return true;
+
+	/*
+	 * If interrupt delivery mode is legacy PIC or virtual wire without
+	 * configuration, the local APIC timer wont be set up. Make sure
+	 * that the PIT is initialized.
+	 */
+	if (apic_intr_mode == APIC_PIC ||
+	    apic_intr_mode == APIC_VIRTUAL_WIRE_NO_CONFIG)
+		return true;
+
+	/* Virt guests may lack ARAT, but still have DEADLINE */
+	if (!boot_cpu_has(X86_FEATURE_ARAT))
+		return true;
+
+	/* Deadline timer is based on TSC so no further PIT action required */
+	if (boot_cpu_has(X86_FEATURE_TSC_DEADLINE_TIMER))
+		return false;
+
+	/* APIC timer disabled? */
+	if (disable_apic_timer)
+		return true;
+	/*
+	 * The APIC timer frequency is known already, no PIT calibration
+	 * required. If unknown, let the PIT be initialized.
+	 */
+	return lapic_timer_period == 0;
+}
+
 static int __init calibrate_APIC_clock(void)
 {
 	struct clock_event_device *levt = this_cpu_ptr(&lapic_events);
@@ -803,25 +861,21 @@ static int __init calibrate_APIC_clock(void)
 	long delta, deltatsc;
 	int pm_referenced = 0;
 
-	/**
-	 * check if lapic timer has already been calibrated by platform
-	 * specific routine, such as tsc calibration code. if so, we just fill
+	if (boot_cpu_has(X86_FEATURE_TSC_DEADLINE_TIMER))
+		return 0;
+
+	/*
+	 * Check if lapic timer has already been calibrated by platform
+	 * specific routine, such as tsc calibration code. If so just fill
 	 * in the clockevent structure and return.
 	 */
-
-	if (boot_cpu_has(X86_FEATURE_TSC_DEADLINE_TIMER)) {
-		return 0;
-	} else if (lapic_timer_frequency) {
+	if (!lapic_init_clockevent()) {
 		apic_printk(APIC_VERBOSE, "lapic timer already calibrated %d\n",
-				lapic_timer_frequency);
-		lapic_clockevent.mult = div_sc(lapic_timer_frequency/APIC_DIVISOR,
-					TICK_NSEC, lapic_clockevent.shift);
-		lapic_clockevent.max_delta_ns =
-			clockevent_delta2ns(0x7FFFFF, &lapic_clockevent);
-		lapic_clockevent.max_delta_ticks = 0x7FFFFF;
-		lapic_clockevent.min_delta_ns =
-			clockevent_delta2ns(0xF, &lapic_clockevent);
-		lapic_clockevent.min_delta_ticks = 0xF;
+			    lapic_timer_period);
+		/*
+		 * Direct calibration methods must have an always running
+		 * local APIC timer, no need for broadcast timer.
+		 */
 		lapic_clockevent.features &= ~CLOCK_EVT_FEAT_DUMMY;
 		return 0;
 	}
@@ -862,22 +916,13 @@ static int __init calibrate_APIC_clock(void)
 	pm_referenced = !calibrate_by_pmtimer(lapic_cal_pm2 - lapic_cal_pm1,
 					&delta, &deltatsc);
 
-	/* Calculate the scaled math multiplication factor */
-	lapic_clockevent.mult = div_sc(delta, TICK_NSEC * LAPIC_CAL_LOOPS,
-				       lapic_clockevent.shift);
-	lapic_clockevent.max_delta_ns =
-		clockevent_delta2ns(0x7FFFFFFF, &lapic_clockevent);
-	lapic_clockevent.max_delta_ticks = 0x7FFFFFFF;
-	lapic_clockevent.min_delta_ns =
-		clockevent_delta2ns(0xF, &lapic_clockevent);
-	lapic_clockevent.min_delta_ticks = 0xF;
-
-	lapic_timer_frequency = (delta * APIC_DIVISOR) / LAPIC_CAL_LOOPS;
+	lapic_timer_period = (delta * APIC_DIVISOR) / LAPIC_CAL_LOOPS;
+	lapic_init_clockevent();
 
 	apic_printk(APIC_VERBOSE, "..... delta %ld\n", delta);
 	apic_printk(APIC_VERBOSE, "..... mult: %u\n", lapic_clockevent.mult);
 	apic_printk(APIC_VERBOSE, "..... calibration result: %u\n",
-		    lapic_timer_frequency);
+		    lapic_timer_period);
 
 	if (boot_cpu_has(X86_FEATURE_TSC)) {
 		apic_printk(APIC_VERBOSE, "..... CPU clock speed is "
@@ -888,13 +933,13 @@ static int __init calibrate_APIC_clock(void)
 
 	apic_printk(APIC_VERBOSE, "..... host bus clock speed is "
 		    "%u.%04u MHz.\n",
-		    lapic_timer_frequency / (1000000 / HZ),
-		    lapic_timer_frequency % (1000000 / HZ));
+		    lapic_timer_period / (1000000 / HZ),
+		    lapic_timer_period % (1000000 / HZ));
 
 	/*
 	 * Do a sanity check on the APIC calibration result
 	 */
-	if (lapic_timer_frequency < (1000000 / HZ)) {
+	if (lapic_timer_period < (1000000 / HZ)) {
 		local_irq_enable();
 		pr_warning("APIC frequency too slow, disabling apic timer\n");
 		return -1;
@@ -1227,7 +1272,7 @@ void __init sync_Arb_IDs(void)
 
 enum apic_intr_mode_id apic_intr_mode;
 
-static int __init apic_intr_mode_select(void)
+static int __init __apic_intr_mode_select(void)
 {
 	/* Check kernel option */
 	if (disable_apic) {
@@ -1289,6 +1334,12 @@ static int __init apic_intr_mode_select(void)
 	return APIC_SYMMETRIC_IO;
 }
 
+/* Select the interrupt delivery mode for the BSP */
+void __init apic_intr_mode_select(void)
+{
+	apic_intr_mode = __apic_intr_mode_select();
+}
+
 /*
  * An initial setup of the virtual wire mode.
  */
@@ -1342,8 +1393,6 @@ void __init init_bsp_APIC(void)
 void __init apic_intr_mode_init(void)
 {
 	bool upmode = IS_ENABLED(CONFIG_UP_LATE_INIT);
-
-	apic_intr_mode = apic_intr_mode_select();
 
 	switch (apic_intr_mode) {
 	case APIC_PIC:
@@ -1744,20 +1793,34 @@ static __init void try_to_enable_x2apic(int remap_mode)
 		return;
 
 	if (remap_mode != IRQ_REMAP_X2APIC_MODE) {
-		/* IR is required if there is APIC ID > 255 even when running
-		 * under KVM
+		u32 apic_limit = 255;
+
+		/*
+		 * Using X2APIC without IR is not architecturally supported
+		 * on bare metal but may be supported in guests.
 		 */
-		if (max_physical_apicid > 255 ||
-		    !x86_init.hyper.x2apic_available()) {
+		if (!x86_init.hyper.x2apic_available()) {
 			pr_info("x2apic: IRQ remapping doesn't support X2APIC mode\n");
 			x2apic_disable();
 			return;
 		}
 
 		/*
-		 * without IR all CPUs can be addressed by IOAPIC/MSI
-		 * only in physical mode
+		 * If the hypervisor supports extended destination ID in
+		 * MSI, that increases the maximum APIC ID that can be
+		 * used for non-remapped IRQ domains.
 		 */
+		if (x86_init.hyper.msi_ext_dest_id()) {
+			virt_ext_dest_id = 1;
+			apic_limit = 32767;
+		}
+
+		/*
+		 * Without IR, all CPUs can be addressed by IOAPIC/MSI only
+		 * in physical mode, and CPUs with an APIC ID that cannnot
+		 * be addressed must not be brought online.
+		 */
+		x2apic_set_max_apicid(apic_limit);
 		x2apic_phys = 1;
 	}
 	x2apic_enable();
@@ -2025,21 +2088,32 @@ __visible void __irq_entry smp_spurious_interrupt(struct pt_regs *regs)
 	entering_irq();
 	trace_spurious_apic_entry(vector);
 
-	/*
-	 * Check if this really is a spurious interrupt and ACK it
-	 * if it is a vectored one.  Just in case...
-	 * Spurious interrupts should not be ACKed.
-	 */
-	v = apic_read(APIC_ISR + ((vector & ~0x1f) >> 1));
-	if (v & (1 << (vector & 0x1f)))
-		ack_APIC_irq();
-
 	inc_irq_stat(irq_spurious_count);
 
-	/* see sw-dev-man vol 3, chapter 7.4.13.5 */
-	pr_info("spurious APIC interrupt through vector %02x on CPU#%d, "
-		"should never happen.\n", vector, smp_processor_id());
+	/*
+	 * If this is a spurious interrupt then do not acknowledge
+	 */
+	if (vector == SPURIOUS_APIC_VECTOR) {
+		/* See SDM vol 3 */
+		pr_info("Spurious APIC interrupt (vector 0xFF) on CPU#%d, should never happen.\n",
+			smp_processor_id());
+		goto out;
+	}
 
+	/*
+	 * If it is a vectored one, verify it's set in the ISR. If set,
+	 * acknowledge it.
+	 */
+	v = apic_read(APIC_ISR + ((vector & ~0x1f) >> 1));
+	if (v & (1 << (vector & 0x1f))) {
+		pr_info("Spurious interrupt (vector 0x%02x) on CPU#%d. Acked\n",
+			vector, smp_processor_id());
+		ack_APIC_irq();
+	} else {
+		pr_info("Spurious interrupt (vector 0x%02x) on CPU#%d. Not pending!\n",
+			vector, smp_processor_id());
+	}
+out:
 	trace_spurious_apic_exit(vector);
 	exiting_irq();
 }
@@ -2191,6 +2265,23 @@ static int nr_logical_cpuids = 1;
 static int cpuid_to_apicid[] = {
 	[0 ... NR_CPUS - 1] = -1,
 };
+
+#ifdef CONFIG_SMP
+/**
+ * apic_id_is_primary_thread - Check whether APIC ID belongs to a primary thread
+ * @id:	APIC ID to check
+ */
+bool apic_id_is_primary_thread(unsigned int apicid)
+{
+	u32 mask;
+
+	if (smp_num_siblings == 1)
+		return true;
+	/* Isolate the SMT bit(s) in the APICID and check for 0 */
+	mask = (1U << (fls(smp_num_siblings) - 1)) - 1;
+	return !(apicid & mask);
+}
+#endif
 
 /*
  * Should use this API to allocate logical CPU IDs to keep nr_logical_cpuids
@@ -2344,6 +2435,46 @@ int hard_smp_processor_id(void)
 {
 	return read_apic_id();
 }
+
+void __irq_msi_compose_msg(struct irq_cfg *cfg, struct msi_msg *msg,
+			   bool dmar)
+{
+	memset(msg, 0, sizeof(*msg));
+
+	msg->arch_addr_lo.base_address = X86_MSI_BASE_ADDRESS_LOW;
+	msg->arch_addr_lo.dest_mode_logical = (apic->irq_dest_mode != 0);
+	msg->arch_addr_lo.destid_0_7 = cfg->dest_apicid & 0xFF;
+
+	msg->arch_data.delivery_mode = APIC_DELIVERY_MODE_FIXED;
+	msg->arch_data.vector = cfg->vector;
+
+	msg->address_hi = X86_MSI_BASE_ADDRESS_HIGH;
+	/*
+	 * Only the IOMMU itself can use the trick of putting destination
+	 * APIC ID into the high bits of the address. Anything else would
+	 * just be writing to memory if it tried that, and needs IR to
+	 * address APICs which can't be addressed in the normal 32-bit
+	 * address range at 0xFFExxxxx. That is typically just 8 bits, but
+	 * some hypervisors allow the extended destination ID field in bits
+	 * 5-11 to be used, giving support for 15 bits of APIC IDs in total.
+	 */
+	if (dmar)
+		msg->arch_addr_hi.destid_8_31 = cfg->dest_apicid >> 8;
+	else if (virt_ext_dest_id && cfg->dest_apicid < 0x8000)
+		msg->arch_addr_lo.virt_destid_8_14 = cfg->dest_apicid >> 8;
+	else
+		WARN_ON_ONCE(cfg->dest_apicid > 0xFF);
+}
+
+u32 x86_msi_msg_get_destid(struct msi_msg *msg, bool extid)
+{
+	u32 dest = msg->arch_addr_lo.destid_0_7;
+
+	if (extid)
+		dest |= msg->arch_addr_hi.destid_8_31 << 8;
+	return dest;
+}
+EXPORT_SYMBOL_GPL(x86_msi_msg_get_destid);
 
 /*
  * Override the generic EOI implementation with an optimized version.

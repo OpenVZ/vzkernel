@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  TDA9950 Consumer Electronics Control driver
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * The NXP TDA9950 implements the HDMI Consumer Electronics Control
  * interface.  The host interface is similar to a mailbox: the data
@@ -76,8 +73,11 @@ struct tda9950_priv {
 static int tda9950_write_range(struct i2c_client *client, u8 addr, u8 *p, int cnt)
 {
 	struct i2c_msg msg;
-	u8 buf[cnt + 1];
+	u8 buf[CEC_MAX_MSG_SIZE + 3];
 	int ret;
+
+	if (WARN_ON(cnt > sizeof(buf) - 1))
+		return -EINVAL;
 
 	buf[0] = addr;
 	memcpy(buf + 1, p, cnt);
@@ -188,7 +188,8 @@ static irqreturn_t tda9950_irq(int irq, void *data)
 			break;
 		}
 		/* TDA9950 executes all retries for us */
-		tx_status |= CEC_TX_STATUS_MAX_RETRIES;
+		if (tx_status != CEC_TX_STATUS_OK)
+			tx_status |= CEC_TX_STATUS_MAX_RETRIES;
 		cec_transmit_done(priv->adap, tx_status, arb_lost_cnt,
 				  nack_cnt, 0, err_cnt);
 		break;
@@ -307,7 +308,7 @@ static void tda9950_release(struct tda9950_priv *priv)
 	/* Wait up to .5s for it to signal non-busy */
 	do {
 		csr = tda9950_read(client, REG_CSR);
-		if (!(csr & CSR_BUSY) || --timeout)
+		if (!(csr & CSR_BUSY) || !--timeout)
 			break;
 		msleep(10);
 	} while (1);
@@ -419,7 +420,8 @@ static int tda9950_probe(struct i2c_client *client,
 		priv->hdmi = glue->parent;
 
 	priv->adap = cec_allocate_adapter(&tda9950_cec_ops, priv, "tda9950",
-					  CEC_CAP_DEFAULTS,
+					  CEC_CAP_DEFAULTS |
+					  CEC_CAP_CONNECTOR_INFO,
 					  CEC_MAX_LOG_ADDRS);
 	if (IS_ERR(priv->adap))
 		return PTR_ERR(priv->adap);
@@ -456,13 +458,14 @@ static int tda9950_probe(struct i2c_client *client,
 	if (ret < 0)
 		return ret;
 
-	priv->notify = cec_notifier_get(priv->hdmi);
+	priv->notify = cec_notifier_cec_adap_register(priv->hdmi, NULL,
+						      priv->adap);
 	if (!priv->notify)
 		return -ENOMEM;
 
 	ret = cec_register_adapter(priv->adap, priv->hdmi);
 	if (ret < 0) {
-		cec_notifier_put(priv->notify);
+		cec_notifier_cec_adap_unregister(priv->notify, priv->adap);
 		return ret;
 	}
 
@@ -472,8 +475,6 @@ static int tda9950_probe(struct i2c_client *client,
 	 */
 	devm_remove_action(dev, tda9950_cec_del, priv);
 
-	cec_register_cec_notifier(priv->adap, priv->notify);
-
 	return 0;
 }
 
@@ -481,8 +482,8 @@ static int tda9950_remove(struct i2c_client *client)
 {
 	struct tda9950_priv *priv = i2c_get_clientdata(client);
 
+	cec_notifier_cec_adap_unregister(priv->notify, priv->adap);
 	cec_unregister_adapter(priv->adap);
-	cec_notifier_put(priv->notify);
 
 	return 0;
 }

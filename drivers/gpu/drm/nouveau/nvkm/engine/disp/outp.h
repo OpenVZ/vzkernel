@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_DISP_OUTP_H__
 #define __NVKM_DISP_OUTP_H__
 #include <engine/disp.h>
@@ -13,10 +13,10 @@ struct nvkm_outp {
 	struct dcb_output info;
 
 	struct nvkm_i2c_bus *i2c;
-	int or;
 
 	struct list_head head;
 	struct nvkm_conn *conn;
+	bool identity;
 
 	/* Assembly state. */
 #define NVKM_OUTP_PRIV 1
@@ -32,7 +32,7 @@ int nvkm_outp_new(struct nvkm_disp *, int index, struct dcb_output *,
 void nvkm_outp_del(struct nvkm_outp **);
 void nvkm_outp_init(struct nvkm_outp *);
 void nvkm_outp_fini(struct nvkm_outp *);
-int nvkm_outp_acquire(struct nvkm_outp *, u8 user);
+int nvkm_outp_acquire(struct nvkm_outp *, u8 user, bool hda);
 void nvkm_outp_release(struct nvkm_outp *, u8 user);
 void nvkm_outp_route(struct nvkm_disp *);
 
@@ -41,7 +41,8 @@ struct nvkm_outp_func {
 	void (*init)(struct nvkm_outp *);
 	void (*fini)(struct nvkm_outp *);
 	int (*acquire)(struct nvkm_outp *);
-	void (*release)(struct nvkm_outp *, struct nvkm_ior *);
+	void (*release)(struct nvkm_outp *);
+	void (*disable)(struct nvkm_outp *, struct nvkm_ior *);
 };
 
 #define OUTP_MSG(o,l,f,a...) do {                                              \

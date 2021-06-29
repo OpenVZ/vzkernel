@@ -23,16 +23,6 @@ struct xfs_icluster {
 					 * sparse chunks */
 };
 
-/* Calculate and return the number of filesystem blocks per inode cluster */
-static inline int
-xfs_icluster_size_fsb(
-	struct xfs_mount	*mp)
-{
-	if (mp->m_sb.sb_blocksize >= mp->m_inode_cluster_size)
-		return 1;
-	return mp->m_inode_cluster_size >> mp->m_sb.sb_blocklog;
-}
-
 /*
  * Make an inode pointer out of the buffer/offset.
  */
@@ -82,7 +72,6 @@ int					/* error */
 xfs_difree(
 	struct xfs_trans *tp,		/* transaction pointer */
 	xfs_ino_t	inode,		/* inode to be freed */
-	struct xfs_defer_ops *dfops,	/* extents to free */
 	struct xfs_icluster *ifree);	/* cluster info if deleted */
 
 /*
@@ -95,13 +84,6 @@ xfs_imap(
 	xfs_ino_t	ino,		/* inode to locate */
 	struct xfs_imap	*imap,		/* location map structure */
 	uint		flags);		/* flags for inode btree lookup */
-
-/*
- * Compute and fill in value of m_in_maxlevels.
- */
-void
-xfs_ialloc_compute_maxlevels(
-	struct xfs_mount *mp);		/* file system mount structure */
 
 /*
  * Log specified fields for the ag hdr (inode section)
@@ -169,5 +151,7 @@ int xfs_inobt_insert_rec(struct xfs_btree_cur *cur, uint16_t holemask,
 		int *stat);
 
 int xfs_ialloc_cluster_alignment(struct xfs_mount *mp);
+void xfs_ialloc_setup_geometry(struct xfs_mount *mp);
+xfs_ino_t xfs_ialloc_calc_rootino(struct xfs_mount *mp, int sunit);
 
 #endif	/* __XFS_IALLOC_H__ */

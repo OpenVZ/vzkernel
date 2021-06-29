@@ -18,7 +18,6 @@
  *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
-#include "util.h"
 #include <dirent.h>
 #include <mntent.h>
 #include <stdio.h>
@@ -34,8 +33,9 @@
 #include <stdbool.h>
 #include <linux/list.h>
 #include <linux/kernel.h>
+#include <linux/zalloc.h>
+#include <internal/lib.h> // page_size
 
-#include "../perf.h"
 #include "trace-event.h"
 #include <api/fs/tracing_path.h>
 #include "evsel.h"
@@ -377,7 +377,7 @@ out:
 
 static int record_saved_cmdline(void)
 {
-	unsigned int size;
+	unsigned long long size;
 	char *path;
 	struct stat st;
 	int ret, err = 0;
@@ -420,11 +420,11 @@ static struct tracepoint_path *
 get_tracepoints_path(struct list_head *pattrs)
 {
 	struct tracepoint_path path, *ppath = &path;
-	struct perf_evsel *pos;
+	struct evsel *pos;
 	int nr_tracepoints = 0;
 
-	list_for_each_entry(pos, pattrs, node) {
-		if (pos->attr.type != PERF_TYPE_TRACEPOINT)
+	list_for_each_entry(pos, pattrs, core.node) {
+		if (pos->core.attr.type != PERF_TYPE_TRACEPOINT)
 			continue;
 		++nr_tracepoints;
 
@@ -440,11 +440,11 @@ get_tracepoints_path(struct list_head *pattrs)
 		}
 
 try_id:
-		ppath->next = tracepoint_id_to_path(pos->attr.config);
+		ppath->next = tracepoint_id_to_path(pos->core.attr.config);
 		if (!ppath->next) {
 error:
 			pr_debug("No memory to alloc tracepoints list\n");
-			put_tracepoints_path(&path);
+			put_tracepoints_path(path.next);
 			return NULL;
 		}
 next:
@@ -456,10 +456,10 @@ next:
 
 bool have_tracepoints(struct list_head *pattrs)
 {
-	struct perf_evsel *pos;
+	struct evsel *pos;
 
-	list_for_each_entry(pos, pattrs, node)
-		if (pos->attr.type == PERF_TYPE_TRACEPOINT)
+	list_for_each_entry(pos, pattrs, core.node)
+		if (pos->core.attr.type == PERF_TYPE_TRACEPOINT)
 			return true;
 
 	return false;
@@ -531,12 +531,14 @@ struct tracing_data *tracing_data_get(struct list_head *pattrs,
 			 "/tmp/perf-XXXXXX");
 		if (!mkstemp(tdata->temp_file)) {
 			pr_debug("Can't make temp file");
+			free(tdata);
 			return NULL;
 		}
 
 		temp_fd = open(tdata->temp_file, O_RDWR);
 		if (temp_fd < 0) {
 			pr_debug("Can't read '%s'", tdata->temp_file);
+			free(tdata);
 			return NULL;
 		}
 

@@ -28,9 +28,14 @@
 #include <linux/hashtable.h>
 #include <linux/kernel.h>
 
+#define FAKE_JUMP_OFFSET -1
+
+#define C_JUMP_TABLE_SECTION ".rodata..c_jump_table"
+
 struct alternative {
 	struct list_head list;
 	struct instruction *insn;
+	bool skip_orig;
 };
 
 const char *objname;
@@ -159,12 +164,13 @@ static int __dead_end_function(struct objtool_file *file, struct symbol *func,
 		"do_task_dead",
 		"__module_put_and_exit",
 		"complete_and_exit",
-		"kvm_spurious_fault",
 		"__reiserfs_panic",
 		"lbug_with_loc",
 		"fortify_panic",
 		"usercopy_abort",
 		"machine_real_restart",
+		"rewind_stack_do_exit",
+		"kunit_try_catch_throw",
 	};
 
 	if (func->bind == STB_WEAK)
@@ -452,6 +458,83 @@ static void add_ignores(struct objtool_file *file)
 }
 
 /*
+ * This is a whitelist of functions that is allowed to be called with AC set.
+ * The list is meant to be minimal and only contains compiler instrumentation
+ * ABI and a few functions used to implement *_{to,from}_user() functions.
+ *
+ * These functions must not directly change AC, but may PUSHF/POPF.
+ */
+static const char *uaccess_safe_builtin[] = {
+	/* KASAN */
+	"kasan_report",
+	"check_memory_region",
+	/* KASAN out-of-line */
+	"__asan_loadN_noabort",
+	"__asan_load1_noabort",
+	"__asan_load2_noabort",
+	"__asan_load4_noabort",
+	"__asan_load8_noabort",
+	"__asan_load16_noabort",
+	"__asan_storeN_noabort",
+	"__asan_store1_noabort",
+	"__asan_store2_noabort",
+	"__asan_store4_noabort",
+	"__asan_store8_noabort",
+	"__asan_store16_noabort",
+	/* KASAN in-line */
+	"__asan_report_load_n_noabort",
+	"__asan_report_load1_noabort",
+	"__asan_report_load2_noabort",
+	"__asan_report_load4_noabort",
+	"__asan_report_load8_noabort",
+	"__asan_report_load16_noabort",
+	"__asan_report_store_n_noabort",
+	"__asan_report_store1_noabort",
+	"__asan_report_store2_noabort",
+	"__asan_report_store4_noabort",
+	"__asan_report_store8_noabort",
+	"__asan_report_store16_noabort",
+	/* KCOV */
+	"write_comp_data",
+	"__sanitizer_cov_trace_pc",
+	"__sanitizer_cov_trace_const_cmp1",
+	"__sanitizer_cov_trace_const_cmp2",
+	"__sanitizer_cov_trace_const_cmp4",
+	"__sanitizer_cov_trace_const_cmp8",
+	"__sanitizer_cov_trace_cmp1",
+	"__sanitizer_cov_trace_cmp2",
+	"__sanitizer_cov_trace_cmp4",
+	"__sanitizer_cov_trace_cmp8",
+	/* UBSAN */
+	"ubsan_type_mismatch_common",
+	"__ubsan_handle_type_mismatch",
+	"__ubsan_handle_type_mismatch_v1",
+	"__ubsan_handle_shift_out_of_bounds",
+	/* misc */
+	"csum_partial_copy_generic",
+	"__memcpy_mcsafe",
+	"ftrace_likely_update", /* CONFIG_TRACE_BRANCH_PROFILING */
+	NULL
+};
+
+static void add_uaccess_safe(struct objtool_file *file)
+{
+	struct symbol *func;
+	const char **name;
+
+	if (!uaccess)
+		return;
+
+	for (name = uaccess_safe_builtin; *name; name++) {
+		func = find_symbol_by_name(file->elf, *name);
+		if (!func)
+			continue;
+
+		func->alias->uaccess_safe = true;
+	}
+}
+
+/*
  * FIXME: For now, just ignore any alternatives which add retpolines.  This is
  * a temporary hack, as it doesn't allow ORC to unwind from inside a retpoline.
  * But it at least allows objtool to understand the control flow *around* the
@@ -500,7 +583,7 @@ static int add_jump_destinations(struct objtool_file *file)
 		    insn->type != INSN_JUMP_UNCONDITIONAL)
 			continue;
 
-		if (insn->ignore)
+		if (insn->ignore || insn->offset == FAKE_JUMP_OFFSET)
 			continue;
 
 		rela = find_rela_by_dest_range(insn->sec, insn->offset,
@@ -524,7 +607,8 @@ static int add_jump_destinations(struct objtool_file *file)
 			continue;
 		} else {
 			/* sibling call */
-			insn->jump_dest = 0;
+			insn->call_dest = rela->sym;
+			insn->jump_dest = NULL;
 			continue;
 		}
 
@@ -546,25 +630,38 @@ static int add_jump_destinations(struct objtool_file *file)
 		}
 
 		/*
-		 * For GCC 8+, create parent/child links for any cold
-		 * subfunctions.  This is _mostly_ redundant with a similar
-		 * initialization in read_symbols().
-		 *
-		 * If a function has aliases, we want the *first* such function
-		 * in the symbol table to be the subfunction's parent.  In that
-		 * case we overwrite the initialization done in read_symbols().
-		 *
-		 * However this code can't completely replace the
-		 * read_symbols() code because this doesn't detect the case
-		 * where the parent function's only reference to a subfunction
-		 * is through a switch table.
+		 * Cross-function jump.
 		 */
 		if (insn->func && insn->jump_dest->func &&
-		    insn->func != insn->jump_dest->func &&
-		    !strstr(insn->func->name, ".cold.") &&
-		    strstr(insn->jump_dest->func->name, ".cold.")) {
-			insn->func->cfunc = insn->jump_dest->func;
-			insn->jump_dest->func->pfunc = insn->func;
+		    insn->func != insn->jump_dest->func) {
+
+			/*
+			 * For GCC 8+, create parent/child links for any cold
+			 * subfunctions.  This is _mostly_ redundant with a
+			 * similar initialization in read_symbols().
+			 *
+			 * If a function has aliases, we want the *first* such
+			 * function in the symbol table to be the subfunction's
+			 * parent.  In that case we overwrite the
+			 * initialization done in read_symbols().
+			 *
+			 * However this code can't completely replace the
+			 * read_symbols() code because this doesn't detect the
+			 * case where the parent function's only reference to a
+			 * subfunction is through a jump table.
+			 */
+			if (!strstr(insn->func->name, ".cold.") &&
+			    strstr(insn->jump_dest->func->name, ".cold.")) {
+				insn->func->cfunc = insn->jump_dest->func;
+				insn->jump_dest->func->pfunc = insn->func;
+
+			} else if (insn->jump_dest->func->pfunc != insn->func->pfunc &&
+				   insn->jump_dest->offset == insn->jump_dest->func->offset) {
+
+				/* sibling class */
+				insn->call_dest = insn->jump_dest->func;
+				insn->jump_dest = NULL;
+			}
 		}
 	}
 
@@ -633,9 +730,6 @@ static int add_call_destinations(struct objtool_file *file)
  *    conditionally jumps to the _end_ of the entry.  We have to modify these
  *    jumps' destinations to point back to .text rather than the end of the
  *    entry in .altinstr_replacement.
- *
- * 4. It has been requested that we don't validate the !POPCNT feature path
- *    which is a "very very small percentage of machines".
  */
 static int handle_group_alt(struct objtool_file *file,
 			    struct special_alt *special_alt,
@@ -650,9 +744,6 @@ static int handle_group_alt(struct objtool_file *file,
 	sec_for_each_insn_from(file, insn) {
 		if (insn->offset >= special_alt->orig_off + special_alt->orig_len)
 			break;
-
-		if (special_alt->skip_orig)
-			insn->type = INSN_NOP;
 
 		insn->alt_group = true;
 		last_orig_insn = insn;
@@ -669,10 +760,10 @@ static int handle_group_alt(struct objtool_file *file,
 		clear_insn_state(&fake_jump->state);
 
 		fake_jump->sec = special_alt->new_sec;
-		fake_jump->offset = -1;
+		fake_jump->offset = FAKE_JUMP_OFFSET;
 		fake_jump->type = INSN_JUMP_UNCONDITIONAL;
 		fake_jump->jump_dest = list_next_entry(last_orig_insn, list);
-		fake_jump->ignore = true;
+		fake_jump->func = orig_insn->func;
 	}
 
 	if (!special_alt->new_len) {
@@ -817,6 +908,8 @@ static int add_special_section_alts(struct objtool_file *file)
 		}
 
 		alt->insn = new_insn;
+		alt->skip_orig = special_alt->skip_orig;
+		orig_insn->ignore_alts |= special_alt->skip_alt;
 		list_add_tail(&alt->list, &orig_insn->alts);
 
 		list_del(&special_alt->list);
@@ -827,20 +920,26 @@ out:
 	return ret;
 }
 
-static int add_switch_table(struct objtool_file *file, struct instruction *insn,
-			    struct rela *table, struct rela *next_table)
+static int add_jump_table(struct objtool_file *file, struct instruction *insn,
+			    struct rela *table)
 {
 	struct rela *rela = table;
-	struct instruction *alt_insn;
+	struct instruction *dest_insn;
 	struct alternative *alt;
 	struct symbol *pfunc = insn->func->pfunc;
 	unsigned int prev_offset = 0;
 
-	list_for_each_entry_from(rela, &file->rodata->rela->rela_list, list) {
-		if (rela == next_table)
+	/*
+	 * Each @rela is a switch table relocation which points to the target
+	 * instruction.
+	 */
+	list_for_each_entry_from(rela, &table->sec->rela_list, list) {
+
+		/* Check for the end of the table: */
+		if (rela != table && rela->jump_table_start)
 			break;
 
-		/* Make sure the switch table entries are consecutive: */
+		/* Make sure the table entries are consecutive: */
 		if (prev_offset && rela->offset != prev_offset + 8)
 			break;
 
@@ -849,12 +948,12 @@ static int add_switch_table(struct objtool_file *file, struct instruction *insn,
 		    rela->addend == pfunc->offset)
 			break;
 
-		alt_insn = find_insn(file, rela->sym->sec, rela->addend);
-		if (!alt_insn)
+		dest_insn = find_insn(file, rela->sym->sec, rela->addend);
+		if (!dest_insn)
 			break;
 
-		/* Make sure the jmp dest is in the function or subfunction: */
-		if (alt_insn->func->pfunc != pfunc)
+		/* Make sure the destination is in the same function: */
+		if (dest_insn->func->pfunc != pfunc)
 			break;
 
 		alt = malloc(sizeof(*alt));
@@ -863,7 +962,7 @@ static int add_switch_table(struct objtool_file *file, struct instruction *insn,
 			return -1;
 		}
 
-		alt->insn = alt_insn;
+		alt->insn = dest_insn;
 		list_add_tail(&alt->list, &insn->alts);
 		prev_offset = rela->offset;
 	}
@@ -878,7 +977,7 @@ static int add_switch_table(struct objtool_file *file, struct instruction *insn,
 }
 
 /*
- * find_switch_table() - Given a dynamic jump, find the switch jump table in
+ * find_jump_table() - Given a dynamic jump, find the switch jump table in
  * .rodata associated with it.
  *
  * There are 3 basic patterns:
@@ -920,12 +1019,13 @@ static int add_switch_table(struct objtool_file *file, struct instruction *insn,
  *
  *    NOTE: RETPOLINE made it harder still to decode dynamic jumps.
  */
-static struct rela *find_switch_table(struct objtool_file *file,
+static struct rela *find_jump_table(struct objtool_file *file,
 				      struct symbol *func,
 				      struct instruction *insn)
 {
-	struct rela *text_rela, *rodata_rela;
+	struct rela *text_rela, *table_rela;
 	struct instruction *orig_insn = insn;
+	struct section *table_sec;
 	unsigned long table_offset;
 
 	/*
@@ -953,44 +1053,57 @@ static struct rela *find_switch_table(struct objtool_file *file,
 		/* look for a relocation which references .rodata */
 		text_rela = find_rela_by_dest_range(insn->sec, insn->offset,
 						    insn->len);
-		if (!text_rela || text_rela->sym != file->rodata->sym)
+		if (!text_rela || text_rela->sym->type != STT_SECTION ||
+		    !text_rela->sym->sec->rodata)
 			continue;
 
 		table_offset = text_rela->addend;
+		table_sec = text_rela->sym->sec;
+
 		if (text_rela->type == R_X86_64_PC32)
 			table_offset += 4;
 
 		/*
 		 * Make sure the .rodata address isn't associated with a
-		 * symbol.  gcc jump tables are anonymous data.
+		 * symbol.  GCC jump tables are anonymous data.
+		 *
+		 * Also support C jump tables which are in the same format as
+		 * switch jump tables.  For objtool to recognize them, they
+		 * need to be placed in the C_JUMP_TABLE_SECTION section.  They
+		 * have symbols associated with them.
 		 */
-		if (find_symbol_containing(file->rodata, table_offset))
+		if (find_symbol_containing(table_sec, table_offset) &&
+		    strcmp(table_sec->name, C_JUMP_TABLE_SECTION))
 			continue;
 
-		rodata_rela = find_rela_by_dest(file->rodata, table_offset);
-		if (rodata_rela) {
-			/*
-			 * Use of RIP-relative switch jumps is quite rare, and
-			 * indicates a rare GCC quirk/bug which can leave dead
-			 * code behind.
-			 */
-			if (text_rela->type == R_X86_64_PC32)
-				file->ignore_unreachables = true;
+		/* Each table entry has a rela associated with it. */
+		table_rela = find_rela_by_dest(table_sec, table_offset);
+		if (!table_rela)
+			continue;
 
-			return rodata_rela;
-		}
+		/*
+		 * Use of RIP-relative switch jumps is quite rare, and
+		 * indicates a rare GCC quirk/bug which can leave dead code
+		 * behind.
+		 */
+		if (text_rela->type == R_X86_64_PC32)
+			file->ignore_unreachables = true;
+
+		return table_rela;
 	}
 
 	return NULL;
 }
 
-
-static int add_func_switch_tables(struct objtool_file *file,
-				  struct symbol *func)
+/*
+ * First pass: Mark the head of each jump table so that in the next pass,
+ * we know when a given jump table ends and the next one starts.
+ */
+static void mark_func_jump_tables(struct objtool_file *file,
+				    struct symbol *func)
 {
-	struct instruction *insn, *last = NULL, *prev_jump = NULL;
-	struct rela *rela, *prev_rela = NULL;
-	int ret;
+	struct instruction *insn, *last = NULL;
+	struct rela *rela;
 
 	func_for_each_insn_all(file, func, insn) {
 		if (!last)
@@ -998,7 +1111,7 @@ static int add_func_switch_tables(struct objtool_file *file,
 
 		/*
 		 * Store back-pointers for unconditional forward jumps such
-		 * that find_switch_table() can back-track using those and
+		 * that find_jump_table() can back-track using those and
 		 * avoid some potentially confusing code.
 		 */
 		if (insn->type == INSN_JUMP_UNCONDITIONAL && insn->jump_dest &&
@@ -1013,27 +1126,25 @@ static int add_func_switch_tables(struct objtool_file *file,
 		if (insn->type != INSN_JUMP_DYNAMIC)
 			continue;
 
-		rela = find_switch_table(file, func, insn);
-		if (!rela)
+		rela = find_jump_table(file, func, insn);
+		if (rela) {
+			rela->jump_table_start = true;
+			insn->jump_table = rela;
+		}
+	}
+}
+
+static int add_func_jump_tables(struct objtool_file *file,
+				  struct symbol *func)
+{
+	struct instruction *insn;
+	int ret;
+
+	func_for_each_insn_all(file, func, insn) {
+		if (!insn->jump_table)
 			continue;
 
-		/*
-		 * We found a switch table, but we don't know yet how big it
-		 * is.  Don't add it until we reach the end of the function or
-		 * the beginning of another switch table in the same function.
-		 */
-		if (prev_jump) {
-			ret = add_switch_table(file, prev_jump, prev_rela, rela);
-			if (ret)
-				return ret;
-		}
-
-		prev_jump = insn;
-		prev_rela = rela;
-	}
-
-	if (prev_jump) {
-		ret = add_switch_table(file, prev_jump, prev_rela, NULL);
+		ret = add_jump_table(file, insn, insn->jump_table);
 		if (ret)
 			return ret;
 	}
@@ -1046,13 +1157,13 @@ static int add_func_switch_tables(struct objtool_file *file,
  * section which contains a list of addresses within the function to jump to.
  * This finds these jump tables and adds them to the insn->alts lists.
  */
-static int add_switch_table_alts(struct objtool_file *file)
+static int add_jump_table_alts(struct objtool_file *file)
 {
 	struct section *sec;
 	struct symbol *func;
 	int ret;
 
-	if (!file->rodata || !file->rodata->rela)
+	if (!file->rodata)
 		return 0;
 
 	for_each_sec(file, sec) {
@@ -1060,7 +1171,8 @@ static int add_switch_table_alts(struct objtool_file *file)
 			if (func->type != STT_FUNC)
 				continue;
 
-			ret = add_func_switch_tables(file, func);
+			mark_func_jump_tables(file, func);
+			ret = add_func_jump_tables(file, func);
 			if (ret)
 				return ret;
 		}
@@ -1157,6 +1269,7 @@ static int read_unwind_hints(struct objtool_file *file)
 
 		cfa->offset = hint->sp_offset;
 		insn->state.type = hint->type;
+		insn->state.end = hint->end;
 	}
 
 	return 0;
@@ -1197,9 +1310,37 @@ static int read_retpoline_hints(struct objtool_file *file)
 	return 0;
 }
 
+static void mark_rodata(struct objtool_file *file)
+{
+	struct section *sec;
+	bool found = false;
+
+	/*
+	 * Search for the following rodata sections, each of which can
+	 * potentially contain jump tables:
+	 *
+	 * - .rodata: can contain GCC switch tables
+	 * - .rodata.<func>: same, if -fdata-sections is being used
+	 * - .rodata..c_jump_table: contains C annotated jump tables
+	 *
+	 * .rodata.str1.* sections are ignored; they don't contain jump tables.
+	 */
+	for_each_sec(file, sec) {
+		if ((!strncmp(sec->name, ".rodata", 7) && !strstr(sec->name, ".str1.")) ||
+		    !strcmp(sec->name, C_JUMP_TABLE_SECTION)) {
+			sec->rodata = true;
+			found = true;
+		}
+	}
+
+	file->rodata = found;
+}
+
 static int decode_sections(struct objtool_file *file)
 {
 	int ret;
+
+	mark_rodata(file);
 
 	ret = decode_instructions(file);
 	if (ret)
@@ -1210,6 +1351,7 @@ static int decode_sections(struct objtool_file *file)
 		return ret;
 
 	add_ignores(file);
+	add_uaccess_safe(file);
 
 	ret = add_nospec_ignores(file);
 	if (ret)
@@ -1227,7 +1369,7 @@ static int decode_sections(struct objtool_file *file)
 	if (ret)
 		return ret;
 
-	ret = add_switch_table_alts(file);
+	ret = add_jump_table_alts(file);
 	if (ret)
 		return ret;
 
@@ -1287,15 +1429,15 @@ static int update_insn_state_regs(struct instruction *insn, struct insn_state *s
 	struct cfi_reg *cfa = &state->cfa;
 	struct stack_op *op = &insn->stack_op;
 
-	if (cfa->base != CFI_SP)
+	if (cfa->base != CFI_SP && cfa->base != CFI_SP_INDIRECT)
 		return 0;
 
 	/* push */
-	if (op->dest.type == OP_DEST_PUSH)
+	if (op->dest.type == OP_DEST_PUSH || op->dest.type == OP_DEST_PUSHF)
 		cfa->offset += 8;
 
 	/* pop */
-	if (op->src.type == OP_SRC_POP)
+	if (op->src.type == OP_SRC_POP || op->src.type == OP_SRC_POPF)
 		cfa->offset -= 8;
 
 	/* add immediate to sp */
@@ -1552,6 +1694,7 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state)
 			break;
 
 		case OP_SRC_POP:
+		case OP_SRC_POPF:
 			if (!state->drap && op->dest.type == OP_DEST_REG &&
 			    op->dest.reg == cfa->base) {
 
@@ -1616,6 +1759,7 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state)
 		break;
 
 	case OP_DEST_PUSH:
+	case OP_DEST_PUSHF:
 		state->stack_size += 8;
 		if (cfa->base == CFI_SP)
 			cfa->offset += 8;
@@ -1706,7 +1850,7 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state)
 		break;
 
 	case OP_DEST_MEM:
-		if (op->src.type != OP_SRC_POP) {
+		if (op->src.type != OP_SRC_POP && op->src.type != OP_SRC_POPF) {
 			WARN_FUNC("unknown stack-related memory operation",
 				  insn->sec, insn->offset);
 			return -1;
@@ -1770,6 +1914,44 @@ static bool insn_state_match(struct instruction *insn, struct insn_state *state)
 	return false;
 }
 
+static inline bool func_uaccess_safe(struct symbol *func)
+{
+	if (func)
+		return func->alias->uaccess_safe;
+
+	return false;
+}
+
+static inline const char *insn_dest_name(struct instruction *insn)
+{
+	if (insn->call_dest)
+		return insn->call_dest->name;
+
+	return "{dynamic}";
+}
+
+static int validate_call(struct instruction *insn, struct insn_state *state)
+{
+	if (state->uaccess && !func_uaccess_safe(insn->call_dest)) {
+		WARN_FUNC("call to %s() with UACCESS enabled",
+				insn->sec, insn->offset, insn_dest_name(insn));
+		return 1;
+	}
+
+	return 0;
+}
+
+static int validate_sibling_call(struct instruction *insn, struct insn_state *state)
+{
+	if (has_modified_stack_frame(state)) {
+		WARN_FUNC("sibling call from callable instruction with modified stack frame",
+				insn->sec, insn->offset);
+		return 1;
+	}
+
+	return validate_call(insn, state);
+}
+
 /*
  * Follow the branch starting at the given instruction, and recursively follow
  * any other branches (jumps).  Meanwhile, track the frame pointer state at
@@ -1815,7 +1997,9 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
 			if (!insn->hint && !insn_state_match(insn, &state))
 				return 1;
 
-			return 0;
+			/* If we were here with AC=0, but now have AC=1, go again */
+			if (insn->state.uaccess || !state.uaccess)
+				return 0;
 		}
 
 		if (insn->hint) {
@@ -1864,16 +2048,37 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
 		insn->visited = true;
 
 		if (!insn->ignore_alts) {
+			bool skip_orig = false;
+
 			list_for_each_entry(alt, &insn->alts, list) {
+				if (alt->skip_orig)
+					skip_orig = true;
+
 				ret = validate_branch(file, alt->insn, state);
-				if (ret)
-					return 1;
+				if (ret) {
+					if (backtrace)
+						BT_FUNC("(alt)", insn);
+					return ret;
+				}
 			}
+
+			if (skip_orig)
+				return 0;
 		}
 
 		switch (insn->type) {
 
 		case INSN_RETURN:
+			if (state.uaccess && !func_uaccess_safe(func)) {
+				WARN_FUNC("return with UACCESS enabled", sec, insn->offset);
+				return 1;
+			}
+
+			if (!state.uaccess && func_uaccess_safe(func)) {
+				WARN_FUNC("return with UACCESS disabled from a UACCESS-safe function", sec, insn->offset);
+				return 1;
+			}
+
 			if (func && has_modified_stack_frame(&state)) {
 				WARN_FUNC("return with modified stack frame",
 					  sec, insn->offset);
@@ -1889,17 +2094,22 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
 			return 0;
 
 		case INSN_CALL:
-			if (is_fentry_call(insn))
-				break;
-
-			ret = dead_end_function(file, insn->call_dest);
-			if (ret == 1)
-				return 0;
-			if (ret == -1)
-				return 1;
-
-			/* fallthrough */
 		case INSN_CALL_DYNAMIC:
+			ret = validate_call(insn, &state);
+			if (ret)
+				return ret;
+
+			if (insn->type == INSN_CALL) {
+				if (is_fentry_call(insn))
+					break;
+
+				ret = dead_end_function(file, insn->call_dest);
+				if (ret == 1)
+					return 0;
+				if (ret == -1)
+					return 1;
+			}
+
 			if (!no_fp && func && !has_valid_stack_frame(&state)) {
 				WARN_FUNC("call without frame pointer save/setup",
 					  sec, insn->offset);
@@ -1909,18 +2119,21 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
 
 		case INSN_JUMP_CONDITIONAL:
 		case INSN_JUMP_UNCONDITIONAL:
-			if (insn->jump_dest &&
-			    (!func || !insn->jump_dest->func ||
-			     insn->jump_dest->func->pfunc == func)) {
+			if (func && !insn->jump_dest) {
+				ret = validate_sibling_call(insn, &state);
+				if (ret)
+					return ret;
+
+			} else if (insn->jump_dest &&
+				   (!func || !insn->jump_dest->func ||
+				    insn->jump_dest->func->pfunc == func)) {
 				ret = validate_branch(file, insn->jump_dest,
 						      state);
-				if (ret)
-					return 1;
-
-			} else if (func && has_modified_stack_frame(&state)) {
-				WARN_FUNC("sibling call from callable instruction with modified stack frame",
-					  sec, insn->offset);
-				return 1;
+				if (ret) {
+					if (backtrace)
+						BT_FUNC("(branch)", insn);
+					return ret;
+				}
 			}
 
 			if (insn->type == INSN_JUMP_UNCONDITIONAL)
@@ -1929,11 +2142,10 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
 			break;
 
 		case INSN_JUMP_DYNAMIC:
-			if (func && list_empty(&insn->alts) &&
-			    has_modified_stack_frame(&state)) {
-				WARN_FUNC("sibling call from callable instruction with modified stack frame",
-					  sec, insn->offset);
-				return 1;
+			if (func && list_empty(&insn->alts)) {
+				ret = validate_sibling_call(insn, &state);
+				if (ret)
+					return ret;
 			}
 
 			return 0;
@@ -1950,6 +2162,49 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
 			if (update_insn_state(insn, &state))
 				return 1;
 
+			if (insn->stack_op.dest.type == OP_DEST_PUSHF) {
+				if (!state.uaccess_stack) {
+					state.uaccess_stack = 1;
+				} else if (state.uaccess_stack >> 31) {
+					WARN_FUNC("PUSHF stack exhausted", sec, insn->offset);
+					return 1;
+				}
+				state.uaccess_stack <<= 1;
+				state.uaccess_stack  |= state.uaccess;
+			}
+
+			if (insn->stack_op.src.type == OP_SRC_POPF) {
+				if (state.uaccess_stack) {
+					state.uaccess = state.uaccess_stack & 1;
+					state.uaccess_stack >>= 1;
+					if (state.uaccess_stack == 1)
+						state.uaccess_stack = 0;
+				}
+			}
+
+			break;
+
+		case INSN_STAC:
+			if (state.uaccess) {
+				WARN_FUNC("recursive UACCESS enable", sec, insn->offset);
+				return 1;
+			}
+
+			state.uaccess = true;
+			break;
+
+		case INSN_CLAC:
+			if (!state.uaccess && insn->func) {
+				WARN_FUNC("redundant UACCESS disable", sec, insn->offset);
+				return 1;
+			}
+
+			if (func_uaccess_safe(func) && !state.uaccess_stack) {
+				WARN_FUNC("UACCESS-safe disables UACCESS", sec, insn->offset);
+				return 1;
+			}
+
+			state.uaccess = false;
 			break;
 
 		default:
@@ -1986,6 +2241,8 @@ static int validate_unwind_hints(struct objtool_file *file)
 	for_each_insn(file, insn) {
 		if (insn->hint && !insn->visited) {
 			ret = validate_branch(file, insn, state);
+			if (ret && backtrace)
+				BT_FUNC("<=== (hint)", insn);
 			warnings += ret;
 		}
 	}
@@ -2113,7 +2370,11 @@ static int validate_functions(struct objtool_file *file)
 			if (!insn || insn->ignore)
 				continue;
 
+			state.uaccess = func->alias->uaccess_safe;
+
 			ret = validate_branch(file, insn, state);
+			if (ret && backtrace)
+				BT_FUNC("<=== (func)", insn);
 			warnings += ret;
 		}
 	}
@@ -2170,7 +2431,6 @@ int check(const char *_objname, bool orc)
 	INIT_LIST_HEAD(&file.insn_list);
 	hash_init(file.insn_hash);
 	file.whitelist = find_section_by_name(file.elf, ".discard.func_stack_frame_non_standard");
-	file.rodata = find_section_by_name(file.elf, ".rodata");
 	file.c_file = find_section_by_name(file.elf, ".comment");
 	file.ignore_unreachables = no_unreachable;
 	file.hints = false;

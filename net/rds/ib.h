@@ -216,12 +216,10 @@ struct rds_ib_device {
 	struct list_head	conn_list;
 	struct ib_device	*dev;
 	struct ib_pd		*pd;
-	bool                    use_fastreg;
 
 	unsigned int		max_mrs;
 	struct rds_ib_mr_pool	*mr_1m_pool;
 	struct rds_ib_mr_pool   *mr_8k_pool;
-	unsigned int		fmr_max_remaps;
 	unsigned int		max_8k_mrs;
 	unsigned int		max_1m_mrs;
 	int			max_sge;
@@ -303,10 +301,8 @@ static inline void rds_ib_dma_sync_sg_for_cpu(struct ib_device *dev,
 	unsigned int i;
 
 	for_each_sg(sglist, sg, sg_dma_len, i) {
-		ib_dma_sync_single_for_cpu(dev,
-				ib_sg_dma_address(dev, sg),
-				ib_sg_dma_len(dev, sg),
-				direction);
+		ib_dma_sync_single_for_cpu(dev, sg_dma_address(sg),
+					   sg_dma_len(sg), direction);
 	}
 }
 #define ib_dma_sync_sg_for_cpu	rds_ib_dma_sync_sg_for_cpu
@@ -320,10 +316,8 @@ static inline void rds_ib_dma_sync_sg_for_device(struct ib_device *dev,
 	unsigned int i;
 
 	for_each_sg(sglist, sg, sg_dma_len, i) {
-		ib_dma_sync_single_for_device(dev,
-				ib_sg_dma_address(dev, sg),
-				ib_sg_dma_len(dev, sg),
-				direction);
+		ib_dma_sync_single_for_device(dev, sg_dma_address(sg),
+					      sg_dma_len(sg), direction);
 	}
 }
 #define ib_dma_sync_sg_for_device	rds_ib_dma_sync_sg_for_device

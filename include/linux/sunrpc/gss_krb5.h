@@ -83,7 +83,7 @@ struct gss_krb5_enctype {
 	u32 (*encrypt_v2) (struct krb5_ctx *kctx, u32 offset,
 			   struct xdr_buf *buf,
 			   struct page **pages); /* v2 encryption function */
-	u32 (*decrypt_v2) (struct krb5_ctx *kctx, u32 offset,
+	u32 (*decrypt_v2) (struct krb5_ctx *kctx, u32 offset, u32 len,
 			   struct xdr_buf *buf, u32 *headskip,
 			   u32 *tailskip);	/* v2 decryption function */
 };
@@ -106,9 +106,9 @@ struct krb5_ctx {
 	struct crypto_skcipher *initiator_enc_aux;
 	u8			Ksess[GSS_KRB5_MAX_KEYLEN]; /* session key */
 	u8			cksum[GSS_KRB5_MAX_KEYLEN];
-	s32			endtime;
-	u32			seq_send;
-	u64			seq_send64;
+	atomic_t		seq_send;
+	atomic64_t		seq_send64;
+	time64_t		endtime;
 	struct xdr_netobj	mech_used;
 	u8			initiator_sign[GSS_KRB5_MAX_KEYLEN];
 	u8			acceptor_sign[GSS_KRB5_MAX_KEYLEN];
@@ -117,8 +117,6 @@ struct krb5_ctx {
 	u8			initiator_integ[GSS_KRB5_MAX_KEYLEN];
 	u8			acceptor_integ[GSS_KRB5_MAX_KEYLEN];
 };
-
-extern spinlock_t krb5_seq_lock;
 
 /* The length of the Kerberos GSS token header */
 #define GSS_KRB5_TOK_HDR_LEN	(16)
@@ -257,7 +255,7 @@ gss_wrap_kerberos(struct gss_ctx *ctx_id, int offset,
 		struct xdr_buf *outbuf, struct page **pages);
 
 u32
-gss_unwrap_kerberos(struct gss_ctx *ctx_id, int offset,
+gss_unwrap_kerberos(struct gss_ctx *ctx_id, int offset, int len,
 		struct xdr_buf *buf);
 
 
@@ -314,7 +312,7 @@ gss_krb5_aes_encrypt(struct krb5_ctx *kctx, u32 offset,
 		     struct page **pages);
 
 u32
-gss_krb5_aes_decrypt(struct krb5_ctx *kctx, u32 offset,
+gss_krb5_aes_decrypt(struct krb5_ctx *kctx, u32 offset, u32 len,
 		     struct xdr_buf *buf, u32 *plainoffset,
 		     u32 *plainlen);
 

@@ -24,8 +24,17 @@
 #include <linux/bug.h>
 #include <linux/errno.h>
 
-/*
- * was unsigned short, but we might as well be ready for > 64kB I/O pages
+/**
+ * struct bio_vec - a contiguous range of physical memory addresses
+ * @bv_page:   First page associated with the address range.
+ * @bv_len:    Number of bytes in the address range.
+ * @bv_offset: Start of the address range relative to the start of @bv_page.
+ *
+ * The following holds for a bvec if n * PAGE_SIZE < bv_offset + bv_len:
+ *
+ *   nth_page(@bv_page, n) == @bv_page + n
+ *
+ * This holds because page_is_mergeable() checks the above property.
  */
 struct bio_vec {
 	struct page	*bv_page;
@@ -40,10 +49,15 @@ struct bvec_iter {
 
 	unsigned int		bi_idx;		/* current index into bvl_vec */
 
-	unsigned int            bi_done;	/* number of bytes completed */
-
 	unsigned int            bi_bvec_done;	/* number of bytes completed in
 						   current bvec */
+	/*
+	 * FOR RH USE ONLY.
+	 *
+	 * The reserved field may help us in future, and it won't introduce
+	 * extra real space actually.
+	 */
+	unsigned int		rh_bi_reserved;
 };
 
 /*
@@ -85,7 +99,6 @@ static inline bool bvec_iter_advance(const struct bio_vec *bv,
 		bytes -= len;
 		iter->bi_size -= len;
 		iter->bi_bvec_done += len;
-		iter->bi_done += len;
 
 		if (iter->bi_bvec_done == __bvec_iter_bvec(bv, *iter)->bv_len) {
 			iter->bi_bvec_done = 0;
@@ -95,35 +108,18 @@ static inline bool bvec_iter_advance(const struct bio_vec *bv,
 	return true;
 }
 
-static inline bool bvec_iter_rewind(const struct bio_vec *bv,
-				     struct bvec_iter *iter,
-				     unsigned int bytes)
+static inline void bvec_iter_skip_zero_bvec(struct bvec_iter *iter)
 {
-	while (bytes) {
-		unsigned len = min(bytes, iter->bi_bvec_done);
-
-		if (iter->bi_bvec_done == 0) {
-			if (WARN_ONCE(iter->bi_idx == 0,
-				      "Attempted to rewind iter beyond "
-				      "bvec's boundaries\n")) {
-				return false;
-			}
-			iter->bi_idx--;
-			iter->bi_bvec_done = __bvec_iter_bvec(bv, *iter)->bv_len;
-			continue;
-		}
-		bytes -= len;
-		iter->bi_size += len;
-		iter->bi_bvec_done -= len;
-	}
-	return true;
+	iter->bi_bvec_done = 0;
+	iter->bi_idx++;
 }
 
 #define for_each_bvec(bvl, bio_vec, iter, start)			\
 	for (iter = (start);						\
 	     (iter).bi_size &&						\
 		((bvl = bvec_iter_bvec((bio_vec), (iter))), 1);	\
-	     bvec_iter_advance((bio_vec), &(iter), (bvl).bv_len))
+	     (bvl).bv_len ? (void)bvec_iter_advance((bio_vec), &(iter),	\
+		     (bvl).bv_len) : bvec_iter_skip_zero_bvec(&(iter)))
 
 /* for iterating one bio from start to end */
 #define BVEC_ITER_ALL_INIT (struct bvec_iter)				\

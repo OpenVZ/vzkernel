@@ -96,6 +96,7 @@ void cifs_fscache_get_super_cookie(struct cifs_tcon *tcon)
 {
 	struct TCP_Server_Info *server = tcon->ses->server;
 	char *sharename;
+	struct cifs_fscache_super_auxdata auxdata;
 
 	sharename = extract_sharename(tcon->treeName);
 	if (IS_ERR(sharename)) {
@@ -104,11 +105,16 @@ void cifs_fscache_get_super_cookie(struct cifs_tcon *tcon)
 		return;
 	}
 
+	memset(&auxdata, 0, sizeof(auxdata));
+	auxdata.resource_id = tcon->resource_id;
+	auxdata.vol_create_time = tcon->vol_create_time;
+	auxdata.vol_serial_number = tcon->vol_serial_number;
+
 	tcon->fscache =
 		fscache_acquire_cookie(server->fscache,
 				       &cifs_fscache_super_index_def,
 				       sharename, strlen(sharename),
-				       &tcon->resource_id, sizeof(tcon->resource_id),
+				       &auxdata, sizeof(auxdata),
 				       tcon, 0, true);
 	kfree(sharename);
 	cifs_dbg(FYI, "%s: (0x%p/0x%p)\n",
@@ -117,8 +123,15 @@ void cifs_fscache_get_super_cookie(struct cifs_tcon *tcon)
 
 void cifs_fscache_release_super_cookie(struct cifs_tcon *tcon)
 {
+	struct cifs_fscache_super_auxdata auxdata;
+
+	memset(&auxdata, 0, sizeof(auxdata));
+	auxdata.resource_id = tcon->resource_id;
+	auxdata.vol_create_time = tcon->vol_create_time;
+	auxdata.vol_serial_number = tcon->vol_serial_number;
+
 	cifs_dbg(FYI, "%s: (0x%p)\n", __func__, tcon->fscache);
-	fscache_relinquish_cookie(tcon->fscache, &tcon->resource_id, false);
+	fscache_relinquish_cookie(tcon->fscache, &auxdata, false);
 	tcon->fscache = NULL;
 }
 
@@ -129,8 +142,10 @@ static void cifs_fscache_acquire_inode_cookie(struct cifsInodeInfo *cifsi,
 
 	memset(&auxdata, 0, sizeof(auxdata));
 	auxdata.eof = cifsi->server_eof;
-	auxdata.last_write_time = timespec64_to_timespec(cifsi->vfs_inode.i_mtime);
-	auxdata.last_change_time = timespec64_to_timespec(cifsi->vfs_inode.i_ctime);
+	auxdata.last_write_time_sec = cifsi->vfs_inode.i_mtime.tv_sec;
+	auxdata.last_change_time_sec = cifsi->vfs_inode.i_ctime.tv_sec;
+	auxdata.last_write_time_nsec = cifsi->vfs_inode.i_mtime.tv_nsec;
+	auxdata.last_change_time_nsec = cifsi->vfs_inode.i_ctime.tv_nsec;
 
 	cifsi->fscache =
 		fscache_acquire_cookie(tcon->fscache,
@@ -166,8 +181,10 @@ void cifs_fscache_release_inode_cookie(struct inode *inode)
 	if (cifsi->fscache) {
 		memset(&auxdata, 0, sizeof(auxdata));
 		auxdata.eof = cifsi->server_eof;
-		auxdata.last_write_time = timespec64_to_timespec(cifsi->vfs_inode.i_mtime);
-		auxdata.last_change_time = timespec64_to_timespec(cifsi->vfs_inode.i_ctime);
+		auxdata.last_write_time_sec = cifsi->vfs_inode.i_mtime.tv_sec;
+		auxdata.last_change_time_sec = cifsi->vfs_inode.i_ctime.tv_sec;
+		auxdata.last_write_time_nsec = cifsi->vfs_inode.i_mtime.tv_nsec;
+		auxdata.last_change_time_nsec = cifsi->vfs_inode.i_ctime.tv_nsec;
 
 		cifs_dbg(FYI, "%s: (0x%p)\n", __func__, cifsi->fscache);
 		fscache_relinquish_cookie(cifsi->fscache, &auxdata, false);

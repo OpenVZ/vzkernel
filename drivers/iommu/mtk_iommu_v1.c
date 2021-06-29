@@ -13,7 +13,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/bug.h>
 #include <linux/clk.h>
 #include <linux/component.h>
@@ -302,7 +302,7 @@ static void mtk_iommu_detach_device(struct iommu_domain *domain,
 }
 
 static int mtk_iommu_map(struct iommu_domain *domain, unsigned long iova,
-			 phys_addr_t paddr, size_t size, int prot)
+			 phys_addr_t paddr, size_t size, int prot, gfp_t gfp)
 {
 	struct mtk_iommu_domain *dom = to_mtk_domain(domain);
 	unsigned int page_num = size >> MT2701_IOMMU_PAGE_SHIFT;
@@ -331,7 +331,8 @@ static int mtk_iommu_map(struct iommu_domain *domain, unsigned long iova,
 }
 
 static size_t mtk_iommu_unmap(struct iommu_domain *domain,
-			      unsigned long iova, size_t size)
+			      unsigned long iova, size_t size,
+			      struct iommu_iotlb_gather *gather)
 {
 	struct mtk_iommu_domain *dom = to_mtk_domain(domain);
 	unsigned long flags;
@@ -430,7 +431,7 @@ static int mtk_iommu_add_device(struct device *dev)
 	int err;
 
 	of_for_each_phandle(&it, err, dev->of_node, "iommus",
-			"#iommu-cells", 0) {
+			"#iommu-cells", -1) {
 		int count = of_phandle_iterator_args(&it, iommu_spec.args,
 					MAX_PHANDLE_ARGS);
 		iommu_spec.np = of_node_get(it.node);
@@ -531,7 +532,6 @@ static struct iommu_ops mtk_iommu_ops = {
 	.detach_dev	= mtk_iommu_detach_device,
 	.map		= mtk_iommu_map,
 	.unmap		= mtk_iommu_unmap,
-	.map_sg		= default_iommu_map_sg,
 	.iova_to_phys	= mtk_iommu_iova_to_phys,
 	.add_device	= mtk_iommu_add_device,
 	.remove_device	= mtk_iommu_remove_device,

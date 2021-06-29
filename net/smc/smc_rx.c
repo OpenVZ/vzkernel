@@ -82,8 +82,7 @@ static int smc_rx_update_consumer(struct smc_sock *smc,
 		}
 	}
 
-	smc_curs_write(&conn->local_tx_ctrl.cons, smc_curs_read(&cons, conn),
-		       conn);
+	smc_curs_copy(&conn->local_tx_ctrl.cons, &cons, conn);
 
 	/* send consumer cursor update if required */
 	/* similar to advertising new TCP rcv_wnd if required */
@@ -97,8 +96,7 @@ static void smc_rx_update_cons(struct smc_sock *smc, size_t len)
 	struct smc_connection *conn = &smc->conn;
 	union smc_host_cursor cons;
 
-	smc_curs_write(&cons, smc_curs_read(&conn->local_tx_ctrl.cons, conn),
-		       conn);
+	smc_curs_copy(&cons, &conn->local_tx_ctrl.cons, conn);
 	smc_rx_update_consumer(smc, cons, len);
 }
 
@@ -157,10 +155,8 @@ static int smc_rx_splice(struct pipe_inode_info *pipe, char *src, size_t len,
 	struct splice_pipe_desc spd;
 	struct partial_page partial;
 	struct smc_spd_priv *priv;
-	struct page *page;
 	int bytes;
 
-	page = virt_to_page(smc->conn.rmb_desc->cpu_addr);
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
@@ -172,7 +168,7 @@ static int smc_rx_splice(struct pipe_inode_info *pipe, char *src, size_t len,
 
 	spd.nr_pages_max = 1;
 	spd.nr_pages = 1;
-	spd.pages = &page;
+	spd.pages = &smc->conn.rmb_desc->pages;
 	spd.partial = &partial;
 	spd.ops = &smc_pipe_ops;
 	spd.spd_release = smc_rx_spd_release;
@@ -206,6 +202,8 @@ int smc_rx_wait(struct smc_sock *smc, long *timeo,
 {
 	DEFINE_WAIT_FUNC(wait, woken_wake_function);
 	struct smc_connection *conn = &smc->conn;
+	struct smc_cdc_conn_state_flags *cflags =
+					&conn->local_tx_ctrl.conn_state_flags;
 	struct sock *sk = &smc->sk;
 	int rc;
 
@@ -215,9 +213,10 @@ int smc_rx_wait(struct smc_sock *smc, long *timeo,
 	add_wait_queue(sk_sleep(sk), &wait);
 	rc = sk_wait_event(sk, timeo,
 			   sk->sk_err ||
+			   cflags->peer_conn_abort ||
 			   sk->sk_shutdown & RCV_SHUTDOWN ||
-			   fcrit(conn) ||
-			   smc_cdc_rxed_any_close_or_senddone(conn),
+			   conn->killed ||
+			   fcrit(conn),
 			   &wait);
 	remove_wait_queue(sk_sleep(sk), &wait);
 	sk_clear_bit(SOCKWQ_ASYNC_WAITDATA, sk);
@@ -245,10 +244,7 @@ static int smc_rx_recv_urg(struct smc_sock *smc, struct msghdr *msg, int len,
 			if (!(flags & MSG_TRUNC))
 				rc = memcpy_to_msg(msg, &conn->urg_rx_byte, 1);
 			len = 1;
-			smc_curs_write(&cons,
-				       smc_curs_read(&conn->local_tx_ctrl.cons,
-						     conn),
-				       conn);
+			smc_curs_copy(&cons, &conn->local_tx_ctrl.cons, conn);
 			if (smc_curs_diff(conn->rmb_desc->len, &cons,
 					  &conn->urg_curs) > 1)
 				conn->urg_rx_skip_pend = true;
@@ -268,6 +264,18 @@ static int smc_rx_recv_urg(struct smc_sock *smc, struct msghdr *msg, int len,
 		return 0;
 
 	return -EAGAIN;
+}
+
+static bool smc_rx_recvmsg_data_available(struct smc_sock *smc)
+{
+	struct smc_connection *conn = &smc->conn;
+
+	if (smc_rx_data_available(conn))
+		return true;
+	else if (conn->urg_state == SMC_URG_VALID)
+		/* we received a single urgent Byte - skip */
+		smc_rx_update_cons(smc, 0);
+	return false;
 }
 
 /* smc_rx_recvmsg - receive data from RMBE
@@ -305,22 +313,26 @@ int smc_rx_recvmsg(struct smc_sock *smc, struct msghdr *msg,
 	target = sock_rcvlowat(sk, flags & MSG_WAITALL, len);
 
 	/* we currently use 1 RMBE per RMB, so RMBE == RMB base addr */
-	rcvbuf_base = conn->rmb_desc->cpu_addr;
+	rcvbuf_base = conn->rx_off + conn->rmb_desc->cpu_addr;
 
 	do { /* while (read_remaining) */
 		if (read_done >= target || (pipe && read_done))
 			break;
 
-		if (atomic_read(&conn->bytes_to_rcv))
-			goto copy;
-		else if (conn->urg_state == SMC_URG_VALID)
-			/* we received a single urgent Byte - skip */
-			smc_rx_update_cons(smc, 0);
-
-		if (sk->sk_shutdown & RCV_SHUTDOWN ||
-		    smc_cdc_rxed_any_close_or_senddone(conn) ||
-		    conn->local_tx_ctrl.conn_state_flags.peer_conn_abort)
+		if (conn->killed)
 			break;
+
+		if (smc_rx_recvmsg_data_available(smc))
+			goto copy;
+
+		if (sk->sk_shutdown & RCV_SHUTDOWN) {
+			/* smc_cdc_msg_recv_action() could have run after
+			 * above smc_rx_recvmsg_data_available()
+			 */
+			if (smc_rx_recvmsg_data_available(smc))
+				goto copy;
+			break;
+		}
 
 		if (read_done) {
 			if (sk->sk_err ||
@@ -370,9 +382,7 @@ copy:
 			continue;
 		}
 
-		smc_curs_write(&cons,
-			       smc_curs_read(&conn->local_tx_ctrl.cons, conn),
-			       conn);
+		smc_curs_copy(&cons, &conn->local_tx_ctrl.cons, conn);
 		/* subsequent splice() calls pick up where previous left */
 		if (splbytes)
 			smc_curs_add(conn->rmb_desc->len, &cons, splbytes);

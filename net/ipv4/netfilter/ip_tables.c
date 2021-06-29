@@ -261,7 +261,7 @@ ipt_do_table(struct sk_buff *skb,
 	WARN_ON(!(table->valid_hooks & (1 << hook)));
 	local_bh_disable();
 	addend = xt_write_recseq_begin();
-	private = READ_ONCE(table->private); /* Address dependency. */
+	private = rcu_access_pointer(table->private);
 	cpu        = smp_processor_id();
 	table_base = private->entries;
 	jumpstack  = (struct ipt_entry **)private->jumpstack[cpu];
@@ -794,7 +794,7 @@ static struct xt_counters *alloc_counters(const struct xt_table *table)
 {
 	unsigned int countersize;
 	struct xt_counters *counters;
-	const struct xt_table_info *private = table->private;
+	const struct xt_table_info *private = xt_table_get_private_protected(table);
 
 	/* We need atomic snapshot of counters: rest doesn't change
 	   (other than comefrom, which userspace doesn't care
@@ -818,7 +818,7 @@ copy_entries_to_user(unsigned int total_size,
 	unsigned int off, num;
 	const struct ipt_entry *e;
 	struct xt_counters *counters;
-	const struct xt_table_info *private = table->private;
+	const struct xt_table_info *private = xt_table_get_private_protected(table);
 	int ret = 0;
 	const void *loc_cpu_entry;
 
@@ -968,7 +968,7 @@ static int get_info(struct net *net, void __user *user,
 	t = xt_request_find_table_lock(net, AF_INET, name);
 	if (!IS_ERR(t)) {
 		struct ipt_getinfo info;
-		const struct xt_table_info *private = t->private;
+		const struct xt_table_info *private = xt_table_get_private_protected(t);
 #ifdef CONFIG_COMPAT
 		struct xt_table_info tmp;
 
@@ -1022,7 +1022,7 @@ get_entries(struct net *net, struct ipt_get_entries __user *uptr,
 
 	t = xt_find_table_lock(net, AF_INET, get.name);
 	if (!IS_ERR(t)) {
-		const struct xt_table_info *private = t->private;
+		const struct xt_table_info *private = xt_table_get_private_protected(t);
 		if (get.size == private->size)
 			ret = copy_entries_to_user(private->size,
 						   t, uptr->entrytable);
@@ -1178,7 +1178,7 @@ do_add_counters(struct net *net, const void __user *user,
 	}
 
 	local_bh_disable();
-	private = t->private;
+	private = xt_table_get_private_protected(t);
 	if (private->number != tmp.num_counters) {
 		ret = -EINVAL;
 		goto unlock_up_free;
@@ -1573,7 +1573,7 @@ compat_copy_entries_to_user(unsigned int total_size, struct xt_table *table,
 			    void __user *userptr)
 {
 	struct xt_counters *counters;
-	const struct xt_table_info *private = table->private;
+	const struct xt_table_info *private = xt_table_get_private_protected(table);
 	void __user *pos;
 	unsigned int size;
 	int ret = 0;
@@ -1800,11 +1800,22 @@ out_free:
 	return ret;
 }
 
+void ipt_unregister_table_pre_exit(struct net *net, struct xt_table *table,
+				   const struct nf_hook_ops *ops)
+{
+	nf_unregister_net_hooks(net, ops, hweight32(table->valid_hooks));
+}
+
+void ipt_unregister_table_exit(struct net *net, struct xt_table *table)
+{
+	__ipt_unregister_table(net, table);
+}
+
 void ipt_unregister_table(struct net *net, struct xt_table *table,
 			  const struct nf_hook_ops *ops)
 {
 	if (ops)
-		nf_unregister_net_hooks(net, ops, hweight32(table->valid_hooks));
+		ipt_unregister_table_pre_exit(net, table, ops);
 	__ipt_unregister_table(net, table);
 }
 
@@ -1961,6 +1972,8 @@ static void __exit ip_tables_fini(void)
 
 EXPORT_SYMBOL(ipt_register_table);
 EXPORT_SYMBOL(ipt_unregister_table);
+EXPORT_SYMBOL(ipt_unregister_table_pre_exit);
+EXPORT_SYMBOL(ipt_unregister_table_exit);
 EXPORT_SYMBOL(ipt_do_table);
 module_init(ip_tables_init);
 module_exit(ip_tables_fini);

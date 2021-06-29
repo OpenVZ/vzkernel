@@ -9,6 +9,7 @@
 
 #include <linux/slab.h>
 #include <linux/cpumask.h>
+#include <linux/kmemleak.h>
 #include <linux/percpu.h>
 
 struct vmemmap_backing {
@@ -41,14 +42,12 @@ extern struct kmem_cache *pgtable_cache[];
 			pgtable_cache[(shift) - 1];	\
 		})
 
-extern pte_t *pte_fragment_alloc(struct mm_struct *, unsigned long, int);
+extern pte_t *pte_fragment_alloc(struct mm_struct *, int);
 extern pmd_t *pmd_fragment_alloc(struct mm_struct *, unsigned long);
 extern void pte_fragment_free(unsigned long *, int);
 extern void pmd_fragment_free(unsigned long *);
 extern void pgtable_free_tlb(struct mmu_gather *tlb, void *table, int shift);
-#ifdef CONFIG_SMP
 extern void __tlb_remove_table(void *_table);
-#endif
 
 static inline pgd_t *radix__pgd_alloc(struct mm_struct *mm)
 {
@@ -82,6 +81,16 @@ static inline pgd_t *pgd_alloc(struct mm_struct *mm)
 
 	pgd = kmem_cache_alloc(PGT_CACHE(PGD_INDEX_SIZE),
 			       pgtable_gfp_flags(mm, GFP_KERNEL));
+	if (unlikely(!pgd))
+		return pgd;
+
+	/*
+	 * Don't scan the PGD for pointers, it contains references to PUDs but
+	 * those references are not full pointers and so can't be recognised by
+	 * kmemleak.
+	 */
+	kmemleak_no_scan(pgd);
+
 	/*
 	 * With hugetlb, we don't clear the second half of the page table.
 	 * If we share the same slab cache with the pmd or pud level table,
@@ -110,13 +119,38 @@ static inline void pgd_populate(struct mm_struct *mm, pgd_t *pgd, pud_t *pud)
 
 static inline pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr)
 {
-	return kmem_cache_alloc(PGT_CACHE(PUD_CACHE_INDEX),
-		pgtable_gfp_flags(mm, GFP_KERNEL));
+	pud_t *pud;
+
+	pud = kmem_cache_alloc(PGT_CACHE(PUD_CACHE_INDEX),
+			       pgtable_gfp_flags(mm, GFP_KERNEL));
+	/*
+	 * Tell kmemleak to ignore the PUD, that means don't scan it for
+	 * pointers and don't consider it a leak. PUDs are typically only
+	 * referred to by their PGD, but kmemleak is not able to recognise those
+	 * as pointers, leading to false leak reports.
+	 */
+	kmemleak_ignore(pud);
+
+	return pud;
+}
+
+static inline void __pud_free(pud_t *pud)
+{
+	struct page *page = virt_to_page(pud);
+
+	/*
+	 * Early pud pages allocated via memblock allocator
+	 * can't be directly freed to slab
+	 */
+	if (PageReserved(page))
+		free_reserved_page(page);
+	else
+		kmem_cache_free(PGT_CACHE(PUD_CACHE_INDEX), pud);
 }
 
 static inline void pud_free(struct mm_struct *mm, pud_t *pud)
 {
-	kmem_cache_free(PGT_CACHE(PUD_CACHE_INDEX), pud);
+	return __pud_free(pud);
 }
 
 static inline void pud_populate(struct mm_struct *mm, pud_t *pud, pmd_t *pmd)
@@ -173,16 +207,14 @@ static inline pgtable_t pmd_pgtable(pmd_t pmd)
 	return (pgtable_t)pmd_page_vaddr(pmd);
 }
 
-static inline pte_t *pte_alloc_one_kernel(struct mm_struct *mm,
-					  unsigned long address)
+static inline pte_t *pte_alloc_one_kernel(struct mm_struct *mm)
 {
-	return (pte_t *)pte_fragment_alloc(mm, address, 1);
+	return (pte_t *)pte_fragment_alloc(mm, 1);
 }
 
-static inline pgtable_t pte_alloc_one(struct mm_struct *mm,
-				      unsigned long address)
+static inline pgtable_t pte_alloc_one(struct mm_struct *mm)
 {
-	return (pgtable_t)pte_fragment_alloc(mm, address, 0);
+	return (pgtable_t)pte_fragment_alloc(mm, 0);
 }
 
 static inline void pte_free_kernel(struct mm_struct *mm, pte_t *pte)

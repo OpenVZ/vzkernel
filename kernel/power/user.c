@@ -10,7 +10,6 @@
  */
 
 #include <linux/suspend.h>
-#include <linux/syscalls.h>
 #include <linux/reboot.h>
 #include <linux/string.h>
 #include <linux/device.h>
@@ -50,6 +49,9 @@ static int snapshot_open(struct inode *inode, struct file *filp)
 	int error, nr_calls = 0;
 
 	if (!hibernation_available())
+		return -EPERM;
+
+	if (kernel_is_locked_down("/dev/snapshot"))
 		return -EPERM;
 
 	lock_system_sleep();
@@ -216,7 +218,7 @@ static long snapshot_ioctl(struct file *filp, unsigned int cmd,
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
-	if (!mutex_trylock(&pm_mutex))
+	if (!mutex_trylock(&system_transition_mutex))
 		return -EBUSY;
 
 	lock_device_hotplug();
@@ -228,9 +230,7 @@ static long snapshot_ioctl(struct file *filp, unsigned int cmd,
 		if (data->frozen)
 			break;
 
-		printk("Syncing filesystems ... ");
-		ksys_sync();
-		printk("done.\n");
+		ksys_sync_helper();
 
 		error = freeze_processes();
 		if (error)
@@ -394,7 +394,7 @@ static long snapshot_ioctl(struct file *filp, unsigned int cmd,
 	}
 
 	unlock_device_hotplug();
-	mutex_unlock(&pm_mutex);
+	mutex_unlock(&system_transition_mutex);
 
 	return error;
 }

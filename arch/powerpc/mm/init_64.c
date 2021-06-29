@@ -66,7 +66,7 @@
 #include <asm/iommu.h>
 #include <asm/vdso.h>
 
-#include "mmu_decl.h"
+#include <mm/mmu_decl.h>
 
 phys_addr_t memstart_addr = ~0;
 EXPORT_SYMBOL_GPL(memstart_addr);
@@ -177,26 +177,49 @@ static __meminit void vmemmap_list_populate(unsigned long phys,
 	vmemmap_list = vmem_back;
 }
 
+static bool altmap_cross_boundary(struct vmem_altmap *altmap, unsigned long start,
+				unsigned long page_size)
+{
+	unsigned long nr_pfn = page_size / sizeof(struct page);
+	unsigned long start_pfn = page_to_pfn((struct page *)start);
+
+	if ((start_pfn + nr_pfn) > altmap->end_pfn)
+		return true;
+
+	if (start_pfn < altmap->base_pfn)
+		return true;
+
+	return false;
+}
+
 int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node,
 		struct vmem_altmap *altmap)
 {
 	unsigned long page_size = 1 << mmu_psize_defs[mmu_vmemmap_psize].shift;
 
 	/* Align to the page size of the linear mapping. */
-	start = _ALIGN_DOWN(start, page_size);
+	start = ALIGN_DOWN(start, page_size);
 
 	pr_debug("vmemmap_populate %lx..%lx, node %d\n", start, end, node);
 
 	for (; start < end; start += page_size) {
-		void *p;
+		void *p = NULL;
 		int rc;
 
 		if (vmemmap_populated(start, page_size))
 			continue;
 
-		if (altmap)
+		/*
+		 * Allocate from the altmap first if we have one. This may
+		 * fail due to alignment issues when using 16MB hugepages, so
+		 * fall back to system memory if the altmap allocation fail.
+		 */
+		if (altmap && !altmap_cross_boundary(altmap, start, page_size)) {
 			p = altmap_alloc_block_buf(page_size, altmap);
-		else
+			if (!p)
+				pr_debug("altmap block allocation failed, falling back to system memory");
+		}
+		if (!p)
 			p = vmemmap_alloc_block_buf(page_size, node);
 		if (!p)
 			return -ENOMEM;
@@ -255,8 +278,15 @@ void __ref vmemmap_free(unsigned long start, unsigned long end,
 {
 	unsigned long page_size = 1 << mmu_psize_defs[mmu_vmemmap_psize].shift;
 	unsigned long page_order = get_order(page_size);
+	unsigned long alt_start = ~0, alt_end = ~0;
+	unsigned long base_pfn;
 
-	start = _ALIGN_DOWN(start, page_size);
+	start = ALIGN_DOWN(start, page_size);
+	if (altmap) {
+		alt_start = altmap->base_pfn;
+		alt_end = altmap->base_pfn + altmap->reserve +
+			  altmap->free + altmap->alloc + altmap->align;
+	}
 
 	pr_debug("vmemmap_free %lx...%lx\n", start, end);
 
@@ -280,8 +310,9 @@ void __ref vmemmap_free(unsigned long start, unsigned long end,
 		page = pfn_to_page(addr >> PAGE_SHIFT);
 		section_base = pfn_to_page(vmemmap_section_start(start));
 		nr_pages = 1 << page_order;
+		base_pfn = PHYS_PFN(addr);
 
-		if (altmap) {
+		if (base_pfn >= alt_start && base_pfn < alt_end) {
 			vmem_altmap_free(altmap, nr_pages);
 		} else if (PageReserved(page)) {
 			/* allocated from bootmem */
@@ -307,55 +338,6 @@ void register_page_bootmem_memmap(unsigned long section_nr,
 				  struct page *start_page, unsigned long size)
 {
 }
-
-/*
- * We do not have access to the sparsemem vmemmap, so we fallback to
- * walking the list of sparsemem blocks which we already maintain for
- * the sake of crashdump. In the long run, we might want to maintain
- * a tree if performance of that linear walk becomes a problem.
- *
- * realmode_pfn_to_page functions can fail due to:
- * 1) As real sparsemem blocks do not lay in RAM continously (they
- * are in virtual address space which is not available in the real mode),
- * the requested page struct can be split between blocks so get_page/put_page
- * may fail.
- * 2) When huge pages are used, the get_page/put_page API will fail
- * in real mode as the linked addresses in the page struct are virtual
- * too.
- */
-struct page *realmode_pfn_to_page(unsigned long pfn)
-{
-	struct vmemmap_backing *vmem_back;
-	struct page *page;
-	unsigned long page_size = 1 << mmu_psize_defs[mmu_vmemmap_psize].shift;
-	unsigned long pg_va = (unsigned long) pfn_to_page(pfn);
-
-	for (vmem_back = vmemmap_list; vmem_back; vmem_back = vmem_back->list) {
-		if (pg_va < vmem_back->virt_addr)
-			continue;
-
-		/* After vmemmap_list entry free is possible, need check all */
-		if ((pg_va + sizeof(struct page)) <=
-				(vmem_back->virt_addr + page_size)) {
-			page = (struct page *) (vmem_back->phys + pg_va -
-				vmem_back->virt_addr);
-			return page;
-		}
-	}
-
-	/* Probably that page struct is split between real pages */
-	return NULL;
-}
-EXPORT_SYMBOL_GPL(realmode_pfn_to_page);
-
-#else
-
-struct page *realmode_pfn_to_page(unsigned long pfn)
-{
-	struct page *page = pfn_to_page(pfn);
-	return page;
-}
-EXPORT_SYMBOL_GPL(realmode_pfn_to_page);
 
 #endif /* CONFIG_SPARSEMEM_VMEMMAP */
 
@@ -415,13 +397,15 @@ static void __init early_check_vec5(void)
 		}
 		if (!(vec5[OV5_INDX(OV5_RADIX_GTSE)] &
 						OV5_FEAT(OV5_RADIX_GTSE))) {
-			pr_warn("WARNING: Hypervisor doesn't support RADIX with GTSE\n");
-		}
+			cur_cpu_spec->mmu_features &= ~MMU_FTR_GTSE;
+		} else
+			cur_cpu_spec->mmu_features |= MMU_FTR_GTSE;
 		/* Do radix anyway - the hypervisor said we had to */
 		cur_cpu_spec->mmu_features |= MMU_FTR_TYPE_RADIX;
 	} else if (mmu_supported == OV5_FEAT(OV5_MMU_HASH)) {
 		/* Hypervisor only supports hash - disable radix */
 		cur_cpu_spec->mmu_features &= ~MMU_FTR_TYPE_RADIX;
+		cur_cpu_spec->mmu_features &= ~MMU_FTR_GTSE;
 	}
 }
 
@@ -440,9 +424,16 @@ void __init mmu_early_init_devtree(void)
 	if (!(mfmsr() & MSR_HV))
 		early_check_vec5();
 
-	if (early_radix_enabled())
+	if (early_radix_enabled()) {
 		radix__early_init_devtree();
-	else
+		/*
+		 * We have finalized the translation we are going to use by now.
+		 * Radix mode is not limited by RMA / VRMA addressing.
+		 * Hence don't limit memblock allocations.
+		 */
+		ppc64_rma_size = ULONG_MAX;
+		memblock_set_current_limit(MEMBLOCK_ALLOC_ANYWHERE);
+	} else
 		hash__early_init_devtree();
 }
 #endif /* CONFIG_PPC_BOOK3S_64 */

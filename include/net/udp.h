@@ -170,8 +170,8 @@ static inline void udp_csum_pull_header(struct sk_buff *skb)
 typedef struct sock *(*udp_lookup_t)(struct sk_buff *skb, __be16 sport,
 				     __be16 dport);
 
-struct sk_buff **udp_gro_receive(struct sk_buff **head, struct sk_buff *skb,
-				 struct udphdr *uh, udp_lookup_t lookup);
+struct sk_buff *udp_gro_receive(struct list_head *head, struct sk_buff *skb,
+				struct udphdr *uh, struct sock *sk);
 int udp_gro_complete(struct sk_buff *skb, int nhoff, udp_lookup_t lookup);
 
 struct sk_buff *__udp_gso_segment(struct sk_buff *gso_skb,
@@ -252,19 +252,30 @@ static inline int udp_rqueue_get(struct sock *sk)
 	return sk_rmem_alloc_get(sk) - READ_ONCE(udp_sk(sk)->forward_deficit);
 }
 
+static inline bool udp_sk_bound_dev_eq(struct net *net, int bound_dev_if,
+				       int dif, int sdif)
+{
+#if IS_ENABLED(CONFIG_NET_L3_MASTER_DEV)
+	return inet_bound_dev_eq(!!net->ipv4.sysctl_udp_l3mdev_accept,
+				 bound_dev_if, dif, sdif);
+#else
+	return inet_bound_dev_eq(true, bound_dev_if, dif, sdif);
+#endif
+}
+
 /* net/ipv4/udp.c */
 void udp_destruct_sock(struct sock *sk);
 void skb_consume_udp(struct sock *sk, struct sk_buff *skb, int len);
 int __udp_enqueue_schedule_skb(struct sock *sk, struct sk_buff *skb);
 void udp_skb_destructor(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *__skb_recv_udp(struct sock *sk, unsigned int flags,
-			       int noblock, int *peeked, int *off, int *err);
+			       int noblock, int *off, int *err);
 static inline struct sk_buff *skb_recv_udp(struct sock *sk, unsigned int flags,
 					   int noblock, int *err)
 {
-	int peeked, off = 0;
+	int off = 0;
 
-	return __skb_recv_udp(sk, flags, noblock, &peeked, &off, err);
+	return __skb_recv_udp(sk, flags, noblock, &off, err);
 }
 
 int udp_v4_early_demux(struct sk_buff *skb);
@@ -406,16 +417,23 @@ static inline int copy_linear_skb(struct sk_buff *skb, int len, int off,
 } while(0)
 
 #if IS_ENABLED(CONFIG_IPV6)
-#define __UDPX_INC_STATS(sk, field)					\
-do {									\
-	if ((sk)->sk_family == AF_INET)					\
-		__UDP_INC_STATS(sock_net(sk), field, 0);		\
-	else								\
-		__UDP6_INC_STATS(sock_net(sk), field, 0);		\
-} while (0)
+#define __UDPX_MIB(sk, ipv4)						\
+({									\
+	ipv4 ? (IS_UDPLITE(sk) ? sock_net(sk)->mib.udplite_statistics :	\
+				 sock_net(sk)->mib.udp_statistics) :	\
+		(IS_UDPLITE(sk) ? sock_net(sk)->mib.udplite_stats_in6 :	\
+				 sock_net(sk)->mib.udp_stats_in6);	\
+})
 #else
-#define __UDPX_INC_STATS(sk, field) __UDP_INC_STATS(sock_net(sk), field, 0)
+#define __UDPX_MIB(sk, ipv4)						\
+({									\
+	IS_UDPLITE(sk) ? sock_net(sk)->mib.udplite_statistics :		\
+			 sock_net(sk)->mib.udp_statistics;		\
+})
 #endif
+
+#define __UDPX_INC_STATS(sk, field) \
+	__SNMP_INC_STATS(__UDPX_MIB(sk, (sk)->sk_family == AF_INET), field)
 
 #ifdef CONFIG_PROC_FS
 struct udp_seq_afinfo {
@@ -426,6 +444,7 @@ struct udp_seq_afinfo {
 struct udp_iter_state {
 	struct seq_net_private  p;
 	int			bucket;
+	struct udp_seq_afinfo	*bpf_seq_afinfo;
 };
 
 void *udp_seq_start(struct seq_file *seq, loff_t *pos);
@@ -443,9 +462,49 @@ int udpv4_offload_init(void);
 
 void udp_init(void);
 
+DECLARE_STATIC_KEY_FALSE(udp_encap_needed_key);
 void udp_encap_enable(void);
+void udp_encap_disable(void);
 #if IS_ENABLED(CONFIG_IPV6)
+DECLARE_STATIC_KEY_FALSE(udpv6_encap_needed_key);
 void udpv6_encap_enable(void);
 #endif
+
+static inline struct sk_buff *udp_rcv_segment(struct sock *sk,
+					      struct sk_buff *skb, bool ipv4)
+{
+	netdev_features_t features = NETIF_F_SG;
+	struct sk_buff *segs;
+
+	/* Avoid csum recalculation by skb_segment unless userspace explicitly
+	 * asks for the final checksum values
+	 */
+	if (!inet_get_convert_csum(sk))
+		features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
+
+	if (skb->pkt_type == PACKET_LOOPBACK)
+		skb->ip_summed = CHECKSUM_PARTIAL;
+
+	/* the GSO CB lays after the UDP one, no need to save and restore any
+	 * CB fragment
+	 */
+	segs = __skb_gso_segment(skb, features, false);
+	if (unlikely(IS_ERR_OR_NULL(segs))) {
+		int segs_nr = skb_shinfo(skb)->gso_segs;
+
+		atomic_add(segs_nr, &sk->sk_drops);
+		SNMP_ADD_STATS(__UDPX_MIB(sk, ipv4), UDP_MIB_INERRORS, segs_nr);
+		kfree_skb(skb);
+		return NULL;
+	}
+
+	consume_skb(skb);
+	return segs;
+}
+
+#ifdef CONFIG_BPF_STREAM_PARSER
+struct sk_psock;
+struct proto *udp_bpf_get_proto(struct sock *sk, struct sk_psock *psock);
+#endif /* BPF_STREAM_PARSER */
 
 #endif	/* _UDP_H */

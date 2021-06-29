@@ -1,33 +1,7 @@
+/* SPDX-License-Identifier: (GPL-2.0-only OR BSD-3-Clause) */
 /* QLogic qed NIC Driver
  * Copyright (c) 2015-2017  QLogic Corporation
- *
- * This software is available to you under a choice of one of two
- * licenses.  You may choose to be licensed under the terms of the GNU
- * General Public License (GPL) Version 2, available from the file
- * COPYING in the main directory of this source tree, or the
- * OpenIB.org BSD license below:
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      - Redistributions of source code must retain the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer.
- *
- *      - Redistributions in binary form must reproduce the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer in the documentation and /or other materials
- *        provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * Copyright (c) 2019-2020 Marvell International Ltd.
  */
 
 #ifndef _QED_MCP_H
@@ -42,15 +16,38 @@
 #include "qed_dev_api.h"
 
 struct qed_mcp_link_speed_params {
-	bool    autoneg;
-	u32     advertised_speeds;      /* bitmask of DRV_SPEED_CAPABILITY */
-	u32     forced_speed;	   /* In Mb/s */
+	bool					autoneg;
+
+	u32					advertised_speeds;
+#define QED_EXT_SPEED_MASK_RES			0x1
+#define QED_EXT_SPEED_MASK_1G			0x2
+#define QED_EXT_SPEED_MASK_10G			0x4
+#define QED_EXT_SPEED_MASK_20G			0x8
+#define QED_EXT_SPEED_MASK_25G			0x10
+#define QED_EXT_SPEED_MASK_40G			0x20
+#define QED_EXT_SPEED_MASK_50G_R		0x40
+#define QED_EXT_SPEED_MASK_50G_R2		0x80
+#define QED_EXT_SPEED_MASK_100G_R2		0x100
+#define QED_EXT_SPEED_MASK_100G_R4		0x200
+#define QED_EXT_SPEED_MASK_100G_P4		0x400
+
+	u32					forced_speed;	   /* In Mb/s */
+#define QED_EXT_SPEED_1G			0x1
+#define QED_EXT_SPEED_10G			0x2
+#define QED_EXT_SPEED_20G			0x4
+#define QED_EXT_SPEED_25G			0x8
+#define QED_EXT_SPEED_40G			0x10
+#define QED_EXT_SPEED_50G_R			0x20
+#define QED_EXT_SPEED_50G_R2			0x40
+#define QED_EXT_SPEED_100G_R2			0x80
+#define QED_EXT_SPEED_100G_R4			0x100
+#define QED_EXT_SPEED_100G_P4			0x200
 };
 
 struct qed_mcp_link_pause_params {
-	bool    autoneg;
-	bool    forced_rx;
-	bool    forced_tx;
+	bool					autoneg;
+	bool					forced_rx;
+	bool					forced_tx;
 };
 
 enum qed_mcp_eee_mode {
@@ -60,61 +57,72 @@ enum qed_mcp_eee_mode {
 };
 
 struct qed_mcp_link_params {
-	struct qed_mcp_link_speed_params speed;
-	struct qed_mcp_link_pause_params pause;
-	u32 loopback_mode;
-	struct qed_link_eee_params eee;
+	struct qed_mcp_link_speed_params	speed;
+	struct qed_mcp_link_pause_params	pause;
+	u32					loopback_mode;
+	struct qed_link_eee_params		eee;
+	u32					fec;
+
+	struct qed_mcp_link_speed_params	ext_speed;
+	u32					ext_fec_mode;
 };
 
 struct qed_mcp_link_capabilities {
-	u32 speed_capabilities;
-	bool default_speed_autoneg;
-	enum qed_mcp_eee_mode default_eee;
-	u32 eee_lpi_timer;
-	u8 eee_speed_caps;
+	u32					speed_capabilities;
+	bool					default_speed_autoneg;
+	u32					fec_default;
+	enum qed_mcp_eee_mode			default_eee;
+	u32					eee_lpi_timer;
+	u8					eee_speed_caps;
+
+	u32					default_ext_speed_caps;
+	u32					default_ext_autoneg;
+	u32					default_ext_speed;
+	u32					default_ext_fec;
 };
 
 struct qed_mcp_link_state {
-	bool    link_up;
-
-	u32	min_pf_rate;
+	bool					link_up;
+	u32					min_pf_rate;
 
 	/* Actual link speed in Mb/s */
-	u32	line_speed;
+	u32					line_speed;
 
 	/* PF max speed in Mb/s, deduced from line_speed
 	 * according to PF max bandwidth configuration.
 	 */
-	u32     speed;
-	bool    full_duplex;
+	u32					speed;
 
-	bool    an;
-	bool    an_complete;
-	bool    parallel_detection;
-	bool    pfc_enabled;
+	bool					full_duplex;
+	bool					an;
+	bool					an_complete;
+	bool					parallel_detection;
+	bool					pfc_enabled;
 
-#define QED_LINK_PARTNER_SPEED_1G_HD    BIT(0)
-#define QED_LINK_PARTNER_SPEED_1G_FD    BIT(1)
-#define QED_LINK_PARTNER_SPEED_10G      BIT(2)
-#define QED_LINK_PARTNER_SPEED_20G      BIT(3)
-#define QED_LINK_PARTNER_SPEED_25G      BIT(4)
-#define QED_LINK_PARTNER_SPEED_40G      BIT(5)
-#define QED_LINK_PARTNER_SPEED_50G      BIT(6)
-#define QED_LINK_PARTNER_SPEED_100G     BIT(7)
-	u32     partner_adv_speed;
+	u32					partner_adv_speed;
+#define QED_LINK_PARTNER_SPEED_1G_HD		BIT(0)
+#define QED_LINK_PARTNER_SPEED_1G_FD		BIT(1)
+#define QED_LINK_PARTNER_SPEED_10G		BIT(2)
+#define QED_LINK_PARTNER_SPEED_20G		BIT(3)
+#define QED_LINK_PARTNER_SPEED_25G		BIT(4)
+#define QED_LINK_PARTNER_SPEED_40G		BIT(5)
+#define QED_LINK_PARTNER_SPEED_50G		BIT(6)
+#define QED_LINK_PARTNER_SPEED_100G		BIT(7)
 
-	bool    partner_tx_flow_ctrl_en;
-	bool    partner_rx_flow_ctrl_en;
+	bool					partner_tx_flow_ctrl_en;
+	bool					partner_rx_flow_ctrl_en;
 
-#define QED_LINK_PARTNER_SYMMETRIC_PAUSE (1)
-#define QED_LINK_PARTNER_ASYMMETRIC_PAUSE (2)
-#define QED_LINK_PARTNER_BOTH_PAUSE (3)
-	u8      partner_adv_pause;
+	u8					partner_adv_pause;
+#define QED_LINK_PARTNER_SYMMETRIC_PAUSE	0x1
+#define QED_LINK_PARTNER_ASYMMETRIC_PAUSE	0x2
+#define QED_LINK_PARTNER_BOTH_PAUSE		0x3
 
-	bool    sfp_tx_fault;
-	bool    eee_active;
-	u8      eee_adv_caps;
-	u8      eee_lp_adv_caps;
+	bool					sfp_tx_fault;
+	bool					eee_active;
+	u8					eee_adv_caps;
+	u8					eee_lp_adv_caps;
+
+	u32					fec_active;
 };
 
 struct qed_mcp_function_info {
@@ -251,6 +259,12 @@ union qed_mfw_tlv_data {
 	struct qed_mfw_tlv_iscsi iscsi;
 };
 
+#define QED_NVM_CFG_OPTION_ALL		BIT(0)
+#define QED_NVM_CFG_OPTION_INIT		BIT(1)
+#define QED_NVM_CFG_OPTION_COMMIT       BIT(2)
+#define QED_NVM_CFG_OPTION_FREE		BIT(3)
+#define QED_NVM_CFG_OPTION_ENTITY_SEL	BIT(4)
+
 /**
  * @brief - returns the link params of the hw function
  *
@@ -322,14 +336,61 @@ int qed_mcp_get_mbi_ver(struct qed_hwfn *p_hwfn,
  * @brief Get media type value of the port.
  *
  * @param cdev      - qed dev pointer
+ * @param p_ptt
  * @param mfw_ver    - media type value
  *
  * @return int -
  *      0 - Operation was successul.
  *      -EBUSY - Operation failed
  */
-int qed_mcp_get_media_type(struct qed_dev      *cdev,
-			   u32                  *media_type);
+int qed_mcp_get_media_type(struct qed_hwfn *p_hwfn,
+			   struct qed_ptt *p_ptt, u32 *media_type);
+
+/**
+ * @brief Get transceiver data of the port.
+ *
+ * @param cdev      - qed dev pointer
+ * @param p_ptt
+ * @param p_transceiver_state - transceiver state.
+ * @param p_transceiver_type - media type value
+ *
+ * @return int -
+ *      0 - Operation was successful.
+ *      -EBUSY - Operation failed
+ */
+int qed_mcp_get_transceiver_data(struct qed_hwfn *p_hwfn,
+				 struct qed_ptt *p_ptt,
+				 u32 *p_transceiver_state,
+				 u32 *p_tranceiver_type);
+
+/**
+ * @brief Get transceiver supported speed mask.
+ *
+ * @param cdev      - qed dev pointer
+ * @param p_ptt
+ * @param p_speed_mask - Bit mask of all supported speeds.
+ *
+ * @return int -
+ *      0 - Operation was successful.
+ *      -EBUSY - Operation failed
+ */
+
+int qed_mcp_trans_speed_mask(struct qed_hwfn *p_hwfn,
+			     struct qed_ptt *p_ptt, u32 *p_speed_mask);
+
+/**
+ * @brief Get board configuration.
+ *
+ * @param cdev      - qed dev pointer
+ * @param p_ptt
+ * @param p_board_config - Board config.
+ *
+ * @return int -
+ *      0 - Operation was successful.
+ *      -EBUSY - Operation failed
+ */
+int qed_mcp_get_board_config(struct qed_hwfn *p_hwfn,
+			     struct qed_ptt *p_ptt, u32 *p_board_config);
 
 /**
  * @brief General function for sending commands to the MCP
@@ -392,6 +453,38 @@ int
 qed_mcp_send_drv_version(struct qed_hwfn *p_hwfn,
 			 struct qed_ptt *p_ptt,
 			 struct qed_mcp_drv_version *p_ver);
+
+/**
+ * @brief Read the MFW process kill counter
+ *
+ * @param p_hwfn
+ * @param p_ptt
+ *
+ * @return u32
+ */
+u32 qed_get_process_kill_counter(struct qed_hwfn *p_hwfn,
+				 struct qed_ptt *p_ptt);
+
+/**
+ * @brief Trigger a recovery process
+ *
+ *  @param p_hwfn
+ *  @param p_ptt
+ *
+ * @return int
+ */
+int qed_start_recovery_process(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt);
+
+/**
+ * @brief A recovery handler must call this function as its first step.
+ *        It is assumed that the handler is not run from an interrupt context.
+ *
+ *  @param cdev
+ *  @param p_ptt
+ *
+ * @return int
+ */
+int qed_recovery_prolog(struct qed_dev *cdev);
 
 /**
  * @brief Notify MFW about the change in base device properties
@@ -494,16 +587,6 @@ int qed_mcp_nvm_read(struct qed_dev *cdev, u32 addr, u8 *p_buf, u32 len);
  */
 int qed_mcp_nvm_write(struct qed_dev *cdev,
 		      u32 cmd, u32 addr, u8 *p_buf, u32 len);
-
-/**
- * @brief Put file begin
- *
- *  @param cdev
- *  @param addr - nvm offset
- *
- * @return int - 0 - operation was successful.
- */
-int qed_mcp_nvm_put_file_begin(struct qed_dev *cdev, u32 addr);
 
 /**
  * @brief Check latest response
@@ -610,6 +693,18 @@ int qed_mcp_bist_nvm_get_image_att(struct qed_hwfn *p_hwfn,
  */
 int qed_mfw_process_tlv_req(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt);
 
+/**
+ * @brief Send raw debug data to the MFW
+ *
+ * @param p_hwfn
+ * @param p_ptt
+ * @param p_buf - raw debug data buffer
+ * @param size - buffer size
+ */
+int
+qed_mcp_send_raw_debug_data(struct qed_hwfn *p_hwfn,
+			    struct qed_ptt *p_ptt, u8 *p_buf, u32 size);
+
 /* Using hwfn number (and not pf_num) is required since in CMT mode,
  * same pf_num may be used by two different hwfn
  * TODO - this shouldn't really be in .h file, but until all fields
@@ -622,10 +717,6 @@ int qed_mfw_process_tlv_req(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt);
 					    rel_pfid)
 #define MCP_PF_ID(p_hwfn) MCP_PF_ID_BY_REL(p_hwfn, (p_hwfn)->rel_pf_id)
 
-#define MFW_PORT(_p_hwfn)       ((_p_hwfn)->abs_pf_id %			  \
-				 ((_p_hwfn)->cdev->num_ports_in_engine * \
-				  qed_device_num_engines((_p_hwfn)->cdev)))
-
 struct qed_mcp_info {
 	/* List for mailbox commands which were sent and wait for a response */
 	struct list_head			cmd_list;
@@ -635,11 +726,14 @@ struct qed_mcp_info {
 	 */
 	spinlock_t				cmd_lock;
 
+	/* Flag to indicate whether sending a MFW mailbox command is blocked */
+	bool					b_block_cmd;
+
 	/* Spinlock used for syncing SW link-changes and link-changes
 	 * originating from attention context.
 	 */
 	spinlock_t				link_lock;
-	bool					block_mb_sending;
+
 	u32					public_base;
 	u32					drv_mb_addr;
 	u32					mfw_mb_addr;
@@ -657,17 +751,26 @@ struct qed_mcp_info {
 
 	/* Capabilties negotiated with the MFW */
 	u32					capabilities;
+
+	/* S/N for debug data mailbox commands */
+	atomic_t dbg_data_seq;
 };
 
 struct qed_mcp_mb_params {
-	u32			cmd;
-	u32			param;
-	void			*p_data_src;
-	u8			data_src_size;
-	void			*p_data_dst;
-	u8			data_dst_size;
-	u32			mcp_resp;
-	u32			mcp_param;
+	u32 cmd;
+	u32 param;
+	void *p_data_src;
+	void *p_data_dst;
+	u8 data_src_size;
+	u8 data_dst_size;
+	u32 mcp_resp;
+	u32 mcp_param;
+	u32 flags;
+#define QED_MB_FLAG_CAN_SLEEP	(0x1 << 0)
+#define QED_MB_FLAG_AVOID_BLOCK	(0x1 << 1)
+#define QED_MB_FLAGS_IS_SET(params, flag) \
+	({ typeof(params) __params = (params); \
+	   (__params && (__params->flags & QED_MB_FLAG_ ## flag)); })
 };
 
 struct qed_drv_tlv_hdr {
@@ -677,6 +780,20 @@ struct qed_drv_tlv_hdr {
 #define QED_DRV_TLV_FLAGS_CHANGED 0x01
 	u8 tlv_flags;
 };
+
+/**
+ * qed_mcp_is_ext_speed_supported() - Check if management firmware supports
+ *                                    extended speeds.
+ * @p_hwfn: HW device data.
+ *
+ * Return: true if supported, false otherwise.
+ */
+static inline bool
+qed_mcp_is_ext_speed_supported(const struct qed_hwfn *p_hwfn)
+{
+	return !!(p_hwfn->mcp_info->capabilities &
+		  FW_MB_PARAM_FEATURE_SUPPORT_EXT_SPEED_FEC_CONTROL);
+}
 
 /**
  * @brief Initialize the interface with the MCP
@@ -753,6 +870,16 @@ struct qed_load_req_params {
 int qed_mcp_load_req(struct qed_hwfn *p_hwfn,
 		     struct qed_ptt *p_ptt,
 		     struct qed_load_req_params *p_params);
+
+/**
+ * @brief Sends a LOAD_DONE message to the MFW
+ *
+ * @param p_hwfn
+ * @param p_ptt
+ *
+ * @return int - 0 - Operation was successful.
+ */
+int qed_mcp_load_done(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt);
 
 /**
  * @brief Sends a UNLOAD_REQ message to the MFW
@@ -840,6 +967,22 @@ int qed_mcp_nvm_rd_cmd(struct qed_hwfn *p_hwfn,
 		       u32 *o_mcp_param, u32 *o_txn_size, u32 *o_buf);
 
 /**
+ * @brief Read from sfp
+ *
+ *  @param p_hwfn - hw function
+ *  @param p_ptt  - PTT required for register access
+ *  @param port   - transceiver port
+ *  @param addr   - I2C address
+ *  @param offset - offset in sfp
+ *  @param len    - buffer length
+ *  @param p_buf  - buffer to read into
+ *
+ * @return int - 0 - operation was successful.
+ */
+int qed_mcp_phy_sfp_read(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt,
+			 u32 port, u32 addr, u32 offset, u32 len, u8 *p_buf);
+
+/**
  * @brief indicates whether the MFW objects [under mcp_info] are accessible
  *
  * @param p_hwfn
@@ -894,6 +1037,19 @@ int __qed_configure_pf_min_bandwidth(struct qed_hwfn *p_hwfn,
 
 int qed_mcp_mask_parities(struct qed_hwfn *p_hwfn,
 			  struct qed_ptt *p_ptt, u32 mask_parities);
+
+/* @brief - Gets the mdump retained data from the MFW.
+ *
+ * @param p_hwfn
+ * @param p_ptt
+ * @param p_mdump_retain
+ *
+ * @param return 0 upon success.
+ */
+int
+qed_mcp_mdump_get_retain(struct qed_hwfn *p_hwfn,
+			 struct qed_ptt *p_ptt,
+			 struct mdump_retain_data_stc *p_mdump_retain);
 
 /**
  * @brief - Sets the MFW's max value for the given resource
@@ -1044,6 +1200,16 @@ void qed_mcp_resc_lock_default_init(struct qed_resc_lock_params *p_lock,
 				    struct qed_resc_unlock_params *p_unlock,
 				    enum qed_resc_lock
 				    resource, bool b_is_permanent);
+
+/**
+ * @brief - Return whether management firmware support smart AN
+ *
+ * @param p_hwfn
+ *
+ * @return bool - true if feature is supported.
+ */
+bool qed_mcp_is_smart_an_supported(struct qed_hwfn *p_hwfn);
+
 /**
  * @brief Learn of supported MFW features; To be done during early init
  *
@@ -1076,4 +1242,56 @@ void qed_mcp_read_ufp_config(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt);
  */
 int qed_mcp_nvm_info_populate(struct qed_hwfn *p_hwfn);
 
+/**
+ * @brief Delete nvm info shadow in the given hardware function
+ *
+ * @param p_hwfn
+ */
+void qed_mcp_nvm_info_free(struct qed_hwfn *p_hwfn);
+
+/**
+ * @brief Get the engine affinity configuration.
+ *
+ * @param p_hwfn
+ * @param p_ptt
+ */
+int qed_mcp_get_engine_config(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt);
+
+/**
+ * @brief Get the PPFID bitmap.
+ *
+ * @param p_hwfn
+ * @param p_ptt
+ */
+int qed_mcp_get_ppfid_bitmap(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt);
+
+/**
+ * @brief Get NVM config attribute value.
+ *
+ * @param p_hwfn
+ * @param p_ptt
+ * @param option_id
+ * @param entity_id
+ * @param flags
+ * @param p_buf
+ * @param p_len
+ */
+int qed_mcp_nvm_get_cfg(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt,
+			u16 option_id, u8 entity_id, u16 flags, u8 *p_buf,
+			u32 *p_len);
+
+/**
+ * @brief Set NVM config attribute value.
+ *
+ * @param p_hwfn
+ * @param p_ptt
+ * @param option_id
+ * @param entity_id
+ * @param flags
+ * @param p_buf
+ * @param len
+ */
+int qed_mcp_nvm_set_cfg(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt,
+			u16 option_id, u8 entity_id, u16 flags, u8 *p_buf,
+			u32 len);
 #endif

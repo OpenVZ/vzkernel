@@ -601,17 +601,27 @@ static void list_version_get_info(struct target_type *tt, void *param)
     info->vers = align_ptr(((void *) ++info->vers) + strlen(tt->name) + 1);
 }
 
-static int list_versions(struct file *filp, struct dm_ioctl *param, size_t param_size)
+static int __list_versions(struct dm_ioctl *param, size_t param_size, const char *name)
 {
 	size_t len, needed = 0;
 	struct dm_target_versions *vers;
 	struct vers_iter iter_info;
+	struct target_type *tt = NULL;
+
+	if (name) {
+		tt = dm_get_target_type(name);
+		if (!tt)
+			return -EINVAL;
+	}
 
 	/*
 	 * Loop through all the devices working out how much
 	 * space we need.
 	 */
-	dm_target_iterate(list_version_get_needed, &needed);
+	if (!tt)
+		dm_target_iterate(list_version_get_needed, &needed);
+	else
+		list_version_get_needed(tt, &needed);
 
 	/*
 	 * Grab our output buffer.
@@ -632,11 +642,26 @@ static int list_versions(struct file *filp, struct dm_ioctl *param, size_t param
 	/*
 	 * Now loop through filling out the names & versions.
 	 */
-	dm_target_iterate(list_version_get_info, &iter_info);
+	if (!tt)
+		dm_target_iterate(list_version_get_info, &iter_info);
+	else
+		list_version_get_info(tt, &iter_info);
 	param->flags |= iter_info.flags;
 
  out:
+	if (tt)
+		dm_put_target_type(tt);
 	return 0;
+}
+
+static int list_versions(struct file *filp, struct dm_ioctl *param, size_t param_size)
+{
+	return __list_versions(param, param_size, NULL);
+}
+
+static int get_target_version(struct file *filp, struct dm_ioctl *param, size_t param_size)
+{
+	return __list_versions(param, param_size, param->name);
 }
 
 static int check_name(const char *name)
@@ -1143,7 +1168,7 @@ static void retrieve_status(struct dm_table *table,
 		spec->sector_start = ti->begin;
 		spec->length = ti->len;
 		strncpy(spec->target_type, ti->type->name,
-			sizeof(spec->target_type));
+			sizeof(spec->target_type) - 1);
 
 		outptr += sizeof(struct dm_target_spec);
 		remaining = len - (outptr - outbuf);
@@ -1446,7 +1471,7 @@ static void retrieve_deps(struct dm_table *table,
 	/*
 	 * Check we have enough space.
 	 */
-	needed = sizeof(*deps) + (sizeof(*deps->dev) * count);
+	needed = struct_size(deps, dev, count);
 	if (len < needed) {
 		param->flags |= DM_BUFFER_FULL_FLAG;
 		return;
@@ -1592,7 +1617,7 @@ static int target_message(struct file *filp, struct dm_ioctl *param, size_t para
 	}
 
 	ti = dm_table_find_target(table, tmsg->sector);
-	if (!dm_target_is_valid(ti)) {
+	if (!ti) {
 		DMWARN("Target message sector outside device.");
 		r = -EINVAL;
 	} else if (ti->type->message)
@@ -1664,6 +1689,7 @@ static ioctl_fn lookup_ioctl(unsigned int cmd, int *ioctl_flags)
 		{DM_TARGET_MSG_CMD, 0, target_message},
 		{DM_DEV_SET_GEOMETRY_CMD, 0, dev_set_geometry},
 		{DM_DEV_ARM_POLL, IOCTL_FLAGS_NO_PARAMS, dev_arm_poll},
+		{DM_GET_TARGET_VERSION, 0, get_target_version},
 	};
 
 	if (unlikely(cmd >= ARRAY_SIZE(_ioctls)))
@@ -1720,8 +1746,7 @@ static void free_params(struct dm_ioctl *param, size_t param_size, int param_fla
 }
 
 static int copy_params(struct dm_ioctl __user *user, struct dm_ioctl *param_kernel,
-		       int ioctl_flags,
-		       struct dm_ioctl **param, int *param_flags)
+		       int ioctl_flags, struct dm_ioctl **param, int *param_flags)
 {
 	struct dm_ioctl *dmi;
 	int secure_data;
@@ -1762,18 +1787,13 @@ static int copy_params(struct dm_ioctl __user *user, struct dm_ioctl *param_kern
 
 	*param_flags |= DM_PARAMS_MALLOC;
 
-	if (copy_from_user(dmi, user, param_kernel->data_size))
-		goto bad;
+	/* Copy from param_kernel (which was already copied from user) */
+	memcpy(dmi, param_kernel, minimum_data_size);
 
+	if (copy_from_user(&dmi->data, (char __user *)user + minimum_data_size,
+			   param_kernel->data_size - minimum_data_size))
+		goto bad;
 data_copied:
-	/*
-	 * Abort if something changed the ioctl data while it was being copied.
-	 */
-	if (dmi->data_size != param_kernel->data_size) {
-		DMERR("rejecting ioctl: data size modified while processing parameters");
-		goto bad;
-	}
-
 	/* Wipe the user buffer so we do not return it to userspace */
 	if (secure_data && clear_user(user, param_kernel->data_size))
 		goto bad;
@@ -2024,3 +2044,4 @@ out:
 
 	return r;
 }
+EXPORT_SYMBOL_GPL(dm_copy_name_and_uuid);

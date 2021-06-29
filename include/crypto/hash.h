@@ -151,9 +151,19 @@ struct shash_desc {
 	void *__ctx[] CRYPTO_MINALIGN_ATTR;
 };
 
+#define HASH_MAX_DIGESTSIZE	 64
+
+/*
+ * Worst case is hmac(sha3-224-generic).  Its context is a nested 'shash_desc'
+ * containing a 'struct sha3_state'.
+ */
+#define HASH_MAX_DESCSIZE	(sizeof(struct shash_desc) + 360)
+
+#define HASH_MAX_STATESIZE	512
+
 #define SHASH_DESC_ON_STACK(shash, ctx)				  \
 	char __##shash##_desc[sizeof(struct shash_desc) +	  \
-		crypto_shash_descsize(ctx)] CRYPTO_MINALIGN_ATTR; \
+		HASH_MAX_DESCSIZE] CRYPTO_MINALIGN_ATTR; \
 	struct shash_desc *shash = (struct shash_desc *)__##shash##_desc
 
 /**
@@ -582,7 +592,7 @@ static inline struct ahash_request *ahash_request_alloc(
  */
 static inline void ahash_request_free(struct ahash_request *req)
 {
-	kzfree(req);
+	kfree_sensitive(req);
 }
 
 static inline void ahash_request_zero(struct ahash_request *req)

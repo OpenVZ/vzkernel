@@ -29,21 +29,16 @@ static int smu7_enable_disable_uvd_dpm(struct pp_hwmgr *hwmgr, bool enable)
 {
 	return smum_send_msg_to_smc(hwmgr, enable ?
 			PPSMC_MSG_UVDDPM_Enable :
-			PPSMC_MSG_UVDDPM_Disable);
+			PPSMC_MSG_UVDDPM_Disable,
+			NULL);
 }
 
 static int smu7_enable_disable_vce_dpm(struct pp_hwmgr *hwmgr, bool enable)
 {
 	return smum_send_msg_to_smc(hwmgr, enable ?
 			PPSMC_MSG_VCEDPM_Enable :
-			PPSMC_MSG_VCEDPM_Disable);
-}
-
-static int smu7_enable_disable_samu_dpm(struct pp_hwmgr *hwmgr, bool enable)
-{
-	return smum_send_msg_to_smc(hwmgr, enable ?
-			PPSMC_MSG_SAMUDPM_Enable :
-			PPSMC_MSG_SAMUDPM_Disable);
+			PPSMC_MSG_VCEDPM_Disable,
+			NULL);
 }
 
 static int smu7_update_uvd_dpm(struct pp_hwmgr *hwmgr, bool bgate)
@@ -60,18 +55,12 @@ static int smu7_update_vce_dpm(struct pp_hwmgr *hwmgr, bool bgate)
 	return smu7_enable_disable_vce_dpm(hwmgr, !bgate);
 }
 
-static int smu7_update_samu_dpm(struct pp_hwmgr *hwmgr, bool bgate)
-{
-	if (!bgate)
-		smum_update_smc_table(hwmgr, SMU_SAMU_TABLE);
-	return smu7_enable_disable_samu_dpm(hwmgr, !bgate);
-}
-
 int smu7_powerdown_uvd(struct pp_hwmgr *hwmgr)
 {
 	if (phm_cf_want_uvd_power_gating(hwmgr))
 		return smum_send_msg_to_smc(hwmgr,
-				PPSMC_MSG_UVDPowerOFF);
+				PPSMC_MSG_UVDPowerOFF,
+				NULL);
 	return 0;
 }
 
@@ -81,10 +70,10 @@ static int smu7_powerup_uvd(struct pp_hwmgr *hwmgr)
 		if (phm_cap_enabled(hwmgr->platform_descriptor.platformCaps,
 				  PHM_PlatformCaps_UVDDynamicPowerGating)) {
 			return smum_send_msg_to_smc_with_parameter(hwmgr,
-					PPSMC_MSG_UVDPowerON, 1);
+					PPSMC_MSG_UVDPowerON, 1, NULL);
 		} else {
 			return smum_send_msg_to_smc_with_parameter(hwmgr,
-					PPSMC_MSG_UVDPowerON, 0);
+					PPSMC_MSG_UVDPowerON, 0, NULL);
 		}
 	}
 
@@ -95,7 +84,8 @@ static int smu7_powerdown_vce(struct pp_hwmgr *hwmgr)
 {
 	if (phm_cf_want_vce_power_gating(hwmgr))
 		return smum_send_msg_to_smc(hwmgr,
-				PPSMC_MSG_VCEPowerOFF);
+				PPSMC_MSG_VCEPowerOFF,
+				NULL);
 	return 0;
 }
 
@@ -103,25 +93,8 @@ static int smu7_powerup_vce(struct pp_hwmgr *hwmgr)
 {
 	if (phm_cf_want_vce_power_gating(hwmgr))
 		return smum_send_msg_to_smc(hwmgr,
-				PPSMC_MSG_VCEPowerON);
-	return 0;
-}
-
-static int smu7_powerdown_samu(struct pp_hwmgr *hwmgr)
-{
-	if (phm_cap_enabled(hwmgr->platform_descriptor.platformCaps,
-			PHM_PlatformCaps_SamuPowerGating))
-		return smum_send_msg_to_smc(hwmgr,
-				PPSMC_MSG_SAMPowerOFF);
-	return 0;
-}
-
-static int smu7_powerup_samu(struct pp_hwmgr *hwmgr)
-{
-	if (phm_cap_enabled(hwmgr->platform_descriptor.platformCaps,
-			PHM_PlatformCaps_SamuPowerGating))
-		return smum_send_msg_to_smc(hwmgr,
-				PPSMC_MSG_SAMPowerON);
+				PPSMC_MSG_VCEPowerON,
+				NULL);
 	return 0;
 }
 
@@ -131,11 +104,9 @@ int smu7_disable_clock_power_gating(struct pp_hwmgr *hwmgr)
 
 	data->uvd_power_gated = false;
 	data->vce_power_gated = false;
-	data->samu_power_gated = false;
 
 	smu7_powerup_uvd(hwmgr);
 	smu7_powerup_vce(hwmgr);
-	smu7_powerup_samu(hwmgr);
 
 	return 0;
 }
@@ -195,26 +166,6 @@ void smu7_powergate_vce(struct pp_hwmgr *hwmgr, bool bgate)
 	}
 }
 
-int smu7_powergate_samu(struct pp_hwmgr *hwmgr, bool bgate)
-{
-	struct smu7_hwmgr *data = (struct smu7_hwmgr *)(hwmgr->backend);
-
-	if (data->samu_power_gated == bgate)
-		return 0;
-
-	data->samu_power_gated = bgate;
-
-	if (bgate) {
-		smu7_update_samu_dpm(hwmgr, true);
-		smu7_powerdown_samu(hwmgr);
-	} else {
-		smu7_powerup_samu(hwmgr);
-		smu7_update_samu_dpm(hwmgr, false);
-	}
-
-	return 0;
-}
-
 int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 					const uint32_t *msg_id)
 {
@@ -235,7 +186,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_GFX_CGCG_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			if (PP_STATE_SUPPORT_LS & *msg_id) {
@@ -245,7 +196,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_GFX_CGLS_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -258,7 +209,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_GFX_3DCG_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 
@@ -269,7 +220,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_GFX_3DLS_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -282,7 +233,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_GFX_RLC_LS_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -295,7 +246,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_GFX_CP_LS_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -309,7 +260,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 						CG_GFX_OTHERS_MGCG_MASK);
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -329,7 +280,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_BIF_MGCG_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			if  (PP_STATE_SUPPORT_LS & *msg_id) {
@@ -339,7 +290,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_BIF_MGLS_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -352,7 +303,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_MC_MGCG_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 
@@ -363,7 +314,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_MC_MGLS_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -376,7 +327,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_DRM_MGCG_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			if (PP_STATE_SUPPORT_LS & *msg_id) {
@@ -386,7 +337,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_DRM_MGLS_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -399,7 +350,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_HDP_MGCG_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 
@@ -410,7 +361,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_HDP_MGLS_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -423,7 +374,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_SDMA_MGCG_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 
@@ -434,7 +385,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_SDMA_MGLS_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -447,7 +398,7 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
 				value = CG_SYS_ROM_MASK;
 
 				if (smum_send_msg_to_smc_with_parameter(
-						hwmgr, msg, value))
+						hwmgr, msg, value, NULL))
 					return -EINVAL;
 			}
 			break;
@@ -470,15 +421,17 @@ int smu7_update_clock_gatings(struct pp_hwmgr *hwmgr,
  * Powerplay will only control the static per CU Power Gating.
  * Dynamic per CU Power Gating will be done in gfx.
  */
-int smu7_enable_per_cu_power_gating(struct pp_hwmgr *hwmgr, bool enable)
+int smu7_powergate_gfx(struct pp_hwmgr *hwmgr, bool enable)
 {
 	struct amdgpu_device *adev = hwmgr->adev;
 
 	if (enable)
 		return smum_send_msg_to_smc_with_parameter(hwmgr,
 					PPSMC_MSG_GFX_CU_PG_ENABLE,
-					adev->gfx.cu_info.number);
+					adev->gfx.cu_info.number,
+					NULL);
 	else
 		return smum_send_msg_to_smc(hwmgr,
-				PPSMC_MSG_GFX_CU_PG_DISABLE);
+				PPSMC_MSG_GFX_CU_PG_DISABLE,
+				NULL);
 }

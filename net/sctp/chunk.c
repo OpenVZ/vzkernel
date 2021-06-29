@@ -86,43 +86,39 @@ void sctp_datamsg_free(struct sctp_datamsg *msg)
 /* Final destructruction of datamsg memory. */
 static void sctp_datamsg_destroy(struct sctp_datamsg *msg)
 {
+	struct sctp_association *asoc = NULL;
 	struct list_head *pos, *temp;
 	struct sctp_chunk *chunk;
-	struct sctp_sock *sp;
 	struct sctp_ulpevent *ev;
-	struct sctp_association *asoc = NULL;
-	int error = 0, notify;
-
-	/* If we failed, we may need to notify. */
-	notify = msg->send_failed ? -1 : 0;
+	int error, sent;
 
 	/* Release all references. */
 	list_for_each_safe(pos, temp, &msg->chunks) {
 		list_del_init(pos);
 		chunk = list_entry(pos, struct sctp_chunk, frag_list);
-		/* Check whether we _really_ need to notify. */
-		if (notify < 0) {
-			asoc = chunk->asoc;
-			if (msg->send_error)
-				error = msg->send_error;
-			else
-				error = asoc->outqueue.error;
 
-			sp = sctp_sk(asoc->base.sk);
-			notify = sctp_ulpevent_type_enabled(SCTP_SEND_FAILED,
-							    &sp->subscribe);
+		if (!msg->send_failed) {
+			sctp_chunk_put(chunk);
+			continue;
 		}
 
-		/* Generate a SEND FAILED event only if enabled. */
-		if (notify > 0) {
-			int sent;
-			if (chunk->has_tsn)
-				sent = SCTP_DATA_SENT;
-			else
-				sent = SCTP_DATA_UNSENT;
+		asoc = chunk->asoc;
+		error = msg->send_error ?: asoc->outqueue.error;
+		sent = chunk->has_tsn ? SCTP_DATA_SENT : SCTP_DATA_UNSENT;
 
+		if (sctp_ulpevent_type_enabled(asoc->subscribe,
+					       SCTP_SEND_FAILED)) {
 			ev = sctp_ulpevent_make_send_failed(asoc, chunk, sent,
 							    error, GFP_ATOMIC);
+			if (ev)
+				asoc->stream.si->enqueue_event(&asoc->ulpq, ev);
+		}
+
+		if (sctp_ulpevent_type_enabled(asoc->subscribe,
+					       SCTP_SEND_FAILED_EVENT)) {
+			ev = sctp_ulpevent_make_send_failed_event(asoc, chunk,
+								  sent, error,
+								  GFP_ATOMIC);
 			if (ev)
 				asoc->stream.si->enqueue_event(&asoc->ulpq, ev);
 		}
@@ -191,6 +187,12 @@ struct sctp_datamsg *sctp_datamsg_from_user(struct sctp_association *asoc,
 	 * the packet
 	 */
 	max_data = asoc->frag_point;
+	if (unlikely(!max_data)) {
+		max_data = sctp_min_frag_point(sctp_sk(asoc->base.sk),
+					       sctp_datachk_len(&asoc->stream));
+		pr_warn_ratelimited("%s: asoc:%p frag_point is zero, forcing max_data to default minimum (%zu)",
+				    __func__, asoc, max_data);
+	}
 
 	/* If the the peer requested that we authenticate DATA chunks
 	 * we need to account for bundling of the AUTH chunks along with
@@ -325,7 +327,8 @@ int sctp_chunk_abandoned(struct sctp_chunk *chunk)
 	if (SCTP_PR_TTL_ENABLED(chunk->sinfo.sinfo_flags) &&
 	    time_after(jiffies, chunk->msg->expires_at)) {
 		struct sctp_stream_out *streamout =
-			&chunk->asoc->stream.out[chunk->sinfo.sinfo_stream];
+			SCTP_SO(&chunk->asoc->stream,
+				chunk->sinfo.sinfo_stream);
 
 		if (chunk->sent_count) {
 			chunk->asoc->abandoned_sent[SCTP_PR_INDEX(TTL)]++;
@@ -339,7 +342,8 @@ int sctp_chunk_abandoned(struct sctp_chunk *chunk)
 	} else if (SCTP_PR_RTX_ENABLED(chunk->sinfo.sinfo_flags) &&
 		   chunk->sent_count > chunk->sinfo.sinfo_timetolive) {
 		struct sctp_stream_out *streamout =
-			&chunk->asoc->stream.out[chunk->sinfo.sinfo_stream];
+			SCTP_SO(&chunk->asoc->stream,
+				chunk->sinfo.sinfo_stream);
 
 		chunk->asoc->abandoned_sent[SCTP_PR_INDEX(RTX)]++;
 		streamout->ext->abandoned_sent[SCTP_PR_INDEX(RTX)]++;

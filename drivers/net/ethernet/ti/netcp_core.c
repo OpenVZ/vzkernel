@@ -1825,7 +1825,7 @@ out:
 	return (ret == 0) ? 0 : err;
 }
 
-static void netcp_ndo_tx_timeout(struct net_device *ndev)
+static void netcp_ndo_tx_timeout(struct net_device *ndev, unsigned int txqueue)
 {
 	struct netcp_intf *netcp = netdev_priv(ndev);
 	unsigned int descs = knav_pool_count(netcp->tx_pool);
@@ -1887,13 +1887,6 @@ static int netcp_rx_kill_vid(struct net_device *ndev, __be16 proto, u16 vid)
 	}
 	spin_unlock_irqrestore(&netcp->lock, flags);
 	return err;
-}
-
-static u16 netcp_select_queue(struct net_device *dev, struct sk_buff *skb,
-			      void *accel_priv,
-			      select_queue_fallback_t fallback)
-{
-	return 0;
 }
 
 static int netcp_setup_tc(struct net_device *dev, enum tc_setup_type type,
@@ -1972,7 +1965,7 @@ static const struct net_device_ops netcp_netdev_ops = {
 	.ndo_vlan_rx_add_vid	= netcp_rx_add_vid,
 	.ndo_vlan_rx_kill_vid	= netcp_rx_kill_vid,
 	.ndo_tx_timeout		= netcp_ndo_tx_timeout,
-	.ndo_select_queue	= netcp_select_queue,
+	.ndo_select_queue	= dev_pick_tx_zero,
 	.ndo_setup_tc		= netcp_setup_tc,
 };
 

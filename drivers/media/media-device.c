@@ -61,14 +61,14 @@ static long media_device_get_info(struct media_device *dev, void *arg)
 	memset(info, 0, sizeof(*info));
 
 	if (dev->driver_name[0])
-		strlcpy(info->driver, dev->driver_name, sizeof(info->driver));
+		strscpy(info->driver, dev->driver_name, sizeof(info->driver));
 	else
-		strlcpy(info->driver, dev->dev->driver->name,
+		strscpy(info->driver, dev->dev->driver->name,
 			sizeof(info->driver));
 
-	strlcpy(info->model, dev->model, sizeof(info->model));
-	strlcpy(info->serial, dev->serial, sizeof(info->serial));
-	strlcpy(info->bus_info, dev->bus_info, sizeof(info->bus_info));
+	strscpy(info->model, dev->model, sizeof(info->model));
+	strscpy(info->serial, dev->serial, sizeof(info->serial));
+	strscpy(info->bus_info, dev->bus_info, sizeof(info->bus_info));
 
 	info->media_version = LINUX_VERSION_CODE;
 	info->driver_version = info->media_version;
@@ -107,7 +107,7 @@ static long media_device_enum_entities(struct media_device *mdev, void *arg)
 
 	entd->id = media_entity_id(ent);
 	if (ent->name)
-		strlcpy(entd->name, ent->name, sizeof(entd->name));
+		strscpy(entd->name, ent->name, sizeof(entd->name));
 	entd->type = ent->function;
 	entd->revision = 0;		/* Unused */
 	entd->flags = ent->flags;
@@ -259,7 +259,7 @@ static long media_device_get_topology(struct media_device *mdev, void *arg)
 		memset(&kentity, 0, sizeof(kentity));
 		kentity.id = entity->graph_obj.id;
 		kentity.function = entity->function;
-		strlcpy(kentity.name, entity->name,
+		strscpy(kentity.name, entity->name,
 			sizeof(kentity.name));
 
 		if (copy_to_user(uentity, &kentity, sizeof(kentity)))
@@ -575,18 +575,12 @@ int __must_check media_device_register_entity(struct media_device *mdev,
 	entity->num_links = 0;
 	entity->num_backlinks = 0;
 
-	if (!ida_pre_get(&mdev->entity_internal_idx, GFP_KERNEL))
-		return -ENOMEM;
+	ret = ida_alloc_min(&mdev->entity_internal_idx, 1, GFP_KERNEL);
+	if (ret < 0)
+		return ret;
+	entity->internal_idx = ret;
 
 	mutex_lock(&mdev->graph_mutex);
-
-	ret = ida_get_new_above(&mdev->entity_internal_idx, 1,
-				&entity->internal_idx);
-	if (ret < 0) {
-		mutex_unlock(&mdev->graph_mutex);
-		return ret;
-	}
-
 	mdev->entity_internal_idx_max =
 		max(mdev->entity_internal_idx_max, entity->internal_idx);
 
@@ -632,7 +626,7 @@ static void __media_device_unregister_entity(struct media_entity *entity)
 	struct media_interface *intf;
 	unsigned int i;
 
-	ida_simple_remove(&mdev->entity_internal_idx, entity->internal_idx);
+	ida_free(&mdev->entity_internal_idx, entity->internal_idx);
 
 	/* Remove all interface links pointing to this entity */
 	list_for_each_entry(intf, &mdev->interfaces, graph_obj.list) {
@@ -832,9 +826,9 @@ void media_device_pci_init(struct media_device *mdev,
 	mdev->dev = &pci_dev->dev;
 
 	if (name)
-		strlcpy(mdev->model, name, sizeof(mdev->model));
+		strscpy(mdev->model, name, sizeof(mdev->model));
 	else
-		strlcpy(mdev->model, pci_name(pci_dev), sizeof(mdev->model));
+		strscpy(mdev->model, pci_name(pci_dev), sizeof(mdev->model));
 
 	sprintf(mdev->bus_info, "PCI:%s", pci_name(pci_dev));
 
@@ -855,17 +849,17 @@ void __media_device_usb_init(struct media_device *mdev,
 	mdev->dev = &udev->dev;
 
 	if (driver_name)
-		strlcpy(mdev->driver_name, driver_name,
+		strscpy(mdev->driver_name, driver_name,
 			sizeof(mdev->driver_name));
 
 	if (board_name)
-		strlcpy(mdev->model, board_name, sizeof(mdev->model));
+		strscpy(mdev->model, board_name, sizeof(mdev->model));
 	else if (udev->product)
-		strlcpy(mdev->model, udev->product, sizeof(mdev->model));
+		strscpy(mdev->model, udev->product, sizeof(mdev->model));
 	else
-		strlcpy(mdev->model, "unknown model", sizeof(mdev->model));
+		strscpy(mdev->model, "unknown model", sizeof(mdev->model));
 	if (udev->serial)
-		strlcpy(mdev->serial, udev->serial, sizeof(mdev->serial));
+		strscpy(mdev->serial, udev->serial, sizeof(mdev->serial));
 	usb_make_path(udev, mdev->bus_info, sizeof(mdev->bus_info));
 	mdev->hw_revision = le16_to_cpu(udev->descriptor.bcdDevice);
 

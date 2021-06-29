@@ -111,23 +111,23 @@ static const unsigned long vcpu_reg_offsets[VCPU_NR_MODES][16] = {
  */
 unsigned long *vcpu_reg32(const struct kvm_vcpu *vcpu, u8 reg_num)
 {
-	unsigned long *reg_array = (unsigned long *)&vcpu->arch.ctxt.gp_regs.regs;
-	unsigned long mode = *vcpu_cpsr(vcpu) & COMPAT_PSR_MODE_MASK;
+	unsigned long *reg_array = (unsigned long *)&vcpu->arch.ctxt.regs;
+	unsigned long mode = *vcpu_cpsr(vcpu) & PSR_AA32_MODE_MASK;
 
 	switch (mode) {
-	case COMPAT_PSR_MODE_USR ... COMPAT_PSR_MODE_SVC:
+	case PSR_AA32_MODE_USR ... PSR_AA32_MODE_SVC:
 		mode &= ~PSR_MODE32_BIT; /* 0 ... 3 */
 		break;
 
-	case COMPAT_PSR_MODE_ABT:
+	case PSR_AA32_MODE_ABT:
 		mode = 4;
 		break;
 
-	case COMPAT_PSR_MODE_UND:
+	case PSR_AA32_MODE_UND:
 		mode = 5;
 		break;
 
-	case COMPAT_PSR_MODE_SYS:
+	case PSR_AA32_MODE_SYS:
 		mode = 0;	/* SYS maps to USR */
 		break;
 
@@ -143,13 +143,13 @@ unsigned long *vcpu_reg32(const struct kvm_vcpu *vcpu, u8 reg_num)
  */
 static int vcpu_spsr32_mode(const struct kvm_vcpu *vcpu)
 {
-	unsigned long mode = *vcpu_cpsr(vcpu) & COMPAT_PSR_MODE_MASK;
+	unsigned long mode = *vcpu_cpsr(vcpu) & PSR_AA32_MODE_MASK;
 	switch (mode) {
-	case COMPAT_PSR_MODE_SVC: return KVM_SPSR_SVC;
-	case COMPAT_PSR_MODE_ABT: return KVM_SPSR_ABT;
-	case COMPAT_PSR_MODE_UND: return KVM_SPSR_UND;
-	case COMPAT_PSR_MODE_IRQ: return KVM_SPSR_IRQ;
-	case COMPAT_PSR_MODE_FIQ: return KVM_SPSR_FIQ;
+	case PSR_AA32_MODE_SVC: return KVM_SPSR_SVC;
+	case PSR_AA32_MODE_ABT: return KVM_SPSR_ABT;
+	case PSR_AA32_MODE_UND: return KVM_SPSR_UND;
+	case PSR_AA32_MODE_IRQ: return KVM_SPSR_IRQ;
+	case PSR_AA32_MODE_FIQ: return KVM_SPSR_FIQ;
 	default: BUG();
 	}
 }
@@ -158,12 +158,24 @@ unsigned long vcpu_read_spsr32(const struct kvm_vcpu *vcpu)
 {
 	int spsr_idx = vcpu_spsr32_mode(vcpu);
 
-	if (!vcpu->arch.sysregs_loaded_on_cpu)
-		return vcpu_gp_regs(vcpu)->spsr[spsr_idx];
+	if (!vcpu->arch.sysregs_loaded_on_cpu) {
+		switch (spsr_idx) {
+		case KVM_SPSR_SVC:
+			return __vcpu_sys_reg(vcpu, SPSR_EL1);
+		case KVM_SPSR_ABT:
+			return vcpu->arch.ctxt.spsr_abt;
+		case KVM_SPSR_UND:
+			return vcpu->arch.ctxt.spsr_und;
+		case KVM_SPSR_IRQ:
+			return vcpu->arch.ctxt.spsr_irq;
+		case KVM_SPSR_FIQ:
+			return vcpu->arch.ctxt.spsr_fiq;
+		}
+	}
 
 	switch (spsr_idx) {
 	case KVM_SPSR_SVC:
-		return read_sysreg_el1(spsr);
+		return read_sysreg_el1(SYS_SPSR);
 	case KVM_SPSR_ABT:
 		return read_sysreg(spsr_abt);
 	case KVM_SPSR_UND:
@@ -182,20 +194,42 @@ void vcpu_write_spsr32(struct kvm_vcpu *vcpu, unsigned long v)
 	int spsr_idx = vcpu_spsr32_mode(vcpu);
 
 	if (!vcpu->arch.sysregs_loaded_on_cpu) {
-		vcpu_gp_regs(vcpu)->spsr[spsr_idx] = v;
+		switch (spsr_idx) {
+		case KVM_SPSR_SVC:
+			__vcpu_sys_reg(vcpu, SPSR_EL1) = v;
+			break;
+		case KVM_SPSR_ABT:
+			vcpu->arch.ctxt.spsr_abt = v;
+			break;
+		case KVM_SPSR_UND:
+			vcpu->arch.ctxt.spsr_und = v;
+			break;
+		case KVM_SPSR_IRQ:
+			vcpu->arch.ctxt.spsr_irq = v;
+			break;
+		case KVM_SPSR_FIQ:
+			vcpu->arch.ctxt.spsr_fiq = v;
+			break;
+		}
+
 		return;
 	}
 
 	switch (spsr_idx) {
 	case KVM_SPSR_SVC:
-		write_sysreg_el1(v, spsr);
+		write_sysreg_el1(v, SYS_SPSR);
+		break;
 	case KVM_SPSR_ABT:
 		write_sysreg(v, spsr_abt);
+		break;
 	case KVM_SPSR_UND:
 		write_sysreg(v, spsr_und);
+		break;
 	case KVM_SPSR_IRQ:
 		write_sysreg(v, spsr_irq);
+		break;
 	case KVM_SPSR_FIQ:
 		write_sysreg(v, spsr_fiq);
+		break;
 	}
 }

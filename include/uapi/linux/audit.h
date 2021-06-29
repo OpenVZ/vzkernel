@@ -114,6 +114,10 @@
 #define AUDIT_REPLACE		1329	/* Replace auditd if this packet unanswerd */
 #define AUDIT_KERN_MODULE	1330	/* Kernel Module events */
 #define AUDIT_FANOTIFY		1331	/* Fanotify access decision */
+#define AUDIT_TIME_INJOFFSET	1332	/* Timekeeping offset injected */
+#define AUDIT_TIME_ADJNTPVAL	1333	/* NTP value adjustment */
+#define AUDIT_BPF		1334	/* BPF subsystem */
+#define AUDIT_EVENT_LISTENER	1335	/* Task joined multicast read socket */
 
 #define AUDIT_AVC		1400	/* SE Linux avc denial or grant */
 #define AUDIT_SELINUX_ERR	1401	/* Internal SE Linux Errors */
@@ -141,6 +145,7 @@
 #define AUDIT_ANOM_PROMISCUOUS      1700 /* Device changed promiscuous mode */
 #define AUDIT_ANOM_ABEND            1701 /* Process ended abnormally */
 #define AUDIT_ANOM_LINK		    1702 /* Suspicious use of file links */
+#define AUDIT_ANOM_CREAT	    1703 /* Suspicious file creation */
 #define AUDIT_INTEGRITY_DATA	    1800 /* Data integrity verification */
 #define AUDIT_INTEGRITY_METADATA    1801 /* Metadata integrity verification */
 #define AUDIT_INTEGRITY_STATUS	    1802 /* Integrity enable status */
@@ -148,6 +153,7 @@
 #define AUDIT_INTEGRITY_PCR	    1804 /* PCR invalidation msgs */
 #define AUDIT_INTEGRITY_RULE	    1805 /* policy rule */
 #define AUDIT_INTEGRITY_EVM_XATTR   1806 /* New EVM-covered xattr */
+#define AUDIT_INTEGRITY_POLICY_RULE 1807 /* IMA policy rules */
 
 #define AUDIT_KERNEL		2000	/* Asynchronous audit record. NOT A REQUEST. */
 
@@ -157,7 +163,8 @@
 #define AUDIT_FILTER_ENTRY	0x02	/* Apply rule at syscall entry */
 #define AUDIT_FILTER_WATCH	0x03	/* Apply rule to file system watches */
 #define AUDIT_FILTER_EXIT	0x04	/* Apply rule at syscall exit */
-#define AUDIT_FILTER_TYPE	0x05	/* Apply rule at audit_log_start */
+#define AUDIT_FILTER_EXCLUDE	0x05	/* Apply rule before record creation */
+#define AUDIT_FILTER_TYPE	AUDIT_FILTER_EXCLUDE /* obsolete misleading naming */
 #define AUDIT_FILTER_FS		0x06	/* Apply rule at __audit_inode_child */
 
 #define AUDIT_NR_FILTERS	7
@@ -277,6 +284,7 @@
 #define AUDIT_OBJ_GID	110
 #define AUDIT_FIELD_COMPARE	111
 #define AUDIT_EXE	112
+#define AUDIT_SADDR_FAM	113
 
 #define AUDIT_ARG0      200
 #define AUDIT_ARG1      (AUDIT_ARG0+1)
@@ -325,14 +333,15 @@ enum {
 };
 
 /* Status symbols */
-				/* Mask values */
-#define AUDIT_STATUS_ENABLED		0x0001
-#define AUDIT_STATUS_FAILURE		0x0002
-#define AUDIT_STATUS_PID		0x0004
+						/* Mask values */
+#define AUDIT_STATUS_ENABLED			0x0001
+#define AUDIT_STATUS_FAILURE			0x0002
+#define AUDIT_STATUS_PID			0x0004
 #define AUDIT_STATUS_RATE_LIMIT		0x0008
-#define AUDIT_STATUS_BACKLOG_LIMIT	0x0010
-#define AUDIT_STATUS_BACKLOG_WAIT_TIME	0x0020
-#define AUDIT_STATUS_LOST		0x0040
+#define AUDIT_STATUS_BACKLOG_LIMIT		0x0010
+#define AUDIT_STATUS_BACKLOG_WAIT_TIME		0x0020
+#define AUDIT_STATUS_LOST			0x0040
+#define AUDIT_STATUS_BACKLOG_WAIT_TIME_ACTUAL	0x0080
 
 #define AUDIT_FEATURE_BITMAP_BACKLOG_LIMIT	0x00000001
 #define AUDIT_FEATURE_BITMAP_BACKLOG_WAIT_TIME	0x00000002
@@ -443,6 +452,9 @@ struct audit_status {
 		__u32	feature_bitmap;	/* bitmap of kernel audit features */
 	};
 	__u32		backlog_wait_time;/* message queue wait timeout */
+	__u32           backlog_wait_time_actual;/* time spent waiting while
+						  * message limit exceeded
+						  */
 };
 
 struct audit_features {

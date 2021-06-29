@@ -13,6 +13,12 @@
 #include <linux/types.h>
 #include <linux/ioport.h>
 
+#define GICD_INT_DEF_PRI		0xa0
+#define GICD_INT_DEF_PRI_X4		((GICD_INT_DEF_PRI << 24) |\
+					(GICD_INT_DEF_PRI << 16) |\
+					(GICD_INT_DEF_PRI << 8) |\
+					GICD_INT_DEF_PRI)
+
 enum gic_type {
 	GIC_V2,
 	GIC_V3,
@@ -29,8 +35,15 @@ struct gic_kvm_info {
 	struct resource vctrl;
 	/* vlpi support */
 	bool		has_v4;
+	/* rvpeid support */
+	bool		has_v4_1;
 };
 
 const struct gic_kvm_info *gic_get_kvm_info(void);
+
+struct irq_domain;
+struct fwnode_handle;
+int gicv2m_init(struct fwnode_handle *parent_handle,
+		struct irq_domain *parent);
 
 #endif /* __LINUX_IRQCHIP_ARM_GIC_COMMON_H */

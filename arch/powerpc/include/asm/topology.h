@@ -35,6 +35,7 @@ static inline int pcibus_to_node(struct pci_bus *bus)
 				 cpu_all_mask :				\
 				 cpumask_of_node(pcibus_to_node(bus)))
 
+extern int cpu_distance(__be32 *cpu1_assoc, __be32 *cpu2_assoc);
 extern int __node_distance(int, int);
 #define node_distance(a, b) __node_distance(a, b)
 
@@ -84,6 +85,11 @@ static inline int numa_update_cpu_topology(bool cpus_locked)
 
 static inline void update_numa_cpu_lookup_table(unsigned int cpu, int node) {}
 
+static inline int cpu_distance(__be32 *cpu1_assoc, __be32 *cpu2_assoc)
+{
+	return 0;
+}
+
 #endif /* CONFIG_NUMA */
 
 #if defined(CONFIG_NUMA) && defined(CONFIG_PPC_SPLPAR)
@@ -92,6 +98,7 @@ extern int stop_topology_update(void);
 extern int prrn_is_enabled(void);
 extern int find_and_online_cpu_nid(int cpu);
 extern int timed_topology_update(int nsecs);
+extern int cpu_to_coregroup_id(int cpu);
 #else
 static inline int start_topology_update(void)
 {
@@ -113,6 +120,16 @@ static inline int timed_topology_update(int nsecs)
 {
 	return 0;
 }
+
+static inline int cpu_to_coregroup_id(int cpu)
+{
+#ifdef CONFIG_SMP
+	return cpu_to_core_id(cpu);
+#else
+	return 0;
+#endif
+}
+
 #endif /* CONFIG_NUMA && CONFIG_PPC_SPLPAR */
 
 #include <asm-generic/topology.h>
@@ -124,9 +141,12 @@ static inline int timed_topology_update(int nsecs)
 #include <asm/smp.h>
 
 #define topology_physical_package_id(cpu)	(cpu_to_chip_id(cpu))
+
 #define topology_sibling_cpumask(cpu)	(per_cpu(cpu_sibling_map, cpu))
-#define topology_core_cpumask(cpu)	(per_cpu(cpu_core_map, cpu))
+#define topology_core_cpumask(cpu)	(cpu_cpu_mask(cpu))
 #define topology_core_id(cpu)		(cpu_to_core_id(cpu))
+
+int dlpar_cpu_readd(int cpu);
 #endif
 #endif
 

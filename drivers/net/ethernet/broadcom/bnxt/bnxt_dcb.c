@@ -39,8 +39,8 @@ static int bnxt_queue_to_tc(struct bnxt *bp, u8 queue_id)
 static int bnxt_hwrm_queue_pri2cos_cfg(struct bnxt *bp, struct ieee_ets *ets)
 {
 	struct hwrm_queue_pri2cos_cfg_input req = {0};
-	int rc = 0, i;
 	u8 *pri2cos;
+	int i;
 
 	bnxt_hwrm_cmd_hdr_init(bp, &req, HWRM_QUEUE_PRI2COS_CFG, -1, -1);
 	req.flags = cpu_to_le32(QUEUE_PRI2COS_CFG_REQ_FLAGS_PATH_BIDIR |
@@ -56,8 +56,7 @@ static int bnxt_hwrm_queue_pri2cos_cfg(struct bnxt *bp, struct ieee_ets *ets)
 		qidx = bp->tc_to_qidx[ets->prio_tc[i]];
 		pri2cos[i] = bp->q_info[qidx].queue_id;
 	}
-	rc = hwrm_send_message(bp, &req, sizeof(req), HWRM_CMD_TIMEOUT);
-	return rc;
+	return hwrm_send_message(bp, &req, sizeof(req), HWRM_CMD_TIMEOUT);
 }
 
 static int bnxt_hwrm_queue_pri2cos_qcfg(struct bnxt *bp, struct ieee_ets *ets)
@@ -93,18 +92,18 @@ static int bnxt_hwrm_queue_cos2bw_cfg(struct bnxt *bp, struct ieee_ets *ets,
 {
 	struct hwrm_queue_cos2bw_cfg_input req = {0};
 	struct bnxt_cos2bw_cfg cos2bw;
-	int rc = 0, i;
 	void *data;
+	int i;
 
 	bnxt_hwrm_cmd_hdr_init(bp, &req, HWRM_QUEUE_COS2BW_CFG, -1, -1);
 	for (i = 0; i < max_tc; i++) {
-		u8 qidx;
+		u8 qidx = bp->tc_to_qidx[i];
 
 		req.enables |= cpu_to_le32(
-			QUEUE_COS2BW_CFG_REQ_ENABLES_COS_QUEUE_ID0_VALID << i);
+			QUEUE_COS2BW_CFG_REQ_ENABLES_COS_QUEUE_ID0_VALID <<
+			qidx);
 
 		memset(&cos2bw, 0, sizeof(cos2bw));
-		qidx = bp->tc_to_qidx[i];
 		cos2bw.queue_id = bp->q_info[qidx].queue_id;
 		if (ets->tc_tsa[i] == IEEE_8021QAZ_TSA_STRICT) {
 			cos2bw.tsa =
@@ -128,8 +127,7 @@ static int bnxt_hwrm_queue_cos2bw_cfg(struct bnxt *bp, struct ieee_ets *ets,
 			req.unused_0 = 0;
 		}
 	}
-	rc = hwrm_send_message(bp, &req, sizeof(req), HWRM_CMD_TIMEOUT);
-	return rc;
+	return hwrm_send_message(bp, &req, sizeof(req), HWRM_CMD_TIMEOUT);
 }
 
 static int bnxt_hwrm_queue_cos2bw_qcfg(struct bnxt *bp, struct ieee_ets *ets)
@@ -236,7 +234,6 @@ static int bnxt_hwrm_queue_pfc_cfg(struct bnxt *bp, struct ieee_pfc *pfc)
 	unsigned int tc_mask = 0, pri_mask = 0;
 	u8 i, pri, lltc_count = 0;
 	bool need_q_remap = false;
-	int rc;
 
 	if (!my_ets)
 		return -EINVAL;
@@ -267,15 +264,11 @@ static int bnxt_hwrm_queue_pfc_cfg(struct bnxt *bp, struct ieee_pfc *pfc)
 	}
 
 	if (need_q_remap)
-		rc = bnxt_queue_remap(bp, tc_mask);
+		bnxt_queue_remap(bp, tc_mask);
 
 	bnxt_hwrm_cmd_hdr_init(bp, &req, HWRM_QUEUE_PFCENABLE_CFG, -1, -1);
 	req.flags = cpu_to_le32(pri_mask);
-	rc = hwrm_send_message(bp, &req, sizeof(req), HWRM_CMD_TIMEOUT);
-	if (rc)
-		return rc;
-
-	return rc;
+	return hwrm_send_message(bp, &req, sizeof(req), HWRM_CMD_TIMEOUT);
 }
 
 static int bnxt_hwrm_queue_pfc_qcfg(struct bnxt *bp, struct ieee_pfc *pfc)
@@ -316,8 +309,8 @@ static int bnxt_hwrm_set_dcbx_app(struct bnxt *bp, struct dcb_app *app,
 
 	n = IEEE_8021QAZ_MAX_TCS;
 	data_len = sizeof(*data) + sizeof(*fw_app) * n;
-	data = dma_zalloc_coherent(&bp->pdev->dev, data_len, &mapping,
-				   GFP_KERNEL);
+	data = dma_alloc_coherent(&bp->pdev->dev, data_len, &mapping,
+				  GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 
@@ -377,11 +370,63 @@ static int bnxt_hwrm_set_dcbx_app(struct bnxt *bp, struct dcb_app *app,
 	set.data_len = cpu_to_le16(sizeof(*data) + sizeof(*fw_app) * n);
 	set.hdr_cnt = 1;
 	rc = hwrm_send_message(bp, &set, sizeof(set), HWRM_CMD_TIMEOUT);
-	if (rc)
-		rc = -EIO;
 
 set_app_exit:
 	dma_free_coherent(&bp->pdev->dev, data_len, data, mapping);
+	return rc;
+}
+
+static int bnxt_hwrm_queue_dscp_qcaps(struct bnxt *bp)
+{
+	struct hwrm_queue_dscp_qcaps_output *resp = bp->hwrm_cmd_resp_addr;
+	struct hwrm_queue_dscp_qcaps_input req = {0};
+	int rc;
+
+	bp->max_dscp_value = 0;
+	if (bp->hwrm_spec_code < 0x10800 || BNXT_VF(bp))
+		return 0;
+
+	bnxt_hwrm_cmd_hdr_init(bp, &req, HWRM_QUEUE_DSCP_QCAPS, -1, -1);
+	mutex_lock(&bp->hwrm_cmd_lock);
+	rc = _hwrm_send_message_silent(bp, &req, sizeof(req), HWRM_CMD_TIMEOUT);
+	if (!rc) {
+		bp->max_dscp_value = (1 << resp->num_dscp_bits) - 1;
+		if (bp->max_dscp_value < 0x3f)
+			bp->max_dscp_value = 0;
+	}
+
+	mutex_unlock(&bp->hwrm_cmd_lock);
+	return rc;
+}
+
+static int bnxt_hwrm_queue_dscp2pri_cfg(struct bnxt *bp, struct dcb_app *app,
+					bool add)
+{
+	struct hwrm_queue_dscp2pri_cfg_input req = {0};
+	struct bnxt_dscp2pri_entry *dscp2pri;
+	dma_addr_t mapping;
+	int rc;
+
+	if (bp->hwrm_spec_code < 0x10800)
+		return 0;
+
+	bnxt_hwrm_cmd_hdr_init(bp, &req, HWRM_QUEUE_DSCP2PRI_CFG, -1, -1);
+	dscp2pri = dma_alloc_coherent(&bp->pdev->dev, sizeof(*dscp2pri),
+				      &mapping, GFP_KERNEL);
+	if (!dscp2pri)
+		return -ENOMEM;
+
+	req.src_data_addr = cpu_to_le64(mapping);
+	dscp2pri->dscp = app->protocol;
+	if (add)
+		dscp2pri->mask = 0x3f;
+	else
+		dscp2pri->mask = 0;
+	dscp2pri->pri = app->priority;
+	req.entry_cnt = cpu_to_le16(1);
+	rc = hwrm_send_message(bp, &req, sizeof(req), HWRM_CMD_TIMEOUT);
+	dma_free_coherent(&bp->pdev->dev, sizeof(*dscp2pri), dscp2pri,
+			  mapping);
 	return rc;
 }
 
@@ -416,7 +461,10 @@ static int bnxt_ets_validate(struct bnxt *bp, struct ieee_ets *ets, u8 *tc)
 	if (total_ets_bw > 100)
 		return -EINVAL;
 
-	*tc = max_tc + 1;
+	if (max_tc >= bp->max_tc)
+		*tc = bp->max_tc;
+	else
+		*tc = max_tc + 1;
 	return 0;
 }
 
@@ -424,24 +472,26 @@ static int bnxt_dcbnl_ieee_getets(struct net_device *dev, struct ieee_ets *ets)
 {
 	struct bnxt *bp = netdev_priv(dev);
 	struct ieee_ets *my_ets = bp->ieee_ets;
+	int rc;
 
 	ets->ets_cap = bp->max_tc;
 
 	if (!my_ets) {
-		int rc;
-
 		if (bp->dcbx_cap & DCB_CAP_DCBX_HOST)
 			return 0;
 
 		my_ets = kzalloc(sizeof(*my_ets), GFP_KERNEL);
 		if (!my_ets)
-			return 0;
+			return -ENOMEM;
 		rc = bnxt_hwrm_queue_cos2bw_qcfg(bp, my_ets);
 		if (rc)
-			return 0;
+			goto error;
 		rc = bnxt_hwrm_queue_pri2cos_qcfg(bp, my_ets);
 		if (rc)
-			return 0;
+			goto error;
+
+		/* cache result */
+		bp->ieee_ets = my_ets;
 	}
 
 	ets->cbs = my_ets->cbs;
@@ -450,6 +500,9 @@ static int bnxt_dcbnl_ieee_getets(struct net_device *dev, struct ieee_ets *ets)
 	memcpy(ets->tc_tsa, my_ets->tc_tsa, sizeof(ets->tc_tsa));
 	memcpy(ets->prio_tc, my_ets->prio_tc, sizeof(ets->prio_tc));
 	return 0;
+error:
+	kfree(my_ets);
+	return rc;
 }
 
 static int bnxt_dcbnl_ieee_setets(struct net_device *dev, struct ieee_ets *ets)
@@ -491,7 +544,7 @@ static int bnxt_dcbnl_ieee_setets(struct net_device *dev, struct ieee_ets *ets)
 static int bnxt_dcbnl_ieee_getpfc(struct net_device *dev, struct ieee_pfc *pfc)
 {
 	struct bnxt *bp = netdev_priv(dev);
-	__le64 *stats = (__le64 *)bp->hw_rx_port_stats;
+	__le64 *stats = bp->port_stats.hw_stats;
 	struct ieee_pfc *my_pfc = bp->ieee_pfc;
 	long rx_off, tx_off;
 	int i, rc;
@@ -551,14 +604,29 @@ static int bnxt_dcbnl_ieee_setpfc(struct net_device *dev, struct ieee_pfc *pfc)
 	return rc;
 }
 
+static int bnxt_dcbnl_ieee_dscp_app_prep(struct bnxt *bp, struct dcb_app *app)
+{
+	if (app->selector == IEEE_8021QAZ_APP_SEL_DSCP) {
+		if (!bp->max_dscp_value)
+			return -ENOTSUPP;
+		if (app->protocol > bp->max_dscp_value)
+			return -EINVAL;
+	}
+	return 0;
+}
+
 static int bnxt_dcbnl_ieee_setapp(struct net_device *dev, struct dcb_app *app)
 {
 	struct bnxt *bp = netdev_priv(dev);
-	int rc = -EINVAL;
+	int rc;
 
 	if (!(bp->dcbx_cap & DCB_CAP_DCBX_VER_IEEE) ||
 	    !(bp->dcbx_cap & DCB_CAP_DCBX_HOST))
 		return -EINVAL;
+
+	rc = bnxt_dcbnl_ieee_dscp_app_prep(bp, app);
+	if (rc)
+		return rc;
 
 	rc = dcb_ieee_setapp(dev, app);
 	if (rc)
@@ -569,6 +637,9 @@ static int bnxt_dcbnl_ieee_setapp(struct net_device *dev, struct dcb_app *app)
 	    (app->selector == IEEE_8021QAZ_APP_SEL_DGRAM &&
 	     app->protocol == ROCE_V2_UDP_DPORT))
 		rc = bnxt_hwrm_set_dcbx_app(bp, app, true);
+
+	if (app->selector == IEEE_8021QAZ_APP_SEL_DSCP)
+		rc = bnxt_hwrm_queue_dscp2pri_cfg(bp, app, true);
 
 	return rc;
 }
@@ -582,6 +653,10 @@ static int bnxt_dcbnl_ieee_delapp(struct net_device *dev, struct dcb_app *app)
 	    !(bp->dcbx_cap & DCB_CAP_DCBX_HOST))
 		return -EINVAL;
 
+	rc = bnxt_dcbnl_ieee_dscp_app_prep(bp, app);
+	if (rc)
+		return rc;
+
 	rc = dcb_ieee_delapp(dev, app);
 	if (rc)
 		return rc;
@@ -590,6 +665,9 @@ static int bnxt_dcbnl_ieee_delapp(struct net_device *dev, struct dcb_app *app)
 	    (app->selector == IEEE_8021QAZ_APP_SEL_DGRAM &&
 	     app->protocol == ROCE_V2_UDP_DPORT))
 		rc = bnxt_hwrm_set_dcbx_app(bp, app, false);
+
+	if (app->selector == IEEE_8021QAZ_APP_SEL_DSCP)
+		rc = bnxt_hwrm_queue_dscp2pri_cfg(bp, app, false);
 
 	return rc;
 }
@@ -610,7 +688,7 @@ static u8 bnxt_dcbnl_setdcbx(struct net_device *dev, u8 mode)
 		return 1;
 
 	if (mode & DCB_CAP_DCBX_HOST) {
-		if (BNXT_VF(bp) || (bp->flags & BNXT_FLAG_FW_LLDP_AGENT))
+		if (BNXT_VF(bp) || (bp->fw_cap & BNXT_FW_CAP_LLDP_AGENT))
 			return 1;
 
 		/* only support IEEE */
@@ -639,13 +717,15 @@ static const struct dcbnl_rtnl_ops dcbnl_ops = {
 
 void bnxt_dcb_init(struct bnxt *bp)
 {
+	bp->dcbx_cap = 0;
 	if (bp->hwrm_spec_code < 0x10501)
 		return;
 
+	bnxt_hwrm_queue_dscp_qcaps(bp);
 	bp->dcbx_cap = DCB_CAP_DCBX_VER_IEEE;
-	if (BNXT_PF(bp) && !(bp->flags & BNXT_FLAG_FW_LLDP_AGENT))
+	if (BNXT_PF(bp) && !(bp->fw_cap & BNXT_FW_CAP_LLDP_AGENT))
 		bp->dcbx_cap |= DCB_CAP_DCBX_HOST;
-	else if (bp->flags & BNXT_FLAG_FW_DCBX_AGENT)
+	else if (bp->fw_cap & BNXT_FW_CAP_DCBX_AGENT)
 		bp->dcbx_cap |= DCB_CAP_DCBX_LLD_MANAGED;
 	bp->dev->dcbnl_ops = &dcbnl_ops;
 }

@@ -65,7 +65,7 @@ static int netxen_nic_open(struct net_device *netdev);
 static int netxen_nic_close(struct net_device *netdev);
 static netdev_tx_t netxen_nic_xmit_frame(struct sk_buff *,
 					       struct net_device *);
-static void netxen_tx_timeout(struct net_device *netdev);
+static void netxen_tx_timeout(struct net_device *netdev, unsigned int txqueue);
 static void netxen_tx_timeout_task(struct work_struct *work);
 static void netxen_fw_poll_work(struct work_struct *work);
 static void netxen_schedule_work(struct netxen_adapter *adapter,
@@ -1595,6 +1595,9 @@ netxen_nic_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err)
 		goto err_out_disable_msi;
 
+	/* mark hardware as deprecated in RHEL8 */
+	mark_hardware_deprecated(netxen_nic_driver_name);
+
 	pci_set_drvdata(pdev, adapter);
 
 	netxen_schedule_work(adapter, netxen_fw_poll_work, FW_POLL_DELAY);
@@ -1788,11 +1791,6 @@ static pci_ers_result_t netxen_io_slot_reset(struct pci_dev *pdev)
 	err = netxen_nic_attach_func(pdev);
 
 	return err ? PCI_ERS_RESULT_DISCONNECT : PCI_ERS_RESULT_RECOVERED;
-}
-
-static void netxen_io_resume(struct pci_dev *pdev)
-{
-	pci_cleanup_aer_uncorrect_error_status(pdev);
 }
 
 static void netxen_nic_shutdown(struct pci_dev *pdev)
@@ -2251,7 +2249,7 @@ static void netxen_nic_handle_phy_intr(struct netxen_adapter *adapter)
 	netxen_advert_link_change(adapter, linkup);
 }
 
-static void netxen_tx_timeout(struct net_device *netdev)
+static void netxen_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 {
 	struct netxen_adapter *adapter = netdev_priv(netdev);
 
@@ -3294,6 +3292,7 @@ netxen_config_indev_addr(struct netxen_adapter *adapter,
 		struct net_device *dev, unsigned long event)
 {
 	struct in_device *indev;
+	struct in_ifaddr *ifa;
 
 	if (!netxen_destip_supported(adapter))
 		return;
@@ -3302,7 +3301,8 @@ netxen_config_indev_addr(struct netxen_adapter *adapter,
 	if (!indev)
 		return;
 
-	for_ifa(indev) {
+	rcu_read_lock();
+	in_dev_for_each_ifa_rcu(ifa, indev) {
 		switch (event) {
 		case NETDEV_UP:
 			netxen_list_config_ip(adapter, ifa, NX_IP_UP);
@@ -3313,8 +3313,8 @@ netxen_config_indev_addr(struct netxen_adapter *adapter,
 		default:
 			break;
 		}
-	} endfor_ifa(indev);
-
+	}
+	rcu_read_unlock();
 	in_dev_put(indev);
 }
 
@@ -3490,7 +3490,6 @@ netxen_free_ip_list(struct netxen_adapter *adapter, bool master)
 static const struct pci_error_handlers netxen_err_handler = {
 	.error_detected = netxen_io_error_detected,
 	.slot_reset = netxen_io_slot_reset,
-	.resume = netxen_io_resume,
 };
 
 static struct pci_driver netxen_driver = {
@@ -3509,6 +3508,7 @@ static struct pci_driver netxen_driver = {
 static int __init netxen_init_module(void)
 {
 	printk(KERN_INFO "%s\n", netxen_nic_driver_string);
+	mark_hardware_unsupported(netxen_nic_driver_name);
 
 #ifdef CONFIG_INET
 	register_netdevice_notifier(&netxen_netdev_cb);

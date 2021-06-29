@@ -30,6 +30,19 @@ struct device;
 /* Structure for the low-level drivers. */
 typedef struct ipmi_smi *ipmi_smi_t;
 
+/* RHEL extension for struct ipmi_smi_msg
+ */
+struct ipmi_smi_msg_rh {
+};
+
+/*
+ * Flags for set_check_watch() below.  Tells if the SMI should be
+ * waiting for watchdog timeouts, commands and/or messages.
+ */
+#define IPMI_WATCH_MASK_CHECK_MESSAGES	(1 << 0)
+#define IPMI_WATCH_MASK_CHECK_WATCHDOG	(1 << 1)
+#define IPMI_WATCH_MASK_CHECK_COMMANDS	(1 << 2)
+
 /*
  * Messages to/from the lower layer.  The smi interface will take one
  * of these to send. After the send has occurred and a response has
@@ -55,9 +68,21 @@ struct ipmi_smi_msg {
 	int           rsp_size;
 	unsigned char rsp[IPMI_MAX_MSG_LENGTH];
 
-	/* Will be called when the system is done with the message
-	   (presumably to free it). */
+	/*
+	 * Will be called when the system is done with the message
+	 * (presumably to free it).
+	 */
 	void (*done)(struct ipmi_smi_msg *msg);
+
+	RH_KABI_AUX_EMBED(ipmi_smi_msg)
+};
+
+/* RHEL extension to struct ipmi_smi_handlers
+ * This extension must be dynamically allocated for every instance of
+ * ipmi_smi_handlers, because ipmi_smi_handlers is embedded in another
+ * struct.
+ */
+struct ipmi_smi_handlers_rh {
 };
 
 struct ipmi_smi_handlers {
@@ -105,12 +130,18 @@ struct ipmi_smi_handlers {
 
 	/*
 	 * Called by the upper layer when some user requires that the
-	 * interface watch for events, received messages, watchdog
-	 * pretimeouts, or not.  Used by the SMI to know if it should
-	 * watch for these.  This may be NULL if the SMI does not
-	 * implement it.
+	 * interface watch for received messages and watchdog
+	 * pretimeouts (basically do a "Get Flags", or not.  Used by
+	 * the SMI to know if it should watch for these.  This may be
+	 * NULL if the SMI does not implement it.  watch_mask is from
+	 * IPMI_WATCH_MASK_xxx above.  The interface should run slower
+	 * timeouts for just watchdog checking or faster timeouts when
+	 * waiting for the message queue.
 	 */
-	void (*set_need_watch)(void *send_info, bool enable);
+	RH_KABI_REPLACE(
+	void (*set_need_watch)(void *send_info, bool enable),
+	void (*set_need_watch)(void *send_info, unsigned int watch_mask)
+	)
 
 	/*
 	 * Called when flushing all pending messages.
@@ -140,6 +171,8 @@ struct ipmi_smi_handlers {
 	 * block.
 	 */
 	void (*set_maintenance_mode)(void *send_info, bool enable);
+
+	RH_KABI_AUX_PTR(ipmi_smi_handlers)
 };
 
 struct ipmi_device_id {
@@ -215,6 +248,15 @@ int ipmi_register_smi(const struct ipmi_smi_handlers *handlers,
 		      void                     *send_info,
 		      struct device            *dev,
 		      unsigned char            slave_addr);
+
+int ipmi_add_smi(struct module            *owner,
+		 const struct ipmi_smi_handlers *handlers,
+		 void                     *send_info,
+		 struct device            *dev,
+		 unsigned char            slave_addr);
+
+#define ipmi_register_smi_mod(handlers, send_info, dev, slave_addr) \
+	ipmi_add_smi(THIS_MODULE, handlers, send_info, dev, slave_addr)
 
 /*
  * Remove a low-level interface from the IPMI driver.  This will

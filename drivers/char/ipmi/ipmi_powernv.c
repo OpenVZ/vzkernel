@@ -19,7 +19,7 @@
 
 struct ipmi_smi_powernv {
 	u64			interface_id;
-	ipmi_smi_t		intf;
+	struct ipmi_smi		*intf;
 	unsigned int		irq;
 
 	/**
@@ -33,7 +33,7 @@ struct ipmi_smi_powernv {
 	struct opal_ipmi_msg	*opal_msg;
 };
 
-static int ipmi_powernv_start_processing(void *send_info, ipmi_smi_t intf)
+static int ipmi_powernv_start_processing(void *send_info, struct ipmi_smi *intf)
 {
 	struct ipmi_smi_powernv *smi = send_info;
 
@@ -261,7 +261,7 @@ static int ipmi_powernv_probe(struct platform_device *pdev)
 		goto err_unregister;
 	}
 
-	rc = ipmi_register_smi(&ipmi_powernv_smi_handlers, ipmi, dev, 0);
+	rc = ipmi_register_smi_mod(&ipmi_powernv_smi_handlers, ipmi, dev, 0);
 	if (rc) {
 		dev_warn(dev, "IPMI SMI registration failed (%d)\n", rc);
 		goto err_free_msg;

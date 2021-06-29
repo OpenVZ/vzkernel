@@ -185,7 +185,8 @@ __secondary_hold:
 	isync
 	bctr
 #else
-	BUG_OPCODE
+0:	trap
+	EMIT_BUG_ENTRY 0b, __FILE__, __LINE__, 0
 #endif
 CLOSE_FIXED_SECTION(first_256B)
 
@@ -422,6 +423,10 @@ generic_secondary_common_init:
 	/* From now on, r24 is expected to be logical cpuid */
 	mr	r24,r5
 
+	/* Create a temp kernel stack for use before relocation is on.	*/
+	ld	r1,PACAEMERGSP(r13)
+	subi	r1,r1,STACK_FRAME_OVERHEAD
+
 	/* See if we need to call a cpu state restore handler */
 	LOAD_REG_ADDR(r23, cur_cpu_spec)
 	ld	r23,0(r23)
@@ -449,10 +454,6 @@ generic_secondary_common_init:
 
 	sync				/* order paca.run and cur_cpu_spec */
 	isync				/* In case code patching happened */
-
-	/* Create a temp kernel stack for use before relocation is on.	*/
-	ld	r1,PACAEMERGSP(r13)
-	subi	r1,r1,STACK_FRAME_OVERHEAD
 
 	b	__secondary_start
 #endif /* SMP */
@@ -539,6 +540,7 @@ __start_initialization_multiplatform:
 	b	__after_prom_start
 #endif /* CONFIG_PPC_BOOK3E */
 
+__REF
 __boot_from_prom:
 #ifdef CONFIG_PPC_OF_BOOT_TRAMPOLINE
 	/* Save parameters */
@@ -576,6 +578,7 @@ __boot_from_prom:
 	/* We never return. We also hit that trap if trying to boot
 	 * from OF while CONFIG_PPC_OF_BOOT_TRAMPOLINE isn't selected */
 	trap
+	.previous
 
 __after_prom_start:
 #ifdef CONFIG_RELOCATABLE
@@ -905,6 +908,7 @@ p_toc:	.8byte	__toc_start + 0x8000 - 0b
 /*
  * This is where the main kernel code starts.
  */
+__REF
 start_here_multiplatform:
 	/* set up the TOC */
 	bl      relative_toc
@@ -999,7 +1003,9 @@ start_here_common:
 	bl	start_kernel
 
 	/* Not reached */
-	BUG_OPCODE
+	trap
+	EMIT_BUG_ENTRY 0b, __FILE__, __LINE__, 0
+	.previous
 
 /*
  * We put a few things here that have to be page-aligned.

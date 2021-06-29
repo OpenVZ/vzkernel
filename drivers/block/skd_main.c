@@ -181,6 +181,7 @@ struct skd_request_context {
 	struct fit_completion_entry_v1 completion;
 
 	struct fit_comp_error_info err_info;
+	int retries;
 
 	blk_status_t status;
 };
@@ -382,11 +383,12 @@ static void skd_log_skreq(struct skd_device *skdev,
  * READ/WRITE REQUESTS
  *****************************************************************************
  */
-static void skd_inc_in_flight(struct request *rq, void *data, bool reserved)
+static bool skd_inc_in_flight(struct request *rq, void *data, bool reserved)
 {
 	int *count = data;
 
 	count++;
+	return true;
 }
 
 static int skd_in_flight(struct skd_device *skdev)
@@ -493,6 +495,11 @@ static blk_status_t skd_mq_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	if (unlikely(skdev->state != SKD_DRVR_STATE_ONLINE))
 		return skd_fail_all(q) ? BLK_STS_IOERR : BLK_STS_RESOURCE;
+
+	if (!(req->rq_flags & RQF_DONTPREP)) {
+		skreq->retries = 0;
+		req->rq_flags |= RQF_DONTPREP;
+	}
 
 	blk_mq_start_request(req);
 
@@ -657,8 +664,8 @@ static bool skd_preop_sg_list(struct skd_device *skdev,
 
 	if (unlikely(skdev->dbg_level > 1)) {
 		dev_dbg(&skdev->pdev->dev,
-			"skreq=%x sksg_list=%p sksg_dma=%llx\n",
-			skreq->id, skreq->sksg_list, skreq->sksg_dma_address);
+			"skreq=%x sksg_list=%p sksg_dma=%pad\n",
+			skreq->id, skreq->sksg_list, &skreq->sksg_dma_address);
 		for (i = 0; i < n_sg; i++) {
 			struct fit_sg_descriptor *sgd = &skreq->sksg_list[i];
 
@@ -1190,8 +1197,8 @@ static void skd_send_fitmsg(struct skd_device *skdev,
 {
 	u64 qcmd;
 
-	dev_dbg(&skdev->pdev->dev, "dma address 0x%llx, busy=%d\n",
-		skmsg->mb_dma_address, skd_in_flight(skdev));
+	dev_dbg(&skdev->pdev->dev, "dma address %pad, busy=%d\n",
+		&skmsg->mb_dma_address, skd_in_flight(skdev));
 	dev_dbg(&skdev->pdev->dev, "msg_buf %p\n", skmsg->msg_buf);
 
 	qcmd = skmsg->mb_dma_address;
@@ -1250,9 +1257,9 @@ static void skd_send_special_fitmsg(struct skd_device *skdev,
 		}
 
 		dev_dbg(&skdev->pdev->dev,
-			"skspcl=%p id=%04x sksg_list=%p sksg_dma=%llx\n",
+			"skspcl=%p id=%04x sksg_list=%p sksg_dma=%pad\n",
 			skspcl, skspcl->req.id, skspcl->req.sksg_list,
-			skspcl->req.sksg_dma_address);
+			&skspcl->req.sksg_dma_address);
 		for (i = 0; i < skspcl->req.n_sg; i++) {
 			struct fit_sg_descriptor *sgd =
 				&skspcl->req.sksg_list[i];
@@ -1411,12 +1418,13 @@ static void skd_resolve_req_exception(struct skd_device *skdev,
 	case SKD_CHECK_STATUS_REPORT_GOOD:
 	case SKD_CHECK_STATUS_REPORT_SMART_ALERT:
 		skreq->status = BLK_STS_OK;
-		blk_mq_complete_request(req);
+		if (likely(!blk_should_fake_timeout(req->q)))
+			blk_mq_complete_request(req);
 		break;
 
 	case SKD_CHECK_STATUS_BUSY_IMMINENT:
 		skd_log_skreq(skdev, skreq, "retry(busy)");
-		blk_requeue_request(skdev->queue, req);
+		blk_mq_requeue_request(req, true);
 		dev_info(&skdev->pdev->dev, "drive BUSY imminent\n");
 		skdev->state = SKD_DRVR_STATE_BUSY_IMMINENT;
 		skdev->timer_countdown = SKD_TIMER_MINUTES(20);
@@ -1424,9 +1432,9 @@ static void skd_resolve_req_exception(struct skd_device *skdev,
 		break;
 
 	case SKD_CHECK_STATUS_REQUEUE_REQUEST:
-		if ((unsigned long) ++req->special < SKD_MAX_RETRIES) {
+		if (++skreq->retries < SKD_MAX_RETRIES) {
 			skd_log_skreq(skdev, skreq, "retry");
-			blk_requeue_request(skdev->queue, req);
+			blk_mq_requeue_request(req, true);
 			break;
 		}
 		/* fall through */
@@ -1434,7 +1442,8 @@ static void skd_resolve_req_exception(struct skd_device *skdev,
 	case SKD_CHECK_STATUS_REPORT_ERROR:
 	default:
 		skreq->status = BLK_STS_IOERR;
-		blk_mq_complete_request(req);
+		if (likely(!blk_should_fake_timeout(req->q)))
+			blk_mq_complete_request(req);
 		break;
 	}
 }
@@ -1554,7 +1563,8 @@ static int skd_isr_completion_posted(struct skd_device *skdev,
 		 */
 		if (likely(cmp_status == SAM_STAT_GOOD)) {
 			skreq->status = BLK_STS_OK;
-			blk_mq_complete_request(rq);
+			if (likely(!blk_should_fake_timeout(rq->q)))
+				blk_mq_complete_request(rq);
 		} else {
 			skd_resolve_req_exception(skdev, skreq, rq);
 		}
@@ -1886,13 +1896,13 @@ static void skd_isr_fwstate(struct skd_device *skdev)
 		skd_skdev_state_to_str(skdev->state), skdev->state);
 }
 
-static void skd_recover_request(struct request *req, void *data, bool reserved)
+static bool skd_recover_request(struct request *req, void *data, bool reserved)
 {
 	struct skd_device *const skdev = data;
 	struct skd_request_context *skreq = blk_mq_rq_to_pdu(req);
 
 	if (skreq->state != SKD_REQ_STATE_BUSY)
-		return;
+		return true;
 
 	skd_log_skreq(skdev, skreq, "recover");
 
@@ -1903,6 +1913,7 @@ static void skd_recover_request(struct request *req, void *data, bool reserved)
 	skreq->state = SKD_REQ_STATE_IDLE;
 	skreq->status = BLK_STS_IOERR;
 	blk_mq_complete_request(req);
+	return true;
 }
 
 static void skd_recover_requests(struct skd_device *skdev)
@@ -2685,8 +2696,8 @@ static int skd_cons_skmsg(struct skd_device *skdev)
 
 		WARN(((uintptr_t)skmsg->msg_buf | skmsg->mb_dma_address) &
 		     (FIT_QCMD_ALIGN - 1),
-		     "not aligned: msg_buf %p mb_dma_address %#llx\n",
-		     skmsg->msg_buf, skmsg->mb_dma_address);
+		     "not aligned: msg_buf %p mb_dma_address %pad\n",
+		     skmsg->msg_buf, &skmsg->mb_dma_address);
 		memset(skmsg->msg_buf, 0, SKD_N_FITMSG_BYTES);
 	}
 
@@ -2834,7 +2845,6 @@ static int skd_cons_disk(struct skd_device *skdev)
 		skdev->sgs_per_request * sizeof(struct scatterlist);
 	skdev->tag_set.numa_node = NUMA_NO_NODE;
 	skdev->tag_set.flags = BLK_MQ_F_SHOULD_MERGE |
-		BLK_MQ_F_SG_MERGE |
 		BLK_ALLOC_POLICY_TO_MQ_FLAG(BLK_TAG_ALLOC_FIFO);
 	skdev->tag_set.driver_data = skdev;
 	rc = blk_mq_alloc_tag_set(&skdev->tag_set);
@@ -3104,7 +3114,7 @@ static int skd_bdev_getgeo(struct block_device *bdev, struct hd_geometry *geo)
 static int skd_bdev_attach(struct device *parent, struct skd_device *skdev)
 {
 	dev_dbg(&skdev->pdev->dev, "add_disk\n");
-	device_add_disk(parent, skdev->disk);
+	device_add_disk(parent, skdev->disk, NULL);
 	return 0;
 }
 

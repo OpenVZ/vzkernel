@@ -43,6 +43,7 @@
 #ifdef CONFIG_IP_VS_IPV6
 #include <net/ipv6.h>
 #include <net/ip6_route.h>
+#include <net/netfilter/ipv6/nf_defrag_ipv6.h>
 #endif
 #include <net/route.h>
 #include <net/sock.h>
@@ -134,7 +135,7 @@ static void update_defense_level(struct netns_ipvs *ipvs)
 		} else {
 			atomic_set(&ipvs->dropentry, 0);
 			ipvs->sysctl_drop_entry = 1;
-		};
+		}
 		break;
 	case 3:
 		atomic_set(&ipvs->dropentry, 1);
@@ -895,6 +896,7 @@ ip_vs_new_dest(struct ip_vs_service *svc, struct ip_vs_dest_user_kern *udest,
 {
 	struct ip_vs_dest *dest;
 	unsigned int atype, i;
+	int ret = 0;
 
 	EnterFunction(2);
 
@@ -905,6 +907,10 @@ ip_vs_new_dest(struct ip_vs_service *svc, struct ip_vs_dest_user_kern *udest,
 			atype & IPV6_ADDR_LINKLOCAL) &&
 			!__ip_vs_addr_is_local_v6(svc->ipvs->net, &udest->addr.in6))
 			return -EINVAL;
+
+		ret = nf_defrag_ipv6_enable(svc->ipvs->net);
+		if (ret)
+			return ret;
 	} else
 #endif
 	{
@@ -1197,7 +1203,8 @@ ip_vs_add_service(struct netns_ipvs *ipvs, struct ip_vs_service_user_kern *u,
 	struct ip_vs_service *svc = NULL;
 
 	/* increase the module use count */
-	ip_vs_use_count_inc();
+	if (!ip_vs_use_count_inc())
+		return -ENOPROTOOPT;
 
 	/* Lookup the scheduler by 'u->sched_name' */
 	if (strcmp(u->sched_name, "none")) {
@@ -1228,6 +1235,10 @@ ip_vs_add_service(struct netns_ipvs *ipvs, struct ip_vs_service_user_kern *u,
 			ret = -EINVAL;
 			goto out_err;
 		}
+
+		ret = nf_defrag_ipv6_enable(ipvs->net);
+		if (ret)
+			goto out_err;
 	}
 #endif
 
@@ -1644,7 +1655,6 @@ static int ip_vs_zero_all(struct netns_ipvs *ipvs)
 
 #ifdef CONFIG_SYSCTL
 
-static int zero;
 static int three = 3;
 
 static int
@@ -1853,7 +1863,7 @@ static struct ctl_table vs_vars[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= &zero,
+		.extra1		= SYSCTL_ZERO,
 		.extra2		= &three,
 	},
 	{
@@ -2340,9 +2350,6 @@ do_ip_vs_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
 	if (copy_from_user(arg, user, len) != 0)
 		return -EFAULT;
 
-	/* increase the module use count */
-	ip_vs_use_count_inc();
-
 	/* Handle daemons since they have another lock */
 	if (cmd == IP_VS_SO_SET_STARTDAEMON ||
 	    cmd == IP_VS_SO_SET_STOPDAEMON) {
@@ -2355,15 +2362,13 @@ do_ip_vs_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
 			ret = -EINVAL;
 			if (strscpy(cfg.mcast_ifn, dm->mcast_ifn,
 				    sizeof(cfg.mcast_ifn)) <= 0)
-				goto out_dec;
+				return ret;
 			cfg.syncid = dm->syncid;
 			ret = start_sync_thread(ipvs, &cfg, dm->state);
 		} else {
-			mutex_lock(&ipvs->sync_mutex);
 			ret = stop_sync_thread(ipvs, dm->state);
-			mutex_unlock(&ipvs->sync_mutex);
 		}
-		goto out_dec;
+		return ret;
 	}
 
 	mutex_lock(&__ip_vs_mutex);
@@ -2458,10 +2463,6 @@ do_ip_vs_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
 
   out_unlock:
 	mutex_unlock(&__ip_vs_mutex);
-  out_dec:
-	/* decrease the module use count */
-	ip_vs_use_count_dec();
-
 	return ret;
 }
 
@@ -2874,7 +2875,7 @@ static const struct nla_policy ip_vs_dest_policy[IPVS_DEST_ATTR_MAX + 1] = {
 static int ip_vs_genl_fill_stats(struct sk_buff *skb, int container_type,
 				 struct ip_vs_kstats *kstats)
 {
-	struct nlattr *nl_stats = nla_nest_start(skb, container_type);
+	struct nlattr *nl_stats = nla_nest_start_noflag(skb, container_type);
 
 	if (!nl_stats)
 		return -EMSGSIZE;
@@ -2904,7 +2905,7 @@ nla_put_failure:
 static int ip_vs_genl_fill_stats64(struct sk_buff *skb, int container_type,
 				   struct ip_vs_kstats *kstats)
 {
-	struct nlattr *nl_stats = nla_nest_start(skb, container_type);
+	struct nlattr *nl_stats = nla_nest_start_noflag(skb, container_type);
 
 	if (!nl_stats)
 		return -EMSGSIZE;
@@ -2950,7 +2951,7 @@ static int ip_vs_genl_fill_service(struct sk_buff *skb,
 	struct ip_vs_kstats kstats;
 	char *sched_name;
 
-	nl_service = nla_nest_start(skb, IPVS_CMD_ATTR_SERVICE);
+	nl_service = nla_nest_start_noflag(skb, IPVS_CMD_ATTR_SERVICE);
 	if (!nl_service)
 		return -EMSGSIZE;
 
@@ -3074,8 +3075,7 @@ static int ip_vs_genl_parse_service(struct netns_ipvs *ipvs,
 
 	/* Parse mandatory identifying service fields first */
 	if (nla == NULL ||
-	    nla_parse_nested(attrs, IPVS_SVC_ATTR_MAX, nla,
-			     ip_vs_svc_policy, NULL))
+	    nla_parse_nested_deprecated(attrs, IPVS_SVC_ATTR_MAX, nla, ip_vs_svc_policy, NULL))
 		return -EINVAL;
 
 	nla_af		= attrs[IPVS_SVC_ATTR_AF];
@@ -3161,7 +3161,7 @@ static int ip_vs_genl_fill_dest(struct sk_buff *skb, struct ip_vs_dest *dest)
 	struct nlattr *nl_dest;
 	struct ip_vs_kstats kstats;
 
-	nl_dest = nla_nest_start(skb, IPVS_CMD_ATTR_DEST);
+	nl_dest = nla_nest_start_noflag(skb, IPVS_CMD_ATTR_DEST);
 	if (!nl_dest)
 		return -EMSGSIZE;
 
@@ -3233,8 +3233,7 @@ static int ip_vs_genl_dump_dests(struct sk_buff *skb,
 	mutex_lock(&__ip_vs_mutex);
 
 	/* Try to find the service for which to dump destinations */
-	if (nlmsg_parse(cb->nlh, GENL_HDRLEN, attrs, IPVS_CMD_ATTR_MAX,
-			ip_vs_cmd_policy, NULL))
+	if (nlmsg_parse_deprecated(cb->nlh, GENL_HDRLEN, attrs, IPVS_CMD_ATTR_MAX, ip_vs_cmd_policy, cb->extack))
 		goto out_err;
 
 
@@ -3270,8 +3269,7 @@ static int ip_vs_genl_parse_dest(struct ip_vs_dest_user_kern *udest,
 
 	/* Parse mandatory identifying destination fields first */
 	if (nla == NULL ||
-	    nla_parse_nested(attrs, IPVS_DEST_ATTR_MAX, nla,
-			     ip_vs_dest_policy, NULL))
+	    nla_parse_nested_deprecated(attrs, IPVS_DEST_ATTR_MAX, nla, ip_vs_dest_policy, NULL))
 		return -EINVAL;
 
 	nla_addr	= attrs[IPVS_DEST_ATTR_ADDR];
@@ -3319,7 +3317,7 @@ static int ip_vs_genl_fill_daemon(struct sk_buff *skb, __u32 state,
 {
 	struct nlattr *nl_daemon;
 
-	nl_daemon = nla_nest_start(skb, IPVS_CMD_ATTR_DAEMON);
+	nl_daemon = nla_nest_start_noflag(skb, IPVS_CMD_ATTR_DAEMON);
 	if (!nl_daemon)
 		return -EMSGSIZE;
 
@@ -3469,10 +3467,8 @@ static int ip_vs_genl_del_daemon(struct netns_ipvs *ipvs, struct nlattr **attrs)
 	if (!attrs[IPVS_DAEMON_ATTR_STATE])
 		return -EINVAL;
 
-	mutex_lock(&ipvs->sync_mutex);
 	ret = stop_sync_thread(ipvs,
 			       nla_get_u32(attrs[IPVS_DAEMON_ATTR_STATE]));
-	mutex_unlock(&ipvs->sync_mutex);
 	return ret;
 }
 
@@ -3507,9 +3503,7 @@ static int ip_vs_genl_set_daemon(struct sk_buff *skb, struct genl_info *info)
 		struct nlattr *daemon_attrs[IPVS_DAEMON_ATTR_MAX + 1];
 
 		if (!info->attrs[IPVS_CMD_ATTR_DAEMON] ||
-		    nla_parse_nested(daemon_attrs, IPVS_DAEMON_ATTR_MAX,
-				     info->attrs[IPVS_CMD_ATTR_DAEMON],
-				     ip_vs_daemon_policy, info->extack))
+		    nla_parse_nested_deprecated(daemon_attrs, IPVS_DAEMON_ATTR_MAX, info->attrs[IPVS_CMD_ATTR_DAEMON], ip_vs_daemon_policy, info->extack))
 			goto out;
 
 		if (cmd == IPVS_CMD_NEW_DAEMON)
@@ -3753,94 +3747,98 @@ out:
 static const struct genl_ops ip_vs_genl_ops[] = {
 	{
 		.cmd	= IPVS_CMD_NEW_SERVICE,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.doit	= ip_vs_genl_set_cmd,
 	},
 	{
 		.cmd	= IPVS_CMD_SET_SERVICE,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.doit	= ip_vs_genl_set_cmd,
 	},
 	{
 		.cmd	= IPVS_CMD_DEL_SERVICE,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.doit	= ip_vs_genl_set_cmd,
 	},
 	{
 		.cmd	= IPVS_CMD_GET_SERVICE,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
 		.doit	= ip_vs_genl_get_cmd,
 		.dumpit	= ip_vs_genl_dump_services,
-		.policy	= ip_vs_cmd_policy,
 	},
 	{
 		.cmd	= IPVS_CMD_NEW_DEST,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.doit	= ip_vs_genl_set_cmd,
 	},
 	{
 		.cmd	= IPVS_CMD_SET_DEST,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.doit	= ip_vs_genl_set_cmd,
 	},
 	{
 		.cmd	= IPVS_CMD_DEL_DEST,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.doit	= ip_vs_genl_set_cmd,
 	},
 	{
 		.cmd	= IPVS_CMD_GET_DEST,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.dumpit	= ip_vs_genl_dump_dests,
 	},
 	{
 		.cmd	= IPVS_CMD_NEW_DAEMON,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.doit	= ip_vs_genl_set_daemon,
 	},
 	{
 		.cmd	= IPVS_CMD_DEL_DAEMON,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.doit	= ip_vs_genl_set_daemon,
 	},
 	{
 		.cmd	= IPVS_CMD_GET_DAEMON,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
 		.dumpit	= ip_vs_genl_dump_daemons,
 	},
 	{
 		.cmd	= IPVS_CMD_SET_CONFIG,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.doit	= ip_vs_genl_set_cmd,
 	},
 	{
 		.cmd	= IPVS_CMD_GET_CONFIG,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
 		.doit	= ip_vs_genl_get_cmd,
 	},
 	{
 		.cmd	= IPVS_CMD_GET_INFO,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
 		.doit	= ip_vs_genl_get_cmd,
 	},
 	{
 		.cmd	= IPVS_CMD_ZERO,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
-		.policy	= ip_vs_cmd_policy,
 		.doit	= ip_vs_genl_set_cmd,
 	},
 	{
 		.cmd	= IPVS_CMD_FLUSH,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags	= GENL_ADMIN_PERM,
 		.doit	= ip_vs_genl_set_cmd,
 	},
@@ -3851,6 +3849,7 @@ static struct genl_family ip_vs_genl_family __ro_after_init = {
 	.name		= IPVS_GENL_NAME,
 	.version	= IPVS_GENL_VERSION,
 	.maxattr	= IPVS_CMD_ATTR_MAX,
+	.policy = ip_vs_cmd_policy,
 	.netnsok        = true,         /* Make ipvsadm to work on netns */
 	.module		= THIS_MODULE,
 	.ops		= ip_vs_genl_ops,
@@ -3980,6 +3979,9 @@ static void __net_exit ip_vs_control_net_cleanup_sysctl(struct netns_ipvs *ipvs)
 
 static struct notifier_block ip_vs_dst_notifier = {
 	.notifier_call = ip_vs_dst_event,
+#ifdef CONFIG_IP_VS_IPV6
+	.priority = ADDRCONF_NOTIFY_PRIORITY + 5,
+#endif
 };
 
 int __net_init ip_vs_control_net_init(struct netns_ipvs *ipvs)

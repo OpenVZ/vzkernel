@@ -27,6 +27,7 @@
 struct seq_file;
 struct module;
 struct msi_msg;
+struct irq_affinity_desc;
 enum irqchip_irq_state;
 
 /*
@@ -208,6 +209,10 @@ struct irq_data {
  * IRQD_SINGLE_TARGET		- IRQ allows only a single affinity target
  * IRQD_DEFAULT_TRIGGER_SET	- Expected trigger already been set
  * IRQD_CAN_RESERVE		- Can use reservation mode
+ * IRQD_MSI_NOMASK_QUIRK	- Non-maskable MSI quirk for affinity change
+ *				  required
+ * IRQD_HANDLE_ENFORCE_IRQCTX	- Enforce that handle_irq_*() is only invoked
+ *				  from actual interrupt context.
  */
 enum {
 	IRQD_TRIGGER_MASK		= 0xf,
@@ -230,6 +235,8 @@ enum {
 	IRQD_SINGLE_TARGET		= (1 << 24),
 	IRQD_DEFAULT_TRIGGER_SET	= (1 << 25),
 	IRQD_CAN_RESERVE		= (1 << 26),
+	IRQD_MSI_NOMASK_QUIRK		= (1 << 27),
+	IRQD_HANDLE_ENFORCE_IRQCTX	= (1 << 28),
 };
 
 #define __irqd_to_state(d) ACCESS_PRIVATE((d)->common, state_use_accessors)
@@ -297,6 +304,16 @@ static inline void irqd_set_single_target(struct irq_data *d)
 static inline bool irqd_is_single_target(struct irq_data *d)
 {
 	return __irqd_to_state(d) & IRQD_SINGLE_TARGET;
+}
+
+static inline void irqd_set_handle_enforce_irqctx(struct irq_data *d)
+{
+	__irqd_to_state(d) |= IRQD_HANDLE_ENFORCE_IRQCTX;
+}
+
+static inline bool irqd_is_handle_enforce_irqctx(struct irq_data *d)
+{
+	return __irqd_to_state(d) & IRQD_HANDLE_ENFORCE_IRQCTX;
 }
 
 static inline bool irqd_is_wakeup_set(struct irq_data *d)
@@ -387,6 +404,21 @@ static inline void irqd_clr_can_reserve(struct irq_data *d)
 static inline bool irqd_can_reserve(struct irq_data *d)
 {
 	return __irqd_to_state(d) & IRQD_CAN_RESERVE;
+}
+
+static inline void irqd_set_msi_nomask_quirk(struct irq_data *d)
+{
+	__irqd_to_state(d) |= IRQD_MSI_NOMASK_QUIRK;
+}
+
+static inline void irqd_clr_msi_nomask_quirk(struct irq_data *d)
+{
+	__irqd_to_state(d) &= ~IRQD_MSI_NOMASK_QUIRK;
+}
+
+static inline bool irqd_msi_nomask_quirk(struct irq_data *d)
+{
+	return __irqd_to_state(d) & IRQD_MSI_NOMASK_QUIRK;
 }
 
 #undef __irqd_to_state
@@ -504,6 +536,7 @@ struct irq_chip {
  * IRQCHIP_ONESHOT_SAFE:	One shot does not require mask/unmask
  * IRQCHIP_EOI_THREADED:	Chip requires eoi() on unmask in threaded mode
  * IRQCHIP_SUPPORTS_LEVEL_MSI	Chip can provide two doorbells for Level MSIs
+ * IRQCHIP_SUPPORTS_NMI:	Chip can deliver NMIs, only for root irqchips
  */
 enum {
 	IRQCHIP_SET_TYPE_MASKED		= (1 <<  0),
@@ -514,6 +547,7 @@ enum {
 	IRQCHIP_ONESHOT_SAFE		= (1 <<  5),
 	IRQCHIP_EOI_THREADED		= (1 <<  6),
 	IRQCHIP_SUPPORTS_LEVEL_MSI	= (1 <<  7),
+	IRQCHIP_SUPPORTS_NMI		= (1 <<  8),
 };
 
 #include <linux/irqdesc.h>
@@ -592,6 +626,9 @@ extern void handle_percpu_irq(struct irq_desc *desc);
 extern void handle_percpu_devid_irq(struct irq_desc *desc);
 extern void handle_bad_irq(struct irq_desc *desc);
 extern void handle_nested_irq(unsigned int irq);
+
+extern void handle_fasteoi_nmi(struct irq_desc *desc);
+extern void handle_percpu_devid_fasteoi_nmi(struct irq_desc *desc);
 
 extern int irq_chip_compose_msi_msg(struct irq_data *data, struct msi_msg *msg);
 extern int irq_chip_pm_get(struct irq_data *data);
@@ -834,11 +871,12 @@ struct cpumask *irq_data_get_effective_affinity_mask(struct irq_data *d)
 unsigned int arch_dynirq_lower_bound(unsigned int from);
 
 int __irq_alloc_descs(int irq, unsigned int from, unsigned int cnt, int node,
-		      struct module *owner, const struct cpumask *affinity);
+		      struct module *owner,
+		      const struct irq_affinity_desc *affinity);
 
 int __devm_irq_alloc_descs(struct device *dev, int irq, unsigned int from,
 			   unsigned int cnt, int node, struct module *owner,
-			   const struct cpumask *affinity);
+			   const struct irq_affinity_desc *affinity);
 
 /* use macros to avoid needing export.h for THIS_MODULE */
 #define irq_alloc_descs(irq, from, cnt, node)	\
@@ -1151,7 +1189,8 @@ void irq_matrix_offline(struct irq_matrix *m);
 void irq_matrix_assign_system(struct irq_matrix *m, unsigned int bit, bool replace);
 int irq_matrix_reserve_managed(struct irq_matrix *m, const struct cpumask *msk);
 void irq_matrix_remove_managed(struct irq_matrix *m, const struct cpumask *msk);
-int irq_matrix_alloc_managed(struct irq_matrix *m, unsigned int cpu);
+int irq_matrix_alloc_managed(struct irq_matrix *m, const struct cpumask *msk,
+				unsigned int *mapped_cpu);
 void irq_matrix_reserve(struct irq_matrix *m);
 void irq_matrix_remove_reserved(struct irq_matrix *m);
 int irq_matrix_alloc(struct irq_matrix *m, const struct cpumask *msk,

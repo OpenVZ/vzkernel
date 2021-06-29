@@ -20,6 +20,7 @@
 #include <asm/oprofile_impl.h>
 #include <asm/cputable.h>
 #include <asm/prom.h>		/* for PTRRELOC on ARCH=ppc */
+#include <asm/mce.h>
 #include <asm/mmu.h>
 #include <asm/setup.h>
 
@@ -63,17 +64,12 @@ extern void __setup_cpu_7410(unsigned long offset, struct cpu_spec* spec);
 extern void __setup_cpu_745x(unsigned long offset, struct cpu_spec* spec);
 #endif /* CONFIG_PPC32 */
 #ifdef CONFIG_PPC64
+#include <asm/cpu_setup_power.h>
 extern void __setup_cpu_ppc970(unsigned long offset, struct cpu_spec* spec);
 extern void __setup_cpu_ppc970MP(unsigned long offset, struct cpu_spec* spec);
 extern void __setup_cpu_pa6t(unsigned long offset, struct cpu_spec* spec);
 extern void __restore_cpu_pa6t(void);
 extern void __restore_cpu_ppc970(void);
-extern void __setup_cpu_power7(unsigned long offset, struct cpu_spec* spec);
-extern void __restore_cpu_power7(void);
-extern void __setup_cpu_power8(unsigned long offset, struct cpu_spec* spec);
-extern void __restore_cpu_power8(void);
-extern void __setup_cpu_power9(unsigned long offset, struct cpu_spec* spec);
-extern void __restore_cpu_power9(void);
 extern long __machine_check_early_realmode_p7(struct pt_regs *regs);
 extern long __machine_check_early_realmode_p8(struct pt_regs *regs);
 extern long __machine_check_early_realmode_p9(struct pt_regs *regs);
@@ -123,6 +119,16 @@ extern void __restore_cpu_e6500(void);
 				 PPC_FEATURE2_ARCH_3_00 | \
 				 PPC_FEATURE2_HAS_IEEE128 | \
 				 PPC_FEATURE2_DARN )
+#define COMMON_USER_POWER10	COMMON_USER_POWER9
+#define COMMON_USER2_POWER10	(PPC_FEATURE2_ARCH_3_1 | \
+				 PPC_FEATURE2_MMA | \
+				 PPC_FEATURE2_ARCH_3_00 | \
+				 PPC_FEATURE2_HAS_IEEE128 | \
+				 PPC_FEATURE2_DARN | \
+				 PPC_FEATURE2_ARCH_2_07 | \
+				 PPC_FEATURE2_DSCR | \
+				 PPC_FEATURE2_ISEL | PPC_FEATURE2_TAR | \
+				 PPC_FEATURE2_VEC_CRYPTO)
 
 #ifdef CONFIG_PPC_BOOK3E_64
 #define COMMON_USER_BOOKE	(COMMON_USER_PPC64 | PPC_FEATURE_BOOKE)
@@ -371,6 +377,22 @@ static struct cpu_spec __initdata cpu_specs[] = {
 		.cpu_restore		= __restore_cpu_power9,
 		.platform		= "power9",
 	},
+	{	/* 3.1-compliant processor, i.e. Power10 "architected" mode */
+		.pvr_mask		= 0xffffffff,
+		.pvr_value		= 0x0f000006,
+		.cpu_name		= "POWER10 (architected)",
+		.cpu_features		= CPU_FTRS_POWER10,
+		.cpu_user_features	= COMMON_USER_POWER10,
+		.cpu_user_features2	= COMMON_USER2_POWER10,
+		.mmu_features		= MMU_FTRS_POWER10,
+		.icache_bsize		= 128,
+		.dcache_bsize		= 128,
+		.oprofile_type		= PPC_OPROFILE_INVALID,
+		.oprofile_cpu_type	= "ppc64/ibm-compat-v1",
+		.cpu_setup		= __setup_cpu_power10,
+		.cpu_restore		= __restore_cpu_power10,
+		.platform		= "power10",
+	},
 	{	/* Power7 */
 		.pvr_mask		= 0xffff0000,
 		.pvr_value		= 0x003f0000,
@@ -485,25 +507,6 @@ static struct cpu_spec __initdata cpu_specs[] = {
 		.machine_check_early	= __machine_check_early_realmode_p8,
 		.platform		= "power8",
 	},
-	{	/* Power9 DD1*/
-		.pvr_mask		= 0xffffff00,
-		.pvr_value		= 0x004e0100,
-		.cpu_name		= "POWER9 (raw)",
-		.cpu_features		= CPU_FTRS_POWER9_DD1,
-		.cpu_user_features	= COMMON_USER_POWER9,
-		.cpu_user_features2	= COMMON_USER2_POWER9,
-		.mmu_features		= MMU_FTRS_POWER9,
-		.icache_bsize		= 128,
-		.dcache_bsize		= 128,
-		.num_pmcs		= 6,
-		.pmc_type		= PPC_PMC_IBM,
-		.oprofile_cpu_type	= "ppc64/power9",
-		.oprofile_type		= PPC_OPROFILE_INVALID,
-		.cpu_setup		= __setup_cpu_power9,
-		.cpu_restore		= __restore_cpu_power9,
-		.machine_check_early	= __machine_check_early_realmode_p9,
-		.platform		= "power9",
-	},
 	{	/* Power9 DD2.0 */
 		.pvr_mask		= 0xffffefff,
 		.pvr_value		= 0x004e0200,
@@ -560,6 +563,25 @@ static struct cpu_spec __initdata cpu_specs[] = {
 		.cpu_restore		= __restore_cpu_power9,
 		.machine_check_early	= __machine_check_early_realmode_p9,
 		.platform		= "power9",
+	},
+	{	/* Power10 */
+		.pvr_mask		= 0xffff0000,
+		.pvr_value		= 0x00800000,
+		.cpu_name		= "POWER10 (raw)",
+		.cpu_features		= CPU_FTRS_POWER10,
+		.cpu_user_features	= COMMON_USER_POWER10,
+		.cpu_user_features2	= COMMON_USER2_POWER10,
+		.mmu_features		= MMU_FTRS_POWER10,
+		.icache_bsize		= 128,
+		.dcache_bsize		= 128,
+		.num_pmcs		= 6,
+		.pmc_type		= PPC_PMC_IBM,
+		.oprofile_cpu_type	= "ppc64/power10",
+		.oprofile_type		= PPC_OPROFILE_INVALID,
+		.cpu_setup		= __setup_cpu_power10,
+		.cpu_restore		= __restore_cpu_power10,
+		.machine_check_early	= __machine_check_early_realmode_p10,
+		.platform		= "power10",
 	},
 	{	/* Cell Broadband Engine */
 		.pvr_mask		= 0xffff0000,
@@ -1179,6 +1201,7 @@ static struct cpu_spec __initdata cpu_specs[] = {
 		.machine_check		= machine_check_generic,
 		.platform		= "ppc603",
 	},
+#ifdef CONFIG_PPC_83xx
 	{	/* e300c1 (a 603e core, plus some) on 83xx */
 		.pvr_mask		= 0x7fff0000,
 		.pvr_value		= 0x00830000,
@@ -1189,7 +1212,7 @@ static struct cpu_spec __initdata cpu_specs[] = {
 		.icache_bsize		= 32,
 		.dcache_bsize		= 32,
 		.cpu_setup		= __setup_cpu_603,
-		.machine_check		= machine_check_generic,
+		.machine_check		= machine_check_83xx,
 		.platform		= "ppc603",
 	},
 	{	/* e300c2 (an e300c1 core, plus some, minus FPU) on 83xx */
@@ -1203,7 +1226,7 @@ static struct cpu_spec __initdata cpu_specs[] = {
 		.icache_bsize		= 32,
 		.dcache_bsize		= 32,
 		.cpu_setup		= __setup_cpu_603,
-		.machine_check		= machine_check_generic,
+		.machine_check		= machine_check_83xx,
 		.platform		= "ppc603",
 	},
 	{	/* e300c3 (e300c1, plus one IU, half cache size) on 83xx */
@@ -1217,7 +1240,7 @@ static struct cpu_spec __initdata cpu_specs[] = {
 		.icache_bsize		= 32,
 		.dcache_bsize		= 32,
 		.cpu_setup		= __setup_cpu_603,
-		.machine_check		= machine_check_generic,
+		.machine_check		= machine_check_83xx,
 		.num_pmcs		= 4,
 		.oprofile_cpu_type	= "ppc/e300",
 		.oprofile_type		= PPC_OPROFILE_FSL_EMB,
@@ -1234,12 +1257,13 @@ static struct cpu_spec __initdata cpu_specs[] = {
 		.icache_bsize		= 32,
 		.dcache_bsize		= 32,
 		.cpu_setup		= __setup_cpu_603,
-		.machine_check		= machine_check_generic,
+		.machine_check		= machine_check_83xx,
 		.num_pmcs		= 4,
 		.oprofile_cpu_type	= "ppc/e300",
 		.oprofile_type		= PPC_OPROFILE_FSL_EMB,
 		.platform		= "ppc603",
 	},
+#endif
 	{	/* default match, we assume split I/D cache & TB (non-601)... */
 		.pvr_mask		= 0x00000000,
 		.pvr_value		= 0x00000000,
@@ -2224,11 +2248,13 @@ static struct cpu_spec * __init setup_cpu_spec(unsigned long offset,
 		 * oprofile_cpu_type already has a value, then we are
 		 * possibly overriding a real PVR with a logical one,
 		 * and, in that case, keep the current value for
-		 * oprofile_cpu_type.
+		 * oprofile_cpu_type. Futhermore, let's ensure that the
+		 * fix for the PMAO bug is enabled on compatibility mode.
 		 */
 		if (old.oprofile_cpu_type != NULL) {
 			t->oprofile_cpu_type = old.oprofile_cpu_type;
 			t->oprofile_type = old.oprofile_type;
+			t->cpu_features |= old.cpu_features & CPU_FTR_PMAO_BUG;
 		}
 	}
 

@@ -1,31 +1,8 @@
-/******************************************************************************
- *
- * Copyright(c) 2003 - 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2015 - 2016 Intel Deutschland GmbH
- *
- * Portions of this file are derived from the ipw3945 project.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
- *
- * The full GNU General Public License is included in this distribution in the
- * file called LICENSE.
- *
- * Contact Information:
- *  Intel Linux Wireless <linuxwifi@intel.com>
- * Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
- *
- *****************************************************************************/
+// SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+/*
+ * Copyright (C) 2003-2014, 2018-2020 Intel Corporation
+ * Copyright (C) 2015-2016 Intel Deutschland GmbH
+ */
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/export.h>
@@ -241,12 +218,15 @@ IWL_EXPORT_SYMBOL(iwl_clear_bits_prph);
 
 void iwl_force_nmi(struct iwl_trans *trans)
 {
-	if (trans->cfg->device_family < IWL_DEVICE_FAMILY_9000)
+	if (trans->trans_cfg->device_family < IWL_DEVICE_FAMILY_9000)
 		iwl_write_prph(trans, DEVICE_SET_NMI_REG,
 			       DEVICE_SET_NMI_VAL_DRV);
+	else if (trans->trans_cfg->device_family < IWL_DEVICE_FAMILY_AX210)
+		iwl_write_umac_prph(trans, UREG_NIC_SET_NMI_DRIVER,
+				UREG_NIC_SET_NMI_DRIVER_NMI_FROM_DRIVER);
 	else
-		iwl_write_prph(trans, UREG_NIC_SET_NMI_DRIVER,
-			       UREG_NIC_SET_NMI_DRIVER_NMI_FROM_DRIVER_MSK);
+		iwl_write_umac_prph(trans, UREG_DOORBELL_TO_ISR6,
+				    UREG_DOORBELL_TO_ISR6_NMI_BIT);
 }
 IWL_EXPORT_SYMBOL(iwl_force_nmi);
 
@@ -392,7 +372,7 @@ int iwl_dump_fh(struct iwl_trans *trans, char **buf)
 		FH_TSSR_TX_ERROR_REG
 	};
 
-	if (trans->cfg->mq_rx_supported)
+	if (trans->trans_cfg->mq_rx_supported)
 		return iwl_dump_rfh(trans, buf);
 
 #ifdef CONFIG_IWLWIFI_DEBUGFS
@@ -425,3 +405,43 @@ int iwl_dump_fh(struct iwl_trans *trans, char **buf)
 
 	return 0;
 }
+
+int iwl_finish_nic_init(struct iwl_trans *trans,
+			const struct iwl_cfg_trans_params *cfg_trans)
+{
+	int err;
+
+	if (cfg_trans->bisr_workaround) {
+		/* ensure the TOP FSM isn't still in previous reset */
+		mdelay(2);
+	}
+
+	/*
+	 * Set "initialization complete" bit to move adapter from
+	 * D0U* --> D0A* (powered-up active) state.
+	 */
+	iwl_set_bit(trans, CSR_GP_CNTRL, CSR_GP_CNTRL_REG_FLAG_INIT_DONE);
+
+	if (cfg_trans->device_family == IWL_DEVICE_FAMILY_8000)
+		udelay(2);
+
+	/*
+	 * Wait for clock stabilization; once stabilized, access to
+	 * device-internal resources is supported, e.g. iwl_write_prph()
+	 * and accesses to uCode SRAM.
+	 */
+	err = iwl_poll_bit(trans, CSR_GP_CNTRL,
+			   CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY,
+			   CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY,
+			   25000);
+	if (err < 0)
+		IWL_DEBUG_INFO(trans, "Failed to wake NIC\n");
+
+	if (cfg_trans->bisr_workaround) {
+		/* ensure BISR shift has finished */
+		udelay(200);
+	}
+
+	return err < 0 ? err : 0;
+}
+IWL_EXPORT_SYMBOL(iwl_finish_nic_init);

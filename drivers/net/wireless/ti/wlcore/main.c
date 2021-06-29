@@ -1436,7 +1436,7 @@ int wl1271_rx_filter_alloc_field(struct wl12xx_rx_filter *filter,
 
 	field = &filter->fields[filter->num_fields];
 
-	field->pattern = kzalloc(len, GFP_KERNEL);
+	field->pattern = kmemdup(pattern, len, GFP_KERNEL);
 	if (!field->pattern) {
 		wl1271_warning("Failed to allocate RX filter pattern");
 		return -ENOMEM;
@@ -1447,7 +1447,6 @@ int wl1271_rx_filter_alloc_field(struct wl12xx_rx_filter *filter,
 	field->offset = cpu_to_le16(offset);
 	field->flags = flags;
 	field->len = len;
-	memcpy(field->pattern, pattern, len);
 
 	return 0;
 }
@@ -5665,7 +5664,8 @@ static void wlcore_roc_complete_work(struct work_struct *work)
 		ieee80211_remain_on_channel_expired(wl->hw);
 }
 
-static int wlcore_op_cancel_remain_on_channel(struct ieee80211_hw *hw)
+static int wlcore_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
+					      struct ieee80211_vif *vif)
 {
 	struct wl1271 *wl = hw->priv;
 

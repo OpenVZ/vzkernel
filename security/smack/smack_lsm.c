@@ -1927,9 +1927,9 @@ static int smack_file_receive(struct file *file)
  *
  * Returns 0
  */
-static int smack_file_open(struct file *file, const struct cred *cred)
+static int smack_file_open(struct file *file)
 {
-	struct task_smack *tsp = cred->security;
+	struct task_smack *tsp = file->f_cred->security;
 	struct inode *inode = file_inode(file);
 	struct smk_audit_info ad;
 	int rc;
@@ -1937,7 +1937,7 @@ static int smack_file_open(struct file *file, const struct cred *cred)
 	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_PATH);
 	smk_ad_setfield_u_fs_path(&ad, file->f_path);
 	rc = smk_tskacc(tsp, smk_of_inode(inode), MAY_READ, &ad);
-	rc = smk_bu_credfile(cred, file, MAY_READ, rc);
+	rc = smk_bu_credfile(file->f_cred, file, MAY_READ, rc);
 
 	return rc;
 }
@@ -2250,7 +2250,7 @@ static int smack_task_movememory(struct task_struct *p)
  * Return 0 if write access is permitted
  *
  */
-static int smack_task_kill(struct task_struct *p, struct siginfo *info,
+static int smack_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 			   int sig, const struct cred *cred)
 {
 	struct smk_audit_info ad;
@@ -4145,7 +4145,7 @@ static void smack_sock_graft(struct sock *sk, struct socket *parent)
  * Returns 0 if a task with the packet label could write to
  * the socket, otherwise an error code
  */
-static int smack_inet_conn_request(struct sock *sk, struct sk_buff *skb,
+static int smack_inet_conn_request(const struct sock *sk, struct sk_buff *skb,
 				   struct request_sock *req)
 {
 	u16 family = sk->sk_family;
@@ -4454,13 +4454,11 @@ static int smack_audit_rule_known(struct audit_krule *krule)
  * @field: audit rule flags given from user-space
  * @op: required testing operator
  * @vrule: smack internal rule presentation
- * @actx: audit context associated with the check
  *
  * The core Audit hook. It's used to take the decision of
  * whether to audit or not to audit a given object.
  */
-static int smack_audit_rule_match(u32 secid, u32 field, u32 op, void *vrule,
-				  struct audit_context *actx)
+static int smack_audit_rule_match(u32 secid, u32 field, u32 op, void *vrule)
 {
 	struct smack_known *skp;
 	char *rule = vrule;

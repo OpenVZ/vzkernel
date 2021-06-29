@@ -10,11 +10,9 @@
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
 #include "xfs_mount.h"
-#include "xfs_defer.h"
 #include "xfs_inode.h"
 #include "xfs_errortag.h"
 #include "xfs_error.h"
-#include "xfs_cksum.h"
 #include "xfs_icache.h"
 #include "xfs_trans.h"
 #include "xfs_ialloc.h"
@@ -33,12 +31,9 @@ xfs_inobp_check(
 	xfs_buf_t	*bp)
 {
 	int		i;
-	int		j;
 	xfs_dinode_t	*dip;
 
-	j = mp->m_inode_cluster_size >> mp->m_sb.sb_inodelog;
-
-	for (i = 0; i < j; i++) {
+	for (i = 0; i < M_IGEO(mp)->inodes_per_cluster; i++) {
 		dip = xfs_buf_offset(bp, i * mp->m_sb.sb_inodesize);
 		if (!dip->di_next_unlinked)  {
 			xfs_alert(mp,
@@ -80,7 +75,7 @@ xfs_inode_buf_verify(
 	struct xfs_buf	*bp,
 	bool		readahead)
 {
-	struct xfs_mount *mp = bp->b_target->bt_mount;
+	struct xfs_mount *mp = bp->b_mount;
 	xfs_agnumber_t	agno;
 	int		i;
 	int		ni;
@@ -97,10 +92,9 @@ xfs_inode_buf_verify(
 
 		dip = xfs_buf_offset(bp, (i << mp->m_sb.sb_inodelog));
 		unlinked_ino = be32_to_cpu(dip->di_next_unlinked);
-		di_ok = dip->di_magic == cpu_to_be16(XFS_DINODE_MAGIC) &&
+		di_ok = xfs_verify_magic16(bp, dip->di_magic) &&
 			xfs_dinode_good_version(mp, dip->di_version) &&
-			(unlinked_ino == NULLAGINO ||
-			 xfs_verify_agino(mp, agno, unlinked_ino));
+			xfs_verify_agino_or_null(mp, agno, unlinked_ino);
 		if (unlikely(XFS_TEST_ERROR(!di_ok, mp,
 						XFS_ERRTAG_ITOBP_INOTOBP))) {
 			if (readahead) {
@@ -147,12 +141,16 @@ xfs_inode_buf_write_verify(
 
 const struct xfs_buf_ops xfs_inode_buf_ops = {
 	.name = "xfs_inode",
+	.magic16 = { cpu_to_be16(XFS_DINODE_MAGIC),
+		     cpu_to_be16(XFS_DINODE_MAGIC) },
 	.verify_read = xfs_inode_buf_read_verify,
 	.verify_write = xfs_inode_buf_write_verify,
 };
 
 const struct xfs_buf_ops xfs_inode_buf_ra_ops = {
-	.name = "xxfs_inode_ra",
+	.name = "xfs_inode_ra",
+	.magic16 = { cpu_to_be16(XFS_DINODE_MAGIC),
+		     cpu_to_be16(XFS_DINODE_MAGIC) },
 	.verify_read = xfs_inode_buf_readahead_verify,
 	.verify_write = xfs_inode_buf_write_verify,
 };
@@ -215,13 +213,12 @@ xfs_inode_from_disk(
 	to->di_version = from->di_version;
 	if (to->di_version == 1) {
 		set_nlink(inode, be16_to_cpu(from->di_onlink));
-		to->di_projid_lo = 0;
-		to->di_projid_hi = 0;
+		to->di_projid = 0;
 		to->di_version = 2;
 	} else {
 		set_nlink(inode, be32_to_cpu(from->di_nlink));
-		to->di_projid_lo = be16_to_cpu(from->di_projid_lo);
-		to->di_projid_hi = be16_to_cpu(from->di_projid_hi);
+		to->di_projid = (prid_t)be16_to_cpu(from->di_projid_hi) << 16 |
+					be16_to_cpu(from->di_projid_lo);
 	}
 
 	to->di_format = from->di_format;
@@ -258,8 +255,8 @@ xfs_inode_from_disk(
 	if (to->di_version == 3) {
 		inode_set_iversion_queried(inode,
 					   be64_to_cpu(from->di_changecount));
-		to->di_crtime.t_sec = be32_to_cpu(from->di_crtime.t_sec);
-		to->di_crtime.t_nsec = be32_to_cpu(from->di_crtime.t_nsec);
+		to->di_crtime.tv_sec = be32_to_cpu(from->di_crtime.t_sec);
+		to->di_crtime.tv_nsec = be32_to_cpu(from->di_crtime.t_nsec);
 		to->di_flags2 = be64_to_cpu(from->di_flags2);
 		to->di_cowextsize = be32_to_cpu(from->di_cowextsize);
 	}
@@ -281,8 +278,8 @@ xfs_inode_to_disk(
 	to->di_format = from->di_format;
 	to->di_uid = cpu_to_be32(from->di_uid);
 	to->di_gid = cpu_to_be32(from->di_gid);
-	to->di_projid_lo = cpu_to_be16(from->di_projid_lo);
-	to->di_projid_hi = cpu_to_be16(from->di_projid_hi);
+	to->di_projid_lo = cpu_to_be16(from->di_projid & 0xffff);
+	to->di_projid_hi = cpu_to_be16(from->di_projid >> 16);
 
 	memset(to->di_pad, 0, sizeof(to->di_pad));
 	to->di_atime.t_sec = cpu_to_be32(inode->i_atime.tv_sec);
@@ -308,8 +305,8 @@ xfs_inode_to_disk(
 
 	if (from->di_version == 3) {
 		to->di_changecount = cpu_to_be64(inode_peek_iversion(inode));
-		to->di_crtime.t_sec = cpu_to_be32(from->di_crtime.t_sec);
-		to->di_crtime.t_nsec = cpu_to_be32(from->di_crtime.t_nsec);
+		to->di_crtime.t_sec = cpu_to_be32(from->di_crtime.tv_sec);
+		to->di_crtime.t_nsec = cpu_to_be32(from->di_crtime.tv_nsec);
 		to->di_flags2 = cpu_to_be64(from->di_flags2);
 		to->di_cowextsize = cpu_to_be32(from->di_cowextsize);
 		to->di_ino = cpu_to_be64(ip->i_ino);
@@ -415,6 +412,31 @@ xfs_dinode_verify_fork(
 	return NULL;
 }
 
+static xfs_failaddr_t
+xfs_dinode_verify_forkoff(
+	struct xfs_dinode	*dip,
+	struct xfs_mount	*mp)
+{
+	if (!XFS_DFORK_Q(dip))
+		return NULL;
+
+	switch (dip->di_format)  {
+	case XFS_DINODE_FMT_DEV:
+		if (dip->di_forkoff != (roundup(sizeof(xfs_dev_t), 8) >> 3))
+			return __this_address;
+		break;
+	case XFS_DINODE_FMT_LOCAL:	/* fall through ... */
+	case XFS_DINODE_FMT_EXTENTS:    /* fall through ... */
+	case XFS_DINODE_FMT_BTREE:
+		if (dip->di_forkoff >= (XFS_LITINO(mp, dip->di_version) >> 3))
+			return __this_address;
+		break;
+	default:
+		return __this_address;
+	}
+	return NULL;
+}
+
 xfs_failaddr_t
 xfs_dinode_verify(
 	struct xfs_mount	*mp,
@@ -469,6 +491,11 @@ xfs_dinode_verify(
 
 	if (mode && (flags & XFS_DIFLAG_REALTIME) && !mp->m_rtdev_targp)
 		return __this_address;
+
+	/* check for illegal values of forkoff */
+	fa = xfs_dinode_verify_forkoff(dip, mp);
+	if (fa)
+		return fa;
 
 	/* Do we have appropriate data fork formats for the mode? */
 	switch (mode & S_IFMT) {
@@ -540,10 +567,6 @@ xfs_dinode_verify(
 	if ((flags2 & XFS_DIFLAG2_REFLINK) && (flags & XFS_DIFLAG_REALTIME))
 		return __this_address;
 
-	/* don't let reflink and dax mix */
-	if ((flags2 & XFS_DIFLAG2_REFLINK) && (flags2 & XFS_DIFLAG2_DAX))
-		return __this_address;
-
 	/* COW extent size hint validation */
 	fa = xfs_inode_validate_cowextsize(mp, be32_to_cpu(dip->di_cowextsize),
 			mode, flags, flags2);
@@ -604,8 +627,6 @@ xfs_iread(
 	if ((iget_flags & XFS_IGET_CREATE) &&
 	    xfs_sb_version_hascrc(&mp->m_sb) &&
 	    !(mp->m_flags & XFS_MOUNT_IKEEP)) {
-		/* initialise the on-disk inode core */
-		memset(&ip->i_d, 0, sizeof(ip->i_d));
 		VFS_I(ip)->i_generation = prandom_u32();
 		ip->i_d.di_version = 3;
 		return 0;

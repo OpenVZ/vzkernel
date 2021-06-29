@@ -38,11 +38,21 @@
 #include <linux/uaccess.h>
 #include <linux/poll.h>
 #include <linux/wait.h>
+#include <linux/memcontrol.h>
 
 #include "inotify.h"
 #include "../fdinfo.h"
 
 #include <asm/ioctls.h>
+
+/*
+ * An inotify watch requires allocating an inotify_inode_mark structure as
+ * well as pinning the watched inode. Doubling the size of a VFS inode
+ * should be more than enough to cover the additional filesystem inode
+ * size increase.
+ */
+#define INOTIFY_WATCH_COST	(sizeof(struct inotify_inode_mark) + \
+				 2 * sizeof(struct inode))
 
 /* configurable via /proc/sys/fs/inotify/ */
 static int inotify_max_queued_events __read_mostly;
@@ -53,8 +63,6 @@ struct kmem_cache *inotify_inode_mark_cachep __read_mostly;
 
 #include <linux/sysctl.h>
 
-static int zero;
-
 struct ctl_table inotify_table[] = {
 	{
 		.procname	= "max_user_instances",
@@ -62,7 +70,7 @@ struct ctl_table inotify_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= &zero,
+		.extra1		= SYSCTL_ZERO,
 	},
 	{
 		.procname	= "max_user_watches",
@@ -70,7 +78,7 @@ struct ctl_table inotify_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= &zero,
+		.extra1		= SYSCTL_ZERO,
 	},
 	{
 		.procname	= "max_queued_events",
@@ -78,7 +86,7 @@ struct ctl_table inotify_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= &zero
+		.extra1		= SYSCTL_ZERO
 	},
 	{ }
 };
@@ -510,6 +518,7 @@ static int inotify_update_existing_watch(struct fsnotify_group *group,
 	__u32 old_mask, new_mask;
 	__u32 mask;
 	int add = (arg & IN_MASK_ADD);
+	int create = (arg & IN_MASK_CREATE);
 	int ret;
 
 	mask = inotify_arg_to_mask(arg);
@@ -517,6 +526,10 @@ static int inotify_update_existing_watch(struct fsnotify_group *group,
 	fsn_mark = fsnotify_find_mark(&inode->i_fsnotify_marks, group);
 	if (!fsn_mark)
 		return -ENOENT;
+	else if (create) {
+		ret = -EEXIST;
+		goto out;
+	}
 
 	i_mark = container_of(fsn_mark, struct inotify_inode_mark, fsn_mark);
 
@@ -544,6 +557,7 @@ static int inotify_update_existing_watch(struct fsnotify_group *group,
 	/* return the wd */
 	ret = i_mark->wd;
 
+out:
 	/* match the get from fsnotify_find_mark() */
 	fsnotify_put_mark(fsn_mark);
 
@@ -636,6 +650,7 @@ static struct fsnotify_group *inotify_new_group(unsigned int max_events)
 	oevent->name_len = 0;
 
 	group->max_events = max_events;
+	group->memcg = get_mem_cgroup_from_mm(current->mm);
 
 	spin_lock_init(&group->inotify_data.idr_lock);
 	idr_init(&group->inotify_data.idr);
@@ -718,6 +733,12 @@ SYSCALL_DEFINE3(inotify_add_watch, int, fd, const char __user *, pathname,
 	if (unlikely(!f.file))
 		return -EBADF;
 
+	/* IN_MASK_ADD and IN_MASK_CREATE don't make sense together */
+	if (unlikely((mask & IN_MASK_ADD) && (mask & IN_MASK_CREATE))) {
+		ret = -EINVAL;
+		goto fput_and_out;
+	}
+
 	/* verify that this is indeed an inotify instance */
 	if (unlikely(f.file->f_op != &inotify_fops)) {
 		ret = -EINVAL;
@@ -787,6 +808,18 @@ out:
  */
 static int __init inotify_user_setup(void)
 {
+	unsigned long watches_max;
+	struct sysinfo si;
+
+	si_meminfo(&si);
+	/*
+	 * Allow up to 1% of addressable memory to be allocated for inotify
+	 * watches (per user) limited to the range [8192, 1048576].
+	 */
+	watches_max = (((si.totalram - si.totalhigh) / 100) << PAGE_SHIFT) /
+			INOTIFY_WATCH_COST;
+	watches_max = clamp(watches_max, 8192UL, 1048576UL);
+
 	BUILD_BUG_ON(IN_ACCESS != FS_ACCESS);
 	BUILD_BUG_ON(IN_MODIFY != FS_MODIFY);
 	BUILD_BUG_ON(IN_ATTRIB != FS_ATTRIB);
@@ -806,13 +839,14 @@ static int __init inotify_user_setup(void)
 	BUILD_BUG_ON(IN_ISDIR != FS_ISDIR);
 	BUILD_BUG_ON(IN_ONESHOT != FS_IN_ONESHOT);
 
-	BUG_ON(hweight32(ALL_INOTIFY_BITS) != 21);
+	BUILD_BUG_ON(HWEIGHT32(ALL_INOTIFY_BITS) != 22);
 
-	inotify_inode_mark_cachep = KMEM_CACHE(inotify_inode_mark, SLAB_PANIC);
+	inotify_inode_mark_cachep = KMEM_CACHE(inotify_inode_mark,
+					       SLAB_PANIC|SLAB_ACCOUNT);
 
 	inotify_max_queued_events = 16384;
 	init_user_ns.ucount_max[UCOUNT_INOTIFY_INSTANCES] = 128;
-	init_user_ns.ucount_max[UCOUNT_INOTIFY_WATCHES] = 8192;
+	init_user_ns.ucount_max[UCOUNT_INOTIFY_WATCHES] = watches_max;
 
 	return 0;
 }

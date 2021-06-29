@@ -29,6 +29,10 @@
 #include <drm/amdgpu_drm.h>
 #include "smumgr.h"
 
+MODULE_FIRMWARE("amdgpu/bonaire_smc.bin");
+MODULE_FIRMWARE("amdgpu/bonaire_k_smc.bin");
+MODULE_FIRMWARE("amdgpu/hawaii_smc.bin");
+MODULE_FIRMWARE("amdgpu/hawaii_k_smc.bin");
 MODULE_FIRMWARE("amdgpu/topaz_smc.bin");
 MODULE_FIRMWARE("amdgpu/topaz_k_smc.bin");
 MODULE_FIRMWARE("amdgpu/tonga_smc.bin");
@@ -37,10 +41,13 @@ MODULE_FIRMWARE("amdgpu/fiji_smc.bin");
 MODULE_FIRMWARE("amdgpu/polaris10_smc.bin");
 MODULE_FIRMWARE("amdgpu/polaris10_smc_sk.bin");
 MODULE_FIRMWARE("amdgpu/polaris10_k_smc.bin");
+MODULE_FIRMWARE("amdgpu/polaris10_k2_smc.bin");
 MODULE_FIRMWARE("amdgpu/polaris11_smc.bin");
 MODULE_FIRMWARE("amdgpu/polaris11_smc_sk.bin");
 MODULE_FIRMWARE("amdgpu/polaris11_k_smc.bin");
+MODULE_FIRMWARE("amdgpu/polaris11_k2_smc.bin");
 MODULE_FIRMWARE("amdgpu/polaris12_smc.bin");
+MODULE_FIRMWARE("amdgpu/polaris12_k_smc.bin");
 MODULE_FIRMWARE("amdgpu/vegam_smc.bin");
 MODULE_FIRMWARE("amdgpu/vega10_smc.bin");
 MODULE_FIRMWARE("amdgpu/vega10_acg_smc.bin");
@@ -96,14 +103,6 @@ int smum_process_firmware_header(struct pp_hwmgr *hwmgr)
 	return 0;
 }
 
-int smum_get_argument(struct pp_hwmgr *hwmgr)
-{
-	if (NULL != hwmgr->smumgr_funcs->get_argument)
-		return hwmgr->smumgr_funcs->get_argument(hwmgr);
-
-	return 0;
-}
-
 uint32_t smum_get_mac_definition(struct pp_hwmgr *hwmgr, uint32_t value)
 {
 	if (NULL != hwmgr->smumgr_funcs->get_mac_definition)
@@ -128,22 +127,58 @@ int smum_upload_powerplay_table(struct pp_hwmgr *hwmgr)
 	return 0;
 }
 
-int smum_send_msg_to_smc(struct pp_hwmgr *hwmgr, uint16_t msg)
+int smum_send_msg_to_smc(struct pp_hwmgr *hwmgr, uint16_t msg, uint32_t *resp)
 {
-	if (hwmgr == NULL || hwmgr->smumgr_funcs->send_msg_to_smc == NULL)
+	int ret = 0;
+
+	if (hwmgr == NULL ||
+	    hwmgr->smumgr_funcs->send_msg_to_smc == NULL ||
+	    (resp && !hwmgr->smumgr_funcs->get_argument))
 		return -EINVAL;
 
-	return hwmgr->smumgr_funcs->send_msg_to_smc(hwmgr, msg);
+	mutex_lock(&hwmgr->msg_lock);
+
+	ret = hwmgr->smumgr_funcs->send_msg_to_smc(hwmgr, msg);
+	if (ret) {
+		mutex_unlock(&hwmgr->msg_lock);
+		return ret;
+	}
+
+	if (resp)
+		*resp = hwmgr->smumgr_funcs->get_argument(hwmgr);
+
+	mutex_unlock(&hwmgr->msg_lock);
+
+	return ret;
 }
 
 int smum_send_msg_to_smc_with_parameter(struct pp_hwmgr *hwmgr,
-					uint16_t msg, uint32_t parameter)
+					uint16_t msg,
+					uint32_t parameter,
+					uint32_t *resp)
 {
+	int ret = 0;
+
 	if (hwmgr == NULL ||
-		hwmgr->smumgr_funcs->send_msg_to_smc_with_parameter == NULL)
+	    hwmgr->smumgr_funcs->send_msg_to_smc_with_parameter == NULL ||
+	    (resp && !hwmgr->smumgr_funcs->get_argument))
 		return -EINVAL;
-	return hwmgr->smumgr_funcs->send_msg_to_smc_with_parameter(
+
+	mutex_lock(&hwmgr->msg_lock);
+
+	ret = hwmgr->smumgr_funcs->send_msg_to_smc_with_parameter(
 						hwmgr, msg, parameter);
+	if (ret) {
+		mutex_unlock(&hwmgr->msg_lock);
+		return ret;
+	}
+
+	if (resp)
+		*resp = hwmgr->smumgr_funcs->get_argument(hwmgr);
+
+	mutex_unlock(&hwmgr->msg_lock);
+
+	return ret;
 }
 
 int smum_init_smc_table(struct pp_hwmgr *hwmgr)
@@ -209,4 +244,12 @@ int smum_smc_table_manager(struct pp_hwmgr *hwmgr, uint8_t *table, uint16_t tabl
 		return hwmgr->smumgr_funcs->smc_table_manager(hwmgr, table, table_id, rw);
 
 	return -EINVAL;
+}
+
+int smum_stop_smc(struct pp_hwmgr *hwmgr)
+{
+	if (hwmgr->smumgr_funcs->stop_smc)
+		return hwmgr->smumgr_funcs->stop_smc(hwmgr);
+
+	return 0;
 }

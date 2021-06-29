@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_DEVINIT_PRIV_H__
 #define __NVKM_DEVINIT_PRIV_H__
 #define nvkm_devinit(p) container_of((p), struct nvkm_devinit, subdev)
@@ -19,4 +19,5 @@ void nvkm_devinit_ctor(const struct nvkm_devinit_func *, struct nvkm_device *,
 		       int index, struct nvkm_devinit *);
 
 int nv04_devinit_post(struct nvkm_devinit *, bool);
+int tu102_devinit_post(struct nvkm_devinit *, bool);
 #endif

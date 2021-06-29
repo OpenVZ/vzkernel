@@ -4,6 +4,14 @@ config HAS_DMA
 	depends on !NO_DMA
 	default y
 
+#
+# IOMMU drivers that can bypass the IOMMU code and optionally use the direct
+# mapping fast path should select this option and set the dma_ops_bypass
+# flag in struct device where applicable
+#
+config DMA_OPS_BYPASS
+	bool
+
 config NEED_SG_DMA_LENGTH
 	bool
 
@@ -13,7 +21,25 @@ config NEED_DMA_MAP_STATE
 config ARCH_DMA_ADDR_T_64BIT
 	def_bool 64BIT || PHYS_ADDR_T_64BIT
 
+config ARCH_HAS_DMA_COHERENCE_H
+	bool
+
+config ARCH_HAS_DMA_SET_MASK
+	bool
+
+#
+# Select this option if the architecture needs special handling for
+# DMA_ATTR_WRITE_COMBINE.  Normally the "uncached" mapping should be what
+# people thing of when saying write combine, so very few platforms should
+# need to enable this.
+#
+config ARCH_HAS_DMA_WRITE_COMBINE
+	bool
+
 config HAVE_GENERIC_DMA_COHERENT
+	bool
+
+config ARCH_HAS_SETUP_DMA_OPS
 	bool
 
 config ARCH_HAS_SYNC_DMA_FOR_DEVICE
@@ -23,22 +49,17 @@ config ARCH_HAS_SYNC_DMA_FOR_CPU
 	bool
 	select NEED_DMA_MAP_STATE
 
-config DMA_DIRECT_OPS
+config ARCH_HAS_SYNC_DMA_FOR_CPU_ALL
 	bool
-	depends on HAS_DMA
 
-config DMA_NONCOHERENT_OPS
+config ARCH_HAS_DMA_PREP_COHERENT
 	bool
-	depends on HAS_DMA
-	select DMA_DIRECT_OPS
 
-config DMA_NONCOHERENT_MMAP
+config ARCH_HAS_FORCE_DMA_UNENCRYPTED
 	bool
-	depends on DMA_NONCOHERENT_OPS
 
 config DMA_NONCOHERENT_CACHE_SYNC
 	bool
-	depends on DMA_NONCOHERENT_OPS
 
 config DMA_VIRT_OPS
 	bool
@@ -46,5 +67,27 @@ config DMA_VIRT_OPS
 
 config SWIOTLB
 	bool
-	select DMA_DIRECT_OPS
 	select NEED_DMA_MAP_STATE
+
+#
+# Should be selected if we can mmap non-coherent mappings to userspace.
+# The only thing that is really required is a way to set an uncached bit
+# in the pagetables
+#
+config DMA_NONCOHERENT_MMAP
+	default y if !MMU
+	bool
+
+config DMA_COHERENT_POOL
+	select GENERIC_ALLOCATOR
+	bool
+
+config DMA_REMAP
+	bool
+	depends on MMU
+	select DMA_NONCOHERENT_MMAP
+
+config DMA_DIRECT_REMAP
+	bool
+	select DMA_REMAP
+	select DMA_COHERENT_POOL

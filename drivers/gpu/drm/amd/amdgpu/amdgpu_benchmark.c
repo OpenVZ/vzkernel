@@ -21,7 +21,7 @@
  *
  * Authors: Jerome Glisse
  */
-#include <drm/drmP.h>
+
 #include <drm/amdgpu_drm.h>
 #include "amdgpu.h"
 
@@ -33,27 +33,25 @@ static int amdgpu_benchmark_do_move(struct amdgpu_device *adev, unsigned size,
 {
 	unsigned long start_jiffies;
 	unsigned long end_jiffies;
-	struct dma_fence *fence = NULL;
+	struct dma_fence *fence;
 	int i, r;
 
 	start_jiffies = jiffies;
 	for (i = 0; i < n; i++) {
 		struct amdgpu_ring *ring = adev->mman.buffer_funcs_ring;
 		r = amdgpu_copy_buffer(ring, saddr, daddr, size, NULL, &fence,
-				       false, false);
+				       false, false, false);
 		if (r)
 			goto exit_do_move;
 		r = dma_fence_wait(fence, false);
+		dma_fence_put(fence);
 		if (r)
 			goto exit_do_move;
-		dma_fence_put(fence);
 	}
 	end_jiffies = jiffies;
 	r = jiffies_to_msecs(end_jiffies - start_jiffies);
 
 exit_do_move:
-	if (fence)
-		dma_fence_put(fence);
 	return r;
 }
 
@@ -95,11 +93,17 @@ static void amdgpu_benchmark_move(struct amdgpu_device *adev, unsigned size,
 	r = amdgpu_bo_reserve(sobj, false);
 	if (unlikely(r != 0))
 		goto out_cleanup;
-	r = amdgpu_bo_pin(sobj, sdomain, &saddr);
+	r = amdgpu_bo_pin(sobj, sdomain);
+	if (r) {
+		amdgpu_bo_unreserve(sobj);
+		goto out_cleanup;
+	}
+	r = amdgpu_ttm_alloc_gart(&sobj->tbo);
 	amdgpu_bo_unreserve(sobj);
 	if (r) {
 		goto out_cleanup;
 	}
+	saddr = amdgpu_bo_gpu_offset(sobj);
 	bp.domain = ddomain;
 	r = amdgpu_bo_create(adev, &bp, &dobj);
 	if (r) {
@@ -108,11 +112,17 @@ static void amdgpu_benchmark_move(struct amdgpu_device *adev, unsigned size,
 	r = amdgpu_bo_reserve(dobj, false);
 	if (unlikely(r != 0))
 		goto out_cleanup;
-	r = amdgpu_bo_pin(dobj, ddomain, &daddr);
+	r = amdgpu_bo_pin(dobj, ddomain);
+	if (r) {
+		amdgpu_bo_unreserve(sobj);
+		goto out_cleanup;
+	}
+	r = amdgpu_ttm_alloc_gart(&dobj->tbo);
 	amdgpu_bo_unreserve(dobj);
 	if (r) {
 		goto out_cleanup;
 	}
+	daddr = amdgpu_bo_gpu_offset(dobj);
 
 	if (adev->mman.buffer_funcs) {
 		time = amdgpu_benchmark_do_move(adev, size, saddr, daddr, n);

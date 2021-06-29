@@ -287,21 +287,35 @@ static void nft_netdev_event(unsigned long event, struct net_device *dev,
 			     struct nft_ctx *ctx)
 {
 	struct nft_base_chain *basechain = nft_base_chain(ctx->chain);
+	struct nft_hook *hook, *found = NULL;
+	int n = 0;
 
-	switch (event) {
-	case NETDEV_UNREGISTER:
-		if (strcmp(basechain->dev_name, dev->name) != 0)
-			return;
+	if (event != NETDEV_UNREGISTER)
+		return;
 
-		__nft_release_basechain(ctx);
-		break;
-	case NETDEV_CHANGENAME:
-		if (dev->ifindex != basechain->ops.dev->ifindex)
-			return;
+	list_for_each_entry(hook, &basechain->hook_list, list) {
+		if (hook->ops.dev == dev)
+			found = hook;
 
-		strncpy(basechain->dev_name, dev->name, IFNAMSIZ);
-		break;
+		n++;
 	}
+	if (!found)
+		return;
+
+	if (n > 1) {
+		nf_unregister_net_hook(ctx->net, &found->ops);
+		list_del_rcu(&found->list);
+		kfree_rcu(found, rcu);
+		return;
+	}
+
+	/* UNREGISTER events are also happening on netns exit.
+	 *
+	 * Although nf_tables core releases all tables/chains, only this event
+	 * handler provides guarantee that hook->ops.dev is still accessible,
+	 * so we cannot skip exiting net namespaces.
+	 */
+	__nft_release_basechain(ctx);
 }
 
 static int nf_tables_netdev_event(struct notifier_block *this,
@@ -318,11 +332,7 @@ static int nf_tables_netdev_event(struct notifier_block *this,
 	    event != NETDEV_CHANGENAME)
 		return NOTIFY_DONE;
 
-	ctx.net = maybe_get_net(ctx.net);
-	if (!ctx.net)
-		return NOTIFY_DONE;
-
-	nfnl_lock(NFNL_SUBSYS_NFTABLES);
+	mutex_lock(&ctx.net->nft_commit_mutex);
 	list_for_each_entry(table, &ctx.net->nft.tables, list) {
 		if (table->family != NFPROTO_NETDEV)
 			continue;
@@ -337,8 +347,7 @@ static int nf_tables_netdev_event(struct notifier_block *this,
 			nft_netdev_event(event, dev, &ctx);
 		}
 	}
-	nfnl_unlock(NFNL_SUBSYS_NFTABLES);
-	put_net(ctx.net);
+	mutex_unlock(&ctx.net->nft_commit_mutex);
 
 	return NOTIFY_DONE;
 }
@@ -392,7 +401,7 @@ int __init nft_chain_filter_init(void)
 	return 0;
 }
 
-void __exit nft_chain_filter_fini(void)
+void nft_chain_filter_fini(void)
 {
 	nft_chain_filter_bridge_fini();
 	nft_chain_filter_inet_fini();

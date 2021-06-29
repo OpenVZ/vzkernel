@@ -13,7 +13,6 @@
 #include <linux/io.h>
 #include <linux/netdevice.h>
 #include <linux/pci.h>
-#include <linux/pci-aspm.h>
 #include <linux/crc32.h>
 #include <linux/if_vlan.h>
 #include <linux/timecounter.h>
@@ -461,7 +460,6 @@ enum latency_range {
 };
 
 extern char e1000e_driver_name[];
-extern const char e1000e_driver_version[];
 
 void e1000e_check_options(struct e1000_adapter *adapter);
 void e1000e_set_ethtool_ops(struct net_device *netdev);
@@ -504,6 +502,9 @@ extern const struct e1000_info e1000_es2_info;
 
 void e1000e_ptp_init(struct e1000_adapter *adapter);
 void e1000e_ptp_remove(struct e1000_adapter *adapter);
+
+u64 e1000e_read_systim(struct e1000_adapter *adapter,
+		       struct ptp_system_timestamp *sts);
 
 static inline s32 e1000_phy_hw_reset(struct e1000_hw *hw)
 {
@@ -574,7 +575,6 @@ static inline u32 __er32(struct e1000_hw *hw, unsigned long reg)
 
 #define er32(reg)	__er32(hw, E1000_##reg)
 
-s32 __ew32_prepare(struct e1000_hw *hw);
 void __ew32(struct e1000_hw *hw, unsigned long reg, u32 val);
 
 #define ew32(reg, val)	__ew32(hw, E1000_##reg, (val))

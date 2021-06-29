@@ -71,7 +71,7 @@ void jprobe_return_end(void);
 DEFINE_PER_CPU(struct kprobe *, current_kprobe) = NULL;
 DEFINE_PER_CPU(struct kprobe_ctlblk, kprobe_ctlblk);
 
-#define stack_addr(regs) ((unsigned long *)kernel_stack_pointer(regs))
+#define stack_addr(regs) ((unsigned long *)regs->sp)
 
 #define W(row, b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, ba, bb, bc, bd, be, bf)\
 	(((b0##UL << 0x0)|(b1##UL << 0x1)|(b2##UL << 0x2)|(b3##UL << 0x3) |   \
@@ -435,8 +435,20 @@ void *alloc_insn_page(void)
 	void *page;
 
 	page = module_alloc(PAGE_SIZE);
-	if (page)
-		set_memory_ro((unsigned long)page & PAGE_MASK, 1);
+	if (!page)
+		return NULL;
+
+	/*
+	 * First make the page read-only, and only then make it executable to
+	 * prevent it from being W+X in between.
+	 */
+	set_memory_ro((unsigned long)page, 1);
+
+	/*
+	 * TODO: Once additional kernel code protection mechanisms are set, ensure
+	 * that the page was not maliciously altered and it is still zeroed.
+	 */
+	set_memory_x((unsigned long)page, 1);
 
 	return page;
 }
@@ -444,8 +456,12 @@ void *alloc_insn_page(void)
 /* Recover page to RW mode before releasing it */
 void free_insn_page(void *page)
 {
-	set_memory_nx((unsigned long)page & PAGE_MASK, 1);
-	set_memory_rw((unsigned long)page & PAGE_MASK, 1);
+	/*
+	 * First make the page non-executable, and only then make it writable to
+	 * prevent it from being W+X in between.
+	 */
+	set_memory_nx((unsigned long)page, 1);
+	set_memory_rw((unsigned long)page, 1);
 	module_memfree(page);
 }
 
@@ -573,6 +589,7 @@ void arch_prepare_kretprobe(struct kretprobe_instance *ri, struct pt_regs *regs)
 	unsigned long *sara = stack_addr(regs);
 
 	ri->ret_addr = (kprobe_opcode_t *) *sara;
+	ri->fp = sara;
 
 	/* Replace the return addr with trampoline addr */
 	*sara = (unsigned long) &kretprobe_trampoline;
@@ -585,7 +602,7 @@ static void setup_singlestep(struct kprobe *p, struct pt_regs *regs,
 	if (setup_detour_execution(p, regs, reenter))
 		return;
 
-#if !defined(CONFIG_PREEMPT)
+#if !defined(CONFIG_PREEMPTION)
 	if (p->ainsn.boostable && !p->post_handler) {
 		/* Boost up -- we can execute copied instructions directly */
 		if (!reenter)
@@ -734,29 +751,27 @@ asm(
 	".global kretprobe_trampoline\n"
 	".type kretprobe_trampoline, @function\n"
 	"kretprobe_trampoline:\n"
-#ifdef CONFIG_X86_64
 	/* We don't bother saving the ss register */
+#ifdef CONFIG_X86_64
 	"	pushq %rsp\n"
 	"	pushfq\n"
 	SAVE_REGS_STRING
 	"	movq %rsp, %rdi\n"
 	"	call trampoline_handler\n"
 	/* Replace saved sp with true return address. */
-	"	movq %rax, 152(%rsp)\n"
+	"	movq %rax, 19*8(%rsp)\n"
 	RESTORE_REGS_STRING
 	"	popfq\n"
 #else
-	"	pushf\n"
+	"	pushl %esp\n"
+	"	pushfl\n"
 	SAVE_REGS_STRING
 	"	movl %esp, %eax\n"
 	"	call trampoline_handler\n"
-	/* Move flags to cs */
-	"	movl 56(%esp), %edx\n"
-	"	movl %edx, 52(%esp)\n"
-	/* Replace saved flags with true return address. */
-	"	movl %eax, 56(%esp)\n"
+	/* Replace saved sp with true return address. */
+	"	movl %eax, 15*4(%esp)\n"
 	RESTORE_REGS_STRING
-	"	popf\n"
+	"	popfl\n"
 #endif
 	"	ret\n"
 	".size kretprobe_trampoline, .-kretprobe_trampoline\n"
@@ -775,16 +790,26 @@ __visible __used void *trampoline_handler(struct pt_regs *regs)
 	unsigned long flags, orig_ret_address = 0;
 	unsigned long trampoline_address = (unsigned long)&kretprobe_trampoline;
 	kprobe_opcode_t *correct_ret_addr = NULL;
+	void *frame_pointer;
+	bool skipped = false;
+
+	/*
+	 * Set a dummy kprobe for avoiding kretprobe recursion.
+	 * Since kretprobe never run in kprobe handler, kprobe must not
+	 * be running at this point.
+	 */
+	kprobe_busy_begin();
 
 	INIT_HLIST_HEAD(&empty_rp);
 	kretprobe_hash_lock(current, &head, &flags);
 	/* fixup registers */
-#ifdef CONFIG_X86_64
 	regs->cs = __KERNEL_CS;
-#else
-	regs->cs = __KERNEL_CS | get_kernel_rpl();
+#ifdef CONFIG_X86_32
+	regs->cs |= get_kernel_rpl();
 	regs->gs = 0;
 #endif
+	/* We use pt_regs->sp for return address holder. */
+	frame_pointer = &regs->sp;
 	regs->ip = trampoline_address;
 	regs->orig_ax = ~0UL;
 
@@ -805,8 +830,25 @@ __visible __used void *trampoline_handler(struct pt_regs *regs)
 		if (ri->task != current)
 			/* another task is sharing our hash bucket */
 			continue;
+		/*
+		 * Return probes must be pushed on this hash list correct
+		 * order (same as return order) so that it can be poped
+		 * correctly. However, if we find it is pushed it incorrect
+		 * order, this means we find a function which should not be
+		 * probed, because the wrong order entry is pushed on the
+		 * path of processing other kretprobe itself.
+		 */
+		if (ri->fp != frame_pointer) {
+			if (!skipped)
+				pr_warn("kretprobe is stacked incorrectly. Trying to fixup.\n");
+			skipped = true;
+			continue;
+		}
 
 		orig_ret_address = (unsigned long)ri->ret_addr;
+		if (skipped)
+			pr_warn("%ps must be blacklisted because of incorrect kretprobe order\n",
+				ri->rp->kp.addr);
 
 		if (orig_ret_address != trampoline_address)
 			/*
@@ -824,14 +866,15 @@ __visible __used void *trampoline_handler(struct pt_regs *regs)
 		if (ri->task != current)
 			/* another task is sharing our hash bucket */
 			continue;
+		if (ri->fp != frame_pointer)
+			continue;
 
 		orig_ret_address = (unsigned long)ri->ret_addr;
 		if (ri->rp && ri->rp->handler) {
 			__this_cpu_write(current_kprobe, &ri->rp->kp);
-			get_kprobe_ctlblk()->kprobe_status = KPROBE_HIT_ACTIVE;
 			ri->ret_addr = correct_ret_addr;
 			ri->rp->handler(ri, regs);
-			__this_cpu_write(current_kprobe, NULL);
+			__this_cpu_write(current_kprobe, &kprobe_busy);
 		}
 
 		recycle_rp_inst(ri, &empty_rp);
@@ -846,6 +889,8 @@ __visible __used void *trampoline_handler(struct pt_regs *regs)
 	}
 
 	kretprobe_hash_unlock(current, &flags);
+
+	kprobe_busy_end();
 
 	hlist_for_each_entry_safe(ri, tmp, &empty_rp, hlist) {
 		hlist_del(&ri->hlist);
@@ -1172,18 +1217,10 @@ NOKPROBE_SYMBOL(longjmp_break_handler);
 
 bool arch_within_kprobe_blacklist(unsigned long addr)
 {
-	bool is_in_entry_trampoline_section = false;
-
-#ifdef CONFIG_X86_64
-	is_in_entry_trampoline_section =
-		(addr >= (unsigned long)__entry_trampoline_start &&
-		 addr < (unsigned long)__entry_trampoline_end);
-#endif
 	return  (addr >= (unsigned long)__kprobes_text_start &&
 		 addr < (unsigned long)__kprobes_text_end) ||
 		(addr >= (unsigned long)__entry_text_start &&
-		 addr < (unsigned long)__entry_text_end) ||
-		is_in_entry_trampoline_section;
+		 addr < (unsigned long)__entry_text_end);
 }
 
 int __init arch_init_kprobes(void)

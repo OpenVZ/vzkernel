@@ -19,6 +19,7 @@
 #define PCI_SLOT_ID_PREFIX	(1UL << 63)
 #define PCI_SLOT_ID(phb_id, bdfn)	\
 	(PCI_SLOT_ID_PREFIX | ((uint64_t)(bdfn) << 16) | (phb_id))
+#define PCI_PHB_SLOT_ID(phb_id)		(phb_id)
 
 extern int pnv_pci_get_slot_id(struct device_node *np, uint64_t *id);
 extern int pnv_pci_get_device_tree(uint32_t phandle, void *buf, uint64_t len);
@@ -61,7 +62,6 @@ void pnv_cxl_phb_set_peer_afu(struct pci_dev *dev, struct cxl_afu *afu);
 
 struct pnv_php_slot {
 	struct hotplug_slot		slot;
-	struct hotplug_slot_info	slot_info;
 	uint64_t			id;
 	char				*name;
 	int				slot_no;
@@ -79,6 +79,7 @@ struct pnv_php_slot {
 	struct pci_dev			*pdev;
 	struct pci_bus			*bus;
 	bool				power_state_check;
+	u8				attention_state;
 	void				*fdt;
 	void				*dt;
 	struct of_changeset		ocs;

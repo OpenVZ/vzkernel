@@ -781,7 +781,7 @@ static void emac_reset_work(struct work_struct *work)
 	mutex_unlock(&dev->link_lock);
 }
 
-static void emac_tx_timeout(struct net_device *ndev)
+static void emac_tx_timeout(struct net_device *ndev, unsigned int txqueue)
 {
 	struct emac_instance *dev = netdev_priv(ndev);
 
@@ -1409,7 +1409,7 @@ static inline u16 emac_tx_csum(struct emac_instance *dev,
 	return 0;
 }
 
-static inline int emac_xmit_finish(struct emac_instance *dev, int len)
+static inline netdev_tx_t emac_xmit_finish(struct emac_instance *dev, int len)
 {
 	struct emac_regs __iomem *p = dev->emacp;
 	struct net_device *ndev = dev->ndev;
@@ -1436,7 +1436,7 @@ static inline int emac_xmit_finish(struct emac_instance *dev, int len)
 }
 
 /* Tx lock BH */
-static int emac_start_xmit(struct sk_buff *skb, struct net_device *ndev)
+static netdev_tx_t emac_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct emac_instance *dev = netdev_priv(ndev);
 	unsigned int len = skb->len;
@@ -1494,7 +1494,8 @@ static inline int emac_xmit_split(struct emac_instance *dev, int slot,
 }
 
 /* Tx lock BH disabled (SG version for TAH equipped EMACs) */
-static int emac_start_xmit_sg(struct sk_buff *skb, struct net_device *ndev)
+static netdev_tx_t
+emac_start_xmit_sg(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct emac_instance *dev = netdev_priv(ndev);
 	int nr_frags = skb_shinfo(skb)->nr_frags;
@@ -2454,7 +2455,8 @@ static void emac_adjust_link(struct net_device *ndev)
 	dev->phy.duplex = phy->duplex;
 	dev->phy.pause = phy->pause;
 	dev->phy.asym_pause = phy->asym_pause;
-	dev->phy.advertising = phy->advertising;
+	ethtool_convert_link_mode_to_legacy_u32(&dev->phy.advertising,
+						phy->advertising);
 }
 
 static int emac_mii_bus_read(struct mii_bus *bus, int addr, int regnum)
@@ -2489,7 +2491,8 @@ static int emac_mdio_phy_start_aneg(struct mii_phy *phy,
 	phy_dev->autoneg = phy->autoneg;
 	phy_dev->speed = phy->speed;
 	phy_dev->duplex = phy->duplex;
-	phy_dev->advertising = phy->advertising;
+	ethtool_convert_legacy_u32_to_link_mode(phy_dev->advertising,
+						phy->advertising);
 	return phy_start_aneg(phy_dev);
 }
 
@@ -2623,7 +2626,8 @@ static int emac_dt_phy_connect(struct emac_instance *dev,
 	dev->phy.def->phy_id_mask = dev->phy_dev->drv->phy_id_mask;
 	dev->phy.def->name = dev->phy_dev->drv->name;
 	dev->phy.def->ops = &emac_dt_mdio_phy_ops;
-	dev->phy.features = dev->phy_dev->supported;
+	ethtool_convert_link_mode_to_legacy_u32(&dev->phy.features,
+						dev->phy_dev->supported);
 	dev->phy.address = dev->phy_dev->mdio.addr;
 	dev->phy.mode = dev->phy_dev->interface;
 	return 0;

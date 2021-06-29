@@ -88,7 +88,7 @@ extern void amd_iommu_free_device(struct pci_dev *pdev);
  *
  * The function returns 0 on success or a negative value on error.
  */
-extern int amd_iommu_bind_pasid(struct pci_dev *pdev, int pasid,
+extern int amd_iommu_bind_pasid(struct pci_dev *pdev, u32 pasid,
 				struct task_struct *task);
 
 /**
@@ -100,7 +100,7 @@ extern int amd_iommu_bind_pasid(struct pci_dev *pdev, int pasid,
  * When this function returns the device is no longer using the PASID
  * and the PASID is no longer bound to its task.
  */
-extern void amd_iommu_unbind_pasid(struct pci_dev *pdev, int pasid);
+extern void amd_iommu_unbind_pasid(struct pci_dev *pdev, u32 pasid);
 
 /**
  * amd_iommu_set_invalid_ppr_cb() - Register a call-back for failed
@@ -126,7 +126,7 @@ extern void amd_iommu_unbind_pasid(struct pci_dev *pdev, int pasid);
 #define AMD_IOMMU_INV_PRI_RSP_FAIL	2
 
 typedef int (*amd_iommu_invalid_ppr_cb)(struct pci_dev *pdev,
-					int pasid,
+					u32 pasid,
 					unsigned long address,
 					u16);
 
@@ -178,7 +178,7 @@ extern int amd_iommu_device_info(struct pci_dev *pdev,
  * @cb: The call-back function
  */
 
-typedef void (*amd_iommu_invalidate_ctx)(struct pci_dev *pdev, int pasid);
+typedef void (*amd_iommu_invalidate_ctx)(struct pci_dev *pdev, u32 pasid);
 
 extern int amd_iommu_set_invalidate_ctx_cb(struct pci_dev *pdev,
 					   amd_iommu_invalidate_ctx cb);
@@ -196,6 +196,9 @@ extern int amd_iommu_register_ga_log_notifier(int (*notifier)(u32));
 extern int
 amd_iommu_update_ga(int cpu, bool is_run, void *data);
 
+extern int amd_iommu_activate_guest_mode(void *data);
+extern int amd_iommu_deactivate_guest_mode(void *data);
+
 #else /* defined(CONFIG_AMD_IOMMU) && defined(CONFIG_IRQ_REMAP) */
 
 static inline int
@@ -210,6 +213,15 @@ amd_iommu_update_ga(int cpu, bool is_run, void *data)
 	return 0;
 }
 
+static inline int amd_iommu_activate_guest_mode(void *data)
+{
+	return 0;
+}
+
+static inline int amd_iommu_deactivate_guest_mode(void *data)
+{
+	return 0;
+}
 #endif /* defined(CONFIG_AMD_IOMMU) && defined(CONFIG_IRQ_REMAP) */
 
 #endif /* _ASM_X86_AMD_IOMMU_H */

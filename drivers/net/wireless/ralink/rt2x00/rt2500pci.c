@@ -1430,7 +1430,7 @@ static void rt2500pci_txdone(struct rt2x00_dev *rt2x00dev,
 			break;
 		case 2: /* Failure, excessive retries */
 			__set_bit(TXDONE_EXCESSIVE_RETRY, &txdesc.flags);
-			/* Don't break, this is a failed frame! */
+			/* Fall through - this is a failed frame! */
 		default: /* Failure */
 			__set_bit(TXDONE_FAILURE, &txdesc.flags);
 		}
@@ -2143,8 +2143,7 @@ static struct pci_driver rt2500pci_driver = {
 	.id_table	= rt2500pci_device_table,
 	.probe		= rt2500pci_probe,
 	.remove		= rt2x00pci_remove,
-	.suspend	= rt2x00pci_suspend,
-	.resume		= rt2x00pci_resume,
+	.driver.pm	= &rt2x00pci_pm_ops,
 };
 
 module_pci_driver(rt2500pci_driver);

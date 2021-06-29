@@ -41,7 +41,7 @@ static void *nft_dynset_new(struct nft_set *set, const struct nft_expr *expr,
 
 	timeout = priv->timeout ? : set->timeout;
 	elem = nft_set_elem_init(set, &priv->tmpl,
-				 &regs->data[priv->sreg_key],
+				 &regs->data[priv->sreg_key], NULL,
 				 &regs->data[priv->sreg_data],
 				 timeout, GFP_ATOMIC);
 	if (elem == NULL)
@@ -117,6 +117,8 @@ static int nft_dynset_init(const struct nft_ctx *ctx,
 	struct nft_set *set;
 	u64 timeout;
 	int err;
+
+	lockdep_assert_held(&ctx->net->nft_commit_mutex);
 
 	if (tb[NFTA_DYNSET_SET_NAME] == NULL ||
 	    tb[NFTA_DYNSET_OP] == NULL ||
@@ -213,8 +215,10 @@ static int nft_dynset_init(const struct nft_ctx *ctx,
 		nft_set_ext_add_length(&priv->tmpl, NFT_SET_EXT_EXPR,
 				       priv->expr->ops->size);
 	if (set->flags & NFT_SET_TIMEOUT) {
-		if (timeout || set->timeout)
+		if (timeout || set->timeout) {
+			nft_set_ext_add(&priv->tmpl, NFT_SET_EXT_TIMEOUT);
 			nft_set_ext_add(&priv->tmpl, NFT_SET_EXT_EXPIRATION);
+		}
 	}
 
 	priv->timeout = timeout;
@@ -235,14 +239,28 @@ err1:
 	return err;
 }
 
+static void nft_dynset_deactivate(const struct nft_ctx *ctx,
+				  const struct nft_expr *expr,
+				  enum nft_trans_phase phase)
+{
+	struct nft_dynset *priv = nft_expr_priv(expr);
+
+	if (phase == NFT_TRANS_PREPARE)
+		return;
+
+	nf_tables_unbind_set(ctx, priv->set, &priv->binding,
+			     phase == NFT_TRANS_COMMIT);
+}
+
 static void nft_dynset_destroy(const struct nft_ctx *ctx,
 			       const struct nft_expr *expr)
 {
 	struct nft_dynset *priv = nft_expr_priv(expr);
 
-	nf_tables_unbind_set(ctx, priv->set, &priv->binding);
 	if (priv->expr != NULL)
 		nft_expr_destroy(ctx, priv->expr);
+
+	nf_tables_destroy_set(ctx, priv->set);
 }
 
 static int nft_dynset_dump(struct sk_buff *skb, const struct nft_expr *expr)
@@ -279,6 +297,7 @@ static const struct nft_expr_ops nft_dynset_ops = {
 	.eval		= nft_dynset_eval,
 	.init		= nft_dynset_init,
 	.destroy	= nft_dynset_destroy,
+	.deactivate	= nft_dynset_deactivate,
 	.dump		= nft_dynset_dump,
 };
 

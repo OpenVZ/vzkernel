@@ -1,14 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * The input core
  *
  * Copyright (c) 1999-2002 Vojtech Pavlik
  */
 
-/*
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published by
- * the Free Software Foundation.
- */
 
 #define pr_fmt(fmt) KBUILD_BASENAME ": " fmt
 
@@ -480,11 +476,19 @@ EXPORT_SYMBOL(input_inject_event);
  */
 void input_alloc_absinfo(struct input_dev *dev)
 {
-	if (!dev->absinfo)
-		dev->absinfo = kcalloc(ABS_CNT, sizeof(*dev->absinfo),
-					GFP_KERNEL);
+	if (dev->absinfo)
+		return;
 
-	WARN(!dev->absinfo, "%s(): kcalloc() failed?\n", __func__);
+	dev->absinfo = kcalloc(ABS_CNT, sizeof(*dev->absinfo), GFP_KERNEL);
+	if (!dev->absinfo) {
+		dev_err(dev->dev.parent ?: &dev->dev,
+			"%s: unable to allocate memory\n", __func__);
+		/*
+		 * We will handle this allocation failure in
+		 * input_register_device() when we refuse to register input
+		 * device with ABS bits but without absinfo.
+		 */
+	}
 }
 EXPORT_SYMBOL(input_alloc_absinfo);
 
@@ -850,16 +854,18 @@ static int input_default_setkeycode(struct input_dev *dev,
 		}
 	}
 
-	__clear_bit(*old_keycode, dev->keybit);
-	__set_bit(ke->keycode, dev->keybit);
-
-	for (i = 0; i < dev->keycodemax; i++) {
-		if (input_fetch_keycode(dev, i) == *old_keycode) {
-			__set_bit(*old_keycode, dev->keybit);
-			break; /* Setting the bit twice is useless, so break */
+	if (*old_keycode <= KEY_MAX) {
+		__clear_bit(*old_keycode, dev->keybit);
+		for (i = 0; i < dev->keycodemax; i++) {
+			if (input_fetch_keycode(dev, i) == *old_keycode) {
+				__set_bit(*old_keycode, dev->keybit);
+				/* Setting the bit twice is useless, so break */
+				break;
+			}
 		}
 	}
 
+	__set_bit(ke->keycode, dev->keybit);
 	return 0;
 }
 
@@ -915,9 +921,13 @@ int input_set_keycode(struct input_dev *dev,
 	 * Simulate keyup event if keycode is not present
 	 * in the keymap anymore
 	 */
-	if (test_bit(EV_KEY, dev->evbit) &&
-	    !is_event_supported(old_keycode, dev->keybit, KEY_MAX) &&
-	    __test_and_clear_bit(old_keycode, dev->key)) {
+	if (old_keycode > KEY_MAX) {
+		dev_warn(dev->dev.parent ?: &dev->dev,
+			 "%s: got too big old keycode %#x\n",
+			 __func__, old_keycode);
+	} else if (test_bit(EV_KEY, dev->evbit) &&
+		   !is_event_supported(old_keycode, dev->keybit, KEY_MAX) &&
+		   __test_and_clear_bit(old_keycode, dev->key)) {
 		struct input_value vals[] =  {
 			{ EV_KEY, old_keycode, 0 },
 			input_value_sync

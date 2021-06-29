@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-1.0+
+/* SPDX-License-Identifier: GPL-1.0+ */
 /*
  * OHCI HCD (Host Controller Driver) for USB.
  *
@@ -162,7 +162,7 @@ struct td {
 
 
 /* map OHCI TD status codes (CC) to errno values */
-static const int cc_to_error [16] = {
+static const int __maybe_unused cc_to_error [16] = {
 	/* No  Error  */               0,
 	/* CRC Error  */               -EILSEQ,
 	/* Bit Stuff  */               -EPROTO,
@@ -385,6 +385,8 @@ struct ohci_hcd {
 
 	/*
 	 * memory management for queue data structures
+	 *
+	 * @td_cache and @ed_cache are %NULL if &usb_hcd.localmem_pool is used.
 	 */
 	struct dma_pool		*td_cache;
 	struct dma_pool		*ed_cache;

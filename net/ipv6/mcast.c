@@ -660,7 +660,7 @@ bool inet6_mc_check(struct sock *sk, const struct in6_addr *mc_addr,
 	return rv;
 }
 
-static void igmp6_group_added(struct ifmcaddr6 *mc, unsigned int mode)
+static void igmp6_group_added(struct ifmcaddr6 *mc)
 {
 	struct net_device *dev = mc->idev->dev;
 	char buf[MAX_ADDR_LEN];
@@ -690,7 +690,7 @@ static void igmp6_group_added(struct ifmcaddr6 *mc, unsigned int mode)
 	 * should not send filter-mode change record as the mode
 	 * should be from IN() to IN(A).
 	 */
-	if (mode == MCAST_EXCLUDE)
+	if (mc->mca_sfmode == MCAST_EXCLUDE)
 		mc->mca_crcount = mc->idev->mc_qrv;
 
 	mld_ifc_event(mc->idev);
@@ -791,14 +791,15 @@ static void mld_del_delrec(struct inet6_dev *idev, struct ifmcaddr6 *im)
 	if (pmc) {
 		im->idev = pmc->idev;
 		if (im->mca_sfmode == MCAST_INCLUDE) {
-			im->mca_tomb = pmc->mca_tomb;
-			im->mca_sources = pmc->mca_sources;
+			swap(im->mca_tomb, pmc->mca_tomb);
+			swap(im->mca_sources, pmc->mca_sources);
 			for (psf = im->mca_sources; psf; psf = psf->sf_next)
 				psf->sf_crcount = idev->mc_qrv;
 		} else {
 			im->mca_crcount = idev->mc_qrv;
 		}
 		in6_dev_put(pmc->idev);
+		ip6_mc_clear_src(pmc);
 		kfree(pmc);
 	}
 	spin_unlock_bh(&im->mca_lock);
@@ -931,7 +932,7 @@ static int __ipv6_dev_mc_inc(struct net_device *dev,
 	write_unlock_bh(&idev->lock);
 
 	mld_del_delrec(idev, mc);
-	igmp6_group_added(mc, mode);
+	igmp6_group_added(mc);
 	ma_put(mc);
 	return 0;
 }
@@ -2436,17 +2437,17 @@ static int ip6_mc_leave_src(struct sock *sk, struct ipv6_mc_socklist *iml,
 {
 	int err;
 
-	/* callers have the socket lock and rtnl lock
-	 * so no other readers or writers of iml or its sflist
-	 */
+	write_lock_bh(&iml->sflock);
 	if (!iml->sflist) {
 		/* any-source empty exclude case */
-		return ip6_mc_del_src(idev, &iml->addr, iml->sfmode, 0, NULL, 0);
+		err = ip6_mc_del_src(idev, &iml->addr, iml->sfmode, 0, NULL, 0);
+	} else {
+		err = ip6_mc_del_src(idev, &iml->addr, iml->sfmode,
+				iml->sflist->sl_count, iml->sflist->sl_addr, 0);
+		sock_kfree_s(sk, iml->sflist, IP6_SFLSIZE(iml->sflist->sl_max));
+		iml->sflist = NULL;
 	}
-	err = ip6_mc_del_src(idev, &iml->addr, iml->sfmode,
-		iml->sflist->sl_count, iml->sflist->sl_addr, 0);
-	sock_kfree_s(sk, iml->sflist, IP6_SFLSIZE(iml->sflist->sl_max));
-	iml->sflist = NULL;
+	write_unlock_bh(&iml->sflock);
 	return err;
 }
 
@@ -2571,7 +2572,7 @@ void ipv6_mc_up(struct inet6_dev *idev)
 	ipv6_mc_reset(idev);
 	for (i = idev->mc_list; i; i = i->next) {
 		mld_del_delrec(idev, i);
-		igmp6_group_added(i, i->mca_sfmode);
+		igmp6_group_added(i);
 	}
 	read_unlock_bh(&idev->lock);
 }
@@ -2619,6 +2620,7 @@ void ipv6_mc_destroy_dev(struct inet6_dev *idev)
 		idev->mc_list = i->next;
 
 		write_unlock_bh(&idev->lock);
+		ip6_mc_clear_src(i);
 		ma_put(i);
 		write_lock_bh(&idev->lock);
 	}

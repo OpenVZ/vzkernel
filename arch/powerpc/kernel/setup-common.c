@@ -133,13 +133,11 @@ int crashing_cpu = -1;
 /* also used by kexec */
 void machine_shutdown(void)
 {
-#ifdef CONFIG_FA_DUMP
 	/*
 	 * if fadump is active, cleanup the fadump registration before we
 	 * shutdown.
 	 */
 	fadump_cleanup();
-#endif
 
 	if (ppc_md.machine_shutdown)
 		ppc_md.machine_shutdown();
@@ -322,6 +320,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 				min = pvr & 0xFF;
 				break;
 			case 0x004e: /* POWER9 bits 12-15 give chip type */
+			case 0x0080: /* POWER10 bit 12 gives SMT8/4 */
 				maj = (pvr >> 8) & 0x0F;
 				min = pvr & 0xFF;
 				break;
@@ -401,8 +400,8 @@ void __init check_for_initrd(void)
 
 #ifdef CONFIG_SMP
 
-int threads_per_core, threads_per_subcore, threads_shift;
-cpumask_t threads_core_mask;
+int threads_per_core, threads_per_subcore, threads_shift __read_mostly;
+cpumask_t threads_core_mask __read_mostly;
 EXPORT_SYMBOL_GPL(threads_per_core);
 EXPORT_SYMBOL_GPL(threads_per_subcore);
 EXPORT_SYMBOL_GPL(threads_shift);
@@ -459,8 +458,7 @@ void __init smp_setup_cpu_maps(void)
 
 	DBG("smp_setup_cpu_maps()\n");
 
-	cpu_to_phys_id = __va(memblock_alloc(nr_cpu_ids * sizeof(u32),
-							__alignof__(u32)));
+	cpu_to_phys_id = __va(memblock_phys_alloc(nr_cpu_ids * sizeof(u32), __alignof__(u32)));
 	memset(cpu_to_phys_id, 0, nr_cpu_ids * sizeof(u32));
 
 	for_each_node_by_type(dn, "cpu") {
@@ -792,7 +790,6 @@ void arch_setup_pdev_archdata(struct platform_device *pdev)
 {
 	pdev->archdata.dma_mask = DMA_BIT_MASK(32);
 	pdev->dev.dma_mask = &pdev->archdata.dma_mask;
- 	set_dma_ops(&pdev->dev, &dma_nommu_ops);
 }
 
 static __init void print_system_info(void)
@@ -801,7 +798,7 @@ static __init void print_system_info(void)
 #ifdef CONFIG_PPC_BOOK3S_64
 	pr_info("ppc64_pft_size    = 0x%llx\n", ppc64_pft_size);
 #endif
-#ifdef CONFIG_PPC_STD_MMU_32
+#ifdef CONFIG_PPC_BOOK3S_32
 	pr_info("Hash_size         = 0x%lx\n", Hash_size);
 #endif
 	pr_info("phys_mem_size     = 0x%llx\n",
@@ -831,7 +828,7 @@ static __init void print_system_info(void)
 	if (htab_hash_mask)
 		pr_info("htab_hash_mask    = 0x%lx\n", htab_hash_mask);
 #endif
-#ifdef CONFIG_PPC_STD_MMU_32
+#ifdef CONFIG_PPC_BOOK3S_32
 	if (Hash)
 		pr_info("Hash              = 0x%p\n", Hash);
 	if (Hash_mask)
@@ -881,6 +878,12 @@ void __init setup_arch(char **cmdline_p)
 	 */
 	initialize_cache_info();
 
+	/*
+	 * Lock down the kernel if booted in secure mode. This is required to
+	 * maintain kernel integrity.
+	 */
+	init_lockdown();
+
 	/* Initialize RTAS if available. */
 	rtas_initialize();
 
@@ -929,8 +932,6 @@ void __init setup_arch(char **cmdline_p)
 
 	/* On BookE, setup per-core TLB data structures. */
 	setup_tlb_core_data();
-
-	smp_release_cpus();
 #endif
 
 	/* Print various info about the machine that has been gathered so far. */
@@ -964,13 +965,19 @@ void __init setup_arch(char **cmdline_p)
 	exc_lvl_early_init();
 	emergency_stack_init();
 
+	smp_release_cpus();
+
 	initmem_init();
+
+	early_memtest(min_low_pfn << PAGE_SHIFT, max_low_pfn << PAGE_SHIFT);
 
 #ifdef CONFIG_DUMMY_CONSOLE
 	conswitchp = &dummy_con;
 #endif
 	if (ppc_md.setup_arch)
 		ppc_md.setup_arch();
+
+	setup_barrier_nospec();
 
 	paging_init();
 

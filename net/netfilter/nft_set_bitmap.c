@@ -84,6 +84,7 @@ static bool nft_bitmap_lookup(const struct net *net, const struct nft_set *set,
 	u32 idx, off;
 
 	nft_bitmap_location(set, key, &idx, &off);
+	*ext = NULL;
 
 	return nft_bitmap_active(priv->bitmap, idx, off, genmask);
 }
@@ -248,13 +249,13 @@ static inline u32 nft_bitmap_size(u32 klen)
 	return ((2 << ((klen * BITS_PER_BYTE) - 1)) / BITS_PER_BYTE) << 1;
 }
 
-static inline u32 nft_bitmap_total_size(u32 klen)
+static inline u64 nft_bitmap_total_size(u32 klen)
 {
 	return sizeof(struct nft_bitmap) + nft_bitmap_size(klen);
 }
 
-static unsigned int nft_bitmap_privsize(const struct nlattr * const nla[],
-					const struct nft_set_desc *desc)
+static u64 nft_bitmap_privsize(const struct nlattr * const nla[],
+			       const struct nft_set_desc *desc)
 {
 	u32 klen = ntohl(nla_get_be32(nla[NFTA_SET_KEY_LEN]));
 
@@ -262,8 +263,8 @@ static unsigned int nft_bitmap_privsize(const struct nlattr * const nla[],
 }
 
 static int nft_bitmap_init(const struct nft_set *set,
-			 const struct nft_set_desc *desc,
-			 const struct nlattr * const nla[])
+			   const struct nft_set_desc *desc,
+			   const struct nlattr * const nla[])
 {
 	struct nft_bitmap *priv = nft_set_priv(set);
 

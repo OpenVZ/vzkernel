@@ -40,6 +40,7 @@
 #include <linux/export.h>
 #include <linux/debugfs.h>
 #include <linux/prefetch.h>
+#include <linux/numa.h>
 #include "mtip32xx.h"
 
 #define HW_CMD_SLOT_SZ		(MTIP_MAX_COMMAND_SLOTS * 32)
@@ -537,7 +538,8 @@ static void mtip_complete_command(struct mtip_cmd *cmd, blk_status_t status)
 	struct request *req = blk_mq_rq_from_pdu(cmd);
 
 	cmd->status = status;
-	blk_mq_complete_request(req);
+	if (likely(!blk_should_fake_timeout(req->q)))
+		blk_mq_complete_request(req);
 }
 
 /*
@@ -2575,8 +2577,7 @@ static int mtip_hw_debugfs_init(struct driver_data *dd)
 
 static void mtip_hw_debugfs_exit(struct driver_data *dd)
 {
-	if (dd->dfs_node)
-		debugfs_remove_recursive(dd->dfs_node);
+	debugfs_remove_recursive(dd->dfs_node);
 }
 
 /*
@@ -2725,7 +2726,7 @@ static void mtip_softirq_done_fn(struct request *rq)
 	blk_mq_end_request(rq, cmd->status);
 }
 
-static void mtip_abort_cmd(struct request *req, void *data, bool reserved)
+static bool mtip_abort_cmd(struct request *req, void *data, bool reserved)
 {
 	struct mtip_cmd *cmd = blk_mq_rq_to_pdu(req);
 	struct driver_data *dd = data;
@@ -2735,14 +2736,16 @@ static void mtip_abort_cmd(struct request *req, void *data, bool reserved)
 	clear_bit(req->tag, dd->port->cmds_to_issue);
 	cmd->status = BLK_STS_IOERR;
 	mtip_softirq_done_fn(req);
+	return true;
 }
 
-static void mtip_queue_cmd(struct request *req, void *data, bool reserved)
+static bool mtip_queue_cmd(struct request *req, void *data, bool reserved)
 {
 	struct driver_data *dd = data;
 
 	set_bit(req->tag, dd->port->cmds_to_issue);
 	blk_abort_request(req);
+	return true;
 }
 
 /*
@@ -2808,10 +2811,7 @@ restart_eh:
 
 			blk_mq_quiesce_queue(dd->queue);
 
-			spin_lock(dd->queue->queue_lock);
-			blk_mq_tagset_busy_iter(&dd->tags,
-							mtip_queue_cmd, dd);
-			spin_unlock(dd->queue->queue_lock);
+			blk_mq_tagset_busy_iter(&dd->tags, mtip_queue_cmd, dd);
 
 			set_bit(MTIP_PF_ISSUE_CMDS_BIT, &dd->port->flags);
 
@@ -3873,7 +3873,7 @@ skip_create_disk:
 	set_capacity(dd->disk, capacity);
 
 	/* Enable the block device and add it to /dev */
-	device_add_disk(&dd->pdev->dev, dd->disk);
+	device_add_disk(&dd->pdev->dev, dd->disk, NULL);
 
 	dd->bdev = bdget_disk(dd->disk, 0);
 	/*
@@ -3937,12 +3937,13 @@ protocol_init_error:
 	return rv;
 }
 
-static void mtip_no_dev_cleanup(struct request *rq, void *data, bool reserv)
+static bool mtip_no_dev_cleanup(struct request *rq, void *data, bool reserv)
 {
 	struct mtip_cmd *cmd = blk_mq_rq_to_pdu(rq);
 
 	cmd->status = BLK_STS_IOERR;
 	blk_mq_complete_request(rq);
+	return true;
 }
 
 /*
@@ -4105,9 +4106,9 @@ static int get_least_used_cpu_on_node(int node)
 /* Helper for selecting a node in round robin mode */
 static inline int mtip_get_next_rr_node(void)
 {
-	static int next_node = -1;
+	static int next_node = NUMA_NO_NODE;
 
-	if (next_node == -1) {
+	if (next_node == NUMA_NO_NODE) {
 		next_node = first_online_node;
 		return next_node;
 	}

@@ -199,7 +199,7 @@ META_COLLECTOR(int_priority)
 META_COLLECTOR(int_protocol)
 {
 	/* Let userspace take care of the byte ordering */
-	dst->value = tc_skb_protocol(skb);
+	dst->value = skb_protocol(skb, false);
 }
 
 META_COLLECTOR(int_pkttype)
@@ -450,7 +450,7 @@ META_COLLECTOR(int_sk_wmem_queued)
 		*err = -1;
 		return;
 	}
-	dst->value = sk->sk_wmem_queued;
+	dst->value = READ_ONCE(sk->sk_wmem_queued);
 }
 
 META_COLLECTOR(int_sk_fwd_alloc)
@@ -525,7 +525,7 @@ META_COLLECTOR(int_sk_ack_bl)
 		*err = -1;
 		return;
 	}
-	dst->value = sk->sk_ack_backlog;
+	dst->value = READ_ONCE(sk->sk_ack_backlog);
 }
 
 META_COLLECTOR(int_sk_max_ack_bl)
@@ -536,7 +536,7 @@ META_COLLECTOR(int_sk_max_ack_bl)
 		*err = -1;
 		return;
 	}
-	dst->value = sk->sk_max_ack_backlog;
+	dst->value = READ_ONCE(sk->sk_max_ack_backlog);
 }
 
 META_COLLECTOR(int_sk_prio)
@@ -912,7 +912,8 @@ static int em_meta_change(struct net *net, void *data, int len,
 	struct tcf_meta_hdr *hdr;
 	struct meta_match *meta = NULL;
 
-	err = nla_parse(tb, TCA_EM_META_MAX, data, len, meta_policy, NULL);
+	err = nla_parse_deprecated(tb, TCA_EM_META_MAX, data, len,
+				   meta_policy, NULL);
 	if (err < 0)
 		goto errout;
 

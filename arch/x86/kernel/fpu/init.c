@@ -229,7 +229,8 @@ static void __init fpu__init_system_xstate_size_legacy(void)
  */
 u64 __init fpu__get_supported_xfeatures_mask(void)
 {
-	return XCNTXT_MASK;
+	return XFEATURE_MASK_USER_SUPPORTED |
+	       XFEATURE_MASK_SUPERVISOR_SUPPORTED;
 }
 
 /* Legacy code to initialize eager fpu mode. */
@@ -239,8 +240,6 @@ static void __init fpu__init_system_ctx_switch(void)
 
 	WARN_ON_FPU(!on_boot_cpu);
 	on_boot_cpu = 0;
-
-	WARN_ON_FPU(current->thread.fpu.initialized);
 }
 
 /*

@@ -16,6 +16,7 @@
 struct dm_dev;
 struct dm_target;
 struct dm_table;
+struct dm_report_zones_args;
 struct mapped_device;
 struct bio_vec;
 
@@ -26,9 +27,7 @@ enum dm_queue_mode {
 	DM_TYPE_NONE		 = 0,
 	DM_TYPE_BIO_BASED	 = 1,
 	DM_TYPE_REQUEST_BASED	 = 2,
-	DM_TYPE_MQ_REQUEST_BASED = 3,
-	DM_TYPE_DAX_BIO_BASED	 = 4,
-	DM_TYPE_NVME_BIO_BASED	 = 5,
+	DM_TYPE_DAX_BIO_BASED	 = 3,
 };
 
 typedef enum { STATUSTYPE_INFO, STATUSTYPE_TABLE } status_type_t;
@@ -62,7 +61,8 @@ typedef int (*dm_clone_and_map_request_fn) (struct dm_target *ti,
 					    struct request *rq,
 					    union map_info *map_context,
 					    struct request **clone);
-typedef void (*dm_release_clone_request_fn) (struct request *clone);
+typedef void (*dm_release_clone_request_fn) (struct request *clone,
+					     union map_info *map_context);
 
 /*
  * Returns:
@@ -91,6 +91,10 @@ typedef int (*dm_message_fn) (struct dm_target *ti, unsigned argc, char **argv,
 			      char *result, unsigned maxlen);
 
 typedef int (*dm_prepare_ioctl_fn) (struct dm_target *ti, struct block_device **bdev);
+
+typedef int (*dm_report_zones_fn) (struct dm_target *ti,
+				   struct dm_report_zones_args *args,
+				   unsigned int nr_zones);
 
 /*
  * These iteration functions are typically used to check (and combine)
@@ -135,6 +139,8 @@ typedef long (*dm_dax_direct_access_fn) (struct dm_target *ti, pgoff_t pgoff,
 		long nr_pages, void **kaddr, pfn_t *pfn);
 typedef size_t (*dm_dax_copy_iter_fn)(struct dm_target *ti, pgoff_t pgoff,
 		void *addr, size_t bytes, struct iov_iter *i);
+typedef int (*dm_dax_zero_page_range_fn)(struct dm_target *ti, pgoff_t pgoff,
+		size_t nr_pages);
 #define PAGE_SECTORS (PAGE_SIZE / 512)
 
 void dm_error(const char *message);
@@ -180,12 +186,16 @@ struct target_type {
 	dm_status_fn status;
 	dm_message_fn message;
 	dm_prepare_ioctl_fn prepare_ioctl;
+#if 1 /* CONFIG_BLK_DEV_ZONED */
+	dm_report_zones_fn report_zones;
+#endif
 	dm_busy_fn busy;
 	dm_iterate_devices_fn iterate_devices;
 	dm_io_hints_fn io_hints;
 	dm_dax_direct_access_fn direct_access;
 	dm_dax_copy_iter_fn dax_copy_from_iter;
 	dm_dax_copy_iter_fn dax_copy_to_iter;
+	dm_dax_zero_page_range_fn dax_zero_page_range;
 
 	/* For internal device-mapper use. */
 	struct list_head list;
@@ -239,6 +249,12 @@ struct target_type {
  */
 #define DM_TARGET_ZONED_HM		0x00000040
 #define dm_target_supports_zoned_hm(type) ((type)->features & DM_TARGET_ZONED_HM)
+
+/*
+ * A target handles REQ_NOWAIT
+ */
+#define DM_TARGET_NOWAIT		0x00000080
+#define dm_target_supports_nowait(type) ((type)->features & DM_TARGET_NOWAIT)
 
 struct dm_target {
 	struct dm_table *table;
@@ -325,6 +341,8 @@ struct dm_target_callbacks {
 void *dm_per_bio_data(struct bio *bio, size_t data_size);
 struct bio *dm_bio_from_per_bio_data(void *data, size_t data_size);
 unsigned dm_bio_get_target_bio_nr(const struct bio *bio);
+
+u64 dm_start_time_ns_from_clone(struct bio *bio);
 
 int dm_register_target(struct target_type *t);
 void dm_unregister_target(struct target_type *t);
@@ -418,11 +436,25 @@ const char *dm_device_name(struct mapped_device *md);
 int dm_copy_name_and_uuid(struct mapped_device *md, char *name, char *uuid);
 struct gendisk *dm_disk(struct mapped_device *md);
 int dm_suspended(struct dm_target *ti);
+int dm_post_suspending(struct dm_target *ti);
 int dm_noflush_suspending(struct dm_target *ti);
 void dm_accept_partial_bio(struct bio *bio, unsigned n_sectors);
-void dm_remap_zone_report(struct dm_target *ti, struct bio *bio,
-			  sector_t start);
 union map_info *dm_get_rq_mapinfo(struct request *rq);
+
+#ifdef CONFIG_BLK_DEV_ZONED
+struct dm_report_zones_args {
+	struct dm_target *tgt;
+	sector_t next_sector;
+
+	void *orig_data;
+	report_zones_cb orig_cb;
+	unsigned int zone_idx;
+
+	/* must be filled by ->report_zones before calling dm_report_zones_cb */
+	sector_t start;
+};
+int dm_report_zones_cb(struct blk_zone *zone, unsigned int idx, void *data);
+#endif /* CONFIG_BLK_DEV_ZONED */
 
 struct queue_limits *dm_get_queue_limits(struct mapped_device *md);
 
@@ -490,6 +522,7 @@ sector_t dm_table_get_size(struct dm_table *t);
 unsigned int dm_table_get_num_targets(struct dm_table *t);
 fmode_t dm_table_get_mode(struct dm_table *t);
 struct mapped_device *dm_table_get_md(struct dm_table *t);
+const char *dm_table_device_name(struct dm_table *t);
 
 /*
  * Trigger an event.
@@ -518,33 +551,19 @@ void *dm_vcalloc(unsigned long nmemb, unsigned long elem_size);
  *---------------------------------------------------------------*/
 #define DM_NAME "device-mapper"
 
-#define DM_RATELIMIT(pr_func, fmt, ...)					\
-do {									\
-	static DEFINE_RATELIMIT_STATE(rs, DEFAULT_RATELIMIT_INTERVAL,	\
-				      DEFAULT_RATELIMIT_BURST);		\
-									\
-	if (__ratelimit(&rs))						\
-		pr_func(DM_FMT(fmt), ##__VA_ARGS__);			\
-} while (0)
-
 #define DM_FMT(fmt) DM_NAME ": " DM_MSG_PREFIX ": " fmt "\n"
 
 #define DMCRIT(fmt, ...) pr_crit(DM_FMT(fmt), ##__VA_ARGS__)
 
 #define DMERR(fmt, ...) pr_err(DM_FMT(fmt), ##__VA_ARGS__)
-#define DMERR_LIMIT(fmt, ...) DM_RATELIMIT(pr_err, fmt, ##__VA_ARGS__)
+#define DMERR_LIMIT(fmt, ...) pr_err_ratelimited(DM_FMT(fmt), ##__VA_ARGS__)
 #define DMWARN(fmt, ...) pr_warn(DM_FMT(fmt), ##__VA_ARGS__)
-#define DMWARN_LIMIT(fmt, ...) DM_RATELIMIT(pr_warn, fmt, ##__VA_ARGS__)
+#define DMWARN_LIMIT(fmt, ...) pr_warn_ratelimited(DM_FMT(fmt), ##__VA_ARGS__)
 #define DMINFO(fmt, ...) pr_info(DM_FMT(fmt), ##__VA_ARGS__)
-#define DMINFO_LIMIT(fmt, ...) DM_RATELIMIT(pr_info, fmt, ##__VA_ARGS__)
+#define DMINFO_LIMIT(fmt, ...) pr_info_ratelimited(DM_FMT(fmt), ##__VA_ARGS__)
 
-#ifdef CONFIG_DM_DEBUG
-#define DMDEBUG(fmt, ...) printk(KERN_DEBUG DM_FMT(fmt), ##__VA_ARGS__)
-#define DMDEBUG_LIMIT(fmt, ...) DM_RATELIMIT(pr_debug, fmt, ##__VA_ARGS__)
-#else
-#define DMDEBUG(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
-#define DMDEBUG_LIMIT(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
-#endif
+#define DMDEBUG(fmt, ...) pr_debug(DM_FMT(fmt), ##__VA_ARGS__)
+#define DMDEBUG_LIMIT(fmt, ...) pr_debug_ratelimited(DM_FMT(fmt), ##__VA_ARGS__)
 
 #define DMEMIT(x...) sz += ((sz >= maxlen) ? \
 			  0 : scnprintf(result + sz, maxlen - sz, x))
@@ -591,9 +610,6 @@ do {									\
  * ceiling(n / size) * size
  */
 #define dm_round_up(n, sz) (dm_div_up((n), (sz)) * (sz))
-
-#define dm_array_too_big(fixed, obj, num) \
-	((num) > (UINT_MAX - (fixed)) / (obj))
 
 /*
  * Sector offset taken relative to the start of the target instead of

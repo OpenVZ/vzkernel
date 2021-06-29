@@ -105,6 +105,22 @@ config ASUS_LAPTOP
 
 	  If you have an ACPI-compatible ASUS laptop, say Y or M here.
 
+config DCDBAS
+	tristate "Dell Systems Management Base Driver"
+	depends on X86
+	help
+	  The Dell Systems Management Base Driver provides a sysfs interface
+	  for systems management software to perform System Management
+	  Interrupts (SMIs) and Host Control Actions (system power cycle or
+	  power off after OS shutdown) on certain Dell systems.
+
+	  See <file:Documentation/dcdbas.txt> for more details on the driver
+	  and the Dell systems on which Dell systems management software makes
+	  use of this driver.
+
+	  Say Y or M here to enable the driver for use by Dell systems
+	  management software such as Dell OpenManage.
+
 #
 # The DELL_SMBIOS driver depends on ACPI_WMI and/or DCDBAS if those
 # backends are selected. The "depends" line prevents a configuration
@@ -158,6 +174,8 @@ config DELL_LAPTOP
 	select POWER_SUPPLY
 	select LEDS_CLASS
 	select NEW_LEDS
+	select LEDS_TRIGGERS
+	select LEDS_TRIGGER_AUDIO
 	---help---
 	This driver adds support for rfkill and backlight control to Dell
 	laptops (except for some models covered by the Compal driver).
@@ -176,6 +194,18 @@ config DELL_WMI
 
 	  To compile this driver as a module, choose M here: the module will
 	  be called dell-wmi.
+
+config DELL_WMI_SYSMAN
+	tristate "Dell WMI-based Systems management driver"
+	depends on ACPI_WMI
+	depends on DMI
+	select NLS
+	help
+	  This driver allows changing BIOS settings on many Dell machines from
+	  2018 and newer without the use of any additional software.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called dell-wmi-sysman.
 
 config DELL_WMI_DESCRIPTOR
 	tristate
@@ -448,6 +478,8 @@ config THINKPAD_ACPI
 	select NVRAM
 	select NEW_LEDS
 	select LEDS_CLASS
+	select LEDS_TRIGGERS
+	select LEDS_TRIGGER_AUDIO
 	---help---
 	  This is a driver for the IBM and Lenovo ThinkPad laptops. It adds
 	  support for Fn-Fx key combinations, Bluetooth control, video
@@ -958,7 +990,7 @@ config INTEL_MFLD_THERMAL
 
 config INTEL_IPS
 	tristate "Intel Intelligent Power Sharing"
-	depends on ACPI
+	depends on ACPI && PCI
 	---help---
 	  Intel Calpella platforms support dynamic power sharing between the
 	  CPU and GPU, maximizing performance in a given TDP.  This driver,
@@ -1084,7 +1116,7 @@ config SAMSUNG_Q10
 
 config APPLE_GMUX
 	tristate "Apple Gmux Driver"
-	depends on ACPI
+	depends on ACPI && PCI
 	depends on PNP
 	depends on BACKLIGHT_CLASS_DEVICE
 	depends on BACKLIGHT_APPLE=n || BACKLIGHT_APPLE
@@ -1131,7 +1163,7 @@ config PVPANIC
 
 config INTEL_PMC_IPC
 	tristate "Intel PMC IPC Driver"
-	depends on ACPI
+	depends on ACPI && PCI
 	---help---
 	This driver provides support for PMC control on some Intel platforms.
 	The PMC is an ARC processor which defines IPC commands for communication
@@ -1217,6 +1249,19 @@ config INTEL_CHTDC_TI_PWRBTN
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called intel_chtdc_ti_pwrbtn.
+
+config I2C_MULTI_INSTANTIATE
+	tristate "I2C multi instantiate pseudo device driver"
+	depends on I2C && ACPI
+	help
+	  Some ACPI-based systems list multiple i2c-devices in a single ACPI
+	  firmware-node. This driver will instantiate separate i2c-clients
+	  for each device in the firmware-node.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called i2c-multi-instantiate.
+
+source "drivers/platform/x86/intel_speed_select_if/Kconfig"
 
 endif # X86_PLATFORM_DEVICES
 

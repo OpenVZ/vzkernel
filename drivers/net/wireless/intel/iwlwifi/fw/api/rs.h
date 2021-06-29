@@ -1,64 +1,8 @@
-/******************************************************************************
- *
- * This file is provided under a dual BSD/GPLv2 license.  When using or
- * redistributing this file, you may do so under either license.
- *
- * GPL LICENSE SUMMARY
- *
- * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 Intel Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * The full GNU General Public License is included in this distribution
- * in the file called COPYING.
- *
- * Contact Information:
- *  Intel Linux Wireless <linuxwifi@intel.com>
- * Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
- *
- * BSD LICENSE
- *
- * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *  * Neither the name Intel Corporation nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *****************************************************************************/
-
+/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
+/*
+ * Copyright (C) 2012-2014, 2018-2020 Intel Corporation
+ * Copyright (C) 2017 Intel Deutschland GmbH
+ */
 #ifndef __iwl_fw_api_rs_h__
 #define __iwl_fw_api_rs_h__
 
@@ -66,12 +10,24 @@
 
 /**
  * enum iwl_tlc_mng_cfg_flags_enum - options for TLC config flags
- * @IWL_TLC_MNG_CFG_FLAGS_STBC_MSK: enable STBC
+ * @IWL_TLC_MNG_CFG_FLAGS_STBC_MSK: enable STBC. For HE this enables STBC for
+ *				    bandwidths <= 80MHz
  * @IWL_TLC_MNG_CFG_FLAGS_LDPC_MSK: enable LDPC
+ * @IWL_TLC_MNG_CFG_FLAGS_HE_STBC_160MHZ_MSK: enable STBC in HE at 160MHz
+ *					      bandwidth
+ * @IWL_TLC_MNG_CFG_FLAGS_HE_DCM_NSS_1_MSK: enable HE Dual Carrier Modulation
+ *					    for BPSK (MCS 0) with 1 spatial
+ *					    stream
+ * @IWL_TLC_MNG_CFG_FLAGS_HE_DCM_NSS_2_MSK: enable HE Dual Carrier Modulation
+ *					    for BPSK (MCS 0) with 2 spatial
+ *					    streams
  */
 enum iwl_tlc_mng_cfg_flags {
-	IWL_TLC_MNG_CFG_FLAGS_STBC_MSK		= BIT(0),
-	IWL_TLC_MNG_CFG_FLAGS_LDPC_MSK		= BIT(1),
+	IWL_TLC_MNG_CFG_FLAGS_STBC_MSK			= BIT(0),
+	IWL_TLC_MNG_CFG_FLAGS_LDPC_MSK			= BIT(1),
+	IWL_TLC_MNG_CFG_FLAGS_HE_STBC_160MHZ_MSK	= BIT(2),
+	IWL_TLC_MNG_CFG_FLAGS_HE_DCM_NSS_1_MSK		= BIT(3),
+	IWL_TLC_MNG_CFG_FLAGS_HE_DCM_NSS_2_MSK		= BIT(4),
 };
 
 /**
@@ -154,8 +110,16 @@ enum iwl_tlc_mng_ht_rates {
 	IWL_TLC_MNG_HT_RATE_MAX = IWL_TLC_MNG_HT_RATE_MCS11,
 };
 
-/* Maximum supported tx antennas number */
-#define MAX_NSS 2
+enum IWL_TLC_MNG_NSS {
+	IWL_TLC_NSS_1,
+	IWL_TLC_NSS_2,
+	IWL_TLC_NSS_MAX
+};
+
+enum IWL_TLC_HT_BW_RATES {
+	IWL_TLC_HT_BW_NONE_160,
+	IWL_TLC_HT_BW_160,
+};
 
 /**
  * struct tlc_config_cmd - TLC configuration
@@ -173,6 +137,8 @@ enum iwl_tlc_mng_ht_rates {
  * @sgi_ch_width_supp: bitmap of SGI support per channel width
  *		       use BIT(@enum iwl_tlc_mng_cfg_cw)
  * @reserved2: reserved
+ * @max_tx_op: max TXOP in uSecs for all AC (BK, BE, VO, VI),
+ *	       set zero for no limit.
  */
 struct iwl_tlc_config_cmd {
 	u8 sta_id;
@@ -183,11 +149,12 @@ struct iwl_tlc_config_cmd {
 	u8 amsdu;
 	__le16 flags;
 	__le16 non_ht_rates;
-	__le16 ht_rates[MAX_NSS][2];
+	__le16 ht_rates[IWL_TLC_NSS_MAX][2];
 	__le16 max_mpdu_len;
 	u8 sgi_ch_width_supp;
-	u8 reserved2[1];
-} __packed; /* TLC_MNG_CONFIG_CMD_API_S_VER_2 */
+	u8 reserved2;
+	__le32 max_tx_op;
+} __packed; /* TLC_MNG_CONFIG_CMD_API_S_VER_3 */
 
 /**
  * enum iwl_tlc_update_flags - updated fields
@@ -216,66 +183,6 @@ struct iwl_tlc_update_notif {
 	__le32 amsdu_size;
 	__le32 amsdu_enabled;
 } __packed; /* TLC_MNG_UPDATE_NTFY_API_S_VER_2 */
-
-/**
- * enum iwl_tlc_debug_flags - debug options
- * @IWL_TLC_DEBUG_FIXED_RATE: set fixed rate for rate scaling
- * @IWL_TLC_DEBUG_STATS_TH: threshold for sending statistics to the driver, in
- *	frames
- * @IWL_TLC_DEBUG_STATS_TIME_TH: threshold for sending statistics to the
- *	driver, in msec
- * @IWL_TLC_DEBUG_AGG_TIME_LIM: time limit for a BA session
- * @IWL_TLC_DEBUG_AGG_DIS_START_TH: frame with try-count greater than this
- *	threshold should not start an aggregation session
- * @IWL_TLC_DEBUG_AGG_FRAME_CNT_LIM: set max number of frames in an aggregation
- * @IWL_TLC_DEBUG_RENEW_ADDBA_DELAY: delay between retries of ADD BA
- * @IWL_TLC_DEBUG_START_AC_RATE_IDX: frames per second to start a BA session
- * @IWL_TLC_DEBUG_NO_FAR_RANGE_TWEAK: disable BW scaling
- */
-enum iwl_tlc_debug_flags {
-	IWL_TLC_DEBUG_FIXED_RATE,
-	IWL_TLC_DEBUG_STATS_TH,
-	IWL_TLC_DEBUG_STATS_TIME_TH,
-	IWL_TLC_DEBUG_AGG_TIME_LIM,
-	IWL_TLC_DEBUG_AGG_DIS_START_TH,
-	IWL_TLC_DEBUG_AGG_FRAME_CNT_LIM,
-	IWL_TLC_DEBUG_RENEW_ADDBA_DELAY,
-	IWL_TLC_DEBUG_START_AC_RATE_IDX,
-	IWL_TLC_DEBUG_NO_FAR_RANGE_TWEAK,
-}; /* TLC_MNG_DEBUG_FLAGS_API_E_VER_1 */
-
-/**
- * struct iwl_dhc_tlc_dbg - fixed debug config
- * @sta_id: bit 0 - enable/disable, bits 1 - 7 hold station id
- * @reserved1: reserved
- * @flags: bitmap of %IWL_TLC_DEBUG_\*
- * @fixed_rate: rate value
- * @stats_threshold: if number of tx-ed frames is greater, send statistics
- * @time_threshold: statistics threshold in usec
- * @agg_time_lim: max agg time
- * @agg_dis_start_threshold: frames with try-cont greater than this count will
- *			     not be aggregated
- * @agg_frame_count_lim: agg size
- * @addba_retry_delay: delay between retries of ADD BA
- * @start_ac_rate_idx: frames per second to start a BA session
- * @no_far_range_tweak: disable BW scaling
- * @reserved2: reserved
- */
-struct iwl_dhc_tlc_cmd {
-	u8 sta_id;
-	u8 reserved1[3];
-	__le32 flags;
-	__le32 fixed_rate;
-	__le16 stats_threshold;
-	__le16 time_threshold;
-	__le16 agg_time_lim;
-	__le16 agg_dis_start_threshold;
-	__le16 agg_frame_count_lim;
-	__le16 addba_retry_delay;
-	u8 start_ac_rate_idx[IEEE80211_NUM_ACS];
-	u8 no_far_range_tweak;
-	u8 reserved2[3];
-} __packed;
 
 /*
  * These serve as indexes into
@@ -314,8 +221,11 @@ enum {
 	IWL_RATE_MCS_8_INDEX,
 	IWL_RATE_MCS_9_INDEX,
 	IWL_LAST_VHT_RATE = IWL_RATE_MCS_9_INDEX,
+	IWL_RATE_MCS_10_INDEX,
+	IWL_RATE_MCS_11_INDEX,
+	IWL_LAST_HE_RATE = IWL_RATE_MCS_11_INDEX,
 	IWL_RATE_COUNT_LEGACY = IWL_LAST_NON_HT_RATE + 1,
-	IWL_RATE_COUNT = IWL_LAST_VHT_RATE + 1,
+	IWL_RATE_COUNT = IWL_LAST_HE_RATE + 1,
 };
 
 #define IWL_RATE_BIT_MSK(r) BIT(IWL_RATE_##r##M_INDEX)
@@ -440,8 +350,8 @@ enum {
 #define RATE_LEGACY_RATE_MSK 0xff
 
 /* Bit 10 - OFDM HE */
-#define RATE_MCS_OFDM_HE_POS		10
-#define RATE_MCS_OFDM_HE_MSK		BIT(RATE_MCS_OFDM_HE_POS)
+#define RATE_MCS_HE_POS		10
+#define RATE_MCS_HE_MSK		BIT(RATE_MCS_HE_POS)
 
 /*
  * Bit 11-12: (0) 20MHz, (1) 40MHz, (2) 80MHz, (3) 160MHz
@@ -482,15 +392,33 @@ enum {
 #define RATE_MCS_BF_MSK			(1 << RATE_MCS_BF_POS)
 
 /*
- * Bit 20-21: HE guard interval and LTF type.
- * (0) 1xLTF+1.6us, (1) 2xLTF+0.8us,
- * (2) 2xLTF+1.6us, (3) 4xLTF+3.2us
+ * Bit 20-21: HE LTF type and guard interval
+ * HE (ext) SU:
+ *	0			1xLTF+0.8us
+ *	1			2xLTF+0.8us
+ *	2			2xLTF+1.6us
+ *	3 & SGI (bit 13) clear	4xLTF+3.2us
+ *	3 & SGI (bit 13) set	4xLTF+0.8us
+ * HE MU:
+ *	0			4xLTF+0.8us
+ *	1			2xLTF+0.8us
+ *	2			2xLTF+1.6us
+ *	3			4xLTF+3.2us
+ * HE TRIG:
+ *	0			1xLTF+1.6us
+ *	1			2xLTF+1.6us
+ *	2			4xLTF+3.2us
+ *	3			(does not occur)
  */
 #define RATE_MCS_HE_GI_LTF_POS		20
 #define RATE_MCS_HE_GI_LTF_MSK		(3 << RATE_MCS_HE_GI_LTF_POS)
 
 /* Bit 22-23: HE type. (0) SU, (1) SU_EXT, (2) MU, (3) trigger based */
 #define RATE_MCS_HE_TYPE_POS		22
+#define RATE_MCS_HE_TYPE_SU		(0 << RATE_MCS_HE_TYPE_POS)
+#define RATE_MCS_HE_TYPE_EXT_SU		(1 << RATE_MCS_HE_TYPE_POS)
+#define RATE_MCS_HE_TYPE_MU		(2 << RATE_MCS_HE_TYPE_POS)
+#define RATE_MCS_HE_TYPE_TRIG		(3 << RATE_MCS_HE_TYPE_POS)
 #define RATE_MCS_HE_TYPE_MSK		(3 << RATE_MCS_HE_TYPE_POS)
 
 /* Bit 24-25: (0) 20MHz (no dup), (1) 2x20MHz, (2) 4x20MHz, 3 8x20MHz */
@@ -501,6 +429,16 @@ enum {
 #define RATE_MCS_LDPC_POS		27
 #define RATE_MCS_LDPC_MSK		(1 << RATE_MCS_LDPC_POS)
 
+/* Bit 28: (1) 106-tone RX (8 MHz RU), (0) normal bandwidth */
+#define RATE_MCS_HE_106T_POS		28
+#define RATE_MCS_HE_106T_MSK		(1 << RATE_MCS_HE_106T_POS)
+
+/* Bit 30-31: (1) RTS, (2) CTS */
+#define RATE_MCS_RTS_REQUIRED_POS  (30)
+#define RATE_MCS_RTS_REQUIRED_MSK  (0x1 << RATE_MCS_RTS_REQUIRED_POS)
+
+#define RATE_MCS_CTS_REQUIRED_POS  (31)
+#define RATE_MCS_CTS_REQUIRED_MSK  (0x1 << RATE_MCS_CTS_REQUIRED_POS)
 
 /* Link Quality definitions */
 

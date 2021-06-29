@@ -25,6 +25,7 @@
 #include <linux/if_ether.h>
 #include <linux/netdevice.h>
 #include <linux/random.h>
+#include <linux/crc32.h>
 #include <asm/unaligned.h>
 #include <asm/bitsperlong.h>
 
@@ -32,7 +33,7 @@
 struct device;
 int eth_platform_get_mac_address(struct device *dev, u8 *mac_addr);
 unsigned char *arch_get_platform_mac_address(void);
-u32 eth_get_headlen(void *data, unsigned int max_len);
+u32 eth_get_headlen(const struct net_device *dev, void *data, unsigned int len);
 __be16 eth_type_trans(struct sk_buff *skb, struct net_device *dev);
 extern const struct header_ops eth_header_ops;
 
@@ -43,6 +44,7 @@ int eth_header_cache(const struct neighbour *neigh, struct hh_cache *hh,
 		     __be16 type);
 void eth_header_cache_update(struct hh_cache *hh, const struct net_device *dev,
 			     const unsigned char *haddr);
+__be16 eth_header_parse_protocol(const struct sk_buff *skb);
 int eth_prepare_mac_addr_change(struct net_device *dev, void *p);
 void eth_commit_mac_addr_change(struct net_device *dev, void *p);
 int eth_mac_addr(struct net_device *dev, void *p);
@@ -59,8 +61,7 @@ struct net_device *devm_alloc_etherdev_mqs(struct device *dev, int sizeof_priv,
 					   unsigned int rxqs);
 #define devm_alloc_etherdev(dev, sizeof_priv) devm_alloc_etherdev_mqs(dev, sizeof_priv, 1, 1)
 
-struct sk_buff **eth_gro_receive(struct sk_buff **head,
-				 struct sk_buff *skb);
+struct sk_buff *eth_gro_receive(struct list_head *head, struct sk_buff *skb);
 int eth_gro_complete(struct sk_buff *skb, int nhoff);
 
 /* Reserved Ethernet Addresses per IEEE 802.1Q */
@@ -268,6 +269,17 @@ static inline void eth_hw_addr_random(struct net_device *dev)
 {
 	dev->addr_assign_type = NET_ADDR_RANDOM;
 	eth_random_addr(dev->dev_addr);
+}
+
+/**
+ * eth_hw_addr_crc - Calculate CRC from netdev_hw_addr
+ * @ha: pointer to hardware address
+ *
+ * Calculate CRC from a hardware address as basis for filter hashes.
+ */
+static inline u32 eth_hw_addr_crc(struct netdev_hw_addr *ha)
+{
+	return ether_crc(ETH_ALEN, ha->addr);
 }
 
 /**

@@ -1,27 +1,5 @@
-/******************************************************************************
- *
- * Copyright(c) 2009-2010  Realtek Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * The full GNU General Public License is included in this distribution in the
- * file called LICENSE.
- *
- * Contact Information:
- * wlanfae <wlanfae@realtek.com>
- * Realtek Corporation, No. 2, Innovation Road II, Hsinchu Science Park,
- * Hsinchu 300, Taiwan.
- *
- * Larry Finger <Larry.Finger@lwfinger.net>
- *
- *****************************************************************************/
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright(c) 2009-2010  Realtek Corporation.*/
 
 #include "../wifi.h"
 #include "../base.h"
@@ -115,124 +93,6 @@ static const u32 rtl8821ae_txscaling_table[TXSCALE_TABLE_SIZE] = {
 	0x3FE  /* 36, +6.0dB */
 };
 
-static const u32 ofdmswing_table[] = {
-	0x0b40002d, /* 0, -15.0dB */
-	0x0c000030, /* 1, -14.5dB */
-	0x0cc00033, /* 2, -14.0dB */
-	0x0d800036, /* 3, -13.5dB */
-	0x0e400039, /* 4, -13.0dB */
-	0x0f00003c, /* 5, -12.5dB */
-	0x10000040, /* 6, -12.0dB */
-	0x11000044, /* 7, -11.5dB */
-	0x12000048, /* 8, -11.0dB */
-	0x1300004c, /* 9, -10.5dB */
-	0x14400051, /* 10, -10.0dB */
-	0x15800056, /* 11, -9.5dB */
-	0x16c0005b, /* 12, -9.0dB */
-	0x18000060, /* 13, -8.5dB */
-	0x19800066, /* 14, -8.0dB */
-	0x1b00006c, /* 15, -7.5dB */
-	0x1c800072, /* 16, -7.0dB */
-	0x1e400079, /* 17, -6.5dB */
-	0x20000080, /* 18, -6.0dB */
-	0x22000088, /* 19, -5.5dB */
-	0x24000090, /* 20, -5.0dB */
-	0x26000098, /* 21, -4.5dB */
-	0x288000a2, /* 22, -4.0dB */
-	0x2ac000ab, /* 23, -3.5dB */
-	0x2d4000b5, /* 24, -3.0dB */
-	0x300000c0, /* 25, -2.5dB */
-	0x32c000cb, /* 26, -2.0dB */
-	0x35c000d7, /* 27, -1.5dB */
-	0x390000e4, /* 28, -1.0dB */
-	0x3c8000f2, /* 29, -0.5dB */
-	0x40000100, /* 30, +0dB */
-	0x43c0010f, /* 31, +0.5dB */
-	0x47c0011f, /* 32, +1.0dB */
-	0x4c000130, /* 33, +1.5dB */
-	0x50800142, /* 34, +2.0dB */
-	0x55400155, /* 35, +2.5dB */
-	0x5a400169, /* 36, +3.0dB */
-	0x5fc0017f, /* 37, +3.5dB */
-	0x65400195, /* 38, +4.0dB */
-	0x6b8001ae, /* 39, +4.5dB */
-	0x71c001c7, /* 40, +5.0dB */
-	0x788001e2, /* 41, +5.5dB */
-	0x7f8001fe  /* 42, +6.0dB */
-};
-
-static const u8 cckswing_table_ch1ch13[CCK_TABLE_SIZE][8] = {
-	{0x09, 0x08, 0x07, 0x06, 0x04, 0x03, 0x01, 0x01}, /* 0, -16.0dB */
-	{0x09, 0x09, 0x08, 0x06, 0x05, 0x03, 0x01, 0x01}, /* 1, -15.5dB */
-	{0x0a, 0x09, 0x08, 0x07, 0x05, 0x03, 0x02, 0x01}, /* 2, -15.0dB */
-	{0x0a, 0x0a, 0x09, 0x07, 0x05, 0x03, 0x02, 0x01}, /* 3, -14.5dB */
-	{0x0b, 0x0a, 0x09, 0x08, 0x06, 0x04, 0x02, 0x01}, /* 4, -14.0dB */
-	{0x0b, 0x0b, 0x0a, 0x08, 0x06, 0x04, 0x02, 0x01}, /* 5, -13.5dB */
-	{0x0c, 0x0c, 0x0a, 0x09, 0x06, 0x04, 0x02, 0x01}, /* 6, -13.0dB */
-	{0x0d, 0x0c, 0x0b, 0x09, 0x07, 0x04, 0x02, 0x01}, /* 7, -12.5dB */
-	{0x0d, 0x0d, 0x0c, 0x0a, 0x07, 0x05, 0x02, 0x01}, /* 8, -12.0dB */
-	{0x0e, 0x0e, 0x0c, 0x0a, 0x08, 0x05, 0x02, 0x01}, /* 9, -11.5dB */
-	{0x0f, 0x0f, 0x0d, 0x0b, 0x08, 0x05, 0x03, 0x01}, /* 10, -11.0dB */
-	{0x10, 0x10, 0x0e, 0x0b, 0x08, 0x05, 0x03, 0x01}, /* 11, -10.5dB */
-	{0x11, 0x11, 0x0f, 0x0c, 0x09, 0x06, 0x03, 0x01}, /* 12, -10.0dB */
-	{0x12, 0x12, 0x0f, 0x0c, 0x09, 0x06, 0x03, 0x01}, /* 13, -9.5dB */
-	{0x13, 0x13, 0x10, 0x0d, 0x0a, 0x06, 0x03, 0x01}, /* 14, -9.0dB */
-	{0x14, 0x14, 0x11, 0x0e, 0x0b, 0x07, 0x03, 0x02}, /* 15, -8.5dB */
-	{0x16, 0x15, 0x12, 0x0f, 0x0b, 0x07, 0x04, 0x01}, /* 16, -8.0dB */
-	{0x17, 0x16, 0x13, 0x10, 0x0c, 0x08, 0x04, 0x02}, /* 17, -7.5dB */
-	{0x18, 0x17, 0x15, 0x11, 0x0c, 0x08, 0x04, 0x02}, /* 18, -7.0dB */
-	{0x1a, 0x19, 0x16, 0x12, 0x0d, 0x09, 0x04, 0x02}, /* 19, -6.5dB */
-	{0x1b, 0x1a, 0x17, 0x13, 0x0e, 0x09, 0x04, 0x02}, /* 20, -6.0dB */
-	{0x1d, 0x1c, 0x18, 0x14, 0x0f, 0x0a, 0x05, 0x02}, /* 21, -5.5dB */
-	{0x1f, 0x1e, 0x1a, 0x15, 0x10, 0x0a, 0x05, 0x02}, /* 22, -5.0dB */
-	{0x20, 0x20, 0x1b, 0x16, 0x11, 0x08, 0x05, 0x02}, /* 23, -4.5dB */
-	{0x22, 0x21, 0x1d, 0x18, 0x11, 0x0b, 0x06, 0x02}, /* 24, -4.0dB */
-	{0x24, 0x23, 0x1f, 0x19, 0x13, 0x0c, 0x06, 0x03}, /* 25, -3.5dB */
-	{0x26, 0x25, 0x21, 0x1b, 0x14, 0x0d, 0x06, 0x03}, /* 26, -3.0dB */
-	{0x28, 0x28, 0x22, 0x1c, 0x15, 0x0d, 0x07, 0x03}, /* 27, -2.5dB */
-	{0x2b, 0x2a, 0x25, 0x1e, 0x16, 0x0e, 0x07, 0x03}, /* 28, -2.0dB */
-	{0x2d, 0x2d, 0x27, 0x1f, 0x18, 0x0f, 0x08, 0x03}, /* 29, -1.5dB */
-	{0x30, 0x2f, 0x29, 0x21, 0x19, 0x10, 0x08, 0x03}, /* 30, -1.0dB */
-	{0x33, 0x32, 0x2b, 0x23, 0x1a, 0x11, 0x08, 0x04}, /* 31, -0.5dB */
-	{0x36, 0x35, 0x2e, 0x25, 0x1c, 0x12, 0x09, 0x04} /* 32, +0dB */
-};
-
-static const u8 cckswing_table_ch14[CCK_TABLE_SIZE][8] = {
-	{0x09, 0x08, 0x07, 0x04, 0x00, 0x00, 0x00, 0x00}, /* 0, -16.0dB */
-	{0x09, 0x09, 0x08, 0x05, 0x00, 0x00, 0x00, 0x00}, /* 1, -15.5dB */
-	{0x0a, 0x09, 0x08, 0x05, 0x00, 0x00, 0x00, 0x00}, /* 2, -15.0dB */
-	{0x0a, 0x0a, 0x09, 0x05, 0x00, 0x00, 0x00, 0x00}, /* 3, -14.5dB */
-	{0x0b, 0x0a, 0x09, 0x05, 0x00, 0x00, 0x00, 0x00}, /* 4, -14.0dB */
-	{0x0b, 0x0b, 0x0a, 0x06, 0x00, 0x00, 0x00, 0x00}, /* 5, -13.5dB */
-	{0x0c, 0x0c, 0x0a, 0x06, 0x00, 0x00, 0x00, 0x00}, /* 6, -13.0dB */
-	{0x0d, 0x0c, 0x0b, 0x06, 0x00, 0x00, 0x00, 0x00}, /* 7, -12.5dB */
-	{0x0d, 0x0d, 0x0c, 0x07, 0x00, 0x00, 0x00, 0x00}, /* 8, -12.0dB */
-	{0x0e, 0x0e, 0x0c, 0x07, 0x00, 0x00, 0x00, 0x00}, /* 9, -11.5dB */
-	{0x0f, 0x0f, 0x0d, 0x08, 0x00, 0x00, 0x00, 0x00}, /* 10, -11.0dB */
-	{0x10, 0x10, 0x0e, 0x08, 0x00, 0x00, 0x00, 0x00}, /* 11, -10.5dB */
-	{0x11, 0x11, 0x0f, 0x09, 0x00, 0x00, 0x00, 0x00}, /* 12, -10.0dB */
-	{0x12, 0x12, 0x0f, 0x09, 0x00, 0x00, 0x00, 0x00}, /* 13, -9.5dB */
-	{0x13, 0x13, 0x10, 0x0a, 0x00, 0x00, 0x00, 0x00}, /* 14, -9.0dB */
-	{0x14, 0x14, 0x11, 0x0a, 0x00, 0x00, 0x00, 0x00}, /* 15, -8.5dB */
-	{0x16, 0x15, 0x12, 0x0b, 0x00, 0x00, 0x00, 0x00}, /* 16, -8.0dB */
-	{0x17, 0x16, 0x13, 0x0b, 0x00, 0x00, 0x00, 0x00}, /* 17, -7.5dB */
-	{0x18, 0x17, 0x15, 0x0c, 0x00, 0x00, 0x00, 0x00}, /* 18, -7.0dB */
-	{0x1a, 0x19, 0x16, 0x0d, 0x00, 0x00, 0x00, 0x00}, /* 19, -6.5dB */
-	{0x1b, 0x1a, 0x17, 0x0e, 0x00, 0x00, 0x00, 0x00}, /* 20, -6.0dB */
-	{0x1d, 0x1c, 0x18, 0x0e, 0x00, 0x00, 0x00, 0x00}, /* 21, -5.5dB */
-	{0x1f, 0x1e, 0x1a, 0x0f, 0x00, 0x00, 0x00, 0x00}, /* 22, -5.0dB */
-	{0x20, 0x20, 0x1b, 0x10, 0x00, 0x00, 0x00, 0x00}, /* 23, -4.5dB */
-	{0x22, 0x21, 0x1d, 0x11, 0x00, 0x00, 0x00, 0x00}, /* 24, -4.0dB */
-	{0x24, 0x23, 0x1f, 0x12, 0x00, 0x00, 0x00, 0x00}, /* 25, -3.5dB */
-	{0x26, 0x25, 0x21, 0x13, 0x00, 0x00, 0x00, 0x00}, /* 26, -3.0dB */
-	{0x28, 0x28, 0x24, 0x14, 0x00, 0x00, 0x00, 0x00}, /* 27, -2.5dB */
-	{0x2b, 0x2a, 0x25, 0x15, 0x00, 0x00, 0x00, 0x00}, /* 28, -2.0dB */
-	{0x2d, 0x2d, 0x17, 0x17, 0x00, 0x00, 0x00, 0x00}, /* 29, -1.5dB */
-	{0x30, 0x2f, 0x29, 0x18, 0x00, 0x00, 0x00, 0x00}, /* 30, -1.0dB */
-	{0x33, 0x32, 0x2b, 0x19, 0x00, 0x00, 0x00, 0x00}, /* 31, -0.5dB */
-	{0x36, 0x35, 0x2e, 0x1b, 0x00, 0x00, 0x00, 0x00} /* 32, +0dB */
-};
-
 static const u32 edca_setting_dl[PEER_MAX] = {
 	0xa44f,		/* 0 UNKNOWN */
 	0x5ea44f,	/* 1 REALTEK_90 */
@@ -255,47 +115,47 @@ static const u32 edca_setting_ul[PEER_MAX] = {
 	0x5ea44f,	/* 7 MARV */
 };
 
-static u8 rtl8818e_delta_swing_table_idx_24gb_p[] = {
+static const u8 rtl8818e_delta_swing_table_idx_24gb_p[] = {
 	0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 4, 4,
 	4, 4, 4, 5, 5, 7, 7, 8, 8, 8, 9, 9, 9, 9, 9};
 
-static u8 rtl8818e_delta_swing_table_idx_24gb_n[] = {
+static const u8 rtl8818e_delta_swing_table_idx_24gb_n[] = {
 	0, 0, 0, 2, 2, 3, 3, 4, 4, 4, 4, 5, 5, 6, 6,
 	7, 7, 7, 7, 8, 8, 9, 9, 10, 10, 10, 11, 11, 11, 11};
 
-static u8 rtl8812ae_delta_swing_table_idx_24gb_n[]  = {
+static const u8 rtl8812ae_delta_swing_table_idx_24gb_n[]  = {
 	0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6,
 	6, 6, 7, 8, 9, 9, 9, 9, 10, 10, 10, 10, 11, 11};
 
-static u8 rtl8812ae_delta_swing_table_idx_24gb_p[] = {
+static const u8 rtl8812ae_delta_swing_table_idx_24gb_p[] = {
 	0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 6,
 	6, 6, 7, 7, 7, 8, 8, 8, 9, 9, 9, 9, 9, 9};
 
-static u8 rtl8812ae_delta_swing_table_idx_24ga_n[] = {
+static const u8 rtl8812ae_delta_swing_table_idx_24ga_n[] = {
 	0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6,
 	6, 6, 7, 8, 8, 9, 9, 9, 10, 10, 10, 10, 11, 11};
 
-static u8 rtl8812ae_delta_swing_table_idx_24ga_p[] = {
+static const u8 rtl8812ae_delta_swing_table_idx_24ga_p[] = {
 	0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 6,
 	6, 6, 7, 7, 7, 8, 8, 8, 9, 9, 9, 9, 9, 9};
 
-static u8 rtl8812ae_delta_swing_table_idx_24gcckb_n[] = {
+static const u8 rtl8812ae_delta_swing_table_idx_24gcckb_n[] = {
 	0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6,
 	6, 6, 7, 8, 9, 9, 9, 9, 10, 10, 10, 10, 11, 11};
 
-static u8 rtl8812ae_delta_swing_table_idx_24gcckb_p[] = {
+static const u8 rtl8812ae_delta_swing_table_idx_24gcckb_p[] = {
 	0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 6,
 	6, 6, 7, 7, 7, 8, 8, 8, 9, 9, 9, 9, 9, 9};
 
-static u8 rtl8812ae_delta_swing_table_idx_24gccka_n[] = {
+static const u8 rtl8812ae_delta_swing_table_idx_24gccka_n[] = {
 	0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6,
 	6, 6, 7, 8, 8, 9, 9, 9, 10, 10, 10, 10, 11, 11};
 
-static u8 rtl8812ae_delta_swing_table_idx_24gccka_p[] = {
+static const u8 rtl8812ae_delta_swing_table_idx_24gccka_p[] = {
 	0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 6,
 	6, 6, 7, 7, 7, 8, 8, 8, 9, 9, 9, 9, 9, 9};
 
-static u8 rtl8812ae_delta_swing_table_idx_5gb_n[][DEL_SW_IDX_SZ] = {
+static const u8 rtl8812ae_delta_swing_table_idx_5gb_n[][DEL_SW_IDX_SZ] = {
 	{0, 1, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 6, 7, 7,
 	7, 8, 8, 9, 9, 9, 10, 10, 11, 11, 12, 12, 13},
 	{0, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7,
@@ -304,7 +164,7 @@ static u8 rtl8812ae_delta_swing_table_idx_5gb_n[][DEL_SW_IDX_SZ] = {
 	12, 12, 13, 14, 14, 14, 15, 16, 17, 17, 17, 18, 18, 18},
 };
 
-static u8 rtl8812ae_delta_swing_table_idx_5gb_p[][DEL_SW_IDX_SZ] = {
+static const u8 rtl8812ae_delta_swing_table_idx_5gb_p[][DEL_SW_IDX_SZ] = {
 	{0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 6, 7, 7, 8,
 	8, 9, 9, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11},
 	{0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 7, 8,
@@ -313,7 +173,7 @@ static u8 rtl8812ae_delta_swing_table_idx_5gb_p[][DEL_SW_IDX_SZ] = {
 	9, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11},
 };
 
-static u8 rtl8812ae_delta_swing_table_idx_5ga_n[][DEL_SW_IDX_SZ] = {
+static const u8 rtl8812ae_delta_swing_table_idx_5ga_n[][DEL_SW_IDX_SZ] = {
 	{0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 7, 8,
 	8, 9, 9, 10, 10, 11, 11, 12, 12, 12, 13, 13, 13},
 	{0, 1, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 9,
@@ -322,7 +182,7 @@ static u8 rtl8812ae_delta_swing_table_idx_5ga_n[][DEL_SW_IDX_SZ] = {
 	12, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 18, 18},
 };
 
-static u8 rtl8812ae_delta_swing_table_idx_5ga_p[][DEL_SW_IDX_SZ] = {
+static const u8 rtl8812ae_delta_swing_table_idx_5ga_p[][DEL_SW_IDX_SZ] = {
 	{0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 4, 5, 5, 6, 7, 7, 8,
 	8, 9, 9, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11},
 	{0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 7, 8,
@@ -331,39 +191,23 @@ static u8 rtl8812ae_delta_swing_table_idx_5ga_p[][DEL_SW_IDX_SZ] = {
 	10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11},
 };
 
-static u8 rtl8821ae_delta_swing_table_idx_24gb_n[] = {
+static const u8 rtl8821ae_delta_swing_table_idx_24ga_n[]  = {
 	0, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6,
 	6, 7, 7, 7, 8, 8, 8, 9, 9, 9, 10, 10, 10};
 
-static u8 rtl8821ae_delta_swing_table_idx_24gb_p[]  = {
+static const u8 rtl8821ae_delta_swing_table_idx_24ga_p[] = {
 	0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8,
 	8, 9, 9, 10, 10, 11, 11, 12, 12, 12, 12, 12, 12};
 
-static u8 rtl8821ae_delta_swing_table_idx_24ga_n[]  = {
+static const u8 rtl8821ae_delta_swing_table_idx_24gccka_n[] = {
 	0, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6,
 	6, 7, 7, 7, 8, 8, 8, 9, 9, 9, 10, 10, 10};
 
-static u8 rtl8821ae_delta_swing_table_idx_24ga_p[] = {
+static const u8 rtl8821ae_delta_swing_table_idx_24gccka_p[] = {
 	0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8,
 	8, 9, 9, 10, 10, 11, 11, 12, 12, 12, 12, 12, 12};
 
-static u8 rtl8821ae_delta_swing_table_idx_24gcckb_n[] = {
-	0, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6,
-	6, 7, 7, 7, 8, 8, 8, 9, 9, 9, 10, 10, 10};
-
-static u8 rtl8821ae_delta_swing_table_idx_24gcckb_p[] = {
-	0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8,
-	8, 9, 9, 10, 10, 11, 11, 12, 12, 12, 12, 12, 12};
-
-static u8 rtl8821ae_delta_swing_table_idx_24gccka_n[] = {
-	0, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6,
-	6, 7, 7, 7, 8, 8, 8, 9, 9, 9, 10, 10, 10};
-
-static u8 rtl8821ae_delta_swing_table_idx_24gccka_p[] = {
-	0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8,
-	8, 9, 9, 10, 10, 11, 11, 12, 12, 12, 12, 12, 12};
-
-static u8 rtl8821ae_delta_swing_table_idx_5gb_n[][DEL_SW_IDX_SZ] = {
+static const u8 rtl8821ae_delta_swing_table_idx_5ga_n[][DEL_SW_IDX_SZ] = {
 	{0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11,
 	12, 12, 13, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16},
 	{0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11,
@@ -372,25 +216,7 @@ static u8 rtl8821ae_delta_swing_table_idx_5gb_n[][DEL_SW_IDX_SZ] = {
 	12, 12, 13, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16},
 };
 
-static u8 rtl8821ae_delta_swing_table_idx_5gb_p[][DEL_SW_IDX_SZ] = {
-	{0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11,
-	12, 12, 13, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16},
-	{0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11,
-	12, 12, 13, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16},
-	{0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11,
-	12, 12, 13, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16},
-};
-
-static u8 rtl8821ae_delta_swing_table_idx_5ga_n[][DEL_SW_IDX_SZ] = {
-	{0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11,
-	12, 12, 13, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16},
-	{0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11,
-	12, 12, 13, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16},
-	{0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11,
-	12, 12, 13, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16},
-};
-
-static u8 rtl8821ae_delta_swing_table_idx_5ga_p[][DEL_SW_IDX_SZ] = {
+static const u8 rtl8821ae_delta_swing_table_idx_5ga_p[][DEL_SW_IDX_SZ] = {
 	{0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11,
 	12, 12, 13, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16},
 	{0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11,
@@ -677,10 +503,9 @@ static void rtl8821ae_dm_check_rssi_monitor(struct ieee80211_hw *hw)
 	u8 h2c_parameter[4] = { 0 };
 	long tmp_entry_max_pwdb = 0, tmp_entry_min_pwdb = 0xff;
 	u8 stbc_tx = 0;
-	u64 cur_txokcnt = 0, cur_rxokcnt = 0;
+	u64 cur_rxokcnt = 0;
 	static u64 last_txokcnt = 0, last_rxokcnt;
 
-	cur_txokcnt = rtlpriv->stats.txbytesunicast - last_txokcnt;
 	cur_rxokcnt = rtlpriv->stats.rxbytesunicast - last_rxokcnt;
 	last_txokcnt = rtlpriv->stats.txbytesunicast;
 	last_rxokcnt = rtlpriv->stats.rxbytesunicast;
@@ -1103,8 +928,10 @@ static void rtl8821ae_dm_iq_calibrate(struct ieee80211_hw *hw)
 }
 
 static void rtl8812ae_get_delta_swing_table(struct ieee80211_hw *hw,
-					    u8 **up_a, u8 **down_a,
-					    u8 **up_b, u8 **down_b)
+					    const u8 **up_a,
+					    const u8 **down_a,
+					    const u8 **up_b,
+					    const u8 **down_b)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_phy *rtlphy = &rtlpriv->phy;
@@ -1140,10 +967,10 @@ static void rtl8812ae_get_delta_swing_table(struct ieee80211_hw *hw,
 		*up_b = rtl8812ae_delta_swing_table_idx_5gb_p[2];
 		*down_b = rtl8812ae_delta_swing_table_idx_5gb_n[2];
 	} else {
-	    *up_a = (u8 *)rtl8818e_delta_swing_table_idx_24gb_p;
-	    *down_a = (u8 *)rtl8818e_delta_swing_table_idx_24gb_n;
-	    *up_b = (u8 *)rtl8818e_delta_swing_table_idx_24gb_p;
-	    *down_b = (u8 *)rtl8818e_delta_swing_table_idx_24gb_n;
+		*up_a = rtl8818e_delta_swing_table_idx_24gb_p;
+		*down_a = rtl8818e_delta_swing_table_idx_24gb_n;
+		*up_b = rtl8818e_delta_swing_table_idx_24gb_p;
+		*down_b = rtl8818e_delta_swing_table_idx_24gb_n;
 	}
 }
 
@@ -1633,17 +1460,17 @@ void rtl8812ae_dm_txpower_tracking_callback_thermalmeter(
 	/* 1. The following TWO tables decide
 	 * the final index of OFDM/CCK swing table.
 	 */
-	u8 *delta_swing_table_idx_tup_a;
-	u8 *delta_swing_table_idx_tdown_a;
-	u8 *delta_swing_table_idx_tup_b;
-	u8 *delta_swing_table_idx_tdown_b;
+	const u8 *delta_swing_table_idx_tup_a;
+	const u8 *delta_swing_table_idx_tdown_a;
+	const u8 *delta_swing_table_idx_tup_b;
+	const u8 *delta_swing_table_idx_tdown_b;
 
 	/*2. Initilization ( 7 steps in total )*/
 	rtl8812ae_get_delta_swing_table(hw,
-		(u8 **)&delta_swing_table_idx_tup_a,
-		(u8 **)&delta_swing_table_idx_tdown_a,
-		(u8 **)&delta_swing_table_idx_tup_b,
-		(u8 **)&delta_swing_table_idx_tdown_b);
+		&delta_swing_table_idx_tup_a,
+		&delta_swing_table_idx_tdown_a,
+		&delta_swing_table_idx_tup_b,
+		&delta_swing_table_idx_tdown_b);
 
 	rtldm->txpower_trackinginit = true;
 
@@ -1971,8 +1798,9 @@ void rtl8812ae_dm_txpower_tracking_callback_thermalmeter(
 		 "<===rtl8812ae_dm_txpower_tracking_callback_thermalmeter\n");
 }
 
-static void rtl8821ae_get_delta_swing_table(struct ieee80211_hw *hw, u8 **up_a,
-					    u8 **down_a, u8 **up_b, u8 **down_b)
+static void rtl8821ae_get_delta_swing_table(struct ieee80211_hw *hw,
+					    const u8 **up_a,
+					    const u8 **down_a)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_phy *rtlphy = &rtlpriv->phy;
@@ -1984,34 +1812,22 @@ static void rtl8821ae_get_delta_swing_table(struct ieee80211_hw *hw, u8 **up_a,
 		if (RTL8821AE_RX_HAL_IS_CCK_RATE(rate)) {
 			*up_a = rtl8821ae_delta_swing_table_idx_24gccka_p;
 			*down_a = rtl8821ae_delta_swing_table_idx_24gccka_n;
-			*up_b = rtl8821ae_delta_swing_table_idx_24gcckb_p;
-			*down_b = rtl8821ae_delta_swing_table_idx_24gcckb_n;
 		} else {
 			*up_a = rtl8821ae_delta_swing_table_idx_24ga_p;
 			*down_a = rtl8821ae_delta_swing_table_idx_24ga_n;
-			*up_b = rtl8821ae_delta_swing_table_idx_24gb_p;
-			*down_b = rtl8821ae_delta_swing_table_idx_24gb_n;
 		}
 	} else if (36 <= channel && channel <= 64) {
 		*up_a = rtl8821ae_delta_swing_table_idx_5ga_p[0];
 		*down_a = rtl8821ae_delta_swing_table_idx_5ga_n[0];
-		*up_b = rtl8821ae_delta_swing_table_idx_5gb_p[0];
-		*down_b = rtl8821ae_delta_swing_table_idx_5gb_n[0];
 	} else if (100 <= channel && channel <= 140) {
 		*up_a = rtl8821ae_delta_swing_table_idx_5ga_p[1];
 		*down_a = rtl8821ae_delta_swing_table_idx_5ga_n[1];
-		*up_b = rtl8821ae_delta_swing_table_idx_5gb_p[1];
-		*down_b = rtl8821ae_delta_swing_table_idx_5gb_n[1];
 	} else if (149 <= channel && channel <= 173) {
 		*up_a = rtl8821ae_delta_swing_table_idx_5ga_p[2];
 		*down_a = rtl8821ae_delta_swing_table_idx_5ga_n[2];
-		*up_b = rtl8821ae_delta_swing_table_idx_5gb_p[2];
-		*down_b = rtl8821ae_delta_swing_table_idx_5gb_n[2];
 	} else {
-	    *up_a = (u8 *)rtl8818e_delta_swing_table_idx_24gb_p;
-	    *down_a = (u8 *)rtl8818e_delta_swing_table_idx_24gb_n;
-	    *up_b = (u8 *)rtl8818e_delta_swing_table_idx_24gb_p;
-	    *down_b = (u8 *)rtl8818e_delta_swing_table_idx_24gb_n;
+		*up_a = rtl8818e_delta_swing_table_idx_24gb_p;
+		*down_a = rtl8818e_delta_swing_table_idx_24gb_n;
 	}
 	return;
 }
@@ -2216,16 +2032,13 @@ void rtl8821ae_dm_txpower_tracking_callback_thermalmeter(
 	/* 1. The following TWO tables decide the final
 	 * index of OFDM/CCK swing table.
 	 */
-	u8 *delta_swing_table_idx_tup_a;
-	u8 *delta_swing_table_idx_tdown_a;
-	u8 *delta_swing_table_idx_tup_b;
-	u8 *delta_swing_table_idx_tdown_b;
+	const u8 *delta_swing_table_idx_tup_a;
+	const u8 *delta_swing_table_idx_tdown_a;
 
 	/*2. Initilization ( 7 steps in total )*/
-	rtl8821ae_get_delta_swing_table(hw, (u8 **)&delta_swing_table_idx_tup_a,
-					(u8 **)&delta_swing_table_idx_tdown_a,
-					(u8 **)&delta_swing_table_idx_tup_b,
-					(u8 **)&delta_swing_table_idx_tdown_b);
+	rtl8821ae_get_delta_swing_table(hw,
+					&delta_swing_table_idx_tup_a,
+					&delta_swing_table_idx_tdown_a);
 
 	rtldm->txpower_trackinginit = true;
 
@@ -2676,7 +2489,6 @@ static void rtl8821ae_dm_check_edca_turbo(struct ieee80211_hw *hw)
 	u32 edca_be = 0x5ea42b;
 	u8 iot_peer = 0;
 	bool *pb_is_cur_rdl_state = NULL;
-	bool b_last_is_cur_rdl_state = false;
 	bool b_bias_on_rx = false;
 	bool b_edca_turbo_on = false;
 
@@ -2694,7 +2506,6 @@ static void rtl8821ae_dm_check_edca_turbo(struct ieee80211_hw *hw)
 	 * list paramter for different platform
 	 *===============================
 	 */
-	b_last_is_cur_rdl_state = rtlpriv->dm.is_cur_rdlstate;
 	pb_is_cur_rdl_state = &rtlpriv->dm.is_cur_rdlstate;
 
 	cur_tx_ok_cnt = rtlpriv->stats.txbytesunicast - rtldm->last_tx_ok_cnt;
@@ -2980,10 +2791,11 @@ void rtl8821ae_dm_set_tx_ant_by_tx_info(struct ieee80211_hw *hw,
 	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
 	struct rtl_dm *rtldm = rtl_dm(rtl_priv(hw));
 	struct fast_ant_training *pfat_table = &rtldm->fat_table;
+	__le32 *pdesc32 = (__le32 *)pdesc;
 
 	if (rtlhal->hw_type != HARDWARE_TYPE_RTL8812AE)
 		return;
 
 	if (rtlefuse->antenna_div_type == CG_TRX_HW_ANTDIV)
-		SET_TX_DESC_TX_ANT(pdesc, pfat_table->antsel_a[mac_id]);
+		set_tx_desc_tx_ant(pdesc32, pfat_table->antsel_a[mac_id]);
 }

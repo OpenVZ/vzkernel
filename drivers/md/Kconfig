@@ -215,17 +215,6 @@ config BLK_DEV_DM
 
 	  If unsure, say N.
 
-config DM_MQ_DEFAULT
-	bool "request-based DM: use blk-mq I/O path by default"
-	depends on BLK_DEV_DM
-	---help---
-	  This option enables the blk-mq based I/O path for request-based
-	  DM devices by default.  With the option the dm_mod.use_blk_mq
-	  module/boot option defaults to Y, without it to N, but it can
-	  still be overriden either way.
-
-	  If unsure say N.
-
 config DM_DEBUG
 	bool "Device mapper debugging support"
 	depends on BLK_DEV_DM
@@ -279,8 +268,10 @@ config DM_UNSTRIPED
 config DM_CRYPT
 	tristate "Crypt target support"
 	depends on BLK_DEV_DM
+	depends on (ENCRYPTED_KEYS || ENCRYPTED_KEYS=n)
 	select CRYPTO
 	select CRYPTO_CBC
+	select CRYPTO_ESSIV
 	---help---
 	  This device-mapper target allows you to create a device that
 	  transparently encrypts the data on it. You'll need to activate
@@ -438,6 +429,17 @@ config DM_MULTIPATH_ST
 
 	  If unsure, say N.
 
+config DM_MULTIPATH_HST
+	tristate "I/O Path Selector based on historical service time"
+	depends on DM_MULTIPATH
+	help
+	  This path selector is a dynamic load balancer which selects
+	  the path expected to complete the incoming I/O in the shortest
+	  time by comparing estimated service time (based on historical
+	  service time).
+
+	  If unsure, say N.
+
 config DM_DELAY
 	tristate "I/O delaying target"
 	depends on BLK_DEV_DM
@@ -476,6 +478,18 @@ config DM_VERITY
 
 	  To compile this code as a module, choose M here: the module will
 	  be called dm-verity.
+
+	  If unsure, say N.
+
+config DM_VERITY_VERIFY_ROOTHASH_SIG
+	def_bool n
+	bool "Verity data device root hash signature verification support"
+	depends on DM_VERITY
+	select SYSTEM_DATA_VERIFICATION
+	  help
+	  Add ability for dm-verity device to be validated if the
+	  pre-generated tree of cryptographic checksums passed has a pkcs#7
+	  signature file that can validate the roothash of the tree.
 
 	  If unsure, say N.
 

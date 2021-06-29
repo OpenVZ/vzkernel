@@ -118,13 +118,14 @@ EXPORT_SYMBOL(eth_header);
 
 /**
  * eth_get_headlen - determine the length of header for an ethernet frame
+ * @dev: pointer to network device
  * @data: pointer to start of frame
  * @len: total length of frame
  *
  * Make a best effort attempt to pull the length for all of the headers for
  * a given frame in a linear buffer.
  */
-u32 eth_get_headlen(void *data, unsigned int len)
+u32 eth_get_headlen(const struct net_device *dev, void *data, unsigned int len)
 {
 	const unsigned int flags = FLOW_DISSECTOR_F_PARSE_1ST_FRAG;
 	const struct ethhdr *eth = (const struct ethhdr *)data;
@@ -135,8 +136,9 @@ u32 eth_get_headlen(void *data, unsigned int len)
 		return len;
 
 	/* parse any remaining L2/L3 headers, check for L4 */
-	if (!skb_flow_dissect_flow_keys_basic(NULL, &keys, data, eth->h_proto,
-					      sizeof(*eth), len, flags))
+	if (!skb_flow_dissect_flow_keys_basic(dev_net(dev), NULL, &keys, data,
+					      eth->h_proto, sizeof(*eth),
+					      len, flags))
 		return max_t(u32, keys.control.thoff, sizeof(*eth));
 
 	/* parse for any L4 headers */
@@ -262,6 +264,18 @@ void eth_header_cache_update(struct hh_cache *hh,
 EXPORT_SYMBOL(eth_header_cache_update);
 
 /**
+ * eth_header_parser_protocol - extract protocol from L2 header
+ * @skb: packet to extract protocol from
+ */
+__be16 eth_header_parse_protocol(const struct sk_buff *skb)
+{
+	const struct ethhdr *eth = eth_hdr(skb);
+
+	return eth->h_proto;
+}
+EXPORT_SYMBOL(eth_header_parse_protocol);
+
+/**
  * eth_prepare_mac_addr_change - prepare for mac change
  * @dev: network device
  * @p: socket address
@@ -343,6 +357,7 @@ const struct header_ops eth_header_ops ____cacheline_aligned = {
 	.parse		= eth_header_parse,
 	.cache		= eth_header_cache,
 	.cache_update	= eth_header_cache_update,
+	.parse_protocol	= eth_header_parse_protocol,
 };
 
 /**
@@ -427,13 +442,13 @@ ssize_t sysfs_format_mac(char *buf, const unsigned char *addr, int len)
 }
 EXPORT_SYMBOL(sysfs_format_mac);
 
-struct sk_buff **eth_gro_receive(struct sk_buff **head,
-				 struct sk_buff *skb)
+struct sk_buff *eth_gro_receive(struct list_head *head, struct sk_buff *skb)
 {
-	struct sk_buff *p, **pp = NULL;
-	struct ethhdr *eh, *eh2;
-	unsigned int hlen, off_eth;
 	const struct packet_offload *ptype;
+	unsigned int hlen, off_eth;
+	struct sk_buff *pp = NULL;
+	struct ethhdr *eh, *eh2;
+	struct sk_buff *p;
 	__be16 type;
 	int flush = 1;
 
@@ -448,7 +463,7 @@ struct sk_buff **eth_gro_receive(struct sk_buff **head,
 
 	flush = 0;
 
-	for (p = *head; p; p = p->next) {
+	list_for_each_entry(p, head, list) {
 		if (!NAPI_GRO_CB(p)->same_flow)
 			continue;
 

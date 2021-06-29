@@ -21,7 +21,8 @@
 enum verity_mode {
 	DM_VERITY_MODE_EIO,
 	DM_VERITY_MODE_LOGGING,
-	DM_VERITY_MODE_RESTART
+	DM_VERITY_MODE_RESTART,
+	DM_VERITY_MODE_PANIC
 };
 
 enum verity_block_type {
@@ -64,6 +65,8 @@ struct dm_verity {
 
 	struct dm_verity_fec *fec;	/* forward error correction */
 	unsigned long *validated_blocks; /* bitset blocks validated */
+
+	char *signature_key_desc; /* signature keyring reference */
 };
 
 struct dm_verity_io {

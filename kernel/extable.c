@@ -52,15 +52,24 @@ void __init sort_main_extable(void)
 	}
 }
 
+/* Given an address, look for it in the kernel exception table */
+const
+struct exception_table_entry *search_kernel_exception_table(unsigned long addr)
+{
+	return search_extable(__start___ex_table,
+			      __stop___ex_table - __start___ex_table, addr);
+}
+
 /* Given an address, look for it in the exception tables. */
 const struct exception_table_entry *search_exception_tables(unsigned long addr)
 {
 	const struct exception_table_entry *e;
 
-	e = search_extable(__start___ex_table,
-			   __stop___ex_table - __start___ex_table, addr);
+	e = search_kernel_exception_table(addr);
 	if (!e)
 		e = search_module_extables(addr);
+	if (!e)
+		e = search_bpf_extables(addr);
 	return e;
 }
 
@@ -134,8 +143,9 @@ int kernel_text_address(unsigned long addr)
 	 * triggers a stack trace, or a WARN() that happens during
 	 * coming back from idle, or cpu on or offlining.
 	 *
-	 * is_module_text_address() as well as the kprobe slots
-	 * and is_bpf_text_address() require RCU to be watching.
+	 * is_module_text_address() as well as the kprobe slots,
+	 * is_bpf_text_address() and is_bpf_image_address require
+	 * RCU to be watching.
 	 */
 	no_rcu = !rcu_is_watching();
 

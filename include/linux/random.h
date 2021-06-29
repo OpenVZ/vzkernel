@@ -9,8 +9,14 @@
 
 #include <linux/list.h>
 #include <linux/once.h>
+#include <linux/percpu.h>
 
 #include <uapi/linux/random.h>
+
+struct random_extrng {
+	ssize_t (*extrng_read)(void *buf, size_t buflen);
+	struct module *owner;
+};
 
 struct random_ready_callback {
 	struct list_head list;
@@ -36,9 +42,13 @@ extern void add_interrupt_randomness(int irq, int irq_flags) __latent_entropy;
 
 extern void get_random_bytes(void *buf, int nbytes);
 extern int wait_for_random_bytes(void);
+extern int __init rand_initialize(void);
+extern bool rng_is_initialized(void);
 extern int add_random_ready_callback(struct random_ready_callback *rdy);
 extern void del_random_ready_callback(struct random_ready_callback *rdy);
-extern void get_random_bytes_arch(void *buf, int nbytes);
+extern int __must_check get_random_bytes_arch(void *buf, int nbytes);
+void random_register_extrng(const struct random_extrng *rng);
+void random_unregister_extrng(void);
 
 #ifndef MODULE
 extern const struct file_operations random_fops, urandom_fops;
@@ -113,6 +123,8 @@ void prandom_reseed_late(void);
 struct rnd_state {
 	__u32 s1, s2, s3, s4;
 };
+
+DECLARE_PER_CPU(struct rnd_state, net_rand_state) __latent_entropy;
 
 u32 prandom_u32_state(struct rnd_state *state);
 void prandom_bytes_state(struct rnd_state *state, void *buf, size_t nbytes);

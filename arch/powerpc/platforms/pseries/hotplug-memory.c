@@ -31,7 +31,7 @@ static bool rtas_hp_event;
 unsigned long pseries_memory_block_size(void)
 {
 	struct device_node *np;
-	unsigned int memblock_size = MIN_MEMORY_BLOCK_SIZE;
+	u64 memblock_size = MIN_MEMORY_BLOCK_SIZE;
 	struct resource r;
 
 	np = of_find_node_by_path("/ibm,dynamic-reconfiguration-memory");
@@ -163,7 +163,7 @@ static u32 find_aa_index(struct device_node *dr_node,
 	return aa_index;
 }
 
-static u32 lookup_lmb_associativity_index(struct drmem_lmb *lmb)
+static int update_lmb_associativity_index(struct drmem_lmb *lmb)
 {
 	struct device_node *parent, *lmb_node, *dr_node;
 	struct property *ala_prop;
@@ -203,43 +203,14 @@ static u32 lookup_lmb_associativity_index(struct drmem_lmb *lmb)
 	aa_index = find_aa_index(dr_node, ala_prop, lmb_assoc);
 
 	dlpar_free_cc_nodes(lmb_node);
-	return aa_index;
-}
 
-static int dlpar_add_device_tree_lmb(struct drmem_lmb *lmb)
-{
-	int rc, aa_index;
-
-	lmb->flags |= DRCONF_MEM_ASSIGNED;
-
-	aa_index = lookup_lmb_associativity_index(lmb);
 	if (aa_index < 0) {
-		pr_err("Couldn't find associativity index for drc index %x\n",
-		       lmb->drc_index);
-		return aa_index;
+		pr_err("Could not find LMB associativity\n");
+		return -1;
 	}
 
 	lmb->aa_index = aa_index;
-
-	rtas_hp_event = true;
-	rc = drmem_update_dt();
-	rtas_hp_event = false;
-
-	return rc;
-}
-
-static int dlpar_remove_device_tree_lmb(struct drmem_lmb *lmb)
-{
-	int rc;
-
-	lmb->flags &= ~DRCONF_MEM_ASSIGNED;
-	lmb->aa_index = 0xffffffff;
-
-	rtas_hp_event = true;
-	rc = drmem_update_dt();
-	rtas_hp_event = false;
-
-	return rc;
+	return 0;
 }
 
 static struct memory_block *lmb_to_memblock(struct drmem_lmb *lmb)
@@ -260,7 +231,7 @@ static int get_lmb_range(u32 drc_index, int n_lmbs,
 			 struct drmem_lmb **end_lmb)
 {
 	struct drmem_lmb *lmb, *start, *end;
-	struct drmem_lmb *last_lmb;
+	struct drmem_lmb *limit;
 
 	start = NULL;
 	for_each_drmem_lmb(lmb) {
@@ -273,10 +244,10 @@ static int get_lmb_range(u32 drc_index, int n_lmbs,
 	if (!start)
 		return -EINVAL;
 
-	end = &start[n_lmbs - 1];
+	end = &start[n_lmbs];
 
-	last_lmb = &drmem_info->lmbs[drmem_info->n_lmbs - 1];
-	if (end > last_lmb)
+	limit = &drmem_info->lmbs[drmem_info->n_lmbs];
+	if (end > limit)
 		return -EINVAL;
 
 	*start_lmb = start;
@@ -334,7 +305,7 @@ static int pseries_remove_memblock(unsigned long base, unsigned int memblock_siz
 	nid = memory_add_physaddr_to_nid(base);
 
 	for (i = 0; i < sections_per_block; i++) {
-		remove_memory(nid, base, MIN_MEMORY_BLOCK_SIZE);
+		__remove_memory(nid, base, MIN_MEMORY_BLOCK_SIZE);
 		base += MIN_MEMORY_BLOCK_SIZE;
 	}
 
@@ -377,7 +348,7 @@ static int pseries_remove_mem_node(struct device_node *np)
 static bool lmb_is_removable(struct drmem_lmb *lmb)
 {
 	int i, scns_per_block;
-	int rc = 1;
+	bool rc = true;
 	unsigned long pfn, block_sz;
 	u64 phys_addr;
 
@@ -389,46 +360,60 @@ static bool lmb_is_removable(struct drmem_lmb *lmb)
 	phys_addr = lmb->base_addr;
 
 #ifdef CONFIG_FA_DUMP
-	/* Don't hot-remove memory that falls in fadump boot memory area */
-	if (is_fadump_boot_memory_area(phys_addr, block_sz))
+	/*
+	 * Don't hot-remove memory that falls in fadump boot memory area
+	 * and memory that is reserved for capturing old kernel memory.
+	 */
+	if (is_fadump_memory_area(phys_addr, block_sz))
 		return false;
 #endif
 
 	for (i = 0; i < scns_per_block; i++) {
 		pfn = PFN_DOWN(phys_addr);
-		if (!pfn_present(pfn))
+		if (!pfn_in_present_section(pfn)) {
+			phys_addr += MIN_MEMORY_BLOCK_SIZE;
 			continue;
+		}
 
-		rc &= is_mem_section_removable(pfn, PAGES_PER_SECTION);
+		rc = rc && is_mem_section_removable(pfn, PAGES_PER_SECTION);
 		phys_addr += MIN_MEMORY_BLOCK_SIZE;
 	}
 
-	return rc ? true : false;
+	return rc;
 }
 
 static int dlpar_add_lmb(struct drmem_lmb *);
 
 static int dlpar_remove_lmb(struct drmem_lmb *lmb)
 {
+	struct memory_block *mem_block;
 	unsigned long block_sz;
-	int nid, rc;
+	int rc;
 
 	if (!lmb_is_removable(lmb))
 		return -EINVAL;
 
+	mem_block = lmb_to_memblock(lmb);
+	if (mem_block == NULL)
+		return -EINVAL;
+
 	rc = dlpar_offline_lmb(lmb);
-	if (rc)
+	if (rc) {
+		put_device(&mem_block->dev);
 		return rc;
+	}
 
 	block_sz = pseries_memory_block_size();
-	nid = memory_add_physaddr_to_nid(lmb->base_addr);
 
-	remove_memory(nid, lmb->base_addr, block_sz);
+	__remove_memory(mem_block->nid, lmb->base_addr, block_sz);
+	put_device(&mem_block->dev);
 
 	/* Update memory regions for memory remove */
 	memblock_remove(lmb->base_addr, block_sz);
 
-	dlpar_remove_device_tree_lmb(lmb);
+	invalidate_lmb_associativity_index(lmb);
+	lmb->flags &= ~DRCONF_MEM_ASSIGNED;
+
 	return 0;
 }
 
@@ -688,30 +673,28 @@ static int dlpar_add_lmb(struct drmem_lmb *lmb)
 	if (lmb->flags & DRCONF_MEM_ASSIGNED)
 		return -EINVAL;
 
-	rc = dlpar_add_device_tree_lmb(lmb);
+	rc = update_lmb_associativity_index(lmb);
 	if (rc) {
-		pr_err("Couldn't update device tree for drc index %x\n",
-		       lmb->drc_index);
 		dlpar_release_drc(lmb->drc_index);
 		return rc;
 	}
 
 	block_sz = memory_block_size_bytes();
 
-	/* Find the node id for this address */
+	/* Find the node id for this address. */
 	nid = memory_add_physaddr_to_nid(lmb->base_addr);
 
 	/* Add the memory */
-	rc = add_memory(nid, lmb->base_addr, block_sz);
+	rc = __add_memory(nid, lmb->base_addr, block_sz);
 	if (rc) {
-		dlpar_remove_device_tree_lmb(lmb);
+		invalidate_lmb_associativity_index(lmb);
 		return rc;
 	}
 
 	rc = dlpar_online_lmb(lmb);
 	if (rc) {
-		remove_memory(nid, lmb->base_addr, block_sz);
-		dlpar_remove_device_tree_lmb(lmb);
+		__remove_memory(nid, lmb->base_addr, block_sz);
+		invalidate_lmb_associativity_index(lmb);
 	} else {
 		lmb->flags |= DRCONF_MEM_ASSIGNED;
 	}
@@ -958,6 +941,12 @@ int dlpar_memory(struct pseries_hp_errorlog *hp_elog)
 		break;
 	}
 
+	if (!rc) {
+		rtas_hp_event = true;
+		rc = drmem_update_dt();
+		rtas_hp_event = false;
+	}
+
 	unlock_device_hotplug();
 	return rc;
 }
@@ -1008,6 +997,9 @@ static int pseries_update_drconf_memory(struct of_reconfig_data *pr)
 	memblock_size = pseries_memory_block_size();
 	if (!memblock_size)
 		return -EINVAL;
+
+	if (!pr->old_prop)
+		return 0;
 
 	p = (__be32 *) pr->old_prop->value;
 	if (!p)

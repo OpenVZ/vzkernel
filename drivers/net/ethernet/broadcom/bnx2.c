@@ -59,8 +59,6 @@
 #include "bnx2_fw.h"
 
 #define DRV_MODULE_NAME		"bnx2"
-#define DRV_MODULE_VERSION	"2.2.6"
-#define DRV_MODULE_RELDATE	"January 29, 2014"
 #define FW_MIPS_FILE_06		"bnx2/bnx2-mips-06-6.2.3.fw"
 #define FW_RV2P_FILE_06		"bnx2/bnx2-rv2p-06-6.0.15.fw"
 #define FW_MIPS_FILE_09		"bnx2/bnx2-mips-09-6.2.1b.fw"
@@ -72,13 +70,9 @@
 /* Time in jiffies before concluding the transmitter is hung. */
 #define TX_TIMEOUT  (5*HZ)
 
-static char version[] =
-	"QLogic " DRV_MODULE_NAME " Gigabit Ethernet Driver v" DRV_MODULE_VERSION " (" DRV_MODULE_RELDATE ")\n";
-
 MODULE_AUTHOR("Michael Chan <mchan@broadcom.com>");
 MODULE_DESCRIPTION("QLogic BCM5706/5708/5709/5716 Driver");
 MODULE_LICENSE("GPL");
-MODULE_VERSION(DRV_MODULE_VERSION);
 MODULE_FIRMWARE(FW_MIPS_FILE_06);
 MODULE_FIRMWARE(FW_RV2P_FILE_06);
 MODULE_FIRMWARE(FW_MIPS_FILE_09);
@@ -3304,8 +3298,6 @@ next_rx:
 	BNX2_WR16(bp, rxr->rx_bidx_addr, sw_prod);
 
 	BNX2_WR(bp, rxr->rx_bseq_addr, rxr->rx_prod_bseq);
-
-	mmiowb();
 
 	return rx_pkt;
 
@@ -6577,7 +6569,7 @@ bnx2_dump_state(struct bnx2 *bp)
 }
 
 static void
-bnx2_tx_timeout(struct net_device *dev)
+bnx2_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct bnx2 *bp = netdev_priv(dev);
 
@@ -6722,8 +6714,6 @@ bnx2_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	BNX2_WR16(bp, txr->tx_bidx_addr, prod);
 	BNX2_WR(bp, txr->tx_bseq_addr, txr->tx_prod_bseq);
-
-	mmiowb();
 
 	txr->tx_prod = prod;
 
@@ -7052,7 +7042,6 @@ bnx2_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
 	struct bnx2 *bp = netdev_priv(dev);
 
 	strlcpy(info->driver, DRV_MODULE_NAME, sizeof(info->driver));
-	strlcpy(info->version, DRV_MODULE_VERSION, sizeof(info->version));
 	strlcpy(info->bus_info, pci_name(bp->pdev), sizeof(info->bus_info));
 	strlcpy(info->fw_version, bp->fw_version, sizeof(info->fw_version));
 }
@@ -8566,14 +8555,12 @@ static const struct net_device_ops bnx2_netdev_ops = {
 static int
 bnx2_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
-	static int version_printed = 0;
 	struct net_device *dev;
 	struct bnx2 *bp;
 	int rc;
 	char str[40];
 
-	if (version_printed++ == 0)
-		pr_info("%s", version);
+	mark_hardware_deprecated(DRV_MODULE_NAME);
 
 	/* dev zeroed in init_etherdev */
 	dev = alloc_etherdev_mq(sizeof(*bp), TX_MAX_RINGS);
@@ -8677,8 +8664,7 @@ bnx2_remove_one(struct pci_dev *pdev)
 static int
 bnx2_suspend(struct device *device)
 {
-	struct pci_dev *pdev = to_pci_dev(device);
-	struct net_device *dev = pci_get_drvdata(pdev);
+	struct net_device *dev = dev_get_drvdata(device);
 	struct bnx2 *bp = netdev_priv(dev);
 
 	if (netif_running(dev)) {
@@ -8697,8 +8683,7 @@ bnx2_suspend(struct device *device)
 static int
 bnx2_resume(struct device *device)
 {
-	struct pci_dev *pdev = to_pci_dev(device);
-	struct net_device *dev = pci_get_drvdata(pdev);
+	struct net_device *dev = dev_get_drvdata(device);
 	struct bnx2 *bp = netdev_priv(dev);
 
 	if (!netif_running(dev))
@@ -8792,13 +8777,6 @@ static pci_ers_result_t bnx2_io_slot_reset(struct pci_dev *pdev)
 
 	if (!(bp->flags & BNX2_FLAG_AER_ENABLED))
 		return result;
-
-	err = pci_cleanup_aer_uncorrect_error_status(pdev);
-	if (err) {
-		dev_err(&pdev->dev,
-			"pci_cleanup_aer_uncorrect_error_status failed 0x%0x\n",
-			 err); /* non-fatal, continue */
-	}
 
 	return result;
 }

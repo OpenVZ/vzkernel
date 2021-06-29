@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: MIT */
 #ifndef __NVKM_I2C_PRIV_H__
 #define __NVKM_I2C_PRIV_H__
 #define nvkm_i2c(p) container_of((p), struct nvkm_i2c, subdev)
@@ -23,6 +23,10 @@ struct nvkm_i2c_func {
 	/* mask on/off interrupt types for a given set of auxch
 	 */
 	void (*aux_mask)(struct nvkm_i2c *, u32, u32, u32);
+
+	/* enable/disable HW-initiated DPCD reads
+	 */
+	void (*aux_autodpcd)(struct nvkm_i2c *, int aux, bool enable);
 };
 
 void g94_aux_stat(struct nvkm_i2c *, u32 *, u32 *, u32 *, u32 *);

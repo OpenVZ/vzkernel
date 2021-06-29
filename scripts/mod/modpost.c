@@ -20,6 +20,7 @@
 #include <errno.h>
 #include "modpost.h"
 #include "../../include/linux/license.h"
+#include "../../include/generated/uapi/linux/version.h"
 
 /* Are we using CONFIG_MODVERSIONS? */
 static int modversions = 0;
@@ -35,7 +36,6 @@ static int vmlinux_section_warnings = 1;
 static int warn_unresolved = 0;
 /* How a symbol is exported */
 static int sec_mismatch_count = 0;
-static int sec_mismatch_verbose = 1;
 static int sec_mismatch_fatal = 0;
 /* ignore missing files */
 static int ignore_missing_files;
@@ -170,6 +170,7 @@ struct symbol {
 	unsigned int kernel:1;     /* 1 if symbol is from kernel
 				    *  (only for external modules) **/
 	unsigned int preloaded:1;  /* 1 if symbol from Module.symvers, or crc */
+	unsigned int is_static:1;  /* 1 if symbol is not global */
 	enum export  export;       /* Type of export */
 	char name[0];
 };
@@ -202,6 +203,7 @@ static struct symbol *alloc_symbol(const char *name, unsigned int weak,
 	strcpy(s->name, name);
 	s->weak = weak;
 	s->next = next;
+	s->is_static = 1;
 	return s;
 }
 
@@ -640,7 +642,7 @@ static void handle_modversions(struct module *mod, struct elf_info *info,
 			       info->sechdrs[sym->st_shndx].sh_offset -
 			       (info->hdr->e_type != ET_REL ?
 				info->sechdrs[sym->st_shndx].sh_addr : 0);
-			crc = *crcp;
+			crc = TO_NATIVE(*crcp);
 		}
 		sym_update_crc(symname + strlen("__crc_"), mod, crc,
 				export);
@@ -895,7 +897,7 @@ static void check_section(const char *modname, struct elf_info *elf,
 
 #define DATA_SECTIONS ".data", ".data.rel"
 #define TEXT_SECTIONS ".text", ".text.unlikely", ".sched.text", \
-		".kprobes.text", ".cpuidle.text"
+		".kprobes.text", ".cpuidle.text", ".noinstr.text"
 #define OTHER_TEXT_SECTIONS ".ref.text", ".head.text", ".spinlock.text", \
 		".fixup", ".entry.text", ".exception.text", ".text.*", \
 		".coldtext"
@@ -1392,8 +1394,6 @@ static void report_sec_mismatch(const char *modname,
 	char *prl_to;
 
 	sec_mismatch_count++;
-	if (!sec_mismatch_verbose)
-		return;
 
 	get_pretty_name(from_is_func, &from, &from_p);
 	get_pretty_name(to_is_func, &to, &to_p);
@@ -1641,9 +1641,7 @@ static void extable_mismatch_handler(const char* modname, struct elf_info *elf,
 
 	sec_mismatch_count++;
 
-	if (sec_mismatch_verbose)
-		report_extable_warnings(modname, elf, mismatch, r, sym,
-					fromsec, tosec);
+	report_extable_warnings(modname, elf, mismatch, r, sym, fromsec, tosec);
 
 	if (match(tosec, mismatch->bad_tosec))
 		fatal("The relocation at %s+0x%lx references\n"
@@ -1971,6 +1969,21 @@ static void read_symbols(const char *modname)
 		handle_modversions(mod, &info, sym, symname);
 		handle_moddevtable(mod, &info, sym, symname);
 	}
+
+	// check for static EXPORT_SYMBOL_* functions && global vars
+	for (sym = info.symtab_start; sym < info.symtab_stop; sym++) {
+		unsigned char bind = ELF_ST_BIND(sym->st_info);
+
+		if (bind == STB_GLOBAL || bind == STB_WEAK) {
+			struct symbol *s =
+				find_symbol(remove_dot(info.strtab +
+						       sym->st_name));
+
+			if (s)
+				s->is_static = 0;
+		}
+	}
+
 	if (!is_vmlinux(modname) || vmlinux_section_warnings)
 		check_sec_ref(mod, modname, &info);
 
@@ -2268,6 +2281,12 @@ static void add_srcversion(struct buffer *b, struct module *mod)
 	}
 }
 
+static void add_rhelversion(struct buffer *b, struct module *mod)
+{
+	buf_printf(b, "MODULE_INFO(rhelversion, \"%d.%d\");\n", RHEL_MAJOR,
+		   RHEL_MINOR);
+}
+
 static void write_if_changed(struct buffer *b, const char *fname)
 {
 	char *tmp;
@@ -2354,6 +2373,7 @@ static void read_dump(const char *fname, unsigned int kernel)
 		s = sym_add_exported(symname, mod, export_no(export));
 		s->kernel    = kernel;
 		s->preloaded = 1;
+		s->is_static = 0;
 		sym_update_crc(symname, mod, crc, export_no(export));
 	}
 	release_file(file, size);
@@ -2410,10 +2430,11 @@ int main(int argc, char **argv)
 	char *dump_write = NULL, *files_source = NULL;
 	int opt;
 	int err;
+	int n;
 	struct ext_sym_list *extsym_iter;
 	struct ext_sym_list *extsym_start = NULL;
 
-	while ((opt = getopt(argc, argv, "i:I:e:mnsST:o:awM:K:E")) != -1) {
+	while ((opt = getopt(argc, argv, "i:I:e:mnsT:o:awM:K:E")) != -1) {
 		switch (opt) {
 		case 'i':
 			kernel_read = optarg;
@@ -2444,9 +2465,6 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			vmlinux_section_warnings = 0;
-			break;
-		case 'S':
-			sec_mismatch_verbose = 0;
 			break;
 		case 'T':
 			files_source = optarg;
@@ -2504,24 +2522,29 @@ int main(int argc, char **argv)
 		add_depends(&buf, mod, modules);
 		add_moddevtable(&buf, mod);
 		add_srcversion(&buf, mod);
+		add_rhelversion(&buf, mod);
 
 		sprintf(fname, "%s.mod.c", mod->name);
 		write_if_changed(&buf, fname);
 	}
 	if (dump_write)
 		write_dump(dump_write);
-	if (sec_mismatch_count) {
-		if (!sec_mismatch_verbose) {
-			warn("modpost: Found %d section mismatch(es).\n"
-			     "To see full details build your kernel with:\n"
-			     "'make CONFIG_DEBUG_SECTION_MISMATCH=y'\n",
-			     sec_mismatch_count);
-		}
-		if (sec_mismatch_fatal) {
-			fatal("modpost: Section mismatches detected.\n"
-			      "Set CONFIG_SECTION_MISMATCH_WARN_ONLY=y to allow them.\n");
+	if (sec_mismatch_count && sec_mismatch_fatal)
+		fatal("modpost: Section mismatches detected.\n"
+		      "Set CONFIG_SECTION_MISMATCH_WARN_ONLY=y to allow them.\n");
+	for (n = 0; n < SYMBOL_HASH_SIZE; n++) {
+		struct symbol *s = symbolhash[n];
+
+		while (s) {
+			if (s->is_static)
+				warn("\"%s\" [%s] is a static %s\n",
+				     s->name, s->module->name,
+				     export_str(s->export));
+
+			s = s->next;
 		}
 	}
+
 	free(buf.p);
 
 	return err;

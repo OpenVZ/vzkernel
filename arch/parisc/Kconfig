@@ -15,8 +15,6 @@ config PARISC
 	select RTC_CLASS
 	select RTC_DRV_GENERIC
 	select INIT_ALL_POSSIBLE
-	select HAVE_MEMBLOCK
-	select NO_BOOTMEM
 	select BUG
 	select BUILDTIME_EXTABLE_SORT
 	select HAVE_PERF_EVENTS
@@ -72,12 +70,6 @@ config GENERIC_LOCKBREAK
 	bool
 	default y
 	depends on SMP && PREEMPT
-
-config RWSEM_GENERIC_SPINLOCK
-	def_bool y
-
-config RWSEM_XCHGADD_ALGORITHM
-	bool
 
 config ARCH_HAS_ILOG2_U32
 	bool

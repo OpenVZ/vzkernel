@@ -169,7 +169,7 @@ make_checksum_hmac_md5(struct krb5_ctx *kctx, char *header, int hdrlen,
 	struct scatterlist              sg[1];
 	int err = -1;
 	u8 *checksumdata;
-	u8 rc4salt[4];
+	u8 *rc4salt;
 	struct crypto_ahash *md5;
 	struct crypto_ahash *hmac_md5;
 	struct ahash_request *req;
@@ -183,14 +183,18 @@ make_checksum_hmac_md5(struct krb5_ctx *kctx, char *header, int hdrlen,
 		return GSS_S_FAILURE;
 	}
 
+	rc4salt = kmalloc_array(4, sizeof(*rc4salt), GFP_NOFS);
+	if (!rc4salt)
+		return GSS_S_FAILURE;
+
 	if (arcfour_hmac_md5_usage_to_salt(usage, rc4salt)) {
 		dprintk("%s: invalid usage value %u\n", __func__, usage);
-		return GSS_S_FAILURE;
+		goto out_free_rc4salt;
 	}
 
 	checksumdata = kmalloc(GSS_KRB5_MAX_CKSUM_LEN, GFP_NOFS);
 	if (!checksumdata)
-		return GSS_S_FAILURE;
+		goto out_free_rc4salt;
 
 	md5 = crypto_alloc_ahash("md5", 0, CRYPTO_ALG_ASYNC);
 	if (IS_ERR(md5))
@@ -258,6 +262,8 @@ out_free_md5:
 	crypto_free_ahash(md5);
 out_free_cksum:
 	kfree(checksumdata);
+out_free_rc4salt:
+	kfree(rc4salt);
 	return err ? GSS_S_FAILURE : 0;
 }
 
@@ -373,7 +379,6 @@ make_checksum_v2(struct krb5_ctx *kctx, char *header, int hdrlen,
 	struct scatterlist sg[1];
 	int err = -1;
 	u8 *checksumdata;
-	unsigned int checksumlen;
 
 	if (kctx->gk5e->keyed_cksum == 0) {
 		dprintk("%s: expected keyed hash for %s\n",
@@ -393,7 +398,6 @@ make_checksum_v2(struct krb5_ctx *kctx, char *header, int hdrlen,
 	tfm = crypto_alloc_ahash(kctx->gk5e->cksum_name, 0, CRYPTO_ALG_ASYNC);
 	if (IS_ERR(tfm))
 		goto out_free_cksum;
-	checksumlen = crypto_ahash_digestsize(tfm);
 
 	req = ahash_request_alloc(tfm, GFP_NOFS);
 	if (!req)
@@ -845,8 +849,8 @@ out_err:
 }
 
 u32
-gss_krb5_aes_decrypt(struct krb5_ctx *kctx, u32 offset, struct xdr_buf *buf,
-		     u32 *headskip, u32 *tailskip)
+gss_krb5_aes_decrypt(struct krb5_ctx *kctx, u32 offset, u32 len,
+		     struct xdr_buf *buf, u32 *headskip, u32 *tailskip)
 {
 	struct xdr_buf subbuf;
 	u32 ret = 0;
@@ -875,7 +879,7 @@ gss_krb5_aes_decrypt(struct krb5_ctx *kctx, u32 offset, struct xdr_buf *buf,
 
 	/* create a segment skipping the header and leaving out the checksum */
 	xdr_buf_subsegment(buf, &subbuf, offset + GSS_KRB5_TOK_HDR_LEN,
-				    (buf->len - offset - GSS_KRB5_TOK_HDR_LEN -
+				    (len - offset - GSS_KRB5_TOK_HDR_LEN -
 				     kctx->gk5e->cksumlength));
 
 	nblocks = (subbuf.len + blocksize - 1) / blocksize;
@@ -920,7 +924,7 @@ gss_krb5_aes_decrypt(struct krb5_ctx *kctx, u32 offset, struct xdr_buf *buf,
 		goto out_err;
 
 	/* Get the packet's hmac value */
-	ret = read_bytes_from_xdr_buf(buf, buf->len - kctx->gk5e->cksumlength,
+	ret = read_bytes_from_xdr_buf(buf, len - kctx->gk5e->cksumlength,
 				      pkt_hmac, kctx->gk5e->cksumlength);
 	if (ret)
 		goto out_err;
@@ -997,7 +1001,7 @@ krb5_rc4_setup_seq_key(struct krb5_ctx *kctx, struct crypto_skcipher *cipher,
 	err = 0;
 
 out_err:
-	kzfree(desc);
+	kfree_sensitive(desc);
 	crypto_free_shash(hmac);
 	dprintk("%s: returning %d\n", __func__, err);
 	return err;
@@ -1072,9 +1076,8 @@ krb5_rc4_setup_enc_key(struct krb5_ctx *kctx, struct crypto_skcipher *cipher,
 	err = 0;
 
 out_err:
-	kzfree(desc);
+	kfree_sensitive(desc);
 	crypto_free_shash(hmac);
 	dprintk("%s: returning %d\n", __func__, err);
 	return err;
 }
-

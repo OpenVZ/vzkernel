@@ -130,6 +130,7 @@
 #include <linux/inetdevice.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
+#include <linux/indirect_call_wrapper.h>
 
 #include <net/snmp.h>
 #include <net/ip.h>
@@ -188,51 +189,53 @@ bool ip_call_ra_chain(struct sk_buff *skb)
 	return false;
 }
 
+INDIRECT_CALLABLE_DECLARE(int udp_rcv(struct sk_buff *));
+INDIRECT_CALLABLE_DECLARE(int tcp_v4_rcv(struct sk_buff *));
+void ip_protocol_deliver_rcu(struct net *net, struct sk_buff *skb, int protocol)
+{
+	const struct net_protocol *ipprot;
+	int raw, ret;
+
+resubmit:
+	raw = raw_local_deliver(skb, protocol);
+
+	ipprot = rcu_dereference(inet_protos[protocol]);
+	if (ipprot) {
+		if (!ipprot->no_policy) {
+			if (!xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb)) {
+				kfree_skb(skb);
+				return;
+			}
+			nf_reset(skb);
+		}
+		ret = INDIRECT_CALL_2(ipprot->handler, tcp_v4_rcv,
+				      udp_rcv, skb);
+		if (ret < 0) {
+			protocol = -ret;
+			goto resubmit;
+		}
+		__IP_INC_STATS(net, IPSTATS_MIB_INDELIVERS);
+	} else {
+		if (!raw) {
+			if (xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb)) {
+				__IP_INC_STATS(net, IPSTATS_MIB_INUNKNOWNPROTOS);
+				icmp_send(skb, ICMP_DEST_UNREACH,
+					  ICMP_PROT_UNREACH, 0);
+			}
+			kfree_skb(skb);
+		} else {
+			__IP_INC_STATS(net, IPSTATS_MIB_INDELIVERS);
+			consume_skb(skb);
+		}
+	}
+}
+
 static int ip_local_deliver_finish(struct net *net, struct sock *sk, struct sk_buff *skb)
 {
 	__skb_pull(skb, skb_network_header_len(skb));
 
 	rcu_read_lock();
-	{
-		int protocol = ip_hdr(skb)->protocol;
-		const struct net_protocol *ipprot;
-		int raw;
-
-	resubmit:
-		raw = raw_local_deliver(skb, protocol);
-
-		ipprot = rcu_dereference(inet_protos[protocol]);
-		if (ipprot) {
-			int ret;
-
-			if (!ipprot->no_policy) {
-				if (!xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb)) {
-					kfree_skb(skb);
-					goto out;
-				}
-				nf_reset(skb);
-			}
-			ret = ipprot->handler(skb);
-			if (ret < 0) {
-				protocol = -ret;
-				goto resubmit;
-			}
-			__IP_INC_STATS(net, IPSTATS_MIB_INDELIVERS);
-		} else {
-			if (!raw) {
-				if (xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb)) {
-					__IP_INC_STATS(net, IPSTATS_MIB_INUNKNOWNPROTOS);
-					icmp_send(skb, ICMP_DEST_UNREACH,
-						  ICMP_PROT_UNREACH, 0);
-				}
-				kfree_skb(skb);
-			} else {
-				__IP_INC_STATS(net, IPSTATS_MIB_INDELIVERS);
-				consume_skb(skb);
-			}
-		}
-	}
- out:
+	ip_protocol_deliver_rcu(net, skb, ip_hdr(skb)->protocol);
 	rcu_read_unlock();
 
 	return 0;
@@ -307,6 +310,8 @@ drop:
 	return true;
 }
 
+INDIRECT_CALLABLE_DECLARE(int udp_v4_early_demux(struct sk_buff *));
+INDIRECT_CALLABLE_DECLARE(int tcp_v4_early_demux(struct sk_buff *));
 static int ip_rcv_finish(struct net *net, struct sock *sk, struct sk_buff *skb)
 {
 	const struct iphdr *iph = ip_hdr(skb);
@@ -331,7 +336,8 @@ static int ip_rcv_finish(struct net *net, struct sock *sk, struct sk_buff *skb)
 
 		ipprot = rcu_dereference(inet_protos[protocol]);
 		if (ipprot && (edemux = READ_ONCE(ipprot->early_demux))) {
-			err = edemux(skb);
+			err = INDIRECT_CALL_2(edemux, tcp_v4_early_demux,
+					      udp_v4_early_demux, skb);
 			if (unlikely(err))
 				goto drop_error;
 			/* must reload iph, skb->head might have changed */
@@ -480,6 +486,7 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 		goto drop;
 	}
 
+	iph = ip_hdr(skb);
 	skb->transport_header = skb->network_header + iph->ihl*4;
 
 	/* Remove any debris in the socket control block */
@@ -487,7 +494,8 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 	IPCB(skb)->iif = skb->skb_iif;
 
 	/* Must drop socket now because of tproxy. */
-	skb_orphan(skb);
+	if (!skb_sk_is_prefetched(skb))
+		skb_orphan(skb);
 
 	return NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING,
 		       net, NULL, skb, dev, NULL,

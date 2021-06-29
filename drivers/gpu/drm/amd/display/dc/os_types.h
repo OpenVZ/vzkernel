@@ -1,5 +1,6 @@
 /*
  * Copyright 2012-16 Advanced Micro Devices, Inc.
+ * Copyright 2019 Raptor Engineering, LLC
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,11 +27,14 @@
 #ifndef _OS_TYPES_H_
 #define _OS_TYPES_H_
 
-#include <asm/byteorder.h>
-#include <linux/types.h>
-#include <drm/drmP.h>
-
+#include <linux/kgdb.h>
 #include <linux/kref.h>
+#include <linux/types.h>
+#include <linux/slab.h>
+
+#include <asm/byteorder.h>
+
+#include <drm/drm_print.h>
 
 #include "cgs_common.h"
 
@@ -40,16 +44,45 @@
 #define LITTLEENDIAN_CPU
 #endif
 
-#undef READ
-#undef WRITE
 #undef FRAME_SIZE
 
 #define dm_output_to_console(fmt, ...) DRM_DEBUG_KMS(fmt, ##__VA_ARGS__)
 
 #define dm_error(fmt, ...) DRM_ERROR(fmt, ##__VA_ARGS__)
 
-#if defined(CONFIG_DRM_AMD_DC_DCN1_0)
+#if defined(CONFIG_DRM_AMD_DC_DCN)
+#if defined(CONFIG_X86)
 #include <asm/fpu/api.h>
+#define DC_FP_START() kernel_fpu_begin()
+#define DC_FP_END() kernel_fpu_end()
+#elif defined(CONFIG_PPC64)
+#include <asm/switch_to.h>
+#include <asm/cputable.h>
+#define DC_FP_START() { \
+	if (cpu_has_feature(CPU_FTR_VSX_COMP)) { \
+		preempt_disable(); \
+		enable_kernel_vsx(); \
+	} else if (cpu_has_feature(CPU_FTR_ALTIVEC_COMP)) { \
+		preempt_disable(); \
+		enable_kernel_altivec(); \
+	} else if (!cpu_has_feature(CPU_FTR_FPU_UNAVAILABLE)) { \
+		preempt_disable(); \
+		enable_kernel_fp(); \
+	} \
+}
+#define DC_FP_END() { \
+	if (cpu_has_feature(CPU_FTR_VSX_COMP)) { \
+		disable_kernel_vsx(); \
+		preempt_enable(); \
+	} else if (cpu_has_feature(CPU_FTR_ALTIVEC_COMP)) { \
+		disable_kernel_altivec(); \
+		preempt_enable(); \
+	} else if (!cpu_has_feature(CPU_FTR_FPU_UNAVAILABLE)) { \
+		disable_kernel_fp(); \
+		preempt_enable(); \
+	} \
+}
+#endif
 #endif
 
 /*
@@ -57,7 +90,7 @@
  * general debug capabilities
  *
  */
-#if defined(CONFIG_HAVE_KGDB) || defined(CONFIG_KGDB)
+#if defined(CONFIG_DEBUG_KERNEL_DC) && (defined(CONFIG_HAVE_KGDB) || defined(CONFIG_KGDB))
 #define ASSERT_CRITICAL(expr) do {	\
 	if (WARN_ON(!(expr))) { \
 		kgdb_breakpoint(); \
@@ -75,10 +108,18 @@
 #define ASSERT(expr) ASSERT_CRITICAL(expr)
 
 #else
-#define ASSERT(expr) WARN_ON(!(expr))
+#define ASSERT(expr) WARN_ON_ONCE(!(expr))
 #endif
 
-#define BREAK_TO_DEBUGGER() ASSERT(0)
+#if defined(CONFIG_DEBUG_KERNEL_DC) && (defined(CONFIG_HAVE_KGDB) || defined(CONFIG_KGDB))
+#define BREAK_TO_DEBUGGER() \
+	do { \
+		DRM_DEBUG_DRIVER("%s():%d\n", __func__, __LINE__); \
+		kgdb_breakpoint(); \
+	} while (0)
+#else
+#define BREAK_TO_DEBUGGER() DRM_DEBUG_DRIVER("%s():%d\n", __func__, __LINE__)
+#endif
 
 #define DC_ERR(...)  do { \
 	dm_error(__VA_ARGS__); \

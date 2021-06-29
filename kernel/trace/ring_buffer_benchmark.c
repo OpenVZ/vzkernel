@@ -28,7 +28,7 @@ static int reader_finish;
 static DECLARE_COMPLETION(read_start);
 static DECLARE_COMPLETION(read_done);
 
-static struct ring_buffer *buffer;
+static struct trace_buffer *buffer;
 static struct task_struct *producer;
 static struct task_struct *consumer;
 static unsigned long read;
@@ -266,7 +266,7 @@ static void ring_buffer_producer(void)
 		if (consumer && !(cnt % wakeup_interval))
 			wake_up_process(consumer);
 
-#ifndef CONFIG_PREEMPT
+#ifndef CONFIG_PREEMPTION
 		/*
 		 * If we are a non preempt kernel, the 10 second run will
 		 * stop everything while it runs. Instead, we will call

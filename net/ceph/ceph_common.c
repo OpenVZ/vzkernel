@@ -12,6 +12,7 @@
 #include <linux/nsproxy.h>
 #include <linux/parser.h>
 #include <linux/sched.h>
+#include <linux/sched/mm.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/statfs.h>
@@ -174,6 +175,10 @@ int ceph_compare_options(struct ceph_options *new_opt,
 		}
 	}
 
+	ret = ceph_compare_crush_locs(&opt1->crush_locs, &opt2->crush_locs);
+	if (ret)
+		return ret;
+
 	/* any matching mon ip implies a match */
 	for (i = 0; i < opt1->num_mon; i++) {
 		if (ceph_monmap_contains(client->monc.monmap,
@@ -184,17 +189,33 @@ int ceph_compare_options(struct ceph_options *new_opt,
 }
 EXPORT_SYMBOL(ceph_compare_options);
 
+/*
+ * kvmalloc() doesn't fall back to the vmalloc allocator unless flags are
+ * compatible with (a superset of) GFP_KERNEL.  This is because while the
+ * actual pages are allocated with the specified flags, the page table pages
+ * are always allocated with GFP_KERNEL.  map_vm_area() doesn't even take
+ * flags because GFP_KERNEL is hard-coded in {p4d,pud,pmd,pte}_alloc().
+ *
+ * ceph_kvmalloc() may be called with GFP_KERNEL, GFP_NOFS or GFP_NOIO.
+ */
 void *ceph_kvmalloc(size_t size, gfp_t flags)
 {
-	if (size <= (PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER)) {
-		void *ptr = kmalloc(size, flags | __GFP_NOWARN);
-		if (ptr)
-			return ptr;
+	void *p;
+
+	if ((flags & (__GFP_IO | __GFP_FS)) == (__GFP_IO | __GFP_FS)) {
+		p = kvmalloc(size, flags);
+	} else if ((flags & (__GFP_IO | __GFP_FS)) == __GFP_IO) {
+		unsigned int nofs_flag = memalloc_nofs_save();
+		p = kvmalloc(size, GFP_KERNEL);
+		memalloc_nofs_restore(nofs_flag);
+	} else {
+		unsigned int noio_flag = memalloc_noio_save();
+		p = kvmalloc(size, GFP_KERNEL);
+		memalloc_noio_restore(noio_flag);
 	}
 
-	return __vmalloc(size, flags, PAGE_KERNEL);
+	return p;
 }
-
 
 static int parse_fsid(const char *str, struct ceph_fsid *fsid)
 {
@@ -243,6 +264,9 @@ enum {
 	Opt_secret,
 	Opt_key,
 	Opt_ip,
+	Opt_crush_location,
+	Opt_read_from_replica,
+	Opt_ms_mode,
 	Opt_last_string,
 	/* string args above */
 	Opt_share,
@@ -255,6 +279,7 @@ enum {
 	Opt_nocephx_sign_messages,
 	Opt_tcp_nodelay,
 	Opt_notcp_nodelay,
+	Opt_abort_on_full,
 };
 
 static match_table_t opt_tokens = {
@@ -269,6 +294,9 @@ static match_table_t opt_tokens = {
 	{Opt_secret, "secret=%s"},
 	{Opt_key, "key=%s"},
 	{Opt_ip, "ip=%s"},
+	{Opt_crush_location, "crush_location=%s"},
+	{Opt_read_from_replica, "read_from_replica=%s"},
+	{Opt_ms_mode, "ms_mode=%s"},
 	/* string args above */
 	{Opt_share, "share"},
 	{Opt_noshare, "noshare"},
@@ -280,12 +308,15 @@ static match_table_t opt_tokens = {
 	{Opt_nocephx_sign_messages, "nocephx_sign_messages"},
 	{Opt_tcp_nodelay, "tcp_nodelay"},
 	{Opt_notcp_nodelay, "notcp_nodelay"},
+	{Opt_abort_on_full, "abort_on_full"},
 	{-1, NULL}
 };
 
 void ceph_destroy_options(struct ceph_options *opt)
 {
 	dout("destroy_options %p\n", opt);
+
+	ceph_clear_crush_locs(&opt->crush_locs);
 	kfree(opt->name);
 	if (opt->key) {
 		ceph_crypto_key_destroy(opt->key);
@@ -304,7 +335,7 @@ static int get_secret(struct ceph_crypto_key *dst, const char *name) {
 	struct ceph_crypto_key *ckey;
 
 	ukey = request_key(&key_type_ceph, name, NULL);
-	if (!ukey || IS_ERR(ukey)) {
+	if (IS_ERR(ukey)) {
 		/* request_key errors don't map nicely to mount(2)
 		   errors; don't even try, but still printk */
 		key_err = PTR_ERR(ukey);
@@ -355,6 +386,8 @@ ceph_parse_options(char *options, const char *dev_name,
 	opt = kzalloc(sizeof(*opt), GFP_KERNEL);
 	if (!opt)
 		return ERR_PTR(-ENOMEM);
+
+	opt->crush_locs = RB_ROOT;
 	opt->mon_addr = kcalloc(CEPH_MAX_MON, sizeof(*opt->mon_addr),
 				GFP_KERNEL);
 	if (!opt->mon_addr)
@@ -369,6 +402,7 @@ ceph_parse_options(char *options, const char *dev_name,
 	opt->mount_timeout = CEPH_MOUNT_TIMEOUT_DEFAULT;
 	opt->osd_idle_ttl = CEPH_OSD_IDLE_TTL_DEFAULT;
 	opt->osd_request_timeout = CEPH_OSD_REQUEST_TIMEOUT_DEFAULT;
+	opt->read_from_replica = CEPH_READ_FROM_REPLICA_DEFAULT;
 
 	/* get mon ip(s) */
 	/* ip1[:port1][,ip2[:port2]...] */
@@ -379,7 +413,7 @@ ceph_parse_options(char *options, const char *dev_name,
 
 	/* parse mount options */
 	while ((c = strsep(&options, ",")) != NULL) {
-		int token, intval, ret;
+		int token, intval;
 		if (!*c)
 			continue;
 		err = -EINVAL;
@@ -394,11 +428,10 @@ ceph_parse_options(char *options, const char *dev_name,
 			continue;
 		}
 		if (token < Opt_last_int) {
-			ret = match_int(&argstr[0], &intval);
-			if (ret < 0) {
-				pr_err("bad mount option arg (not int) "
-				       "at '%s'\n", c);
-				continue;
+			err = match_int(&argstr[0], &intval);
+			if (err < 0) {
+				pr_err("bad option arg (not int) at '%s'\n", c);
+				goto out;
 			}
 			dout("got int token %d val %d\n", token, intval);
 		} else if (token > Opt_last_int && token < Opt_last_string) {
@@ -459,6 +492,28 @@ ceph_parse_options(char *options, const char *dev_name,
 			if (err < 0)
 				goto out;
 			break;
+		case Opt_crush_location:
+			ceph_clear_crush_locs(&opt->crush_locs);
+			err = ceph_parse_crush_location(argstr[0].from,
+							&opt->crush_locs);
+			if (err) {
+				pr_err("failed to parse CRUSH location: %d\n",
+				       err);
+				goto out;
+			}
+			break;
+		case Opt_read_from_replica:
+			if (!strcmp(argstr[0].from, "no")) {
+				opt->read_from_replica = 0;
+			} else if (!strcmp(argstr[0].from, "balance")) {
+				opt->read_from_replica = CEPH_OSD_FLAG_BALANCE_READS;
+			} else if (!strcmp(argstr[0].from, "localize")) {
+				opt->read_from_replica = CEPH_OSD_FLAG_LOCALIZE_READS;
+			} else {
+				err = -EINVAL;
+				goto out;
+			}
+			break;
 
 			/* misc */
 		case Opt_osdtimeout:
@@ -502,6 +557,28 @@ ceph_parse_options(char *options, const char *dev_name,
 			opt->osd_request_timeout = msecs_to_jiffies(intval * 1000);
 			break;
 
+		case Opt_ms_mode:
+			if (!strcmp(argstr[0].from, "legacy")) {
+				opt->con_modes[0] = CEPH_CON_MODE_UNKNOWN;
+				opt->con_modes[1] = CEPH_CON_MODE_UNKNOWN;
+			} else if (!strcmp(argstr[0].from, "crc")) {
+				opt->con_modes[0] = CEPH_CON_MODE_CRC;
+				opt->con_modes[1] = CEPH_CON_MODE_UNKNOWN;
+			} else if (!strcmp(argstr[0].from, "secure")) {
+				opt->con_modes[0] = CEPH_CON_MODE_SECURE;
+				opt->con_modes[1] = CEPH_CON_MODE_UNKNOWN;
+			} else if (!strcmp(argstr[0].from, "prefer-crc")) {
+				opt->con_modes[0] = CEPH_CON_MODE_CRC;
+				opt->con_modes[1] = CEPH_CON_MODE_SECURE;
+			} else if (!strcmp(argstr[0].from, "prefer-secure")) {
+				opt->con_modes[0] = CEPH_CON_MODE_SECURE;
+				opt->con_modes[1] = CEPH_CON_MODE_CRC;
+			} else {
+				err = -EINVAL;
+				goto out;
+			}
+			break;
+
 		case Opt_share:
 			opt->flags &= ~CEPH_OPT_NOSHARE;
 			break;
@@ -536,6 +613,10 @@ ceph_parse_options(char *options, const char *dev_name,
 			opt->flags &= ~CEPH_OPT_TCP_NODELAY;
 			break;
 
+		case Opt_abort_on_full:
+			opt->flags |= CEPH_OPT_ABORT_ON_FULL;
+			break;
+
 		default:
 			BUG_ON(token);
 		}
@@ -550,10 +631,12 @@ out:
 }
 EXPORT_SYMBOL(ceph_parse_options);
 
-int ceph_print_client_options(struct seq_file *m, struct ceph_client *client)
+int ceph_print_client_options(struct seq_file *m, struct ceph_client *client,
+			      bool show_all)
 {
 	struct ceph_options *opt = client->options;
 	size_t pos = m->count;
+	struct rb_node *n;
 
 	if (opt->name) {
 		seq_puts(m, "name=");
@@ -562,6 +645,43 @@ int ceph_print_client_options(struct seq_file *m, struct ceph_client *client)
 	}
 	if (opt->key)
 		seq_puts(m, "secret=<hidden>,");
+
+	if (!RB_EMPTY_ROOT(&opt->crush_locs)) {
+		seq_puts(m, "crush_location=");
+		for (n = rb_first(&opt->crush_locs); ; ) {
+			struct crush_loc_node *loc =
+			    rb_entry(n, struct crush_loc_node, cl_node);
+
+			seq_printf(m, "%s:%s", loc->cl_loc.cl_type_name,
+				   loc->cl_loc.cl_name);
+			n = rb_next(n);
+			if (!n)
+				break;
+
+			seq_putc(m, '|');
+		}
+		seq_putc(m, ',');
+	}
+	if (opt->read_from_replica == CEPH_OSD_FLAG_BALANCE_READS) {
+		seq_puts(m, "read_from_replica=balance,");
+	} else if (opt->read_from_replica == CEPH_OSD_FLAG_LOCALIZE_READS) {
+		seq_puts(m, "read_from_replica=localize,");
+	}
+	if (opt->con_modes[0] != CEPH_CON_MODE_UNKNOWN) {
+		if (opt->con_modes[0] == CEPH_CON_MODE_CRC &&
+		    opt->con_modes[1] == CEPH_CON_MODE_UNKNOWN) {
+			seq_puts(m, "ms_mode=crc,");
+		} else if (opt->con_modes[0] == CEPH_CON_MODE_SECURE &&
+			   opt->con_modes[1] == CEPH_CON_MODE_UNKNOWN) {
+			seq_puts(m, "ms_mode=secure,");
+		} else if (opt->con_modes[0] == CEPH_CON_MODE_CRC &&
+			   opt->con_modes[1] == CEPH_CON_MODE_SECURE) {
+			seq_puts(m, "ms_mode=prefer-crc,");
+		} else if (opt->con_modes[0] == CEPH_CON_MODE_SECURE &&
+			   opt->con_modes[1] == CEPH_CON_MODE_CRC) {
+			seq_puts(m, "ms_mode=prefer-secure,");
+		}
+	}
 
 	if (opt->flags & CEPH_OPT_FSID)
 		seq_printf(m, "fsid=%pU,", &opt->fsid);
@@ -575,6 +695,8 @@ int ceph_print_client_options(struct seq_file *m, struct ceph_client *client)
 		seq_puts(m, "nocephx_sign_messages,");
 	if ((opt->flags & CEPH_OPT_TCP_NODELAY) == 0)
 		seq_puts(m, "notcp_nodelay,");
+	if (show_all && (opt->flags & CEPH_OPT_ABORT_ON_FULL))
+		seq_puts(m, "abort_on_full,");
 
 	if (opt->mount_timeout != CEPH_MOUNT_TIMEOUT_DEFAULT)
 		seq_printf(m, "mount_timeout=%d,",
@@ -685,6 +807,14 @@ void ceph_destroy_client(struct ceph_client *client)
 }
 EXPORT_SYMBOL(ceph_destroy_client);
 
+void ceph_reset_client_addr(struct ceph_client *client)
+{
+	ceph_messenger_reset_nonce(&client->msgr);
+	ceph_monc_reopen_session(&client->monc);
+	ceph_osdc_reopen_osds(&client->osdc);
+}
+EXPORT_SYMBOL(ceph_reset_client_addr);
+
 /*
  * true if we have the mon map (and have thus joined the cluster)
  */
@@ -730,7 +860,6 @@ int __ceph_open_session(struct ceph_client *client, unsigned long started)
 }
 EXPORT_SYMBOL(__ceph_open_session);
 
-
 int ceph_open_session(struct ceph_client *client)
 {
 	int ret;
@@ -746,14 +875,29 @@ int ceph_open_session(struct ceph_client *client)
 }
 EXPORT_SYMBOL(ceph_open_session);
 
+int ceph_wait_for_latest_osdmap(struct ceph_client *client,
+				unsigned long timeout)
+{
+	u64 newest_epoch;
+	int ret;
+
+	ret = ceph_monc_get_version(&client->monc, "osdmap", &newest_epoch);
+	if (ret)
+		return ret;
+
+	if (client->osdc.osdmap->epoch >= newest_epoch)
+		return 0;
+
+	ceph_osdc_maybe_request_map(&client->osdc);
+	return ceph_monc_wait_osdmap(&client->monc, newest_epoch, timeout);
+}
+EXPORT_SYMBOL(ceph_wait_for_latest_osdmap);
 
 static int __init init_ceph_lib(void)
 {
 	int ret = 0;
 
-	ret = ceph_debugfs_init();
-	if (ret < 0)
-		goto out;
+	ceph_debugfs_init();
 
 	ret = ceph_crypto_init();
 	if (ret < 0)
@@ -778,7 +922,6 @@ out_crypto:
 	ceph_crypto_shutdown();
 out_debugfs:
 	ceph_debugfs_cleanup();
-out:
 	return ret;
 }
 

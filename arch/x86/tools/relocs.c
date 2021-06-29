@@ -129,7 +129,7 @@ static void regex_init(int use_real_mode)
 			      REG_EXTENDED|REG_NOSUB);
 
 		if (err) {
-			regerror(err, &sym_regex_c[i], errbuf, sizeof errbuf);
+			regerror(err, &sym_regex_c[i], errbuf, sizeof(errbuf));
 			die("%s", errbuf);
 		}
         }
@@ -403,7 +403,7 @@ static void read_shdrs(FILE *fp)
 	}
 	for (i = 0; i < ehdr.e_shnum; i++) {
 		struct section *sec = &secs[i];
-		if (fread(&shdr, sizeof shdr, 1, fp) != 1)
+		if (fread(&shdr, sizeof(shdr), 1, fp) != 1)
 			die("Cannot read ELF section headers %d/%d: %s\n",
 			    i, ehdr.e_shnum, strerror(errno));
 		sec->shdr.sh_name      = elf_word_to_cpu(shdr.sh_name);
@@ -736,7 +736,7 @@ static void percpu_init(void)
  *	__per_cpu_load
  *
  * The "gold" linker incorrectly associates:
- *	init_per_cpu__irq_stack_union
+ *	init_per_cpu__fixed_percpu_data
  *	init_per_cpu__gdt_page
  */
 static int is_percpu_sym(ElfW(Sym) *sym, const char *symname)

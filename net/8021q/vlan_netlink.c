@@ -35,8 +35,8 @@ static inline int vlan_validate_qos_map(struct nlattr *attr)
 {
 	if (!attr)
 		return 0;
-	return nla_validate_nested(attr, IFLA_VLAN_QOS_MAX, vlan_map_policy,
-				   NULL);
+	return nla_validate_nested_deprecated(attr, IFLA_VLAN_QOS_MAX,
+					      vlan_map_policy, NULL);
 }
 
 static int vlan_validate(struct nlattr *tb[], struct nlattr *data[],
@@ -110,11 +110,13 @@ static int vlan_changelink(struct net_device *dev, struct nlattr *tb[],
 	struct ifla_vlan_flags *flags;
 	struct ifla_vlan_qos_mapping *m;
 	struct nlattr *attr;
-	int rem;
+	int rem, err;
 
 	if (data[IFLA_VLAN_FLAGS]) {
 		flags = nla_data(data[IFLA_VLAN_FLAGS]);
-		vlan_dev_change_flags(dev, flags->flags, flags->mask);
+		err = vlan_dev_change_flags(dev, flags->flags, flags->mask);
+		if (err)
+			return err;
 	}
 	if (data[IFLA_VLAN_INGRESS_QOS]) {
 		nla_for_each_nested(attr, data[IFLA_VLAN_INGRESS_QOS], rem) {
@@ -125,7 +127,9 @@ static int vlan_changelink(struct net_device *dev, struct nlattr *tb[],
 	if (data[IFLA_VLAN_EGRESS_QOS]) {
 		nla_for_each_nested(attr, data[IFLA_VLAN_EGRESS_QOS], rem) {
 			m = nla_data(attr);
-			vlan_dev_set_egress_priority(dev, m->from, m->to);
+			err = vlan_dev_set_egress_priority(dev, m->from, m->to);
+			if (err)
+				return err;
 		}
 	}
 	return 0;
@@ -226,7 +230,7 @@ static int vlan_fill_info(struct sk_buff *skb, const struct net_device *dev)
 			goto nla_put_failure;
 	}
 	if (vlan->nr_ingress_mappings) {
-		nest = nla_nest_start(skb, IFLA_VLAN_INGRESS_QOS);
+		nest = nla_nest_start_noflag(skb, IFLA_VLAN_INGRESS_QOS);
 		if (nest == NULL)
 			goto nla_put_failure;
 
@@ -244,7 +248,7 @@ static int vlan_fill_info(struct sk_buff *skb, const struct net_device *dev)
 	}
 
 	if (vlan->nr_egress_mappings) {
-		nest = nla_nest_start(skb, IFLA_VLAN_EGRESS_QOS);
+		nest = nla_nest_start_noflag(skb, IFLA_VLAN_EGRESS_QOS);
 		if (nest == NULL)
 			goto nla_put_failure;
 

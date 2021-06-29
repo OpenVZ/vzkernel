@@ -41,11 +41,13 @@ static DEFINE_PER_CPU(struct coresight_device *, csdev_src);
 
 /* ETMv3.5/PTM's ETMCR is 'config' */
 PMU_FORMAT_ATTR(cycacc,		"config:" __stringify(ETM_OPT_CYCACC));
+PMU_FORMAT_ATTR(contextid,	"config:" __stringify(ETM_OPT_CTXTID));
 PMU_FORMAT_ATTR(timestamp,	"config:" __stringify(ETM_OPT_TS));
 PMU_FORMAT_ATTR(retstack,	"config:" __stringify(ETM_OPT_RETSTK));
 
 static struct attribute *etm_config_formats_attr[] = {
 	&format_attr_cycacc.attr,
+	&format_attr_contextid.attr,
 	&format_attr_timestamp.attr,
 	&format_attr_retstack.attr,
 	NULL,
@@ -181,15 +183,15 @@ static void etm_free_aux(void *data)
 	schedule_work(&event_data->work);
 }
 
-static void *etm_setup_aux(int event_cpu, void **pages,
+static void *etm_setup_aux(struct perf_event *event, void **pages,
 			   int nr_pages, bool overwrite)
 {
-	int cpu;
+	int cpu = event->cpu;
 	cpumask_t *mask;
 	struct coresight_device *sink;
 	struct etm_event_data *event_data = NULL;
 
-	event_data = alloc_event_data(event_cpu);
+	event_data = alloc_event_data(cpu);
 	if (!event_data)
 		return NULL;
 	INIT_WORK(&event_data->work, free_event_data);
@@ -410,15 +412,16 @@ static int etm_addr_filters_validate(struct list_head *filters)
 static void etm_addr_filters_sync(struct perf_event *event)
 {
 	struct perf_addr_filters_head *head = perf_event_addr_filters(event);
-	unsigned long start, stop, *offs = event->addr_filters_offs;
+	unsigned long start, stop;
+	struct perf_addr_filter_range *fr = event->addr_filter_ranges;
 	struct etm_filters *filters = event->hw.addr_filters;
 	struct etm_filter *etm_filter;
 	struct perf_addr_filter *filter;
 	int i = 0;
 
 	list_for_each_entry(filter, &head->list, entry) {
-		start = filter->offset + offs[i];
-		stop = start + filter->size;
+		start = fr[i].start;
+		stop = start + fr[i].size;
 		etm_filter = &filters->etm_filter[i];
 
 		switch (filter->action) {

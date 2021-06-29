@@ -155,7 +155,7 @@ static const char * const smca_ls_mce_desc[] = {
 	"Store queue parity",
 	"Miss address buffer payload parity",
 	"L1 TLB parity",
-	"Reserved",
+	"DC Tag error type 5",
 	"DC tag error type 6",
 	"DC tag error type 1",
 	"Internal error type 1",
@@ -172,6 +172,33 @@ static const char * const smca_ls_mce_desc[] = {
 	"DC tag error type 3",
 	"DC tag error type 5",
 	"L2 fill data error",
+};
+
+static const char * const smca_ls2_mce_desc[] = {
+	"An ECC error was detected on a data cache read by a probe or victimization",
+	"An ECC error or L2 poison was detected on a data cache read by a load",
+	"An ECC error was detected on a data cache read-modify-write by a store",
+	"An ECC error or poison bit mismatch was detected on a tag read by a probe or victimization",
+	"An ECC error or poison bit mismatch was detected on a tag read by a load",
+	"An ECC error or poison bit mismatch was detected on a tag read by a store",
+	"An ECC error was detected on an EMEM read by a load",
+	"An ECC error was detected on an EMEM read-modify-write by a store",
+	"A parity error was detected in an L1 TLB entry by any access",
+	"A parity error was detected in an L2 TLB entry by any access",
+	"A parity error was detected in a PWC entry by any access",
+	"A parity error was detected in an STQ entry by any access",
+	"A parity error was detected in an LDQ entry by any access",
+	"A parity error was detected in a MAB entry by any access",
+	"A parity error was detected in an SCB entry state field by any access",
+	"A parity error was detected in an SCB entry address field by any access",
+	"A parity error was detected in an SCB entry data field by any access",
+	"A parity error was detected in a WCB entry by any access",
+	"A poisoned line was detected in an SCB entry by any access",
+	"A SystemReadDataError error was reported on read data returned from L2 for a load",
+	"A SystemReadDataError error was reported on read data returned from L2 for an SCB store",
+	"A SystemReadDataError error was reported on read data returned from L2 for a WCB store",
+	"A hardware assertion error was reported",
+	"A parity error was detected in an STLF, SCB EMEM entry or SRB store data by any access",
 };
 
 static const char * const smca_if_mce_desc[] = {
@@ -222,6 +249,7 @@ static const char * const smca_ex_mce_desc[] = {
 	"Retire status queue parity error",
 	"Scheduling queue parity error",
 	"Branch buffer queue parity error",
+	"Hardware Assertion error",
 };
 
 static const char * const smca_fp_mce_desc[] = {
@@ -257,11 +285,29 @@ static const char * const smca_cs_mce_desc[] = {
 	"ECC error on probe filter access",
 };
 
+static const char * const smca_cs2_mce_desc[] = {
+	"Illegal Request",
+	"Address Violation",
+	"Security Violation",
+	"Illegal Response",
+	"Unexpected Response",
+	"Request or Probe Parity Error",
+	"Read Response Parity Error",
+	"Atomic Request Parity Error",
+	"SDP read response had no match in the CS queue",
+	"Probe Filter Protocol Error",
+	"Probe Filter ECC Error",
+	"SDP read response had an unexpected RETRY error",
+	"Counter overflow error",
+	"Counter underflow error",
+};
+
 static const char * const smca_pie_mce_desc[] = {
 	"HW assert",
 	"Internal PIE register security violation",
 	"Error on GMI link",
 	"Poison data written to internal PIE register",
+	"A deferred error was detected in the DF"
 };
 
 static const char * const smca_umc_mce_desc[] = {
@@ -271,6 +317,8 @@ static const char * const smca_umc_mce_desc[] = {
 	"Advanced peripheral bus error",
 	"Command/address parity error",
 	"Write data CRC error",
+	"DCQ SRAM ECC error",
+	"AES SRAM ECC error",
 };
 
 static const char * const smca_pb_mce_desc[] = {
@@ -281,8 +329,72 @@ static const char * const smca_psp_mce_desc[] = {
 	"PSP RAM ECC or parity error",
 };
 
+static const char * const smca_psp2_mce_desc[] = {
+	"High SRAM ECC or parity error",
+	"Low SRAM ECC or parity error",
+	"Instruction Cache Bank 0 ECC or parity error",
+	"Instruction Cache Bank 1 ECC or parity error",
+	"Instruction Tag Ram 0 parity error",
+	"Instruction Tag Ram 1 parity error",
+	"Data Cache Bank 0 ECC or parity error",
+	"Data Cache Bank 1 ECC or parity error",
+	"Data Cache Bank 2 ECC or parity error",
+	"Data Cache Bank 3 ECC or parity error",
+	"Data Tag Bank 0 parity error",
+	"Data Tag Bank 1 parity error",
+	"Data Tag Bank 2 parity error",
+	"Data Tag Bank 3 parity error",
+	"Dirty Data Ram parity error",
+	"TLB Bank 0 parity error",
+	"TLB Bank 1 parity error",
+	"System Hub Read Buffer ECC or parity error",
+};
+
 static const char * const smca_smu_mce_desc[] = {
 	"SMU RAM ECC or parity error",
+};
+
+static const char * const smca_smu2_mce_desc[] = {
+	"High SRAM ECC or parity error",
+	"Low SRAM ECC or parity error",
+	"Data Cache Bank A ECC or parity error",
+	"Data Cache Bank B ECC or parity error",
+	"Data Tag Cache Bank A ECC or parity error",
+	"Data Tag Cache Bank B ECC or parity error",
+	"Instruction Cache Bank A ECC or parity error",
+	"Instruction Cache Bank B ECC or parity error",
+	"Instruction Tag Cache Bank A ECC or parity error",
+	"Instruction Tag Cache Bank B ECC or parity error",
+	"System Hub Read Buffer ECC or parity error",
+};
+
+static const char * const smca_mp5_mce_desc[] = {
+	"High SRAM ECC or parity error",
+	"Low SRAM ECC or parity error",
+	"Data Cache Bank A ECC or parity error",
+	"Data Cache Bank B ECC or parity error",
+	"Data Tag Cache Bank A ECC or parity error",
+	"Data Tag Cache Bank B ECC or parity error",
+	"Instruction Cache Bank A ECC or parity error",
+	"Instruction Cache Bank B ECC or parity error",
+	"Instruction Tag Cache Bank A ECC or parity error",
+	"Instruction Tag Cache Bank B ECC or parity error",
+};
+
+static const char * const smca_nbio_mce_desc[] = {
+	"ECC or Parity error",
+	"PCIE error",
+	"SDP ErrEvent error",
+	"SDP Egress Poison Error",
+	"IOHC Internal Poison Error",
+};
+
+static const char * const smca_pcie_mce_desc[] = {
+	"CCIX PER Message logging",
+	"CCIX Read Response with Status: Non-Data Error",
+	"CCIX Write Response with Status: Non-Data Error",
+	"CCIX Read Response with Status: Data Error",
+	"CCIX Non-okay write response with data error",
 };
 
 struct smca_mce_desc {
@@ -292,6 +404,7 @@ struct smca_mce_desc {
 
 static struct smca_mce_desc smca_mce_descs[] = {
 	[SMCA_LS]	= { smca_ls_mce_desc,	ARRAY_SIZE(smca_ls_mce_desc)	},
+	[SMCA_LS_V2]	= { smca_ls2_mce_desc,	ARRAY_SIZE(smca_ls2_mce_desc)	},
 	[SMCA_IF]	= { smca_if_mce_desc,	ARRAY_SIZE(smca_if_mce_desc)	},
 	[SMCA_L2_CACHE]	= { smca_l2_mce_desc,	ARRAY_SIZE(smca_l2_mce_desc)	},
 	[SMCA_DE]	= { smca_de_mce_desc,	ARRAY_SIZE(smca_de_mce_desc)	},
@@ -299,11 +412,17 @@ static struct smca_mce_desc smca_mce_descs[] = {
 	[SMCA_FP]	= { smca_fp_mce_desc,	ARRAY_SIZE(smca_fp_mce_desc)	},
 	[SMCA_L3_CACHE]	= { smca_l3_mce_desc,	ARRAY_SIZE(smca_l3_mce_desc)	},
 	[SMCA_CS]	= { smca_cs_mce_desc,	ARRAY_SIZE(smca_cs_mce_desc)	},
+	[SMCA_CS_V2]	= { smca_cs2_mce_desc,	ARRAY_SIZE(smca_cs2_mce_desc)	},
 	[SMCA_PIE]	= { smca_pie_mce_desc,	ARRAY_SIZE(smca_pie_mce_desc)	},
 	[SMCA_UMC]	= { smca_umc_mce_desc,	ARRAY_SIZE(smca_umc_mce_desc)	},
 	[SMCA_PB]	= { smca_pb_mce_desc,	ARRAY_SIZE(smca_pb_mce_desc)	},
 	[SMCA_PSP]	= { smca_psp_mce_desc,	ARRAY_SIZE(smca_psp_mce_desc)	},
+	[SMCA_PSP_V2]	= { smca_psp2_mce_desc,	ARRAY_SIZE(smca_psp2_mce_desc)	},
 	[SMCA_SMU]	= { smca_smu_mce_desc,	ARRAY_SIZE(smca_smu_mce_desc)	},
+	[SMCA_SMU_V2]	= { smca_smu2_mce_desc,	ARRAY_SIZE(smca_smu2_mce_desc)	},
+	[SMCA_MP5]	= { smca_mp5_mce_desc,	ARRAY_SIZE(smca_mp5_mce_desc)	},
+	[SMCA_NBIO]	= { smca_nbio_mce_desc,	ARRAY_SIZE(smca_nbio_mce_desc)	},
+	[SMCA_PCIE]	= { smca_pcie_mce_desc,	ARRAY_SIZE(smca_pcie_mce_desc)	},
 };
 
 static bool f12h_mc0_mce(u16 ec, u8 xec)
@@ -993,6 +1112,9 @@ amd_decode_mce(struct notifier_block *nb, unsigned long val, void *data)
 	if (m->status & MCI_STATUS_ADDRV)
 		pr_emerg(HW_ERR "Error Addr: 0x%016llx\n", m->addr);
 
+	if (m->ppin)
+		pr_emerg(HW_ERR "PPIN: 0x%016llx\n", m->ppin);
+
 	if (boot_cpu_has(X86_FEATURE_SMCA)) {
 		pr_emerg(HW_ERR "IPID: 0x%016llx", m->ipid);
 
@@ -1066,6 +1188,11 @@ static int __init mce_amd_init(void)
 	if (!fam_ops)
 		return -ENOMEM;
 
+	if (boot_cpu_has(X86_FEATURE_SMCA)) {
+		xec_mask = 0x3f;
+		goto out;
+	}
+
 	switch (c->x86) {
 	case 0xf:
 		fam_ops->mc0_mce = k8_mc0_mce;
@@ -1113,11 +1240,9 @@ static int __init mce_amd_init(void)
 		break;
 
 	case 0x17:
-		xec_mask = 0x3f;
-		if (!boot_cpu_has(X86_FEATURE_SMCA)) {
-			printk(KERN_WARNING "Decoding supported only on Scalable MCA processors.\n");
-			goto err_out;
-		}
+	case 0x18:
+		pr_warn_once("Decoding supported only on Scalable MCA processors.\n");
+		goto err_out;
 		break;
 
 	default:
@@ -1125,6 +1250,7 @@ static int __init mce_amd_init(void)
 		goto err_out;
 	}
 
+out:
 	pr_info("MCE: In-kernel MCE decoding enabled.\n");
 
 	mce_register_decode_chain(&amd_mce_dec_nb);

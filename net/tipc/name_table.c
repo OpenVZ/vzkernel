@@ -35,6 +35,7 @@
  */
 
 #include <net/sock.h>
+#include <linux/list_sort.h>
 #include "core.h"
 #include "netlink.h"
 #include "name_table.h"
@@ -66,6 +67,7 @@ struct service_range {
 /**
  * struct tipc_service - container for all published instances of a service type
  * @type: 32 bit 'type' value for service
+ * @publ_cnt: increasing counter for publications in this service
  * @ranges: rb tree containing all service ranges for this service
  * @service_list: links to adjacent name ranges in hash chain
  * @subscriptions: list of subscriptions for this service type
@@ -74,6 +76,7 @@ struct service_range {
  */
 struct tipc_service {
 	u32 type;
+	u32 publ_cnt;
 	struct rb_root ranges;
 	struct hlist_node service_list;
 	struct list_head subscriptions;
@@ -109,6 +112,7 @@ static struct publication *tipc_publ_create(u32 type, u32 lower, u32 upper,
 	INIT_LIST_HEAD(&publ->binding_node);
 	INIT_LIST_HEAD(&publ->local_publ);
 	INIT_LIST_HEAD(&publ->all_publ);
+	INIT_LIST_HEAD(&publ->list);
 	return publ;
 }
 
@@ -244,6 +248,8 @@ static struct publication *tipc_service_insert_publ(struct net *net,
 	p = tipc_publ_create(type, lower, upper, scope, node, port, key);
 	if (!p)
 		goto err;
+	/* Suppose there shouldn't be a huge gap btw publs i.e. >INT_MAX */
+	p->id = sc->publ_cnt++;
 	if (in_own_node(net, node))
 		list_add(&p->local_publ, &sr->local_publ);
 	list_add(&p->all_publ, &sr->all_publ);
@@ -278,6 +284,20 @@ static struct publication *tipc_service_remove_publ(struct service_range *sr,
 }
 
 /**
+ * Code reused: time_after32() for the same purpose
+ */
+#define publication_after(pa, pb) time_after32((pa)->id, (pb)->id)
+static int tipc_publ_sort(void *priv, struct list_head *a,
+			  struct list_head *b)
+{
+	struct publication *pa, *pb;
+
+	pa = container_of(a, struct publication, list);
+	pb = container_of(b, struct publication, list);
+	return publication_after(pa, pb);
+}
+
+/**
  * tipc_service_subscribe - attach a subscription, and optionally
  * issue the prescribed number of events if there is any service
  * range overlapping with the requested range
@@ -286,36 +306,51 @@ static void tipc_service_subscribe(struct tipc_service *service,
 				   struct tipc_subscription *sub)
 {
 	struct tipc_subscr *sb = &sub->evt.s;
+	struct publication *p, *first, *tmp;
+	struct list_head publ_list;
 	struct service_range *sr;
 	struct tipc_name_seq ns;
-	struct publication *p;
 	struct rb_node *n;
-	bool first;
+	u32 filter;
 
 	ns.type = tipc_sub_read(sb, seq.type);
 	ns.lower = tipc_sub_read(sb, seq.lower);
 	ns.upper = tipc_sub_read(sb, seq.upper);
+	filter = tipc_sub_read(sb, filter);
 
 	tipc_sub_get(sub);
 	list_add(&sub->service_list, &service->subscriptions);
 
-	if (tipc_sub_read(sb, filter) & TIPC_SUB_NO_STATUS)
+	if (filter & TIPC_SUB_NO_STATUS)
 		return;
 
+	INIT_LIST_HEAD(&publ_list);
 	for (n = rb_first(&service->ranges); n; n = rb_next(n)) {
 		sr = container_of(n, struct service_range, tree_node);
 		if (sr->lower > ns.upper)
 			break;
 		if (!tipc_sub_check_overlap(&ns, sr->lower, sr->upper))
 			continue;
-		first = true;
 
+		first = NULL;
 		list_for_each_entry(p, &sr->all_publ, all_publ) {
-			tipc_sub_report_overlap(sub, sr->lower, sr->upper,
-						TIPC_PUBLISHED,	p->port,
-						p->node, p->scope, first);
-			first = false;
+			if (filter & TIPC_SUB_PORTS)
+				list_add_tail(&p->list, &publ_list);
+			else if (!first || publication_after(first, p))
+				/* Pick this range's *first* publication */
+				first = p;
 		}
+		if (first)
+			list_add_tail(&first->list, &publ_list);
+	}
+
+	/* Sort the publications before reporting */
+	list_sort(NULL, &publ_list, tipc_publ_sort);
+	list_for_each_entry_safe(p, tmp, &publ_list, list) {
+		tipc_sub_report_overlap(sub, p->lower, p->upper,
+					TIPC_PUBLISHED, p->port, p->node,
+					p->scope, true);
+		list_del_init(&p->list);
 	}
 }
 
@@ -615,6 +650,7 @@ struct publication *tipc_nametbl_publish(struct net *net, u32 type, u32 lower,
 	struct tipc_net *tn = tipc_net(net);
 	struct publication *p = NULL;
 	struct sk_buff *skb = NULL;
+	u32 rc_dests;
 
 	spin_lock_bh(&tn->nametbl_lock);
 
@@ -629,12 +665,14 @@ struct publication *tipc_nametbl_publish(struct net *net, u32 type, u32 lower,
 		nt->local_publ_count++;
 		skb = tipc_named_publish(net, p);
 	}
+	rc_dests = nt->rc_dests;
 exit:
 	spin_unlock_bh(&tn->nametbl_lock);
 
 	if (skb)
-		tipc_node_broadcast(net, skb);
+		tipc_node_broadcast(net, skb, rc_dests);
 	return p;
+
 }
 
 /**
@@ -648,6 +686,7 @@ int tipc_nametbl_withdraw(struct net *net, u32 type, u32 lower,
 	u32 self = tipc_own_addr(net);
 	struct sk_buff *skb = NULL;
 	struct publication *p;
+	u32 rc_dests;
 
 	spin_lock_bh(&tn->nametbl_lock);
 
@@ -661,10 +700,11 @@ int tipc_nametbl_withdraw(struct net *net, u32 type, u32 lower,
 		pr_err("Failed to remove local publication {%u,%u,%u}/%u\n",
 		       type, lower, upper, key);
 	}
+	rc_dests = nt->rc_dests;
 	spin_unlock_bh(&tn->nametbl_lock);
 
 	if (skb) {
-		tipc_node_broadcast(net, skb);
+		tipc_node_broadcast(net, skb, rc_dests);
 		return 1;
 	}
 	return 0;
@@ -735,7 +775,7 @@ int tipc_nametbl_init(struct net *net)
 	struct name_table *nt;
 	int i;
 
-	nt = kzalloc(sizeof(*nt), GFP_ATOMIC);
+	nt = kzalloc(sizeof(*nt), GFP_KERNEL);
 	if (!nt)
 		return -ENOMEM;
 
@@ -744,6 +784,7 @@ int tipc_nametbl_init(struct net *net)
 
 	INIT_LIST_HEAD(&nt->node_scope);
 	INIT_LIST_HEAD(&nt->cluster_scope);
+	rwlock_init(&nt->cluster_scope_lock);
 	tn->nametbl = nt;
 	spin_lock_init(&tn->nametbl_lock);
 	return 0;
@@ -828,11 +869,11 @@ static int __tipc_nl_add_nametable_publ(struct tipc_nl_msg *msg,
 		if (!hdr)
 			return -EMSGSIZE;
 
-		attrs = nla_nest_start(msg->skb, TIPC_NLA_NAME_TABLE);
+		attrs = nla_nest_start_noflag(msg->skb, TIPC_NLA_NAME_TABLE);
 		if (!attrs)
 			goto msg_full;
 
-		b = nla_nest_start(msg->skb, TIPC_NLA_NAME_TABLE_PUBL);
+		b = nla_nest_start_noflag(msg->skb, TIPC_NLA_NAME_TABLE_PUBL);
 		if (!b)
 			goto attr_msg_full;
 
@@ -908,7 +949,8 @@ static int tipc_nl_service_list(struct net *net, struct tipc_nl_msg *msg,
 	for (; i < TIPC_NAMETBL_SIZE; i++) {
 		head = &tn->nametbl->services[i];
 
-		if (*last_type) {
+		if (*last_type ||
+		    (!i && *last_key && (*last_lower == *last_key))) {
 			service = tipc_service_find(net, *last_type);
 			if (!service)
 				return -EPIPE;
@@ -980,20 +1022,17 @@ int tipc_nl_name_table_dump(struct sk_buff *skb, struct netlink_callback *cb)
 
 struct tipc_dest *tipc_dest_find(struct list_head *l, u32 node, u32 port)
 {
-	u64 value = (u64)node << 32 | port;
 	struct tipc_dest *dst;
 
 	list_for_each_entry(dst, l, list) {
-		if (dst->value != value)
-			continue;
-		return dst;
+		if (dst->node == node && dst->port == port)
+			return dst;
 	}
 	return NULL;
 }
 
 bool tipc_dest_push(struct list_head *l, u32 node, u32 port)
 {
-	u64 value = (u64)node << 32 | port;
 	struct tipc_dest *dst;
 
 	if (tipc_dest_find(l, node, port))
@@ -1002,7 +1041,8 @@ bool tipc_dest_push(struct list_head *l, u32 node, u32 port)
 	dst = kmalloc(sizeof(*dst), GFP_ATOMIC);
 	if (unlikely(!dst))
 		return false;
-	dst->value = value;
+	dst->node = node;
+	dst->port = port;
 	list_add(&dst->list, l);
 	return true;
 }

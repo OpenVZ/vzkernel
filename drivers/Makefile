@@ -42,6 +42,7 @@ obj-$(CONFIG_DMADEVICES)	+= dma/
 obj-y				+= soc/
 
 obj-$(CONFIG_VIRTIO)		+= virtio/
+obj-$(CONFIG_VDPA)		+= vdpa/
 obj-$(CONFIG_XEN)		+= xen/
 
 # regulators early, since some subsystems rely on them to initialize
@@ -56,7 +57,7 @@ obj-y				+= tty/
 obj-y				+= char/
 
 # iommu/ comes before gpu as gpu are using iommu controllers
-obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
+obj-y				+= iommu/
 
 # gpu/ comes after char for AGP vs DRM startup and after iommu
 obj-y				+= gpu/
@@ -76,7 +77,7 @@ obj-$(CONFIG_DMA_SHARED_BUFFER) += dma-buf/
 obj-$(CONFIG_NUBUS)		+= nubus/
 obj-y				+= macintosh/
 obj-$(CONFIG_IDE)		+= ide/
-obj-$(CONFIG_SCSI)		+= scsi/
+obj-y				+= scsi/
 obj-y				+= nvme/
 obj-$(CONFIG_ATA)		+= ata/
 obj-$(CONFIG_TARGET_CORE)	+= target/
@@ -173,7 +174,7 @@ obj-$(CONFIG_POWERCAP)		+= powercap/
 obj-$(CONFIG_MCB)		+= mcb/
 obj-$(CONFIG_PERF_EVENTS)	+= perf/
 obj-$(CONFIG_RAS)		+= ras/
-obj-$(CONFIG_THUNDERBOLT)	+= thunderbolt/
+obj-$(CONFIG_USB4)		+= thunderbolt/
 obj-$(CONFIG_CORESIGHT)		+= hwtracing/coresight/
 obj-y				+= hwtracing/intel_th/
 obj-$(CONFIG_STM)		+= hwtracing/stm/

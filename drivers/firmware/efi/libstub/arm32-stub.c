@@ -150,6 +150,11 @@ static efi_status_t reserve_kernel_base(efi_system_table_t *sys_table_arg,
 			continue;
 
 		case EFI_CONVENTIONAL_MEMORY:
+			/* Skip soft reserved conventional memory */
+			if (efi_soft_reserve_enabled() &&
+			    (desc->attribute & EFI_MEMORY_SP))
+				continue;
+
 			/*
 			 * Reserve the intersection between this entry and the
 			 * region.
@@ -224,7 +229,7 @@ efi_status_t handle_kernel_image(efi_system_table_t *sys_table,
 	*image_size = image->image_size;
 	status = efi_relocate_kernel(sys_table, image_addr, *image_size,
 				     *image_size,
-				     dram_base + MAX_UNCOMP_KERNEL_SIZE, 0);
+				     dram_base + MAX_UNCOMP_KERNEL_SIZE, 0, 0);
 	if (status != EFI_SUCCESS) {
 		pr_efi_err(sys_table, "Failed to relocate kernel.\n");
 		efi_free(sys_table, *reserve_size, *reserve_addr);

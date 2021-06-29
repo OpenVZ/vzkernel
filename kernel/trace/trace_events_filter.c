@@ -440,7 +440,7 @@ predicate_parse(const char *str, int nr_parens, int nr_preds,
 	op_stack = kmalloc_array(nr_parens, sizeof(*op_stack), GFP_KERNEL);
 	if (!op_stack)
 		return ERR_PTR(-ENOMEM);
-	prog_stack = kmalloc_array(nr_preds, sizeof(*prog_stack), GFP_KERNEL);
+	prog_stack = kcalloc(nr_preds, sizeof(*prog_stack), GFP_KERNEL);
 	if (!prog_stack) {
 		parse_error(pe, -ENOMEM, 0);
 		goto out_free;
@@ -464,8 +464,10 @@ predicate_parse(const char *str, int nr_parens, int nr_preds,
 
 		switch (*next) {
 		case '(':					/* #2 */
-			if (top - op_stack > nr_parens)
-				return ERR_PTR(-EINVAL);
+			if (top - op_stack > nr_parens) {
+				ret = -EINVAL;
+				goto out_free;
+			}
 			*(++top) = invert;
 			continue;
 		case '!':					/* #3 */
@@ -583,11 +585,17 @@ predicate_parse(const char *str, int nr_parens, int nr_preds,
 		}
 	}
 
+	kfree(op_stack);
+	kfree(inverts);
 	return prog;
 out_free:
 	kfree(op_stack);
-	kfree(prog_stack);
 	kfree(inverts);
+	if (prog_stack) {
+		for (i = 0; prog_stack[i].pred; i++)
+			kfree(prog_stack[i].pred);
+		kfree(prog_stack);
+	}
 	return ERR_PTR(ret);
 }
 
@@ -899,7 +907,8 @@ int filter_match_preds(struct event_filter *filter, void *rec)
 	if (!filter)
 		return 1;
 
-	prog = rcu_dereference_sched(filter->prog);
+	/* Protected by either SRCU(tracepoint_srcu) or preempt_disable */
+	prog = rcu_dereference_raw(filter->prog);
 	if (!prog)
 		return 1;
 
@@ -1626,10 +1635,10 @@ static int process_system_preds(struct trace_subsystem_dir *dir,
 
 	/*
 	 * The calls can still be using the old filters.
-	 * Do a synchronize_sched() to ensure all calls are
+	 * Do a synchronize_rcu() and to ensure all calls are
 	 * done with them before we free them.
 	 */
-	synchronize_sched();
+	tracepoint_synchronize_unregister();
 	list_for_each_entry_safe(filter_item, tmp, &filter_list, list) {
 		__free_filter(filter_item->filter);
 		list_del(&filter_item->list);
@@ -1645,10 +1654,10 @@ static int process_system_preds(struct trace_subsystem_dir *dir,
 	parse_error(pe, FILT_ERR_BAD_SUBSYS_FILTER, 0);
 	return -EINVAL;
  fail_mem:
-	kfree(filter);
+	__free_filter(filter);
 	/* If any call succeeded, we still need to sync */
 	if (!fail)
-		synchronize_sched();
+		tracepoint_synchronize_unregister();
 	list_for_each_entry_safe(filter_item, tmp, &filter_list, list) {
 		__free_filter(filter_item->filter);
 		list_del(&filter_item->list);
@@ -1730,6 +1739,7 @@ static int create_filter(struct trace_event_call *call,
 	err = process_preds(call, filter_string, *filterp, pe);
 	if (err && set_str)
 		append_filter_err(pe, *filterp);
+	create_filter_finish(pe);
 
 	return err;
 }
@@ -1790,7 +1800,7 @@ int apply_event_filter(struct trace_event_file *file, char *filter_string)
 		event_clear_filter(file);
 
 		/* Make sure the filter is not being used */
-		synchronize_sched();
+		tracepoint_synchronize_unregister();
 		__free_filter(filter);
 
 		return 0;
@@ -1817,7 +1827,7 @@ int apply_event_filter(struct trace_event_file *file, char *filter_string)
 
 		if (tmp) {
 			/* Make sure the call is done with the filter */
-			synchronize_sched();
+			tracepoint_synchronize_unregister();
 			__free_filter(tmp);
 		}
 	}
@@ -1847,7 +1857,7 @@ int apply_subsystem_event_filter(struct trace_subsystem_dir *dir,
 		filter = system->filter;
 		system->filter = NULL;
 		/* Ensure all filters are no longer used */
-		synchronize_sched();
+		tracepoint_synchronize_unregister();
 		filter_free_subsystem_filters(dir, tr);
 		__free_filter(filter);
 		goto out_unlock;
@@ -1857,7 +1867,7 @@ int apply_subsystem_event_filter(struct trace_subsystem_dir *dir,
 	if (filter) {
 		/*
 		 * No event actually uses the system filter
-		 * we can free it without synchronize_sched().
+		 * we can free it without synchronize_rcu().
 		 */
 		__free_filter(system->filter);
 		system->filter = filter;

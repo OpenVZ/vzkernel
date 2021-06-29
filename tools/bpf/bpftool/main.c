@@ -1,39 +1,6 @@
-/*
- * Copyright (C) 2017 Netronome Systems, Inc.
- *
- * This software is dual licensed under the GNU General License Version 2,
- * June 1991 as shown in the file COPYING in the top-level directory of this
- * source tree or the BSD 2-Clause License provided below.  You have the
- * option to license this software under the complete terms of either license.
- *
- * The BSD 2-Clause License:
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      1. Redistributions of source code must retain the above
- *         copyright notice, this list of conditions and the following
- *         disclaimer.
- *
- *      2. Redistributions in binary form must reproduce the above
- *         copyright notice, this list of conditions and the following
- *         disclaimer in the documentation and/or other materials
- *         provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/* Copyright (C) 2017-2018 Netronome Systems, Inc. */
 
-/* Author: Jakub Kicinski <kubakici@wp.pl> */
-
-#include <bfd.h>
 #include <ctype.h>
 #include <errno.h>
 #include <getopt.h>
@@ -42,7 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <bpf.h>
+#include <bpf/bpf.h>
+#include <bpf/libbpf.h>
 
 #include "main.h"
 
@@ -57,8 +25,13 @@ json_writer_t *json_wtr;
 bool pretty_output;
 bool json_output;
 bool show_pinned;
+bool block_mount;
+bool verifier_logs;
+bool relaxed_maps;
 struct pinned_obj_table prog_table;
 struct pinned_obj_table map_table;
+struct pinned_obj_table link_table;
+struct obj_refs_table refs_table;
 
 static void __noreturn clean_and_exit(int i)
 {
@@ -87,7 +60,7 @@ static int do_help(int argc, char **argv)
 		"       %s batch file FILE\n"
 		"       %s version\n"
 		"\n"
-		"       OBJECT := { prog | map | cgroup | perf }\n"
+		"       OBJECT := { prog | map | link | cgroup | perf | net | feature | btf | gen | struct_ops | iter }\n"
 		"       " HELP_SPEC_OPTIONS "\n"
 		"",
 		bin_name, bin_name, bin_name);
@@ -120,9 +93,16 @@ int cmd_select(const struct cmd *cmds, int argc, char **argv,
 	if (argc < 1 && cmds[0].func)
 		return cmds[0].func(argc, argv);
 
-	for (i = 0; cmds[i].func; i++)
-		if (is_prefix(*argv, cmds[i].cmd))
+	for (i = 0; cmds[i].cmd; i++) {
+		if (is_prefix(*argv, cmds[i].cmd)) {
+			if (!cmds[i].func) {
+				p_err("command '%s' is not supported in bootstrap mode",
+				      cmds[i].cmd);
+				return -1;
+			}
 			return cmds[i].func(argc - 1, argv + 1);
+		}
+	}
 
 	help(argc - 1, argv + 1);
 
@@ -137,6 +117,35 @@ bool is_prefix(const char *pfx, const char *str)
 		return false;
 
 	return !memcmp(str, pfx, strlen(pfx));
+}
+
+/* Last argument MUST be NULL pointer */
+int detect_common_prefix(const char *arg, ...)
+{
+	unsigned int count = 0;
+	const char *ref;
+	char msg[256];
+	va_list ap;
+
+	snprintf(msg, sizeof(msg), "ambiguous prefix: '%s' could be '", arg);
+	va_start(ap, arg);
+	while ((ref = va_arg(ap, const char *))) {
+		if (!is_prefix(arg, ref))
+			continue;
+		count++;
+		if (count > 1)
+			strncat(msg, "' or '", sizeof(msg) - strlen(msg) - 1);
+		strncat(msg, ref, sizeof(msg) - strlen(msg) - 1);
+	}
+	va_end(ap);
+	strncat(msg, "'", sizeof(msg) - strlen(msg) - 1);
+
+	if (count >= 2) {
+		p_err("%s", msg);
+		return -1;
+	}
+
+	return 0;
 }
 
 void fprint_hex(FILE *f, void *arg, unsigned int n, const char *sep)
@@ -215,8 +224,15 @@ static const struct cmd cmds[] = {
 	{ "batch",	do_batch },
 	{ "prog",	do_prog },
 	{ "map",	do_map },
+	{ "link",	do_link },
 	{ "cgroup",	do_cgroup },
 	{ "perf",	do_perf },
+	{ "net",	do_net },
+	{ "feature",	do_feature },
+	{ "btf",	do_btf },
+	{ "gen",	do_gen },
+	{ "struct_ops",	do_struct_ops },
+	{ "iter",	do_iter },
 	{ "version",	do_version },
 	{ 0 }
 };
@@ -321,7 +337,8 @@ static int do_batch(int argc, char **argv)
 		p_err("reading batch file failed: %s", strerror(errno));
 		err = -1;
 	} else {
-		p_info("processed %d commands", lines);
+		if (!json_output)
+			printf("processed %d commands\n", lines);
 		err = 0;
 	}
 err_close:
@@ -342,6 +359,9 @@ int main(int argc, char **argv)
 		{ "pretty",	no_argument,	NULL,	'p' },
 		{ "version",	no_argument,	NULL,	'V' },
 		{ "bpffs",	no_argument,	NULL,	'f' },
+		{ "mapcompat",	no_argument,	NULL,	'm' },
+		{ "nomount",	no_argument,	NULL,	'n' },
+		{ "debug",	no_argument,	NULL,	'd' },
 		{ 0 }
 	};
 	int opt, ret;
@@ -350,13 +370,15 @@ int main(int argc, char **argv)
 	pretty_output = false;
 	json_output = false;
 	show_pinned = false;
+	block_mount = false;
 	bin_name = argv[0];
 
 	hash_init(prog_table.table);
 	hash_init(map_table.table);
+	hash_init(link_table.table);
 
 	opterr = 0;
-	while ((opt = getopt_long(argc, argv, "Vhpjf",
+	while ((opt = getopt_long(argc, argv, "Vhpjfmnd",
 				  options, NULL)) >= 0) {
 		switch (opt) {
 		case 'V':
@@ -380,6 +402,16 @@ int main(int argc, char **argv)
 		case 'f':
 			show_pinned = true;
 			break;
+		case 'm':
+			relaxed_maps = true;
+			break;
+		case 'n':
+			block_mount = true;
+			break;
+		case 'd':
+			libbpf_set_print(print_all_levels);
+			verifier_logs = true;
+			break;
 		default:
 			p_err("unrecognized option '%s'", argv[optind - 1]);
 			if (json_output)
@@ -394,8 +426,6 @@ int main(int argc, char **argv)
 	if (argc < 0)
 		usage();
 
-	bfd_init();
-
 	ret = cmd_select(cmds, argc, argv, do_help);
 
 	if (json_output)
@@ -404,6 +434,7 @@ int main(int argc, char **argv)
 	if (show_pinned) {
 		delete_pinned_obj_table(&prog_table);
 		delete_pinned_obj_table(&map_table);
+		delete_pinned_obj_table(&link_table);
 	}
 
 	return ret;

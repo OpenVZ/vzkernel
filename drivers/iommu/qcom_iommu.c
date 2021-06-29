@@ -18,6 +18,7 @@
  */
 
 #include <linux/atomic.h>
+#include <linux/bitfield.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/dma-iommu.h>
@@ -26,6 +27,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/io-64-nonatomic-hi-lo.h>
+#include <linux/io-pgtable.h>
 #include <linux/iommu.h>
 #include <linux/iopoll.h>
 #include <linux/kconfig.h>
@@ -42,8 +44,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-#include "io-pgtable.h"
-#include "arm-smmu-regs.h"
+#include "arm-smmu.h"
 
 #define SMMU_INTR_SEL_NS     0x2000
 
@@ -175,10 +176,32 @@ static void qcom_iommu_tlb_inv_range_nosync(unsigned long iova, size_t size,
 	}
 }
 
-static const struct iommu_gather_ops qcom_gather_ops = {
+static void qcom_iommu_tlb_flush_walk(unsigned long iova, size_t size,
+				      size_t granule, void *cookie)
+{
+	qcom_iommu_tlb_inv_range_nosync(iova, size, granule, false, cookie);
+	qcom_iommu_tlb_sync(cookie);
+}
+
+static void qcom_iommu_tlb_flush_leaf(unsigned long iova, size_t size,
+				      size_t granule, void *cookie)
+{
+	qcom_iommu_tlb_inv_range_nosync(iova, size, granule, true, cookie);
+	qcom_iommu_tlb_sync(cookie);
+}
+
+static void qcom_iommu_tlb_add_page(struct iommu_iotlb_gather *gather,
+				    unsigned long iova, size_t granule,
+				    void *cookie)
+{
+	qcom_iommu_tlb_inv_range_nosync(iova, granule, granule, true, cookie);
+}
+
+static const struct iommu_flush_ops qcom_flush_ops = {
 	.tlb_flush_all	= qcom_iommu_tlb_inv_context,
-	.tlb_add_flush	= qcom_iommu_tlb_inv_range_nosync,
-	.tlb_sync	= qcom_iommu_tlb_sync,
+	.tlb_flush_walk = qcom_iommu_tlb_flush_walk,
+	.tlb_flush_leaf = qcom_iommu_tlb_flush_leaf,
+	.tlb_add_page	= qcom_iommu_tlb_add_page,
 };
 
 static irqreturn_t qcom_iommu_fault(int irq, void *dev)
@@ -189,7 +212,7 @@ static irqreturn_t qcom_iommu_fault(int irq, void *dev)
 
 	fsr = iommu_readl(ctx, ARM_SMMU_CB_FSR);
 
-	if (!(fsr & FSR_FAULT))
+	if (!(fsr & ARM_SMMU_FSR_FAULT))
 		return IRQ_NONE;
 
 	fsynr = iommu_readl(ctx, ARM_SMMU_CB_FSYNR0);
@@ -203,7 +226,7 @@ static irqreturn_t qcom_iommu_fault(int irq, void *dev)
 	}
 
 	iommu_writel(ctx, ARM_SMMU_CB_FSR, fsr);
-	iommu_writel(ctx, ARM_SMMU_CB_RESUME, RESUME_TERMINATE);
+	iommu_writel(ctx, ARM_SMMU_CB_RESUME, ARM_SMMU_RESUME_TERMINATE);
 
 	return IRQ_HANDLED;
 }
@@ -226,7 +249,7 @@ static int qcom_iommu_init_domain(struct iommu_domain *domain,
 		.pgsize_bitmap	= qcom_iommu_ops.pgsize_bitmap,
 		.ias		= 32,
 		.oas		= 40,
-		.tlb		= &qcom_gather_ops,
+		.tlb		= &qcom_flush_ops,
 		.iommu_dev	= qcom_iommu->dev,
 	};
 
@@ -257,31 +280,30 @@ static int qcom_iommu_init_domain(struct iommu_domain *domain,
 
 		/* TTBRs */
 		iommu_writeq(ctx, ARM_SMMU_CB_TTBR0,
-				pgtbl_cfg.arm_lpae_s1_cfg.ttbr[0] |
-				((u64)ctx->asid << TTBRn_ASID_SHIFT));
-		iommu_writeq(ctx, ARM_SMMU_CB_TTBR1,
-				pgtbl_cfg.arm_lpae_s1_cfg.ttbr[1] |
-				((u64)ctx->asid << TTBRn_ASID_SHIFT));
+				pgtbl_cfg.arm_lpae_s1_cfg.ttbr |
+				FIELD_PREP(ARM_SMMU_TTBRn_ASID, ctx->asid));
+		iommu_writeq(ctx, ARM_SMMU_CB_TTBR1, 0);
 
-		/* TTBCR */
-		iommu_writel(ctx, ARM_SMMU_CB_TTBCR2,
-				(pgtbl_cfg.arm_lpae_s1_cfg.tcr >> 32) |
-				TTBCR2_SEP_UPSTREAM);
-		iommu_writel(ctx, ARM_SMMU_CB_TTBCR,
-				pgtbl_cfg.arm_lpae_s1_cfg.tcr);
+		/* TCR */
+		iommu_writel(ctx, ARM_SMMU_CB_TCR2,
+				arm_smmu_lpae_tcr2(&pgtbl_cfg));
+		iommu_writel(ctx, ARM_SMMU_CB_TCR,
+			     arm_smmu_lpae_tcr(&pgtbl_cfg) | ARM_SMMU_TCR_EAE);
 
 		/* MAIRs (stage-1 only) */
 		iommu_writel(ctx, ARM_SMMU_CB_S1_MAIR0,
-				pgtbl_cfg.arm_lpae_s1_cfg.mair[0]);
+				pgtbl_cfg.arm_lpae_s1_cfg.mair);
 		iommu_writel(ctx, ARM_SMMU_CB_S1_MAIR1,
-				pgtbl_cfg.arm_lpae_s1_cfg.mair[1]);
+				pgtbl_cfg.arm_lpae_s1_cfg.mair >> 32);
 
 		/* SCTLR */
-		reg = SCTLR_CFIE | SCTLR_CFRE | SCTLR_AFE | SCTLR_TRE |
-			SCTLR_M | SCTLR_S1_ASIDPNE | SCTLR_CFCFG;
+		reg = ARM_SMMU_SCTLR_CFIE | ARM_SMMU_SCTLR_CFRE |
+		      ARM_SMMU_SCTLR_AFE | ARM_SMMU_SCTLR_TRE |
+		      ARM_SMMU_SCTLR_M | ARM_SMMU_SCTLR_S1_ASIDPNE |
+		      ARM_SMMU_SCTLR_CFCFG;
 
 		if (IS_ENABLED(CONFIG_BIG_ENDIAN))
-			reg |= SCTLR_E;
+			reg |= ARM_SMMU_SCTLR_E;
 
 		iommu_writel(ctx, ARM_SMMU_CB_SCTLR, reg);
 
@@ -410,7 +432,7 @@ static void qcom_iommu_detach_dev(struct iommu_domain *domain, struct device *de
 }
 
 static int qcom_iommu_map(struct iommu_domain *domain, unsigned long iova,
-			  phys_addr_t paddr, size_t size, int prot)
+			  phys_addr_t paddr, size_t size, int prot, gfp_t gfp)
 {
 	int ret;
 	unsigned long flags;
@@ -427,7 +449,7 @@ static int qcom_iommu_map(struct iommu_domain *domain, unsigned long iova,
 }
 
 static size_t qcom_iommu_unmap(struct iommu_domain *domain, unsigned long iova,
-			       size_t size)
+			       size_t size, struct iommu_iotlb_gather *gather)
 {
 	size_t ret;
 	unsigned long flags;
@@ -444,14 +466,14 @@ static size_t qcom_iommu_unmap(struct iommu_domain *domain, unsigned long iova,
 	 */
 	pm_runtime_get_sync(qcom_domain->iommu->dev);
 	spin_lock_irqsave(&qcom_domain->pgtbl_lock, flags);
-	ret = ops->unmap(ops, iova, size);
+	ret = ops->unmap(ops, iova, size, gather);
 	spin_unlock_irqrestore(&qcom_domain->pgtbl_lock, flags);
 	pm_runtime_put_sync(qcom_domain->iommu->dev);
 
 	return ret;
 }
 
-static void qcom_iommu_iotlb_sync(struct iommu_domain *domain)
+static void qcom_iommu_flush_iotlb_all(struct iommu_domain *domain)
 {
 	struct qcom_iommu_domain *qcom_domain = to_qcom_iommu_domain(domain);
 	struct io_pgtable *pgtable = container_of(qcom_domain->pgtbl_ops,
@@ -462,6 +484,12 @@ static void qcom_iommu_iotlb_sync(struct iommu_domain *domain)
 	pm_runtime_get_sync(qcom_domain->iommu->dev);
 	qcom_iommu_tlb_sync(pgtable->cookie);
 	pm_runtime_put_sync(qcom_domain->iommu->dev);
+}
+
+static void qcom_iommu_iotlb_sync(struct iommu_domain *domain,
+				  struct iommu_iotlb_gather *gather)
+{
+	qcom_iommu_flush_iotlb_all(domain);
 }
 
 static phys_addr_t qcom_iommu_iova_to_phys(struct iommu_domain *domain,
@@ -590,8 +618,7 @@ static const struct iommu_ops qcom_iommu_ops = {
 	.detach_dev	= qcom_iommu_detach_dev,
 	.map		= qcom_iommu_map,
 	.unmap		= qcom_iommu_unmap,
-	.map_sg		= default_iommu_map_sg,
-	.flush_iotlb_all = qcom_iommu_iotlb_sync,
+	.flush_iotlb_all = qcom_iommu_flush_iotlb_all,
 	.iotlb_sync	= qcom_iommu_iotlb_sync,
 	.iova_to_phys	= qcom_iommu_iova_to_phys,
 	.add_device	= qcom_iommu_add_device,
@@ -944,8 +971,6 @@ static void __exit qcom_iommu_exit(void)
 
 module_init(qcom_iommu_init);
 module_exit(qcom_iommu_exit);
-
-IOMMU_OF_DECLARE(qcom_iommu_dev, "qcom,msm-iommu-v1");
 
 MODULE_DESCRIPTION("IOMMU API for QCOM IOMMU v1 implementations");
 MODULE_LICENSE("GPL v2");

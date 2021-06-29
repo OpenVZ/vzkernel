@@ -27,6 +27,26 @@
 #include <asm/tlbflush.h>
 #include <asm/pgalloc.h>
 
+#ifdef CONFIG_ARCH_ENABLE_HUGEPAGE_MIGRATION
+bool arch_hugetlb_migration_supported(struct hstate *h)
+{
+	size_t pagesize = huge_page_size(h);
+
+	switch (pagesize) {
+#ifdef CONFIG_ARM64_4K_PAGES
+	case PUD_SIZE:
+#endif
+	case PMD_SIZE:
+	case CONT_PMD_SIZE:
+	case CONT_PTE_SIZE:
+		return true;
+	}
+	pr_warn("%s: unrecognized huge page size 0x%lx\n",
+			__func__, pagesize);
+	return false;
+}
+#endif
+
 int pmd_huge(pmd_t pmd)
 {
 	return pmd_val(pmd) && !(pmd_val(pmd) & PMD_TABLE_BIT);
@@ -117,11 +137,14 @@ static pte_t get_clear_flush(struct mm_struct *mm,
 
 		/*
 		 * If HW_AFDBM is enabled, then the HW could turn on
-		 * the dirty bit for any page in the set, so check
-		 * them all.  All hugetlb entries are already young.
+		 * the dirty or accessed bit for any page in the set,
+		 * so check them all.
 		 */
 		if (pte_dirty(pte))
 			orig_pte = pte_mkdirty(orig_pte);
+
+		if (pte_young(pte))
+			orig_pte = pte_mkyoung(orig_pte);
 	}
 
 	if (valid) {
@@ -213,7 +236,7 @@ pte_t *huge_pte_alloc(struct mm_struct *mm,
 
 	if (sz == PUD_SIZE) {
 		ptep = (pte_t *)pudp;
-	} else if (sz == (PAGE_SIZE * CONT_PTES)) {
+	} else if (sz == (CONT_PTE_SIZE)) {
 		pmdp = pmd_alloc(mm, pudp, addr);
 
 		WARN_ON(addr & (sz - 1));
@@ -231,7 +254,7 @@ pte_t *huge_pte_alloc(struct mm_struct *mm,
 			ptep = huge_pmd_share(mm, addr, pudp);
 		else
 			ptep = (pte_t *)pmd_alloc(mm, pudp, addr);
-	} else if (sz == (PMD_SIZE * CONT_PMDS)) {
+	} else if (sz == (CONT_PMD_SIZE)) {
 		pmdp = pmd_alloc(mm, pudp, addr);
 		WARN_ON(addr & (sz - 1));
 		return (pte_t *)pmdp;
@@ -320,11 +343,40 @@ pte_t huge_ptep_get_and_clear(struct mm_struct *mm,
 	return get_clear_flush(mm, addr, ptep, pgsize, ncontig);
 }
 
+/*
+ * huge_ptep_set_access_flags will update access flags (dirty, accesssed)
+ * and write permission.
+ *
+ * For a contiguous huge pte range we need to check whether or not write
+ * permission has to change only on the first pte in the set. Then for
+ * all the contiguous ptes we need to check whether or not there is a
+ * discrepancy between dirty or young.
+ */
+static int __cont_access_flags_changed(pte_t *ptep, pte_t pte, int ncontig)
+{
+	int i;
+
+	if (pte_write(pte) != pte_write(huge_ptep_get(ptep)))
+		return 1;
+
+	for (i = 0; i < ncontig; i++) {
+		pte_t orig_pte = huge_ptep_get(ptep + i);
+
+		if (pte_dirty(pte) != pte_dirty(orig_pte))
+			return 1;
+
+		if (pte_young(pte) != pte_young(orig_pte))
+			return 1;
+	}
+
+	return 0;
+}
+
 int huge_ptep_set_access_flags(struct vm_area_struct *vma,
 			       unsigned long addr, pte_t *ptep,
 			       pte_t pte, int dirty)
 {
-	int ncontig, i, changed = 0;
+	int ncontig, i;
 	size_t pgsize = 0;
 	unsigned long pfn = pte_pfn(pte), dpfn;
 	pgprot_t hugeprot;
@@ -336,19 +388,23 @@ int huge_ptep_set_access_flags(struct vm_area_struct *vma,
 	ncontig = find_num_contig(vma->vm_mm, addr, ptep, &pgsize);
 	dpfn = pgsize >> PAGE_SHIFT;
 
-	orig_pte = get_clear_flush(vma->vm_mm, addr, ptep, pgsize, ncontig);
-	if (!pte_same(orig_pte, pte))
-		changed = 1;
+	if (!__cont_access_flags_changed(ptep, pte, ncontig))
+		return 0;
 
-	/* Make sure we don't lose the dirty state */
+	orig_pte = get_clear_flush(vma->vm_mm, addr, ptep, pgsize, ncontig);
+
+	/* Make sure we don't lose the dirty or young state */
 	if (pte_dirty(orig_pte))
 		pte = pte_mkdirty(pte);
+
+	if (pte_young(orig_pte))
+		pte = pte_mkyoung(pte);
 
 	hugeprot = pte_pgprot(pte);
 	for (i = 0; i < ncontig; i++, ptep++, addr += pgsize, pfn += dpfn)
 		set_pte_at(vma->vm_mm, addr, ptep, pfn_pte(pfn, hugeprot));
 
-	return changed;
+	return 1;
 }
 
 void huge_ptep_set_wrprotect(struct mm_struct *mm,
@@ -393,33 +449,30 @@ void huge_ptep_clear_flush(struct vm_area_struct *vma,
 	clear_flush(vma->vm_mm, addr, ptep, pgsize, ncontig);
 }
 
-static __init int setup_hugepagesz(char *opt)
+static int __init hugetlbpage_init(void)
 {
-	unsigned long ps = memparse(opt, &opt);
+#ifdef CONFIG_ARM64_4K_PAGES
+	hugetlb_add_hstate(PUD_SHIFT - PAGE_SHIFT);
+#endif
+	hugetlb_add_hstate((CONT_PMD_SHIFT + PMD_SHIFT) - PAGE_SHIFT);
+	hugetlb_add_hstate(PMD_SHIFT - PAGE_SHIFT);
+	hugetlb_add_hstate((CONT_PTE_SHIFT + PAGE_SHIFT) - PAGE_SHIFT);
 
-	switch (ps) {
+	return 0;
+}
+arch_initcall(hugetlbpage_init);
+
+bool __init arch_hugetlb_valid_size(unsigned long size)
+{
+	switch (size) {
 #ifdef CONFIG_ARM64_4K_PAGES
 	case PUD_SIZE:
 #endif
-	case PMD_SIZE * CONT_PMDS:
+	case CONT_PMD_SIZE:
 	case PMD_SIZE:
-	case PAGE_SIZE * CONT_PTES:
-		hugetlb_add_hstate(ilog2(ps) - PAGE_SHIFT);
-		return 1;
+	case CONT_PTE_SIZE:
+		return true;
 	}
 
-	hugetlb_bad_size();
-	pr_err("hugepagesz: Unsupported page size %lu K\n", ps >> 10);
-	return 0;
+	return false;
 }
-__setup("hugepagesz=", setup_hugepagesz);
-
-#ifdef CONFIG_ARM64_64K_PAGES
-static __init int add_default_hugepagesz(void)
-{
-	if (size_to_hstate(CONT_PTES * PAGE_SIZE) == NULL)
-		hugetlb_add_hstate(CONT_PTE_SHIFT);
-	return 0;
-}
-arch_initcall(add_default_hugepagesz);
-#endif

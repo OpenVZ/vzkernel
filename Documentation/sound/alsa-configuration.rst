@@ -309,7 +309,7 @@ pcifix
 This module supports all ADB PCM channels, ac97 mixer, SPDIF, hardware
 EQ, mpu401, gameport. A3D and wavetable support are still in development.
 Development and reverse engineering work is being coordinated at
-http://savannah.nongnu.org/projects/openvortex/
+https://savannah.nongnu.org/projects/openvortex/
 SPDIF output has a copy of the AC97 codec output, unless you use the
 ``spdif`` pcm device, which allows raw data passthru.
 The hardware EQ hardware and SPDIF is only present in the Vortex2 and 
@@ -495,7 +495,8 @@ Module for C-Media CMI8338/8738/8768/8770 PCI sound cards.
 mpu_port
     port address of MIDI interface (8338 only):
     0x300,0x310,0x320,0x330 = legacy port,
-    0 = disable (default)
+    1 = integrated PCI port (default on 8738),
+    0 = disable
 fm_port
     port address of OPL-3 FM synthesizer (8x38 only):
     0x388 = legacy port,
@@ -1568,11 +1569,11 @@ joystick_io
 The driver requires firmware files ``turtlebeach/msndinit.bin`` and
 ``turtlebeach/msndperm.bin`` in the proper firmware directory.
 
-See Documentation/sound/oss/MultiSound for important information
+See Documentation/sound/cards/multisound.sh for important information
 about this driver.  Note that it has been discontinued, but the 
 Voyetra Turtle Beach knowledge base entry for it is still available
 at
-http://www.turtlebeach.com
+https://www.turtlebeach.com
 
 Module snd-msnd-pinnacle
 ------------------------
@@ -2687,4 +2688,4 @@ Kernel Bugzilla
 ALSA Developers ML
     mailto:alsa-devel@alsa-project.org
 alsa-info.sh script
-    http://www.alsa-project.org/alsa-info.sh
+    https://www.alsa-project.org/alsa-info.sh

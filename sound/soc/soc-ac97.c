@@ -1,20 +1,15 @@
-/*
- * soc-ac97.c  --  ALSA SoC Audio Layer AC97 support
- *
- * Copyright 2005 Wolfson Microelectronics PLC.
- * Copyright 2005 Openedhand Ltd.
- * Copyright (C) 2010 Slimlogic Ltd.
- * Copyright (C) 2010 Texas Instruments Inc.
- *
- * Author: Liam Girdwood <lrg@slimlogic.co.uk>
- *         with code, comments and ideas from :-
- *         Richard Purdie <richard@openedhand.com>
- *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
- */
+// SPDX-License-Identifier: GPL-2.0+
+//
+// soc-ac97.c  --  ALSA SoC Audio Layer AC97 support
+//
+// Copyright 2005 Wolfson Microelectronics PLC.
+// Copyright 2005 Openedhand Ltd.
+// Copyright (C) 2010 Slimlogic Ltd.
+// Copyright (C) 2010 Texas Instruments Inc.
+//
+// Author: Liam Girdwood <lrg@slimlogic.co.uk>
+//         with code, comments and ideas from :-
+//         Richard Purdie <richard@openedhand.com>
 
 #include <linux/ctype.h>
 #include <linux/delay.h>
@@ -87,13 +82,12 @@ static int snd_soc_ac97_gpio_get(struct gpio_chip *chip, unsigned offset)
 	struct snd_soc_component *component = gpio_to_component(chip);
 	int ret;
 
-	if (snd_soc_component_read(component, AC97_GPIO_STATUS, &ret) < 0)
-		ret = -1;
+	ret = snd_soc_component_read(component, AC97_GPIO_STATUS);
 
 	dev_dbg(component->dev, "get gpio %d : %d\n", offset,
-		ret < 0 ? ret : ret & (1 << offset));
+		ret & (1 << offset));
 
-	return ret < 0 ? ret : !!(ret & (1 << offset));
+	return !!(ret & (1 << offset));
 }
 
 static void snd_soc_ac97_gpio_set(struct gpio_chip *chip, unsigned offset,
@@ -399,6 +393,8 @@ EXPORT_SYMBOL_GPL(snd_soc_set_ac97_ops);
 
 /**
  * snd_soc_set_ac97_ops_of_reset - Set ac97 ops with generic ac97 reset functions
+ * @ops: bus ops
+ * @pdev: platform device
  *
  * This function sets the reset and warm_reset properties of ops and parses
  * the device node of pdev to get pinctrl states and gpio numbers to use.

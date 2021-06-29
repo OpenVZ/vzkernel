@@ -485,7 +485,6 @@ static void b43_ram_write(struct b43_wldev *dev, u16 offset, u32 val)
 		val = swab32(val);
 
 	b43_write32(dev, B43_MMIO_RAM_CONTROL, offset);
-	mmiowb();
 	b43_write32(dev, B43_MMIO_RAM_DATA, val);
 }
 
@@ -656,9 +655,7 @@ static void b43_tsf_write_locked(struct b43_wldev *dev, u64 tsf)
 	/* The hardware guarantees us an atomic write, if we
 	 * write the low register first. */
 	b43_write32(dev, B43_MMIO_REV3PLUS_TSF_LOW, low);
-	mmiowb();
 	b43_write32(dev, B43_MMIO_REV3PLUS_TSF_HIGH, high);
-	mmiowb();
 }
 
 void b43_tsf_write(struct b43_wldev *dev, u64 tsf)
@@ -1822,11 +1819,9 @@ static void b43_beacon_update_trigger_work(struct work_struct *work)
 		if (b43_bus_host_is_sdio(dev->dev)) {
 			/* wl->mutex is enough. */
 			b43_do_beacon_update_trigger_work(dev);
-			mmiowb();
 		} else {
 			spin_lock_irq(&wl->hardirq_lock);
 			b43_do_beacon_update_trigger_work(dev);
-			mmiowb();
 			spin_unlock_irq(&wl->hardirq_lock);
 		}
 	}
@@ -2078,7 +2073,6 @@ static irqreturn_t b43_interrupt_thread_handler(int irq, void *dev_id)
 
 	mutex_lock(&dev->wl->mutex);
 	b43_do_interrupt_thread(dev);
-	mmiowb();
 	mutex_unlock(&dev->wl->mutex);
 
 	return IRQ_HANDLED;
@@ -2143,7 +2137,6 @@ static irqreturn_t b43_interrupt_handler(int irq, void *dev_id)
 
 	spin_lock(&dev->wl->hardirq_lock);
 	ret = b43_do_interrupt(dev);
-	mmiowb();
 	spin_unlock(&dev->wl->hardirq_lock);
 
 	return ret;
@@ -2184,7 +2177,7 @@ static void b43_print_fw_helptext(struct b43_wl *wl, bool error)
 {
 	const char text[] =
 		"You must go to " \
-		"http://wireless.kernel.org/en/users/Drivers/b43#devicefirmware " \
+		"https://wireless.wiki.kernel.org/en/users/Drivers/b43#devicefirmware " \
 		"and download the correct firmware for this driver version. " \
 		"Please carefully read all instructions on this website.\n";
 
@@ -3625,7 +3618,7 @@ static void b43_tx_work(struct work_struct *work)
 			else
 				err = b43_dma_tx(dev, skb);
 			if (err == -ENOSPC) {
-				wl->tx_queue_stopped[queue_num] = 1;
+				wl->tx_queue_stopped[queue_num] = true;
 				ieee80211_stop_queue(wl->hw, queue_num);
 				skb_queue_head(&wl->tx_queue[queue_num], skb);
 				break;
@@ -3636,7 +3629,7 @@ static void b43_tx_work(struct work_struct *work)
 		}
 
 		if (!err)
-			wl->tx_queue_stopped[queue_num] = 0;
+			wl->tx_queue_stopped[queue_num] = false;
 	}
 
 #if B43_DEBUG
@@ -5630,7 +5623,7 @@ static struct b43_wl *b43_wireless_init(struct b43_bus_dev *dev)
 	/* Initialize queues and flags. */
 	for (queue_num = 0; queue_num < B43_QOS_QUEUE_NUM; queue_num++) {
 		skb_queue_head_init(&wl->tx_queue[queue_num]);
-		wl->tx_queue_stopped[queue_num] = 0;
+		wl->tx_queue_stopped[queue_num] = false;
 	}
 
 	snprintf(chip_name, ARRAY_SIZE(chip_name),

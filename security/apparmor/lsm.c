@@ -174,14 +174,14 @@ static int apparmor_capget(struct task_struct *target, kernel_cap_t *effective,
 }
 
 static int apparmor_capable(const struct cred *cred, struct user_namespace *ns,
-			    int cap, int audit)
+			    int cap, unsigned int opts)
 {
 	struct aa_label *label;
 	int error = 0;
 
 	label = aa_get_newest_cred_label(cred);
 	if (!unconfined(label))
-		error = aa_capable(label, cap, audit);
+		error = aa_capable(label, cap, opts);
 	aa_put_label(label);
 
 	return error;
@@ -395,7 +395,7 @@ static int apparmor_inode_getattr(const struct path *path)
 	return common_perm_cond(OP_GETATTR, path, AA_MAY_GETATTR);
 }
 
-static int apparmor_file_open(struct file *file, const struct cred *cred)
+static int apparmor_file_open(struct file *file)
 {
 	struct aa_file_ctx *fctx = file_ctx(file);
 	struct aa_label *label;
@@ -414,7 +414,7 @@ static int apparmor_file_open(struct file *file, const struct cred *cred)
 		return 0;
 	}
 
-	label = aa_get_newest_cred_label(cred);
+	label = aa_get_newest_cred_label(file->f_cred);
 	if (!unconfined(label)) {
 		struct inode *inode = file_inode(file);
 		struct path_cond cond = { inode->i_uid, inode->i_mode };
@@ -732,7 +732,7 @@ static int apparmor_task_setrlimit(struct task_struct *task,
 	return error;
 }
 
-static int apparmor_task_kill(struct task_struct *target, struct siginfo *info,
+static int apparmor_task_kill(struct task_struct *target, struct kernel_siginfo *info,
 			      int sig, const struct cred *cred)
 {
 	struct aa_label *cl, *tl;

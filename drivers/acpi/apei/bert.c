@@ -42,19 +42,20 @@ static void __init bert_print_all(struct acpi_bert_region *region,
 	int remain = region_len;
 	u32 estatus_len;
 
-	if (!estatus->block_status)
-		return;
-
-	while (remain > sizeof(struct acpi_bert_region)) {
-		if (cper_estatus_check(estatus)) {
-			pr_err(FW_BUG "Invalid error record.\n");
-			return;
-		}
-
+	while (remain >= sizeof(struct acpi_bert_region)) {
 		estatus_len = cper_estatus_len(estatus);
 		if (remain < estatus_len) {
 			pr_err(FW_BUG "Truncated status block (length: %u).\n",
 			       estatus_len);
+			return;
+		}
+
+		/* No more error records. */
+		if (!estatus->block_status)
+			return;
+
+		if (cper_estatus_check(estatus)) {
+			pr_err(FW_BUG "Invalid error record.\n");
 			return;
 		}
 
@@ -70,10 +71,6 @@ static void __init bert_print_all(struct acpi_bert_region *region,
 		estatus->block_status = 0;
 
 		estatus = (void *)estatus + estatus_len;
-		/* No more error records. */
-		if (!estatus->block_status)
-			return;
-
 		remain -= estatus_len;
 	}
 }
@@ -124,7 +121,7 @@ static int __init bert_init(void)
 	rc = bert_check_table(bert_tab);
 	if (rc) {
 		pr_err(FW_BUG "table invalid.\n");
-		return rc;
+		goto out_put_bert_tab;
 	}
 
 	region_len = bert_tab->region_length;
@@ -132,7 +129,7 @@ static int __init bert_init(void)
 	rc = apei_resources_add(&bert_resources, bert_tab->address,
 				region_len, true);
 	if (rc)
-		return rc;
+		goto out_put_bert_tab;
 	rc = apei_resources_request(&bert_resources, "APEI BERT");
 	if (rc)
 		goto out_fini;
@@ -147,6 +144,8 @@ static int __init bert_init(void)
 	apei_resources_release(&bert_resources);
 out_fini:
 	apei_resources_fini(&bert_resources);
+out_put_bert_tab:
+	acpi_put_table((struct acpi_table_header *)bert_tab);
 
 	return rc;
 }

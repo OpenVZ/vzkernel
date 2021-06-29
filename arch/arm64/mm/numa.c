@@ -20,7 +20,6 @@
 #define pr_fmt(fmt) "NUMA: " fmt
 
 #include <linux/acpi.h>
-#include <linux/bootmem.h>
 #include <linux/memblock.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -70,19 +69,32 @@ EXPORT_SYMBOL(cpumask_of_node);
 
 #endif
 
-static void map_cpu_to_node(unsigned int cpu, int nid)
+static void numa_update_cpu(unsigned int cpu, bool remove)
 {
-	set_cpu_numa_node(cpu, nid);
-	if (nid >= 0)
+	int nid = cpu_to_node(cpu);
+
+	if (nid == NUMA_NO_NODE)
+		return;
+
+	if (remove)
+		cpumask_clear_cpu(cpu, node_to_cpumask_map[nid]);
+	else
 		cpumask_set_cpu(cpu, node_to_cpumask_map[nid]);
+}
+
+void numa_add_cpu(unsigned int cpu)
+{
+	numa_update_cpu(cpu, false);
+}
+
+void numa_remove_cpu(unsigned int cpu)
+{
+	numa_update_cpu(cpu, true);
 }
 
 void numa_clear_node(unsigned int cpu)
 {
-	int nid = cpu_to_node(cpu);
-
-	if (nid >= 0)
-		cpumask_clear_cpu(cpu, node_to_cpumask_map[nid]);
+	numa_remove_cpu(cpu);
 	set_cpu_numa_node(cpu, NUMA_NO_NODE);
 }
 
@@ -108,7 +120,7 @@ static void __init setup_node_to_cpumask_map(void)
 	}
 
 	/* cpumask_of_node() will now work */
-	pr_debug("Node to cpumask map for %d nodes\n", nr_node_ids);
+	pr_debug("Node to cpumask map for %u nodes\n", nr_node_ids);
 }
 
 /*
@@ -116,7 +128,7 @@ static void __init setup_node_to_cpumask_map(void)
  */
 void numa_store_cpu_info(unsigned int cpu)
 {
-	map_cpu_to_node(cpu, cpu_to_node_map[cpu]);
+	set_cpu_numa_node(cpu, cpu_to_node_map[cpu]);
 }
 
 void __init early_map_cpu_to_node(unsigned int cpu, int nid)
@@ -155,7 +167,7 @@ static void * __init pcpu_fc_alloc(unsigned int cpu, size_t size,
 {
 	int nid = early_cpu_to_node(cpu);
 
-	return  memblock_virt_alloc_try_nid(size, align,
+	return  memblock_alloc_try_nid(size, align,
 			__pa(MAX_DMA_ADDRESS), MEMBLOCK_ALLOC_ACCESSIBLE, nid);
 }
 
@@ -224,7 +236,7 @@ static void __init setup_node_data(int nid, u64 start_pfn, u64 end_pfn)
 	if (start_pfn >= end_pfn)
 		pr_info("Initmem setup node %d [<memory-less node>]\n", nid);
 
-	nd_pa = memblock_alloc_try_nid(nd_size, SMP_CACHE_BYTES, nid);
+	nd_pa = memblock_phys_alloc_try_nid(nd_size, SMP_CACHE_BYTES, nid);
 	nd = __va(nd_pa);
 
 	/* report and initialize */
@@ -348,13 +360,16 @@ static int __init numa_register_nodes(void)
 	struct memblock_region *mblk;
 
 	/* Check that valid nid is set to memblks */
-	for_each_memblock(memory, mblk)
-		if (mblk->nid == NUMA_NO_NODE || mblk->nid >= MAX_NUMNODES) {
+	for_each_memblock(memory, mblk) {
+		int mblk_nid = memblock_get_region_node(mblk);
+
+		if (mblk_nid == NUMA_NO_NODE || mblk_nid >= MAX_NUMNODES) {
 			pr_warn("Warning: invalid memblk node %d [mem %#010Lx-%#010Lx]\n",
-				mblk->nid, mblk->base,
+				mblk_nid, mblk->base,
 				mblk->base + mblk->size - 1);
 			return -EINVAL;
 		}
+	}
 
 	/* Finally register nodes. */
 	for_each_node_mask(nid, numa_nodes_parsed) {
@@ -450,4 +465,14 @@ void __init arm64_numa_init(void)
 	}
 
 	numa_init(dummy_numa_init);
+}
+
+/*
+ * We hope that we will be hotplugging memory on nodes we already know about,
+ * such that acpi_get_node() succeeds and we never fall back to this...
+ */
+int memory_add_physaddr_to_nid(u64 addr)
+{
+	pr_warn("Unknown node for memory at 0x%llx, assuming node 0\n", addr);
+	return 0;
 }

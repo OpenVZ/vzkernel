@@ -258,7 +258,7 @@ int mlx4_ib_umem_calc_optimal_mtt_size(struct ib_umem *umem, u64 start_va,
 				       int *num_of_mtts)
 {
 	u64 block_shift = MLX4_MAX_MTT_SHIFT;
-	u64 min_shift = umem->page_shift;
+	u64 min_shift = PAGE_SHIFT;
 	u64 last_block_aligned_end = 0;
 	u64 current_block_start = 0;
 	u64 first_block_start = 0;
@@ -295,8 +295,8 @@ int mlx4_ib_umem_calc_optimal_mtt_size(struct ib_umem *umem, u64 start_va,
 			 * in access to the wrong data.
 			 */
 			misalignment_bits =
-			(start_va & (~(((u64)(BIT(umem->page_shift))) - 1ULL)))
-			^ current_block_start;
+				(start_va & (~(((u64)(PAGE_SIZE)) - 1ULL))) ^
+				current_block_start;
 			block_shift = min(alignment_of(misalignment_bits),
 					  block_shift);
 		}
@@ -367,9 +367,8 @@ end:
 	return block_shift;
 }
 
-static struct ib_umem *mlx4_get_umem_mr(struct ib_ucontext *context, u64 start,
-					u64 length, u64 virt_addr,
-					int access_flags)
+static struct ib_umem *mlx4_get_umem_mr(struct ib_udata *udata, u64 start,
+					u64 length, int access_flags)
 {
 	/*
 	 * Force registering the memory as writable if the underlying pages
@@ -378,6 +377,7 @@ static struct ib_umem *mlx4_get_umem_mr(struct ib_ucontext *context, u64 start,
 	 * again
 	 */
 	if (!ib_access_writable(access_flags)) {
+		unsigned long untagged_start = untagged_addr(start);
 		struct vm_area_struct *vma;
 
 		down_read(&current->mm->mmap_sem);
@@ -386,9 +386,9 @@ static struct ib_umem *mlx4_get_umem_mr(struct ib_ucontext *context, u64 start,
 		 * cover the memory, but for now it requires a single vma to
 		 * entirely cover the MR to support RO mappings.
 		 */
-		vma = find_vma(current->mm, start);
-		if (vma && vma->vm_end >= start + length &&
-		    vma->vm_start <= start) {
+		vma = find_vma(current->mm, untagged_start);
+		if (vma && vma->vm_end >= untagged_start + length &&
+		    vma->vm_start <= untagged_start) {
 			if (vma->vm_flags & VM_WRITE)
 				access_flags |= IB_ACCESS_LOCAL_WRITE;
 		} else {
@@ -398,7 +398,7 @@ static struct ib_umem *mlx4_get_umem_mr(struct ib_ucontext *context, u64 start,
 		up_read(&current->mm->mmap_sem);
 	}
 
-	return ib_umem_get(context, start, length, access_flags, 0);
+	return ib_umem_get(udata, start, length, access_flags);
 }
 
 struct ib_mr *mlx4_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
@@ -415,8 +415,7 @@ struct ib_mr *mlx4_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	if (!mr)
 		return ERR_PTR(-ENOMEM);
 
-	mr->umem = mlx4_get_umem_mr(pd->uobject->context, start, length,
-				    virt_addr, access_flags);
+	mr->umem = mlx4_get_umem_mr(udata, start, length, access_flags);
 	if (IS_ERR(mr->umem)) {
 		err = PTR_ERR(mr->umem);
 		goto err_free;
@@ -440,7 +439,6 @@ struct ib_mr *mlx4_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 
 	mr->ibmr.rkey = mr->ibmr.lkey = mr->mmr.key;
 	mr->ibmr.length = length;
-	mr->ibmr.iova = virt_addr;
 	mr->ibmr.page_size = 1U << shift;
 
 	return &mr->ibmr;
@@ -505,9 +503,8 @@ int mlx4_ib_rereg_user_mr(struct ib_mr *mr, int flags,
 
 		mlx4_mr_rereg_mem_cleanup(dev->dev, &mmr->mmr);
 		ib_umem_release(mmr->umem);
-		mmr->umem =
-			mlx4_get_umem_mr(mr->uobject->context, start, length,
-					 virt_addr, mr_access_flags);
+		mmr->umem = mlx4_get_umem_mr(udata, start, length,
+					     mr_access_flags);
 		if (IS_ERR(mmr->umem)) {
 			err = PTR_ERR(mmr->umem);
 			/* Prevent mlx4_ib_dereg_mr from free'ing invalid pointer */
@@ -515,7 +512,7 @@ int mlx4_ib_rereg_user_mr(struct ib_mr *mr, int flags,
 			goto release_mpt_entry;
 		}
 		n = ib_umem_page_count(mmr->umem);
-		shift = mmr->umem->page_shift;
+		shift = PAGE_SHIFT;
 
 		err = mlx4_mr_rereg_mem_write(dev->dev, &mmr->mmr,
 					      virt_addr, length, n, shift,
@@ -596,7 +593,7 @@ mlx4_free_priv_pages(struct mlx4_ib_mr *mr)
 	}
 }
 
-int mlx4_ib_dereg_mr(struct ib_mr *ibmr)
+int mlx4_ib_dereg_mr(struct ib_mr *ibmr, struct ib_udata *udata)
 {
 	struct mlx4_ib_mr *mr = to_mmr(ibmr);
 	int ret;
@@ -656,8 +653,7 @@ int mlx4_ib_dealloc_mw(struct ib_mw *ibmw)
 	return 0;
 }
 
-struct ib_mr *mlx4_ib_alloc_mr(struct ib_pd *pd,
-			       enum ib_mr_type mr_type,
+struct ib_mr *mlx4_ib_alloc_mr(struct ib_pd *pd, enum ib_mr_type mr_type,
 			       u32 max_num_sg)
 {
 	struct mlx4_ib_dev *dev = to_mdev(pd->device);
@@ -699,99 +695,6 @@ err_free_mr:
 err_free:
 	kfree(mr);
 	return ERR_PTR(err);
-}
-
-struct ib_fmr *mlx4_ib_fmr_alloc(struct ib_pd *pd, int acc,
-				 struct ib_fmr_attr *fmr_attr)
-{
-	struct mlx4_ib_dev *dev = to_mdev(pd->device);
-	struct mlx4_ib_fmr *fmr;
-	int err = -ENOMEM;
-
-	fmr = kmalloc(sizeof *fmr, GFP_KERNEL);
-	if (!fmr)
-		return ERR_PTR(-ENOMEM);
-
-	err = mlx4_fmr_alloc(dev->dev, to_mpd(pd)->pdn, convert_access(acc),
-			     fmr_attr->max_pages, fmr_attr->max_maps,
-			     fmr_attr->page_shift, &fmr->mfmr);
-	if (err)
-		goto err_free;
-
-	err = mlx4_fmr_enable(to_mdev(pd->device)->dev, &fmr->mfmr);
-	if (err)
-		goto err_mr;
-
-	fmr->ibfmr.rkey = fmr->ibfmr.lkey = fmr->mfmr.mr.key;
-
-	return &fmr->ibfmr;
-
-err_mr:
-	(void) mlx4_mr_free(to_mdev(pd->device)->dev, &fmr->mfmr.mr);
-
-err_free:
-	kfree(fmr);
-
-	return ERR_PTR(err);
-}
-
-int mlx4_ib_map_phys_fmr(struct ib_fmr *ibfmr, u64 *page_list,
-		      int npages, u64 iova)
-{
-	struct mlx4_ib_fmr *ifmr = to_mfmr(ibfmr);
-	struct mlx4_ib_dev *dev = to_mdev(ifmr->ibfmr.device);
-
-	return mlx4_map_phys_fmr(dev->dev, &ifmr->mfmr, page_list, npages, iova,
-				 &ifmr->ibfmr.lkey, &ifmr->ibfmr.rkey);
-}
-
-int mlx4_ib_unmap_fmr(struct list_head *fmr_list)
-{
-	struct ib_fmr *ibfmr;
-	int err;
-	struct mlx4_dev *mdev = NULL;
-
-	list_for_each_entry(ibfmr, fmr_list, list) {
-		if (mdev && to_mdev(ibfmr->device)->dev != mdev)
-			return -EINVAL;
-		mdev = to_mdev(ibfmr->device)->dev;
-	}
-
-	if (!mdev)
-		return 0;
-
-	list_for_each_entry(ibfmr, fmr_list, list) {
-		struct mlx4_ib_fmr *ifmr = to_mfmr(ibfmr);
-
-		mlx4_fmr_unmap(mdev, &ifmr->mfmr, &ifmr->ibfmr.lkey, &ifmr->ibfmr.rkey);
-	}
-
-	/*
-	 * Make sure all MPT status updates are visible before issuing
-	 * SYNC_TPT firmware command.
-	 */
-	wmb();
-
-	err = mlx4_SYNC_TPT(mdev);
-	if (err)
-		pr_warn("SYNC_TPT error %d when "
-		       "unmapping FMRs\n", err);
-
-	return 0;
-}
-
-int mlx4_ib_fmr_dealloc(struct ib_fmr *ibfmr)
-{
-	struct mlx4_ib_fmr *ifmr = to_mfmr(ibfmr);
-	struct mlx4_ib_dev *dev = to_mdev(ibfmr->device);
-	int err;
-
-	err = mlx4_fmr_free(dev->dev, &ifmr->mfmr);
-
-	if (!err)
-		kfree(ifmr);
-
-	return err;
 }
 
 static int mlx4_set_page(struct ib_mr *ibmr, u64 addr)

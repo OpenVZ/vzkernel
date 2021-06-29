@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * scsi_sysfs.c
  *
@@ -367,7 +368,6 @@ store_shost_eh_deadline(struct device *dev, struct device_attribute *attr,
 
 static DEVICE_ATTR(eh_deadline, S_IRUGO | S_IWUSR, show_shost_eh_deadline, store_shost_eh_deadline);
 
-shost_rd_attr(use_blk_mq, "%d\n");
 shost_rd_attr(unique_id, "%u\n");
 shost_rd_attr(cmd_per_lun, "%hd\n");
 shost_rd_attr(can_queue, "%hd\n");
@@ -382,9 +382,26 @@ static ssize_t
 show_host_busy(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
-	return snprintf(buf, 20, "%d\n", atomic_read(&shost->host_busy));
+	return snprintf(buf, 20, "%d\n", scsi_host_busy(shost));
 }
 static DEVICE_ATTR(host_busy, S_IRUGO, show_host_busy, NULL);
+
+static ssize_t
+show_use_blk_mq(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "1\n");
+}
+static DEVICE_ATTR(use_blk_mq, S_IRUGO, show_use_blk_mq, NULL);
+
+static ssize_t
+show_nr_hw_queues(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct blk_mq_tag_set *tag_set = &shost->tag_set;
+
+	return snprintf(buf, 20, "%d\n", tag_set->nr_hw_queues);
+}
+static DEVICE_ATTR(nr_hw_queues, S_IRUGO, show_nr_hw_queues, NULL);
 
 static struct attribute *scsi_sysfs_shost_attrs[] = {
 	&dev_attr_use_blk_mq.attr,
@@ -404,6 +421,7 @@ static struct attribute *scsi_sysfs_shost_attrs[] = {
 	&dev_attr_prot_guard_type.attr,
 	&dev_attr_host_reset.attr,
 	&dev_attr_eh_deadline.attr,
+	&dev_attr_nr_hw_queues.attr,
 	NULL
 };
 
@@ -430,6 +448,7 @@ static void scsi_device_dev_release_usercontext(struct work_struct *work)
 	struct device *parent;
 	struct list_head *this, *tmp;
 	struct scsi_vpd *vpd_pg80 = NULL, *vpd_pg83 = NULL;
+	struct scsi_vpd *vpd_pg0 = NULL, *vpd_pg89 = NULL;
 	unsigned long flags;
 
 	sdev = container_of(work, struct scsi_device, ew.work);
@@ -459,16 +478,24 @@ static void scsi_device_dev_release_usercontext(struct work_struct *work)
 	sdev->request_queue = NULL;
 
 	mutex_lock(&sdev->inquiry_mutex);
-	rcu_swap_protected(sdev->vpd_pg80, vpd_pg80,
-			   lockdep_is_held(&sdev->inquiry_mutex));
-	rcu_swap_protected(sdev->vpd_pg83, vpd_pg83,
-			   lockdep_is_held(&sdev->inquiry_mutex));
+	vpd_pg0 = rcu_replace_pointer(sdev->vpd_pg0, vpd_pg0,
+				       lockdep_is_held(&sdev->inquiry_mutex));
+	vpd_pg80 = rcu_replace_pointer(sdev->vpd_pg80, vpd_pg80,
+				       lockdep_is_held(&sdev->inquiry_mutex));
+	vpd_pg83 = rcu_replace_pointer(sdev->vpd_pg83, vpd_pg83,
+				       lockdep_is_held(&sdev->inquiry_mutex));
+	vpd_pg89 = rcu_replace_pointer(sdev->vpd_pg89, vpd_pg89,
+				       lockdep_is_held(&sdev->inquiry_mutex));
 	mutex_unlock(&sdev->inquiry_mutex);
 
+	if (vpd_pg0)
+		kfree_rcu(vpd_pg0, rcu);
 	if (vpd_pg83)
 		kfree_rcu(vpd_pg83, rcu);
 	if (vpd_pg80)
 		kfree_rcu(vpd_pg80, rcu);
+	if (vpd_pg89)
+		kfree_rcu(vpd_pg89, rcu);
 	kfree(sdev->inquiry);
 	kfree(sdev);
 
@@ -656,6 +683,43 @@ sdev_show_device_blocked(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR(device_blocked, S_IRUGO, sdev_show_device_blocked, NULL);
 
+static ssize_t
+sdev_show_unpriv_sgio (struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct scsi_device *sdev;
+	int bit;
+
+	sdev = to_scsi_device(dev);
+	bit = test_bit(QUEUE_FLAG_UNPRIV_SGIO, &sdev->request_queue->queue_flags);
+	return snprintf(buf, 20, "%d\n", bit);
+}
+
+static ssize_t
+sdev_store_unpriv_sgio (struct device *dev, struct device_attribute *attr,
+			const char *buf, size_t count)
+{
+	struct scsi_device *sdev;
+	struct request_queue *q;
+	int err;
+	unsigned long val;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	sdev = to_scsi_device(dev);
+	q = sdev->request_queue;
+	err = kstrtoul(buf, 10, &val);
+	if (err)
+		return -EINVAL;
+
+	if (val)
+		blk_queue_flag_set(QUEUE_FLAG_UNPRIV_SGIO, q);
+	else
+		blk_queue_flag_clear(QUEUE_FLAG_UNPRIV_SGIO, q);
+	return count;
+}
+static DEVICE_ATTR(unpriv_sgio, S_IRUGO | S_IWUSR, sdev_show_unpriv_sgio, sdev_store_unpriv_sgio);
+
 /*
  * TODO: can we make these symlinks to the block layer ones?
  */
@@ -722,8 +786,33 @@ static ssize_t
 sdev_store_delete(struct device *dev, struct device_attribute *attr,
 		  const char *buf, size_t count)
 {
-	if (device_remove_file_self(dev, attr))
-		scsi_remove_device(to_scsi_device(dev));
+	struct kernfs_node *kn;
+	struct scsi_device *sdev = to_scsi_device(dev);
+
+	/*
+	 * We need to try to get module, avoiding the module been removed
+	 * during delete.
+	 */
+	if (scsi_device_get(sdev))
+		return -ENODEV;
+
+	kn = sysfs_break_active_protection(&dev->kobj, &attr->attr);
+	WARN_ON_ONCE(!kn);
+	/*
+	 * Concurrent writes into the "delete" sysfs attribute may trigger
+	 * concurrent calls to device_remove_file() and scsi_remove_device().
+	 * device_remove_file() handles concurrent removal calls by
+	 * serializing these and by ignoring the second and later removal
+	 * attempts.  Concurrent calls of scsi_remove_device() are
+	 * serialized. The second and later calls of scsi_remove_device() are
+	 * ignored because the first call of that function changes the device
+	 * state into SDEV_DEL.
+	 */
+	device_remove_file(dev, attr);
+	scsi_remove_device(sdev);
+	if (kn)
+		sysfs_unbreak_active_protection(kn);
+	scsi_device_put(sdev);
 	return count;
 };
 static DEVICE_ATTR(delete, S_IWUSR, NULL, sdev_store_delete);
@@ -749,6 +838,12 @@ store_state_field(struct device *dev, struct device_attribute *attr,
 
 	mutex_lock(&sdev->state_mutex);
 	ret = scsi_device_set_state(sdev, state);
+	/*
+	 * If the device state changes to SDEV_RUNNING, we need to run
+	 * the queue to avoid I/O hang.
+	 */
+	if (ret == 0 && state == SDEV_RUNNING)
+		blk_mq_run_hw_queues(sdev->request_queue, true);
 	mutex_unlock(&sdev->state_mutex);
 
 	return ret == 0 ? count : -EINVAL;
@@ -804,7 +899,7 @@ show_vpd_##_page(struct file *filp, struct kobject *kobj,	\
 		 struct bin_attribute *bin_attr,			\
 		 char *buf, loff_t off, size_t count)			\
 {									\
-	struct device *dev = container_of(kobj, struct device, kobj);	\
+	struct device *dev = kobj_to_dev(kobj);				\
 	struct scsi_device *sdev = to_scsi_device(dev);			\
 	struct scsi_vpd *vpd_page;					\
 	int ret = -EINVAL;						\
@@ -825,12 +920,14 @@ static struct bin_attribute dev_attr_vpd_##_page = {		\
 
 sdev_vpd_pg_attr(pg83);
 sdev_vpd_pg_attr(pg80);
+sdev_vpd_pg_attr(pg89);
+sdev_vpd_pg_attr(pg0);
 
 static ssize_t show_inquiry(struct file *filep, struct kobject *kobj,
 			    struct bin_attribute *bin_attr,
 			    char *buf, loff_t off, size_t count)
 {
-	struct device *dev = container_of(kobj, struct device, kobj);
+	struct device *dev = kobj_to_dev(kobj);
 	struct scsi_device *sdev = to_scsi_device(dev);
 
 	if (!sdev->inquiry)
@@ -991,14 +1088,14 @@ sdev_show_blacklist(struct device *dev, struct device_attribute *attr,
 			name = sdev_bflags_name[i];
 
 		if (name)
-			len += snprintf(buf + len, PAGE_SIZE - len,
-					"%s%s", len ? " " : "", name);
+			len += scnprintf(buf + len, PAGE_SIZE - len,
+					 "%s%s", len ? " " : "", name);
 		else
-			len += snprintf(buf + len, PAGE_SIZE - len,
-					"%sINVALID_BIT(%d)", len ? " " : "", i);
+			len += scnprintf(buf + len, PAGE_SIZE - len,
+					 "%sINVALID_BIT(%d)", len ? " " : "", i);
 	}
 	if (len)
-		len += snprintf(buf + len, PAGE_SIZE - len, "\n");
+		len += scnprintf(buf + len, PAGE_SIZE - len, "\n");
 	return len;
 }
 static DEVICE_ATTR(blacklist, S_IRUGO, sdev_show_blacklist, NULL);
@@ -1127,7 +1224,7 @@ static DEVICE_ATTR(queue_ramp_up_period, S_IRUGO | S_IWUSR,
 static umode_t scsi_sdev_attr_is_visible(struct kobject *kobj,
 					 struct attribute *attr, int i)
 {
-	struct device *dev = container_of(kobj, struct device, kobj);
+	struct device *dev = kobj_to_dev(kobj);
 	struct scsi_device *sdev = to_scsi_device(dev);
 
 
@@ -1153,14 +1250,20 @@ static umode_t scsi_sdev_attr_is_visible(struct kobject *kobj,
 static umode_t scsi_sdev_bin_attr_is_visible(struct kobject *kobj,
 					     struct bin_attribute *attr, int i)
 {
-	struct device *dev = container_of(kobj, struct device, kobj);
+	struct device *dev = kobj_to_dev(kobj);
 	struct scsi_device *sdev = to_scsi_device(dev);
 
+
+	if (attr == &dev_attr_vpd_pg0 && !sdev->vpd_pg0)
+		return 0;
 
 	if (attr == &dev_attr_vpd_pg80 && !sdev->vpd_pg80)
 		return 0;
 
 	if (attr == &dev_attr_vpd_pg83 && !sdev->vpd_pg83)
+		return 0;
+
+	if (attr == &dev_attr_vpd_pg89 && !sdev->vpd_pg89)
 		return 0;
 
 	return S_IRUGO;
@@ -1178,6 +1281,7 @@ static struct attribute *scsi_sdev_attrs[] = {
 	&dev_attr_rescan.attr,
 	&dev_attr_delete.attr,
 	&dev_attr_state.attr,
+	&dev_attr_unpriv_sgio.attr,
 	&dev_attr_timeout.attr,
 	&dev_attr_eh_timeout.attr,
 	&dev_attr_iocounterbits.attr,
@@ -1205,8 +1309,10 @@ static struct attribute *scsi_sdev_attrs[] = {
 };
 
 static struct bin_attribute *scsi_sdev_bin_attrs[] = {
+	&dev_attr_vpd_pg0,
 	&dev_attr_vpd_pg83,
 	&dev_attr_vpd_pg80,
+	&dev_attr_vpd_pg89,
 	&dev_attr_inquiry,
 	NULL
 };

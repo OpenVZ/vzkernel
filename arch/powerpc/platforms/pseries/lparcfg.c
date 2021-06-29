@@ -26,6 +26,7 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/hugetlb.h>
 #include <asm/lppaca.h>
 #include <asm/hvcall.h>
 #include <asm/firmware.h>
@@ -36,6 +37,7 @@
 #include <asm/vio.h>
 #include <asm/mmu.h>
 #include <asm/machdep.h>
+#include <asm/drmem.h>
 
 #include "pseries.h"
 
@@ -136,6 +138,39 @@ static unsigned int h_get_ppp(struct hvcall_ppp_data *ppp_data)
 	ppp_data->entitled_proc_cap_avail = retbuf[4] & 0xffffff;
 
 	return rc;
+}
+
+static void show_gpci_data(struct seq_file *m)
+{
+	struct hv_gpci_request_buffer *buf;
+	unsigned int affinity_score;
+	long ret;
+
+	buf = kmalloc(sizeof(*buf), GFP_KERNEL);
+	if (buf == NULL)
+		return;
+
+	/*
+	 * Show the local LPAR's affinity score.
+	 *
+	 * 0xB1 selects the Affinity_Domain_Info_By_Partition subcall.
+	 * The score is at byte 0xB in the output buffer.
+	 */
+	memset(&buf->params, 0, sizeof(buf->params));
+	buf->params.counter_request = cpu_to_be32(0xB1);
+	buf->params.starting_index = cpu_to_be32(-1);	/* local LPAR */
+	buf->params.counter_info_version_in = 0x5;	/* v5+ for score */
+	ret = plpar_hcall_norets(H_GET_PERF_COUNTER_INFO, virt_to_phys(buf),
+				 sizeof(*buf));
+	if (ret != H_SUCCESS) {
+		pr_debug("hcall failed: H_GET_PERF_COUNTER_INFO: %ld, %x\n",
+			 ret, be32_to_cpu(buf->params.detail_rc));
+		goto out;
+	}
+	affinity_score = buf->bytes[0xB];
+	seq_printf(m, "partition_affinity_score=%u\n", affinity_score);
+out:
+	kfree(buf);
 }
 
 static unsigned h_pic(unsigned long *pool_idle_time,
@@ -433,6 +468,16 @@ static void parse_em_data(struct seq_file *m)
 		seq_printf(m, "power_mode_data=%016lx\n", retbuf[0]);
 }
 
+static void maxmem_data(struct seq_file *m)
+{
+	unsigned long maxmem = 0;
+
+	maxmem += (unsigned long)drmem_info->n_lmbs * drmem_info->lmb_size;
+	maxmem += hugetlb_total_pages() * PAGE_SIZE;
+
+	seq_printf(m, "MaxMem=%lu\n", maxmem);
+}
+
 static int pseries_lparcfg_data(struct seq_file *m, void *v)
 {
 	int partition_potential_processors;
@@ -478,6 +523,8 @@ static int pseries_lparcfg_data(struct seq_file *m, void *v)
 			   partition_active_processors * 100);
 	}
 
+	show_gpci_data(m);
+
 	seq_printf(m, "partition_active_processors=%d\n",
 		   partition_active_processors);
 
@@ -491,6 +538,7 @@ static int pseries_lparcfg_data(struct seq_file *m, void *v)
 	seq_printf(m, "slb_size=%d\n", mmu_slb_size);
 #endif
 	parse_em_data(m);
+	maxmem_data(m);
 
 	return 0;
 }

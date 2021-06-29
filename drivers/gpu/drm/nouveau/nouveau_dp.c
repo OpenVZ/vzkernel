@@ -22,7 +22,6 @@
  * Authors: Ben Skeggs
  */
 
-#include <drm/drmP.h>
 #include <drm/drm_dp_helper.h>
 
 #include "nouveau_drv.h"
@@ -98,4 +97,42 @@ nouveau_dp_detect(struct nouveau_encoder *nv_encoder)
 	if (ret == 0)
 		return NOUVEAU_DP_SST;
 	return ret;
+}
+
+/* TODO:
+ * - Use the minimum possible BPC here, once we add support for the max bpc
+ *   property.
+ * - Validate the mode against downstream port caps (see
+ *   drm_dp_downstream_max_clock())
+ * - Validate against the DP caps advertised by the GPU (we don't check these
+ *   yet)
+ */
+enum drm_mode_status
+nv50_dp_mode_valid(struct drm_connector *connector,
+		   struct nouveau_encoder *outp,
+		   const struct drm_display_mode *mode,
+		   unsigned *out_clock)
+{
+	const unsigned min_clock = 25000;
+	unsigned int max_rate, mode_rate, clock = mode->clock;
+	const u8 bpp = connector->display_info.bpc * 3;
+
+	if (mode->flags & DRM_MODE_FLAG_INTERLACE && !outp->caps.dp_interlace)
+		return MODE_NO_INTERLACE;
+
+	if ((mode->flags & DRM_MODE_FLAG_3D_MASK) == DRM_MODE_FLAG_3D_FRAME_PACKING)
+		clock *= 2;
+
+	max_rate = outp->dp.link_nr * outp->dp.link_bw;
+	mode_rate = DIV_ROUND_UP(clock * bpp, 8);
+	if (mode_rate > max_rate)
+		return MODE_CLOCK_HIGH;
+
+	if (clock < min_clock)
+		return MODE_CLOCK_LOW;
+
+	if (out_clock)
+		*out_clock = clock;
+
+	return MODE_OK;
 }

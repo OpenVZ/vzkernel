@@ -9,6 +9,7 @@
  *
  */
 
+#include <linux/crash_dump.h>
 #include <linux/device.h>
 #include <linux/irq.h>
 #include <linux/msi.h>
@@ -203,7 +204,8 @@ static struct device_node *find_pe_dn(struct pci_dev *dev, int *total)
 	/* Get the top level device in the PE */
 	edev = pdn_to_eeh_dev(PCI_DN(dn));
 	if (edev->pe)
-		edev = list_first_entry(&edev->pe->edevs, struct eeh_dev, list);
+		edev = list_first_entry(&edev->pe->edevs, struct eeh_dev,
+					entry);
 	dn = pci_device_to_OF_node(edev->pdev);
 	if (!dn)
 		return NULL;
@@ -462,7 +464,28 @@ again:
 			return hwirq;
 		}
 
-		virq = irq_create_mapping(NULL, hwirq);
+		/*
+		 * Depending on the number of online CPUs in the original
+		 * kernel, it is likely for CPU #0 to be offline in a kdump
+		 * kernel. The associated IRQs in the affinity mappings
+		 * provided by irq_create_affinity_masks() are thus not
+		 * started by irq_startup(), as per-design for managed IRQs.
+		 * This can be a problem with multi-queue block devices driven
+		 * by blk-mq : such a non-started IRQ is very likely paired
+		 * with the single queue enforced by blk-mq during kdump (see
+		 * blk_mq_alloc_tag_set()). This causes the device to remain
+		 * silent and likely hangs the guest at some point.
+		 *
+		 * We don't really care for fine-grained affinity when doing
+		 * kdump actually : simply ignore the pre-computed affinity
+		 * masks in this case and let the default mask with all CPUs
+		 * be used when creating the IRQ mappings.
+		 */
+		if (is_kdump_kernel())
+			virq = irq_create_mapping(NULL, hwirq);
+		else
+			virq = irq_create_mapping_affinity(NULL, hwirq,
+							   entry->affinity);
 
 		if (!virq) {
 			pr_debug("rtas_msi: Failed mapping hwirq %d\n", hwirq);

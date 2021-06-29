@@ -9,6 +9,7 @@
 #include <linux/types.h>
 #include <linux/bvec.h>
 #include <linux/ktime.h>
+#include <linux/rh_kabi.h>
 
 struct bio_set;
 struct bio;
@@ -62,6 +63,18 @@ typedef u8 __bitwise blk_status_t;
  * any other system wide resources.
  */
 #define BLK_STS_DEV_RESOURCE	((__force blk_status_t)13)
+
+/*
+ * BLK_STS_ZONE_RESOURCE is returned from the driver to the block layer if zone
+ * related resources are unavailable, but the driver can guarantee the queue
+ * will be rerun in the future once the resources become available again.
+ *
+ * This is different from BLK_STS_DEV_RESOURCE in that it explicitly references
+ * a zone specific resource and IO to a different zone on the same device could
+ * still be served. Examples of that are zones that are write-locked, but a read
+ * to the same zone could be served.
+ */
+#define BLK_STS_ZONE_RESOURCE	((__force blk_status_t)14)
 
 /**
  * blk_path_error - returns true if error may be path related
@@ -174,15 +187,13 @@ struct bio {
 	void			*bi_private;
 #ifdef CONFIG_BLK_CGROUP
 	/*
-	 * Optional ioc and css associated with this bio.  Put on bio
-	 * release.  Read comment on top of bio_associate_current().
+	 * Represents the association of the css and request_queue for the bio.
+	 * If a bio goes direct to device, it will not have a blkg as it will
+	 * not have a request_queue associated with it.  The reference is put
+	 * on release of the bio.
 	 */
-	struct io_context	*bi_ioc;
-	struct cgroup_subsys_state *bi_css;
-#ifdef CONFIG_BLK_DEV_THROTTLING_LOW
-	void			*bi_cg_private;
+	struct blkcg_gq		*bi_blkg;
 	struct bio_issue	bi_issue;
-#endif
 #endif
 	union {
 #if defined(CONFIG_BLK_DEV_INTEGRITY)
@@ -204,6 +215,10 @@ struct bio {
 
 	struct bio_set		*bi_pool;
 
+	RH_KABI_USE(1, u64	bi_iocost_cost)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
 	 * double allocations for a small number of bio_vecs. This member
@@ -217,6 +232,7 @@ struct bio {
 /*
  * bio flags
  */
+#define BIO_NO_PAGE_REF	0	/* don't put release vec pages */
 #define BIO_SEG_VALID	1	/* bi_phys_segments valid */
 #define BIO_CLONED	2	/* doesn't own data */
 #define BIO_BOUNCED	3	/* bio is a bounce bio */
@@ -230,6 +246,8 @@ struct bio {
 #define BIO_TRACE_COMPLETION 10	/* bio_endio() should trace the final completion
 				 * of this bio. */
 #define BIO_QUEUE_ENTERED 11	/* can use blk_queue_enter_live() */
+#define BIO_TRACKED 12		/* set if bio goes through the rq_qos path */
+#define	BIO_CGROUP_ACCT	BIO_QUEUE_ENTERED /* has been accounted to a cgroup */
 
 /* See BVEC_POOL_OFFSET below before adding new flags */
 
@@ -286,16 +304,24 @@ enum req_opf {
 	REQ_OP_FLUSH		= 2,
 	/* discard sectors */
 	REQ_OP_DISCARD		= 3,
-	/* get zone information */
-	REQ_OP_ZONE_REPORT	= 4,
 	/* securely erase sectors */
 	REQ_OP_SECURE_ERASE	= 5,
 	/* seset a zone write pointer */
 	REQ_OP_ZONE_RESET	= 6,
 	/* write the same sector many times */
 	REQ_OP_WRITE_SAME	= 7,
+	/* reset all the zone present on the device */
+	REQ_OP_ZONE_RESET_ALL	= 8,
 	/* write the zero filled sector many times */
 	REQ_OP_WRITE_ZEROES	= 9,
+	/* Open a zone */
+	REQ_OP_ZONE_OPEN	= 10,
+	/* Close a zone */
+	REQ_OP_ZONE_CLOSE	= 11,
+	/* Transition a zone to full */
+	REQ_OP_ZONE_FINISH	= 12,
+	/* write data at the current zone write pointer */
+	REQ_OP_ZONE_APPEND	= 13,
 
 	/* SCSI passthrough using struct scsi_request */
 	REQ_OP_SCSI_IN		= 32,
@@ -327,9 +353,20 @@ enum req_flag_bits {
 	/* command specific flags for REQ_OP_WRITE_ZEROES: */
 	__REQ_NOUNMAP,		/* do not free blocks when zeroing */
 
+	__REQ_HIPRI,
+
 	/* for driver use */
 	__REQ_DRV,
+	__REQ_SWAP,		/* swapping request. */
 
+	/*
+	 * When a shared kthread needs to issue a bio for a cgroup, doing
+	 * so synchronously can lead to priority inversions as the kthread
+	 * can be trapped waiting for that cgroup.  CGROUP_PUNT flag makes
+	 * submit_bio() punt the actual issuing to a dedicated per-blkcg
+	 * work item to avoid such priority inversions.
+	 */
+	__REQ_CGROUP_PUNT,
 	__REQ_NR_BITS,		/* stops here */
 };
 
@@ -347,16 +384,27 @@ enum req_flag_bits {
 #define REQ_RAHEAD		(1ULL << __REQ_RAHEAD)
 #define REQ_BACKGROUND		(1ULL << __REQ_BACKGROUND)
 #define REQ_NOWAIT		(1ULL << __REQ_NOWAIT)
+#define REQ_CGROUP_PUNT		(1ULL << __REQ_CGROUP_PUNT)
 
 #define REQ_NOUNMAP		(1ULL << __REQ_NOUNMAP)
+#define REQ_HIPRI		(1ULL << __REQ_HIPRI)
 
 #define REQ_DRV			(1ULL << __REQ_DRV)
+#define REQ_SWAP		(1ULL << __REQ_SWAP)
 
 #define REQ_FAILFAST_MASK \
 	(REQ_FAILFAST_DEV | REQ_FAILFAST_TRANSPORT | REQ_FAILFAST_DRIVER)
 
 #define REQ_NOMERGE_FLAGS \
 	(REQ_NOMERGE | REQ_PREFLUSH | REQ_FUA)
+
+enum stat_group {
+	STAT_READ,
+	STAT_WRITE,
+	STAT_DISCARD,
+
+	NR_STAT_GROUPS
+};
 
 #define bio_op(bio) \
 	((bio)->bi_opf & REQ_OP_MASK)
@@ -395,6 +443,37 @@ static inline bool op_is_sync(unsigned int op)
 		(op & (REQ_SYNC | REQ_FUA | REQ_PREFLUSH));
 }
 
+static inline bool op_is_discard(unsigned int op)
+{
+	return (op & REQ_OP_MASK) == REQ_OP_DISCARD;
+}
+
+/*
+ * Check if a bio or request operation is a zone management operation, with
+ * the exception of REQ_OP_ZONE_RESET_ALL which is treated as a special case
+ * due to its different handling in the block layer and device response in
+ * case of command failure.
+ */
+static inline bool op_is_zone_mgmt(enum req_opf op)
+{
+	switch (op & REQ_OP_MASK) {
+	case REQ_OP_ZONE_RESET:
+	case REQ_OP_ZONE_OPEN:
+	case REQ_OP_ZONE_CLOSE:
+	case REQ_OP_ZONE_FINISH:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static inline int op_stat_group(unsigned int op)
+{
+	if (op_is_discard(op))
+		return STAT_DISCARD;
+	return op_is_write(op);
+}
+
 typedef unsigned int blk_qc_t;
 #define BLK_QC_T_NONE		-1U
 #define BLK_QC_T_SHIFT		16
@@ -403,17 +482,6 @@ typedef unsigned int blk_qc_t;
 static inline bool blk_qc_t_valid(blk_qc_t cookie)
 {
 	return cookie != BLK_QC_T_NONE;
-}
-
-static inline blk_qc_t blk_tag_to_qc_t(unsigned int tag, unsigned int queue_num,
-				       bool internal)
-{
-	blk_qc_t ret = tag | (queue_num << BLK_QC_T_SHIFT);
-
-	if (internal)
-		ret |= BLK_QC_T_INTERNAL;
-
-	return ret;
 }
 
 static inline unsigned int blk_qc_t_to_queue_num(blk_qc_t cookie)

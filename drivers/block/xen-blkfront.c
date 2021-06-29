@@ -251,13 +251,8 @@ static DEFINE_SPINLOCK(minor_lock);
 #define GRANTS_PER_INDIRECT_FRAME \
 	(XEN_PAGE_SIZE / sizeof(struct blkif_request_segment))
 
-#define PSEGS_PER_INDIRECT_FRAME	\
-	(GRANTS_INDIRECT_FRAME / GRANTS_PSEGS)
-
 #define INDIRECT_GREFS(_grants)		\
 	DIV_ROUND_UP(_grants, GRANTS_PER_INDIRECT_FRAME)
-
-#define GREFS(_psegs)	((_psegs) * GRANTS_PER_PSEG)
 
 static int blkfront_setup_indirect(struct blkfront_ring_info *rinfo);
 static void blkfront_gather_backend_features(struct blkfront_info *info);
@@ -978,7 +973,7 @@ static int xlvbd_init_blk_queue(struct gendisk *gd, u16 sector_size,
 	} else
 		info->tag_set.queue_depth = BLK_RING_SIZE(info);
 	info->tag_set.numa_node = NUMA_NO_NODE;
-	info->tag_set.flags = BLK_MQ_F_SHOULD_MERGE | BLK_MQ_F_SG_MERGE;
+	info->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 	info->tag_set.cmd_size = sizeof(struct blkif_req);
 	info->tag_set.driver_data = info;
 
@@ -1441,7 +1436,7 @@ static bool blkif_completion(unsigned long *id,
 
 		/* Wait the second response if not yet here. */
 		if (s2->status == REQ_WAITING)
-			return 0;
+			return false;
 
 		bret->status = blkif_get_final_status(s->status,
 						      s2->status);
@@ -1542,7 +1537,7 @@ static bool blkif_completion(unsigned long *id,
 		}
 	}
 
-	return 1;
+	return true;
 }
 
 static irqreturn_t blkif_interrupt(int irq, void *dev_id)
@@ -1646,7 +1641,8 @@ static irqreturn_t blkif_interrupt(int irq, void *dev_id)
 			BUG();
 		}
 
-		blk_mq_complete_request(req);
+		if (likely(!blk_should_fake_timeout(req->q)))
+			blk_mq_complete_request(req);
 	}
 
 	rinfo->ring.rsp_cons = i;
@@ -2402,7 +2398,7 @@ static void blkfront_connect(struct blkfront_info *info)
 	for (i = 0; i < info->nr_rings; i++)
 		kick_pending_request_queues(&info->rinfo[i]);
 
-	device_add_disk(&info->xbdev->dev, info->gd);
+	device_add_disk(&info->xbdev->dev, info->gd, NULL);
 
 	info->is_ready = 1;
 	return;

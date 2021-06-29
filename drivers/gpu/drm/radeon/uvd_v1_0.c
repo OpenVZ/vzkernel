@@ -23,7 +23,7 @@
  */
 
 #include <linux/firmware.h>
-#include <drm/drmP.h>
+
 #include "radeon.h"
 #include "radeon_asic.h"
 #include "r600d.h"
@@ -219,7 +219,7 @@ done:
 			WREG32(RS_DQ_RD_RET_CONF, 0x3f);
 			WREG32(MC_CONFIG, 0x1f);
 
-			/* fall through */
+			fallthrough;
 		case CHIP_RV670:
 		case CHIP_RV635:
 
@@ -438,7 +438,7 @@ int uvd_v1_0_ring_test(struct radeon_device *rdev, struct radeon_ring *ring)
 		tmp = RREG32(UVD_CONTEXT_ID);
 		if (tmp == 0xDEADBEEF)
 			break;
-		DRM_UDELAY(1);
+		udelay(1);
 	}
 
 	if (i < rdev->usec_timeout) {

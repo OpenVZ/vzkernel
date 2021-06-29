@@ -32,10 +32,10 @@
 #include <linux/uaccess.h>
 #include <net/compat.h>
 
-int get_compat_msghdr(struct msghdr *kmsg,
-		      struct compat_msghdr __user *umsg,
-		      struct sockaddr __user **save_addr,
-		      struct iovec **iov)
+int __get_compat_msghdr(struct msghdr *kmsg,
+			struct compat_msghdr __user *umsg,
+			struct sockaddr __user **save_addr,
+			compat_uptr_t *ptr, compat_size_t *len)
 {
 	struct compat_msghdr msg;
 	ssize_t err;
@@ -78,10 +78,27 @@ int get_compat_msghdr(struct msghdr *kmsg,
 		return -EMSGSIZE;
 
 	kmsg->msg_iocb = NULL;
+	*ptr = msg.msg_iov;
+	*len = msg.msg_iovlen;
+	return 0;
+}
 
-	return compat_import_iovec(save_addr ? READ : WRITE,
-				   compat_ptr(msg.msg_iov), msg.msg_iovlen,
-				   UIO_FASTIOV, iov, &kmsg->msg_iter);
+int get_compat_msghdr(struct msghdr *kmsg,
+		      struct compat_msghdr __user *umsg,
+		      struct sockaddr __user **save_addr,
+		      struct iovec **iov)
+{
+	compat_uptr_t ptr;
+	compat_size_t len;
+	ssize_t err;
+
+	err = __get_compat_msghdr(kmsg, umsg, save_addr, &ptr, &len);
+	if (err)
+		return err;
+
+	err = compat_import_iovec(save_addr ? READ : WRITE, compat_ptr(ptr),
+				   len, UIO_FASTIOV, iov, &kmsg->msg_iter);
+	return err < 0 ? err : 0;
 }
 
 /* Bleech... */
@@ -289,6 +306,7 @@ void scm_detach_fds_compat(struct msghdr *kmsg, struct scm_cookie *scm)
 			break;
 		}
 		/* Bump the usage count and install the file. */
+		__receive_sock(fp[i]);
 		fd_install(new_fd, get_file(fp[i]));
 	}
 
@@ -315,75 +333,6 @@ void scm_detach_fds_compat(struct msghdr *kmsg, struct scm_cookie *scm)
 	__scm_destroy(scm);
 }
 
-/* allocate a 64-bit sock_fprog on the user stack for duration of syscall. */
-struct sock_fprog __user *get_compat_bpf_fprog(char __user *optval)
-{
-	struct compat_sock_fprog __user *fprog32 = (struct compat_sock_fprog __user *)optval;
-	struct sock_fprog __user *kfprog = compat_alloc_user_space(sizeof(struct sock_fprog));
-	struct compat_sock_fprog f32;
-	struct sock_fprog f;
-
-	if (copy_from_user(&f32, fprog32, sizeof(*fprog32)))
-		return NULL;
-	memset(&f, 0, sizeof(f));
-	f.len = f32.len;
-	f.filter = compat_ptr(f32.filter);
-	if (copy_to_user(kfprog, &f, sizeof(struct sock_fprog)))
-		return NULL;
-
-	return kfprog;
-}
-EXPORT_SYMBOL_GPL(get_compat_bpf_fprog);
-
-static int do_set_attach_filter(struct socket *sock, int level, int optname,
-				char __user *optval, unsigned int optlen)
-{
-	struct sock_fprog __user *kfprog;
-
-	kfprog = get_compat_bpf_fprog(optval);
-	if (!kfprog)
-		return -EFAULT;
-
-	return sock_setsockopt(sock, level, optname, (char __user *)kfprog,
-			      sizeof(struct sock_fprog));
-}
-
-static int do_set_sock_timeout(struct socket *sock, int level,
-		int optname, char __user *optval, unsigned int optlen)
-{
-	struct compat_timeval __user *up = (struct compat_timeval __user *)optval;
-	struct timeval ktime;
-	mm_segment_t old_fs;
-	int err;
-
-	if (optlen < sizeof(*up))
-		return -EINVAL;
-	if (!access_ok(VERIFY_READ, up, sizeof(*up)) ||
-	    __get_user(ktime.tv_sec, &up->tv_sec) ||
-	    __get_user(ktime.tv_usec, &up->tv_usec))
-		return -EFAULT;
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	err = sock_setsockopt(sock, level, optname, (char *)&ktime, sizeof(ktime));
-	set_fs(old_fs);
-
-	return err;
-}
-
-static int compat_sock_setsockopt(struct socket *sock, int level, int optname,
-				char __user *optval, unsigned int optlen)
-{
-	if (optname == SO_ATTACH_FILTER ||
-	    optname == SO_ATTACH_REUSEPORT_CBPF)
-		return do_set_attach_filter(sock, level, optname,
-					    optval, optlen);
-	if (!COMPAT_USE_64BIT_TIME &&
-	    (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO))
-		return do_set_sock_timeout(sock, level, optname, optval, optlen);
-
-	return sock_setsockopt(sock, level, optname, optval, optlen);
-}
-
 static int __compat_sys_setsockopt(int fd, int level, int optname,
 				   char __user *optval, unsigned int optlen)
 {
@@ -398,7 +347,7 @@ static int __compat_sys_setsockopt(int fd, int level, int optname,
 		}
 
 		if (level == SOL_SOCKET)
-			err = compat_sock_setsockopt(sock, level,
+			err = sock_setsockopt(sock, level,
 					optname, optval, optlen);
 		else if (sock->ops->compat_setsockopt)
 			err = sock->ops->compat_setsockopt(sock, level,
@@ -415,44 +364,6 @@ COMPAT_SYSCALL_DEFINE5(setsockopt, int, fd, int, level, int, optname,
 		       char __user *, optval, unsigned int, optlen)
 {
 	return __compat_sys_setsockopt(fd, level, optname, optval, optlen);
-}
-
-static int do_get_sock_timeout(struct socket *sock, int level, int optname,
-		char __user *optval, int __user *optlen)
-{
-	struct compat_timeval __user *up;
-	struct timeval ktime;
-	mm_segment_t old_fs;
-	int len, err;
-
-	up = (struct compat_timeval __user *) optval;
-	if (get_user(len, optlen))
-		return -EFAULT;
-	if (len < sizeof(*up))
-		return -EINVAL;
-	len = sizeof(ktime);
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	err = sock_getsockopt(sock, level, optname, (char *) &ktime, &len);
-	set_fs(old_fs);
-
-	if (!err) {
-		if (put_user(sizeof(*up), optlen) ||
-		    !access_ok(VERIFY_WRITE, up, sizeof(*up)) ||
-		    __put_user(ktime.tv_sec, &up->tv_sec) ||
-		    __put_user(ktime.tv_usec, &up->tv_usec))
-			err = -EFAULT;
-	}
-	return err;
-}
-
-static int compat_sock_getsockopt(struct socket *sock, int level, int optname,
-				char __user *optval, int __user *optlen)
-{
-	if (!COMPAT_USE_64BIT_TIME &&
-	    (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO))
-		return do_get_sock_timeout(sock, level, optname, optval, optlen);
-	return sock_getsockopt(sock, level, optname, optval, optlen);
 }
 
 int compat_sock_get_timestamp(struct sock *sk, struct timeval __user *userstamp)
@@ -526,7 +437,7 @@ static int __compat_sys_getsockopt(int fd, int level, int optname,
 		}
 
 		if (level == SOL_SOCKET)
-			err = compat_sock_getsockopt(sock, level,
+			err = sock_getsockopt(sock, level,
 					optname, optval, optlen);
 		else if (sock->ops->compat_getsockopt)
 			err = sock->ops->compat_getsockopt(sock, level,
@@ -589,8 +500,8 @@ int compat_mc_setsockopt(struct sock *sock, int level, int optname,
 			compat_alloc_user_space(sizeof(struct group_req));
 		u32 interface;
 
-		if (!access_ok(VERIFY_READ, gr32, sizeof(*gr32)) ||
-		    !access_ok(VERIFY_WRITE, kgr, sizeof(struct group_req)) ||
+		if (!access_ok(gr32, sizeof(*gr32)) ||
+		    !access_ok(kgr, sizeof(struct group_req)) ||
 		    __get_user(interface, &gr32->gr_interface) ||
 		    __put_user(interface, &kgr->gr_interface) ||
 		    copy_in_user(&kgr->gr_group, &gr32->gr_group,
@@ -610,8 +521,8 @@ int compat_mc_setsockopt(struct sock *sock, int level, int optname,
 			sizeof(struct group_source_req));
 		u32 interface;
 
-		if (!access_ok(VERIFY_READ, gsr32, sizeof(*gsr32)) ||
-		    !access_ok(VERIFY_WRITE, kgsr,
+		if (!access_ok(gsr32, sizeof(*gsr32)) ||
+		    !access_ok(kgsr,
 			sizeof(struct group_source_req)) ||
 		    __get_user(interface, &gsr32->gsr_interface) ||
 		    __put_user(interface, &kgsr->gsr_interface) ||
@@ -630,7 +541,7 @@ int compat_mc_setsockopt(struct sock *sock, int level, int optname,
 		struct group_filter __user *kgf;
 		u32 interface, fmode, numsrc;
 
-		if (!access_ok(VERIFY_READ, gf32, __COMPAT_GF0_SIZE) ||
+		if (!access_ok(gf32, __COMPAT_GF0_SIZE) ||
 		    __get_user(interface, &gf32->gf_interface) ||
 		    __get_user(fmode, &gf32->gf_fmode) ||
 		    __get_user(numsrc, &gf32->gf_numsrc))
@@ -640,7 +551,7 @@ int compat_mc_setsockopt(struct sock *sock, int level, int optname,
 		if (koptlen < GROUP_FILTER_SIZE(numsrc))
 			return -EINVAL;
 		kgf = compat_alloc_user_space(koptlen);
-		if (!access_ok(VERIFY_WRITE, kgf, koptlen) ||
+		if (!access_ok(kgf, koptlen) ||
 		    __put_user(interface, &kgf->gf_interface) ||
 		    __put_user(fmode, &kgf->gf_fmode) ||
 		    __put_user(numsrc, &kgf->gf_numsrc) ||
@@ -674,7 +585,7 @@ int compat_mc_getsockopt(struct sock *sock, int level, int optname,
 		return getsockopt(sock, level, optname, optval, optlen);
 
 	koptlen = compat_alloc_user_space(sizeof(*koptlen));
-	if (!access_ok(VERIFY_READ, optlen, sizeof(*optlen)) ||
+	if (!access_ok(optlen, sizeof(*optlen)) ||
 	    __get_user(ulen, optlen))
 		return -EFAULT;
 
@@ -684,14 +595,14 @@ int compat_mc_getsockopt(struct sock *sock, int level, int optname,
 	if (klen < GROUP_FILTER_SIZE(0))
 		return -EINVAL;
 
-	if (!access_ok(VERIFY_WRITE, koptlen, sizeof(*koptlen)) ||
+	if (!access_ok(koptlen, sizeof(*koptlen)) ||
 	    __put_user(klen, koptlen))
 		return -EFAULT;
 
 	/* have to allow space for previous compat_alloc_user_space, too */
 	kgf = compat_alloc_user_space(klen+sizeof(*optlen));
 
-	if (!access_ok(VERIFY_READ, gf32, __COMPAT_GF0_SIZE) ||
+	if (!access_ok(gf32, __COMPAT_GF0_SIZE) ||
 	    __get_user(interface, &gf32->gf_interface) ||
 	    __get_user(fmode, &gf32->gf_fmode) ||
 	    __get_user(numsrc, &gf32->gf_numsrc) ||
@@ -705,18 +616,18 @@ int compat_mc_getsockopt(struct sock *sock, int level, int optname,
 	if (err)
 		return err;
 
-	if (!access_ok(VERIFY_READ, koptlen, sizeof(*koptlen)) ||
+	if (!access_ok(koptlen, sizeof(*koptlen)) ||
 	    __get_user(klen, koptlen))
 		return -EFAULT;
 
 	ulen = klen - (sizeof(*kgf)-sizeof(*gf32));
 
-	if (!access_ok(VERIFY_WRITE, optlen, sizeof(*optlen)) ||
+	if (!access_ok(optlen, sizeof(*optlen)) ||
 	    __put_user(ulen, optlen))
 		return -EFAULT;
 
-	if (!access_ok(VERIFY_READ, kgf, klen) ||
-	    !access_ok(VERIFY_WRITE, gf32, ulen) ||
+	if (!access_ok(kgf, klen) ||
+	    !access_ok(gf32, ulen) ||
 	    __get_user(interface, &kgf->gf_interface) ||
 	    __get_user(fmode, &kgf->gf_fmode) ||
 	    __get_user(numsrc, &kgf->gf_numsrc) ||

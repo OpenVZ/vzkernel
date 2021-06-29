@@ -27,16 +27,20 @@ enum bpf_type {
 	BPF_TYPE_UNSPEC	= 0,
 	BPF_TYPE_PROG,
 	BPF_TYPE_MAP,
+	BPF_TYPE_LINK,
 };
 
 static void *bpf_any_get(void *raw, enum bpf_type type)
 {
 	switch (type) {
 	case BPF_TYPE_PROG:
-		raw = bpf_prog_inc(raw);
+		bpf_prog_inc(raw);
 		break;
 	case BPF_TYPE_MAP:
-		raw = bpf_map_inc(raw, true);
+		bpf_map_inc_with_uref(raw);
+		break;
+	case BPF_TYPE_LINK:
+		bpf_link_inc(raw);
 		break;
 	default:
 		WARN_ON_ONCE(1);
@@ -55,6 +59,9 @@ static void bpf_any_put(void *raw, enum bpf_type type)
 	case BPF_TYPE_MAP:
 		bpf_map_put_with_uref(raw);
 		break;
+	case BPF_TYPE_LINK:
+		bpf_link_put(raw);
+		break;
 	default:
 		WARN_ON_ONCE(1);
 		break;
@@ -65,20 +72,32 @@ static void *bpf_fd_probe_obj(u32 ufd, enum bpf_type *type)
 {
 	void *raw;
 
-	*type = BPF_TYPE_MAP;
 	raw = bpf_map_get_with_uref(ufd);
-	if (IS_ERR(raw)) {
-		*type = BPF_TYPE_PROG;
-		raw = bpf_prog_get(ufd);
+	if (!IS_ERR(raw)) {
+		*type = BPF_TYPE_MAP;
+		return raw;
 	}
 
-	return raw;
+	raw = bpf_prog_get(ufd);
+	if (!IS_ERR(raw)) {
+		*type = BPF_TYPE_PROG;
+		return raw;
+	}
+
+	raw = bpf_link_get_from_fd(ufd);
+	if (!IS_ERR(raw)) {
+		*type = BPF_TYPE_LINK;
+		return raw;
+	}
+
+	return ERR_PTR(-EINVAL);
 }
 
 static const struct inode_operations bpf_dir_iops;
 
 static const struct inode_operations bpf_prog_iops = { };
 static const struct inode_operations bpf_map_iops  = { };
+static const struct inode_operations bpf_link_iops  = { };
 
 static struct inode *bpf_get_inode(struct super_block *sb,
 				   const struct inode *dir,
@@ -116,6 +135,8 @@ static int bpf_inode_type(const struct inode *inode, enum bpf_type *type)
 		*type = BPF_TYPE_PROG;
 	else if (inode->i_op == &bpf_map_iops)
 		*type = BPF_TYPE_MAP;
+	else if (inode->i_op == &bpf_link_iops)
+		*type = BPF_TYPE_LINK;
 	else
 		return -EACCES;
 
@@ -196,20 +217,23 @@ static void *map_seq_next(struct seq_file *m, void *v, loff_t *pos)
 {
 	struct bpf_map *map = seq_file_to_map(m);
 	void *key = map_iter(m)->key;
+	void *prev_key;
 
+	(*pos)++;
 	if (map_iter(m)->done)
 		return NULL;
 
 	if (unlikely(v == SEQ_START_TOKEN))
-		goto done;
+		prev_key = NULL;
+	else
+		prev_key = key;
 
-	if (map->ops->map_get_next_key(map, key, key)) {
+	rcu_read_lock();
+	if (map->ops->map_get_next_key(map, prev_key, key)) {
 		map_iter(m)->done = true;
-		return NULL;
+		key = NULL;
 	}
-
-done:
-	++(*pos);
+	rcu_read_unlock();
 	return key;
 }
 
@@ -332,7 +356,17 @@ static int bpf_mkmap(struct dentry *dentry, umode_t mode, void *arg)
 	struct bpf_map *map = arg;
 
 	return bpf_mkobj_ops(dentry, mode, arg, &bpf_map_iops,
-			     map->btf ? &bpffs_map_fops : &bpffs_obj_fops);
+			     bpf_map_support_seq_show(map) ?
+			     &bpffs_map_fops : &bpffs_obj_fops);
+}
+
+static int bpf_mklink(struct dentry *dentry, umode_t mode, void *arg)
+{
+	struct bpf_link *link = arg;
+
+	return bpf_mkobj_ops(dentry, mode, arg, &bpf_link_iops,
+			     bpf_link_is_iter(link) ?
+			     &bpf_iter_fops : &bpffs_obj_fops);
 }
 
 static struct dentry *
@@ -379,7 +413,7 @@ static const struct inode_operations bpf_dir_iops = {
 	.unlink		= simple_unlink,
 };
 
-static int bpf_obj_do_pin(const struct filename *pathname, void *raw,
+static int bpf_obj_do_pin(const char __user *pathname, void *raw,
 			  enum bpf_type type)
 {
 	struct dentry *dentry;
@@ -388,7 +422,7 @@ static int bpf_obj_do_pin(const struct filename *pathname, void *raw,
 	umode_t mode;
 	int ret;
 
-	dentry = kern_path_create(AT_FDCWD, pathname->name, &path, 0);
+	dentry = user_path_create(AT_FDCWD, pathname, &path, 0);
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
 
@@ -411,6 +445,9 @@ static int bpf_obj_do_pin(const struct filename *pathname, void *raw,
 	case BPF_TYPE_MAP:
 		ret = vfs_mkobj(dentry, mode, bpf_mkmap, raw);
 		break;
+	case BPF_TYPE_LINK:
+		ret = vfs_mkobj(dentry, mode, bpf_mklink, raw);
+		break;
 	default:
 		ret = -EPERM;
 	}
@@ -421,30 +458,22 @@ out:
 
 int bpf_obj_pin_user(u32 ufd, const char __user *pathname)
 {
-	struct filename *pname;
 	enum bpf_type type;
 	void *raw;
 	int ret;
 
-	pname = getname(pathname);
-	if (IS_ERR(pname))
-		return PTR_ERR(pname);
-
 	raw = bpf_fd_probe_obj(ufd, &type);
-	if (IS_ERR(raw)) {
-		ret = PTR_ERR(raw);
-		goto out;
-	}
+	if (IS_ERR(raw))
+		return PTR_ERR(raw);
 
-	ret = bpf_obj_do_pin(pname, raw, type);
+	ret = bpf_obj_do_pin(pathname, raw, type);
 	if (ret != 0)
 		bpf_any_put(raw, type);
-out:
-	putname(pname);
+
 	return ret;
 }
 
-static void *bpf_obj_do_get(const struct filename *pathname,
+static void *bpf_obj_do_get(const char __user *pathname,
 			    enum bpf_type *type, int flags)
 {
 	struct inode *inode;
@@ -452,7 +481,7 @@ static void *bpf_obj_do_get(const struct filename *pathname,
 	void *raw;
 	int ret;
 
-	ret = kern_path(pathname->name, LOOKUP_FOLLOW, &path);
+	ret = user_path_at(AT_FDCWD, pathname, LOOKUP_FOLLOW, &path);
 	if (ret)
 		return ERR_PTR(ret);
 
@@ -479,47 +508,42 @@ out:
 int bpf_obj_get_user(const char __user *pathname, int flags)
 {
 	enum bpf_type type = BPF_TYPE_UNSPEC;
-	struct filename *pname;
-	int ret = -ENOENT;
 	int f_flags;
 	void *raw;
+	int ret;
 
 	f_flags = bpf_get_file_flag(flags);
 	if (f_flags < 0)
 		return f_flags;
 
-	pname = getname(pathname);
-	if (IS_ERR(pname))
-		return PTR_ERR(pname);
-
-	raw = bpf_obj_do_get(pname, &type, f_flags);
-	if (IS_ERR(raw)) {
-		ret = PTR_ERR(raw);
-		goto out;
-	}
+	raw = bpf_obj_do_get(pathname, &type, f_flags);
+	if (IS_ERR(raw))
+		return PTR_ERR(raw);
 
 	if (type == BPF_TYPE_PROG)
 		ret = bpf_prog_new_fd(raw);
 	else if (type == BPF_TYPE_MAP)
 		ret = bpf_map_new_fd(raw, f_flags);
+	else if (type == BPF_TYPE_LINK)
+		ret = bpf_link_new_fd(raw);
 	else
-		goto out;
+		return -ENOENT;
 
 	if (ret < 0)
 		bpf_any_put(raw, type);
-out:
-	putname(pname);
 	return ret;
 }
 
 static struct bpf_prog *__get_prog_inode(struct inode *inode, enum bpf_prog_type type)
 {
 	struct bpf_prog *prog;
-	int ret = inode_permission(inode, MAY_READ | MAY_WRITE);
+	int ret = inode_permission(inode, MAY_READ);
 	if (ret)
 		return ERR_PTR(ret);
 
 	if (inode->i_op == &bpf_map_iops)
+		return ERR_PTR(-EINVAL);
+	if (inode->i_op == &bpf_link_iops)
 		return ERR_PTR(-EINVAL);
 	if (inode->i_op != &bpf_prog_iops)
 		return ERR_PTR(-EACCES);
@@ -533,7 +557,8 @@ static struct bpf_prog *__get_prog_inode(struct inode *inode, enum bpf_prog_type
 	if (!bpf_prog_get_ok(prog, &type, false))
 		return ERR_PTR(-EINVAL);
 
-	return bpf_prog_inc(prog);
+	bpf_prog_inc(prog);
+	return prog;
 }
 
 struct bpf_prog *bpf_prog_get_type_path(const char *name, enum bpf_prog_type type)
@@ -551,19 +576,6 @@ struct bpf_prog *bpf_prog_get_type_path(const char *name, enum bpf_prog_type typ
 }
 EXPORT_SYMBOL(bpf_prog_get_type_path);
 
-static void bpf_evict_inode(struct inode *inode)
-{
-	enum bpf_type type;
-
-	truncate_inode_pages_final(&inode->i_data);
-	clear_inode(inode);
-
-	if (S_ISLNK(inode->i_mode))
-		kfree(inode->i_link);
-	if (!bpf_inode_type(inode, &type))
-		bpf_any_put(inode->i_private, type);
-}
-
 /*
  * Display the mount options in /proc/mounts.
  */
@@ -576,11 +588,28 @@ static int bpf_show_options(struct seq_file *m, struct dentry *root)
 	return 0;
 }
 
+static void bpf_destroy_inode_deferred(struct rcu_head *head)
+{
+	struct inode *inode = container_of(head, struct inode, i_rcu);
+	enum bpf_type type;
+
+	if (S_ISLNK(inode->i_mode))
+		kfree(inode->i_link);
+	if (!bpf_inode_type(inode, &type))
+		bpf_any_put(inode->i_private, type);
+	free_inode_nonrcu(inode);
+}
+
+static void bpf_destroy_inode(struct inode *inode)
+{
+	call_rcu(&inode->i_rcu, bpf_destroy_inode_deferred);
+}
+
 static const struct super_operations bpf_super_ops = {
 	.statfs		= simple_statfs,
 	.drop_inode	= generic_delete_inode,
 	.show_options	= bpf_show_options,
-	.evict_inode	= bpf_evict_inode,
+	.destroy_inode	= bpf_destroy_inode,
 };
 
 enum {

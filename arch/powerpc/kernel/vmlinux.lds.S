@@ -4,6 +4,9 @@
 #else
 #define PROVIDE32(x)	PROVIDE(x)
 #endif
+
+#define BSS_FIRST_SECTIONS *(.bss.prominit)
+
 #include <asm/page.h>
 #include <asm-generic/vmlinux.lds.h>
 #include <asm/cache.h>
@@ -99,6 +102,10 @@ SECTIONS
 #endif
 		/* careful! __ftr_alt_* sections need to be close to .text */
 		*(.text.hot TEXT_MAIN .text.fixup .text.unlikely .fixup __ftr_alt_* .ref.text);
+#ifdef CONFIG_PPC64
+		*(.tramp.ftrace.text);
+#endif
+		NOINSTR_TEXT
 		SCHED_TEXT
 		CPUIDLE_TEXT
 		LOCK_TEXT
@@ -153,15 +160,25 @@ SECTIONS
 		*(__rfi_flush_fixup)
 		__stop___rfi_flush_fixup = .;
 	}
+#endif /* CONFIG_PPC64 */
 
+#ifdef CONFIG_PPC_BARRIER_NOSPEC
 	. = ALIGN(8);
 	__spec_barrier_fixup : AT(ADDR(__spec_barrier_fixup) - LOAD_OFFSET) {
 		__start___barrier_nospec_fixup = .;
 		*(__barrier_nospec_fixup)
 		__stop___barrier_nospec_fixup = .;
 	}
-#endif
+#endif /* CONFIG_PPC_BARRIER_NOSPEC */
 
+#ifdef CONFIG_PPC_FSL_BOOK3E
+	. = ALIGN(8);
+	__spec_btb_flush_fixup : AT(ADDR(__spec_btb_flush_fixup) - LOAD_OFFSET) {
+		__start__btb_flush_fixup = .;
+		*(__btb_flush_fixup)
+		__stop__btb_flush_fixup = .;
+	}
+#endif
 	EXCEPTION_TABLE(0)
 
 	NOTES :kernel :notes
@@ -179,7 +196,15 @@ SECTIONS
  */
 	. = ALIGN(STRICT_ALIGN_SIZE);
 	__init_begin = .;
-	INIT_TEXT_SECTION(PAGE_SIZE) :kernel
+	. = ALIGN(PAGE_SIZE);
+	.init.text : AT(ADDR(.init.text) - LOAD_OFFSET) {
+		_sinittext = .;
+		INIT_TEXT
+		_einittext = .;
+#ifdef CONFIG_PPC64
+		*(.tramp.ftrace.init);
+#endif
+	} :kernel
 
 	/* .exit.text is discarded at runtime, not link time,
 	 * to deal with references from __bug_table

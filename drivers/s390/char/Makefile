@@ -11,11 +11,7 @@ endif
 GCOV_PROFILE_sclp_early_core.o		:= n
 KCOV_INSTRUMENT_sclp_early_core.o	:= n
 UBSAN_SANITIZE_sclp_early_core.o	:= n
-
-ifneq ($(CC_FLAGS_MARCH),-march=z900)
-CFLAGS_REMOVE_sclp_early_core.o	+= $(CC_FLAGS_MARCH)
-CFLAGS_sclp_early_core.o		+= -march=z900
-endif
+KASAN_SANITIZE_sclp_early_core.o	:= n
 
 CFLAGS_sclp_early_core.o		+= -D__NO_FORTIFY
 
@@ -38,6 +34,8 @@ obj-$(CONFIG_SCLP_VT220_TTY) += sclp_vt220.o
 obj-$(CONFIG_SCLP_ASYNC) += sclp_async.o
 
 obj-$(CONFIG_PCI) += sclp_pci.o
+
+obj-$(subst m,y,$(CONFIG_ZCRYPT)) += sclp_ap.o
 
 obj-$(CONFIG_VMLOGRDR) += vmlogrdr.o
 obj-$(CONFIG_VMCP) += vmcp.o

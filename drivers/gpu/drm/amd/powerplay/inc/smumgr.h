@@ -29,7 +29,6 @@
 enum SMU_TABLE {
 	SMU_UVD_TABLE = 0,
 	SMU_VCE_TABLE,
-	SMU_SAMU_TABLE,
 	SMU_BIF_TABLE,
 };
 
@@ -42,12 +41,12 @@ enum SMU_MEMBER {
 	HandshakeDisables = 0,
 	VoltageChangeTimeout,
 	AverageGraphicsActivity,
+	AverageMemoryActivity,
 	PreVBlankGap,
 	VBlankTimeout,
 	UcodeLoadStatus,
 	UvdBootLevel,
 	VceBootLevel,
-	SamuBootLevel,
 	LowSclkInterruptThreshold,
 	DRAM_LOG_ADDR_H,
 	DRAM_LOG_ADDR_L,
@@ -82,16 +81,15 @@ enum SMU10_TABLE_ID {
 	SMU10_CLOCKTABLE,
 };
 
-extern int smum_get_argument(struct pp_hwmgr *hwmgr);
-
 extern int smum_download_powerplay_table(struct pp_hwmgr *hwmgr, void **table);
 
 extern int smum_upload_powerplay_table(struct pp_hwmgr *hwmgr);
 
-extern int smum_send_msg_to_smc(struct pp_hwmgr *hwmgr, uint16_t msg);
+extern int smum_send_msg_to_smc(struct pp_hwmgr *hwmgr, uint16_t msg, uint32_t *resp);
 
 extern int smum_send_msg_to_smc_with_parameter(struct pp_hwmgr *hwmgr,
-					uint16_t msg, uint32_t parameter);
+					uint16_t msg, uint32_t parameter,
+					uint32_t *resp);
 
 extern int smum_update_sclk_threshold(struct pp_hwmgr *hwmgr);
 
@@ -114,5 +112,7 @@ extern bool smum_is_hw_avfs_present(struct pp_hwmgr *hwmgr);
 extern int smum_update_dpm_settings(struct pp_hwmgr *hwmgr, void *profile_setting);
 
 extern int smum_smc_table_manager(struct pp_hwmgr *hwmgr, uint8_t *table, uint16_t table_id, bool rw);
+
+extern int smum_stop_smc(struct pp_hwmgr *hwmgr);
 
 #endif

@@ -278,7 +278,7 @@ int irq_startup(struct irq_desc *desc, bool resend, bool force)
 		}
 	}
 	if (resend)
-		check_irq_resend(desc);
+		check_irq_resend(desc, false);
 
 	return ret;
 }
@@ -314,6 +314,12 @@ void irq_shutdown(struct irq_desc *desc)
 		}
 		irq_state_clr_started(desc);
 	}
+}
+
+
+void irq_shutdown_and_deactivate(struct irq_desc *desc)
+{
+	irq_shutdown(desc);
 	/*
 	 * This must be called even if the interrupt was never started up,
 	 * because the activation can happen before the interrupt is
@@ -730,6 +736,39 @@ out:
 EXPORT_SYMBOL_GPL(handle_fasteoi_irq);
 
 /**
+ *	handle_fasteoi_nmi - irq handler for NMI interrupt lines
+ *	@desc:	the interrupt description structure for this irq
+ *
+ *	A simple NMI-safe handler, considering the restrictions
+ *	from request_nmi.
+ *
+ *	Only a single callback will be issued to the chip: an ->eoi()
+ *	call when the interrupt has been serviced. This enables support
+ *	for modern forms of interrupt handlers, which handle the flow
+ *	details in hardware, transparently.
+ */
+void handle_fasteoi_nmi(struct irq_desc *desc)
+{
+	struct irq_chip *chip = irq_desc_get_chip(desc);
+	struct irqaction *action = desc->action;
+	unsigned int irq = irq_desc_get_irq(desc);
+	irqreturn_t res;
+
+	__kstat_incr_irqs_this_cpu(desc);
+
+	trace_irq_handler_entry(irq, action);
+	/*
+	 * NMIs cannot be shared, there is only one action.
+	 */
+	res = action->handler(irq, action->dev_id);
+	trace_irq_handler_exit(irq, action, res);
+
+	if (chip->irq_eoi)
+		chip->irq_eoi(&desc->irq_data);
+}
+EXPORT_SYMBOL_GPL(handle_fasteoi_nmi);
+
+/**
  *	handle_edge_irq - edge type IRQ handler
  *	@desc:	the interrupt description structure for this irq
  *
@@ -855,7 +894,11 @@ void handle_percpu_irq(struct irq_desc *desc)
 {
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 
-	kstat_incr_irqs_this_cpu(desc);
+	/*
+	 * PER CPU interrupts are not serialized. Do not touch
+	 * desc->tot_count.
+	 */
+	__kstat_incr_irqs_this_cpu(desc);
 
 	if (chip->irq_ack)
 		chip->irq_ack(&desc->irq_data);
@@ -884,7 +927,11 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 	unsigned int irq = irq_desc_get_irq(desc);
 	irqreturn_t res;
 
-	kstat_incr_irqs_this_cpu(desc);
+	/*
+	 * PER CPU interrupts are not serialized. Do not touch
+	 * desc->tot_count.
+	 */
+	__kstat_incr_irqs_this_cpu(desc);
 
 	if (chip->irq_ack)
 		chip->irq_ack(&desc->irq_data);
@@ -903,6 +950,31 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 		pr_err_once("Spurious%s percpu IRQ%u on CPU%u\n",
 			    enabled ? " and unmasked" : "", irq, cpu);
 	}
+
+	if (chip->irq_eoi)
+		chip->irq_eoi(&desc->irq_data);
+}
+
+/**
+ * handle_percpu_devid_fasteoi_nmi - Per CPU local NMI handler with per cpu
+ *				     dev ids
+ * @desc:	the interrupt description structure for this irq
+ *
+ * Similar to handle_fasteoi_nmi, but handling the dev_id cookie
+ * as a percpu pointer.
+ */
+void handle_percpu_devid_fasteoi_nmi(struct irq_desc *desc)
+{
+	struct irq_chip *chip = irq_desc_get_chip(desc);
+	struct irqaction *action = desc->action;
+	unsigned int irq = irq_desc_get_irq(desc);
+	irqreturn_t res;
+
+	__kstat_incr_irqs_this_cpu(desc);
+
+	trace_irq_handler_entry(irq, action);
+	res = action->handler(irq, raw_cpu_ptr(action->percpu_dev_id));
+	trace_irq_handler_exit(irq, action, res);
 
 	if (chip->irq_eoi)
 		chip->irq_eoi(&desc->irq_data);
@@ -1394,18 +1466,17 @@ int irq_chip_set_wake_parent(struct irq_data *data, unsigned int on)
  */
 int irq_chip_compose_msi_msg(struct irq_data *data, struct msi_msg *msg)
 {
-	struct irq_data *pos = NULL;
+	struct irq_data *pos;
 
-#ifdef	CONFIG_IRQ_DOMAIN_HIERARCHY
-	for (; data; data = data->parent_data)
-#endif
+	for (pos = NULL; !pos && data; data = irqd_get_parent_data(data)) {
 		if (data->chip && data->chip->irq_compose_msi_msg)
 			pos = data;
+	}
+
 	if (!pos)
 		return -ENOSYS;
 
 	pos->chip->irq_compose_msi_msg(pos, msg);
-
 	return 0;
 }
 

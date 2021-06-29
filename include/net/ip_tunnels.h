@@ -144,25 +144,6 @@ struct ip_tunnel {
 	bool			ignore_df;
 };
 
-#define TUNNEL_CSUM		__cpu_to_be16(0x01)
-#define TUNNEL_ROUTING		__cpu_to_be16(0x02)
-#define TUNNEL_KEY		__cpu_to_be16(0x04)
-#define TUNNEL_SEQ		__cpu_to_be16(0x08)
-#define TUNNEL_STRICT		__cpu_to_be16(0x10)
-#define TUNNEL_REC		__cpu_to_be16(0x20)
-#define TUNNEL_VERSION		__cpu_to_be16(0x40)
-#define TUNNEL_NO_KEY		__cpu_to_be16(0x80)
-#define TUNNEL_DONT_FRAGMENT    __cpu_to_be16(0x0100)
-#define TUNNEL_OAM		__cpu_to_be16(0x0200)
-#define TUNNEL_CRIT_OPT		__cpu_to_be16(0x0400)
-#define TUNNEL_GENEVE_OPT	__cpu_to_be16(0x0800)
-#define TUNNEL_VXLAN_OPT	__cpu_to_be16(0x1000)
-#define TUNNEL_NOCACHE		__cpu_to_be16(0x2000)
-#define TUNNEL_ERSPAN_OPT	__cpu_to_be16(0x4000)
-
-#define TUNNEL_OPTIONS_PRESENT \
-		(TUNNEL_GENEVE_OPT | TUNNEL_VXLAN_OPT | TUNNEL_ERSPAN_OPT)
-
 struct tnl_ptk_info {
 	__be16 flags;
 	__be16 proto;
@@ -286,7 +267,7 @@ void ip_tunnel_delete_nets(struct list_head *list_net, unsigned int id,
 void ip_tunnel_xmit(struct sk_buff *skb, struct net_device *dev,
 		    const struct iphdr *tnl_params, const u8 protocol);
 void ip_md_tunnel_xmit(struct sk_buff *skb, struct net_device *dev,
-		       const u8 proto);
+		       const u8 proto, int tunnel_hlen);
 int ip_tunnel_ioctl(struct net_device *dev, struct ip_tunnel_parm *p, int cmd);
 int __ip_tunnel_change_mtu(struct net_device *dev, int new_mtu, bool strict);
 int ip_tunnel_change_mtu(struct net_device *dev, int new_mtu);
@@ -325,6 +306,26 @@ int ip_tunnel_encap_del_ops(const struct ip_tunnel_encap_ops *op,
 
 int ip_tunnel_encap_setup(struct ip_tunnel *t,
 			  struct ip_tunnel_encap *ipencap);
+
+static inline bool pskb_inet_may_pull(struct sk_buff *skb)
+{
+	int nhlen;
+
+	switch (skb->protocol) {
+#if IS_ENABLED(CONFIG_IPV6)
+	case htons(ETH_P_IPV6):
+		nhlen = sizeof(struct ipv6hdr);
+		break;
+#endif
+	case htons(ETH_P_IP):
+		nhlen = sizeof(struct iphdr);
+		break;
+	default:
+		nhlen = 0;
+	}
+
+	return pskb_network_may_pull(skb, nhlen);
+}
 
 static inline int ip_encap_hlen(struct ip_tunnel_encap *e)
 {
@@ -413,6 +414,8 @@ void iptunnel_xmit(struct sock *sk, struct rtable *rt, struct sk_buff *skb,
 		   u8 tos, u8 ttl, __be16 df, bool xnet);
 struct metadata_dst *iptunnel_metadata_reply(struct metadata_dst *md,
 					     gfp_t flags);
+int skb_tunnel_check_pmtu(struct sk_buff *skb, struct dst_entry *encap_dst,
+			  int headroom, bool reply);
 
 int iptunnel_handle_offloads(struct sk_buff *skb, int gso_type_mask);
 
@@ -466,10 +469,14 @@ static inline void ip_tunnel_info_opts_get(void *to,
 }
 
 static inline void ip_tunnel_info_opts_set(struct ip_tunnel_info *info,
-					   const void *from, int len)
+					   const void *from, int len,
+					   __be16 flags)
 {
-	memcpy(ip_tunnel_info_opts(info), from, len);
 	info->options_len = len;
+	if (len > 0) {
+		memcpy(ip_tunnel_info_opts(info), from, len);
+		info->key.tun_flags |= flags;
+	}
 }
 
 static inline struct ip_tunnel_info *lwt_tun_info(struct lwtunnel_state *lwtstate)
@@ -511,7 +518,8 @@ static inline void ip_tunnel_info_opts_get(void *to,
 }
 
 static inline void ip_tunnel_info_opts_set(struct ip_tunnel_info *info,
-					   const void *from, int len)
+					   const void *from, int len,
+					   __be16 flags)
 {
 	info->options_len = 0;
 }

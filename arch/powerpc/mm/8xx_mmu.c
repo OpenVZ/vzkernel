@@ -15,8 +15,9 @@
 #include <linux/memblock.h>
 #include <asm/fixmap.h>
 #include <asm/code-patching.h>
+#include <asm/inst.h>
 
-#include "mmu_decl.h"
+#include <mm/mmu_decl.h>
 
 #define IMMR_SIZE (FIX_IMMR_SIZE << PAGE_SHIFT)
 
@@ -91,11 +92,10 @@ static void __init mmu_mapin_immr(void)
 {
 	unsigned long p = PHYS_IMMR_BASE;
 	unsigned long v = VIRT_IMMR_BASE;
-	unsigned long f = pgprot_val(PAGE_KERNEL_NCG);
 	int offset;
 
 	for (offset = 0; offset < IMMR_SIZE; offset += PAGE_SIZE)
-		map_kernel_page(v + offset, p + offset, f);
+		map_kernel_page(v + offset, p + offset, PAGE_KERNEL_NCG);
 }
 
 /* Address of instructions to patch */
@@ -113,7 +113,7 @@ static void __init mmu_patch_cmp_limit(unsigned int *addr, unsigned long mapped)
 
 	instr &= 0xffff0000;
 	instr |= (unsigned long)__va(mapped) >> 16;
-	patch_instruction(addr, instr);
+	patch_instruction(addr, ppc_inst(instr));
 }
 
 unsigned long __init mmu_mapin_ram(unsigned long top)
@@ -124,7 +124,7 @@ unsigned long __init mmu_mapin_ram(unsigned long top)
 		mapped = 0;
 		mmu_mapin_immr();
 #ifndef CONFIG_PIN_TLB_IMMR
-		patch_instruction(&DTLBMiss_jmp, PPC_INST_NOP);
+		patch_instruction(&DTLBMiss_jmp, ppc_inst(PPC_INST_NOP));
 #endif
 #ifndef CONFIG_PIN_TLB_TEXT
 		mmu_patch_cmp_limit(&ITLBMiss_cmp, 0);

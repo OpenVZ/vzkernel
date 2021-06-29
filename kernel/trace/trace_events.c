@@ -239,11 +239,11 @@ bool trace_event_ignore_this_pid(struct trace_event_file *trace_file)
 	struct trace_array_cpu *data;
 	struct trace_pid_list *pid_list;
 
-	pid_list = rcu_dereference_sched(tr->filtered_pids);
+	pid_list = rcu_dereference_raw(tr->filtered_pids);
 	if (!pid_list)
 		return false;
 
-	data = this_cpu_ptr(tr->trace_buffer.data);
+	data = this_cpu_ptr(tr->array_buffer.data);
 
 	return data->ignore_pid;
 }
@@ -262,12 +262,12 @@ void *trace_event_buffer_reserve(struct trace_event_buffer *fbuffer,
 	local_save_flags(fbuffer->flags);
 	fbuffer->pc = preempt_count();
 	/*
-	 * If CONFIG_PREEMPT is enabled, then the tracepoint itself disables
+	 * If CONFIG_PREEMPTION is enabled, then the tracepoint itself disables
 	 * preemption (adding one to the preempt_count). Since we are
 	 * interested in the preempt_count at the time the tracepoint was
 	 * hit, we need to subtract one to offset the increment.
 	 */
-	if (IS_ENABLED(CONFIG_PREEMPT))
+	if (IS_ENABLED(CONFIG_PREEMPTION))
 		fbuffer->pc--;
 	fbuffer->trace_file = trace_file;
 
@@ -512,7 +512,7 @@ event_filter_pid_sched_process_exit(void *data, struct task_struct *task)
 	struct trace_pid_list *pid_list;
 	struct trace_array *tr = data;
 
-	pid_list = rcu_dereference_sched(tr->filtered_pids);
+	pid_list = rcu_dereference_raw(tr->filtered_pids);
 	trace_filter_add_remove_task(pid_list, NULL, task);
 }
 
@@ -552,7 +552,7 @@ event_filter_pid_sched_switch_probe_pre(void *data, bool preempt,
 
 	pid_list = rcu_dereference_sched(tr->filtered_pids);
 
-	this_cpu_write(tr->trace_buffer.data->ignore_pid,
+	this_cpu_write(tr->array_buffer.data->ignore_pid,
 		       trace_ignore_this_task(pid_list, prev) &&
 		       trace_ignore_this_task(pid_list, next));
 }
@@ -566,7 +566,7 @@ event_filter_pid_sched_switch_probe_post(void *data, bool preempt,
 
 	pid_list = rcu_dereference_sched(tr->filtered_pids);
 
-	this_cpu_write(tr->trace_buffer.data->ignore_pid,
+	this_cpu_write(tr->array_buffer.data->ignore_pid,
 		       trace_ignore_this_task(pid_list, next));
 }
 
@@ -577,12 +577,12 @@ event_filter_pid_sched_wakeup_probe_pre(void *data, struct task_struct *task)
 	struct trace_pid_list *pid_list;
 
 	/* Nothing to do if we are already tracing */
-	if (!this_cpu_read(tr->trace_buffer.data->ignore_pid))
+	if (!this_cpu_read(tr->array_buffer.data->ignore_pid))
 		return;
 
 	pid_list = rcu_dereference_sched(tr->filtered_pids);
 
-	this_cpu_write(tr->trace_buffer.data->ignore_pid,
+	this_cpu_write(tr->array_buffer.data->ignore_pid,
 		       trace_ignore_this_task(pid_list, task));
 }
 
@@ -593,13 +593,13 @@ event_filter_pid_sched_wakeup_probe_post(void *data, struct task_struct *task)
 	struct trace_pid_list *pid_list;
 
 	/* Nothing to do if we are not tracing */
-	if (this_cpu_read(tr->trace_buffer.data->ignore_pid))
+	if (this_cpu_read(tr->array_buffer.data->ignore_pid))
 		return;
 
 	pid_list = rcu_dereference_sched(tr->filtered_pids);
 
 	/* Set tracing if current is enabled */
-	this_cpu_write(tr->trace_buffer.data->ignore_pid,
+	this_cpu_write(tr->array_buffer.data->ignore_pid,
 		       trace_ignore_this_task(pid_list, current));
 }
 
@@ -631,12 +631,12 @@ static void __ftrace_clear_event_pids(struct trace_array *tr)
 	}
 
 	for_each_possible_cpu(cpu)
-		per_cpu_ptr(tr->trace_buffer.data, cpu)->ignore_pid = false;
+		per_cpu_ptr(tr->array_buffer.data, cpu)->ignore_pid = false;
 
 	rcu_assign_pointer(tr->filtered_pids, NULL);
 
 	/* Wait till all users are no longer using pid filtering */
-	synchronize_sched();
+	tracepoint_synchronize_unregister();
 
 	trace_free_pid_list(pid_list);
 }
@@ -1584,7 +1584,7 @@ static void ignore_task_cpu(void *data)
 	pid_list = rcu_dereference_protected(tr->filtered_pids,
 					     mutex_is_locked(&event_mutex));
 
-	this_cpu_write(tr->trace_buffer.data->ignore_pid,
+	this_cpu_write(tr->array_buffer.data->ignore_pid,
 		       trace_ignore_this_task(pid_list, current));
 }
 
@@ -1622,7 +1622,7 @@ ftrace_event_pid_write(struct file *filp, const char __user *ubuf,
 	}
 
 	if (filtered_pids) {
-		synchronize_sched();
+		tracepoint_synchronize_unregister();
 		trace_free_pid_list(filtered_pids);
 	} else if (pid_list) {
 		/*
@@ -3036,8 +3036,8 @@ int event_trace_del_tracer(struct trace_array *tr)
 	/* Disable any running events */
 	__ftrace_set_clr_event_nolock(tr, NULL, NULL, NULL, 0);
 
-	/* Access to events are within rcu_read_lock_sched() */
-	synchronize_sched();
+	/* Make sure no more events are being executed */
+	tracepoint_synchronize_unregister();
 
 	down_write(&trace_event_sem);
 	__trace_remove_event_dirs(tr);
@@ -3368,8 +3368,8 @@ static void __init
 function_test_events_call(unsigned long ip, unsigned long parent_ip,
 			  struct ftrace_ops *op, struct pt_regs *pt_regs)
 {
+	struct trace_buffer *buffer;
 	struct ring_buffer_event *event;
-	struct ring_buffer *buffer;
 	struct ftrace_entry *entry;
 	unsigned long flags;
 	long disabled;

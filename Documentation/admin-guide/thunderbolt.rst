@@ -133,8 +133,28 @@ If the user still wants to connect the device they can either approve
 the device without a key or write a new key and write 1 to the
 ``authorized`` file to get the new key stored on the device NVM.
 
-Upgrading NVM on Thunderbolt device or host
--------------------------------------------
+DMA protection utilizing IOMMU
+------------------------------
+Recent systems from 2018 and forward with Thunderbolt ports may natively
+support IOMMU. This means that Thunderbolt security is handled by an IOMMU
+so connected devices cannot access memory regions outside of what is
+allocated for them by drivers. When Linux is running on such system it
+automatically enables IOMMU if not enabled by the user already. These
+systems can be identified by reading ``1`` from
+``/sys/bus/thunderbolt/devices/domainX/iommu_dma_protection`` attribute.
+
+The driver does not do anything special in this case but because DMA
+protection is handled by the IOMMU, security levels (if set) are
+redundant. For this reason some systems ship with security level set to
+``none``. Other systems have security level set to ``user`` in order to
+support downgrade to older OS, so users who want to automatically
+authorize devices when IOMMU DMA protection is enabled can use the
+following ``udev`` rule::
+
+  ACTION=="add", SUBSYSTEM=="thunderbolt", ATTRS{iommu_dma_protection}=="1", ATTR{authorized}=="0", ATTR{authorized}="1"
+
+Upgrading NVM on Thunderbolt device, host or retimer
+----------------------------------------------------
 Since most of the functionality is handled in firmware running on a
 host controller or a device, it is important that the firmware can be
 upgraded to the latest where possible bugs in it have been fixed.
@@ -145,9 +165,10 @@ for some machines:
 
   `Thunderbolt Updates <https://thunderbolttechnology.net/updates>`_
 
-Before you upgrade firmware on a device or host, please make sure it is a
-suitable upgrade. Failing to do that may render the device (or host) in a
-state where it cannot be used properly anymore without special tools!
+Before you upgrade firmware on a device, host or retimer, please make
+sure it is a suitable upgrade. Failing to do that may render the device
+in a state where it cannot be used properly anymore without special
+tools!
 
 Host NVM upgrade on Apple Macs is not supported.
 

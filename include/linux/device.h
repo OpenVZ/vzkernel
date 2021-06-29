@@ -26,6 +26,7 @@
 #include <linux/uidgid.h>
 #include <linux/gfp.h>
 #include <linux/overflow.h>
+#include <linux/rh_kabi.h>
 #include <asm/device.h>
 
 struct device;
@@ -42,6 +43,7 @@ struct iommu_ops;
 struct iommu_group;
 struct iommu_fwspec;
 struct dev_pin_info;
+struct dev_iommu;
 
 struct bus_attribute {
 	struct attribute	attr;
@@ -55,6 +57,8 @@ struct bus_attribute {
 	struct bus_attribute bus_attr_##_name = __ATTR_RW(_name)
 #define BUS_ATTR_RO(_name) \
 	struct bus_attribute bus_attr_##_name = __ATTR_RO(_name)
+#define BUS_ATTR_WO(_name) \
+	struct bus_attribute bus_attr_##_name = __ATTR_WO(_name)
 
 extern int __must_check bus_create_file(struct bus_type *,
 					struct bus_attribute *);
@@ -79,6 +83,13 @@ extern void bus_remove_file(struct bus_type *, struct bus_attribute *);
  *		that generate uevents to add the environment variables.
  * @probe:	Called when a new device or driver add to this bus, and callback
  *		the specific driver's probe to initial the matched device.
+ * @sync_state:	Called to sync device state to software state after all the
+ *		state tracking consumers linked to this device (present at
+ *		the time of late_initcall) have successfully bound to a
+ *		driver. If the device has no consumers, this function will
+ *		be called at late_initcall_sync level. If the device has
+ *		consumers that are never bound to a driver, this function
+ *		will never get called until they do.
  * @remove:	Called when a device removed from this bus.
  * @shutdown:	Called at shut-down time to quiesce the device.
  *
@@ -90,7 +101,7 @@ extern void bus_remove_file(struct bus_type *, struct bus_attribute *);
  * @num_vf:	Called to find out how many virtual functions a device on this
  *		bus supports.
  * @dma_configure:	Called to setup DMA configuration on a device on
-			this bus.
+ *			this bus.
  * @pm:		Power management operations of this bus, callback the specific
  *		device driver's pm-ops.
  * @iommu_ops:  IOMMU specific operations for this bus, used to attach IOMMU
@@ -143,6 +154,8 @@ struct bus_type {
 	struct lock_class_key lock_key;
 
 	bool need_parent_lock;
+
+	RH_KABI_EXTEND(void (*sync_state)(struct device *dev))
 };
 
 extern int __must_check bus_register(struct bus_type *bus);
@@ -163,14 +176,89 @@ void subsys_dev_iter_init(struct subsys_dev_iter *iter,
 struct device *subsys_dev_iter_next(struct subsys_dev_iter *iter);
 void subsys_dev_iter_exit(struct subsys_dev_iter *iter);
 
+int device_match_acpi_dev(struct device *dev, const void *adev);
+int device_match_name(struct device *dev, const void *name);
+int device_match_of_node(struct device *dev, const void *np);
+int device_match_fwnode(struct device *dev, const void *fwnode);
+int device_match_devt(struct device *dev, const void *pdevt);
+
 int bus_for_each_dev(struct bus_type *bus, struct device *start, void *data,
 		     int (*fn)(struct device *dev, void *data));
 struct device *bus_find_device(struct bus_type *bus, struct device *start,
-			       void *data,
-			       int (*match)(struct device *dev, void *data));
-struct device *bus_find_device_by_name(struct bus_type *bus,
-				       struct device *start,
-				       const char *name);
+			       const void *data,
+			       int (*match)(struct device *dev, const void *data));
+/**
+ * bus_find_device_by_name - device iterator for locating a particular device
+ * of a specific name.
+ * @bus: bus type
+ * @start: Device to begin with
+ * @name: name of the device to match
+ */
+static inline struct device *bus_find_device_by_name(struct bus_type *bus,
+						     struct device *start,
+						     const char *name)
+{
+	return bus_find_device(bus, start, name, device_match_name);
+}
+
+/**
+ * bus_find_device_by_of_node : device iterator for locating a particular device
+ * matching the of_node.
+ * @bus: bus type
+ * @np: of_node of the device to match.
+ */
+static inline struct device *
+bus_find_device_by_of_node(struct bus_type *bus, const struct device_node *np)
+{
+	return bus_find_device(bus, NULL, np, device_match_of_node);
+}
+
+/**
+ * bus_find_device_by_fwnode : device iterator for locating a particular device
+ * matching the fwnode.
+ * @bus: bus type
+ * @fwnode: fwnode of the device to match.
+ */
+static inline struct device *
+bus_find_device_by_fwnode(struct bus_type *bus, const struct fwnode_handle *fwnode)
+{
+	return bus_find_device(bus, NULL, fwnode, device_match_fwnode);
+}
+
+/**
+ * bus_find_device_by_devt : device iterator for locating a particular device
+ * matching the device type.
+ * @bus: bus type
+ * @devt: device type of the device to match.
+ */
+static inline struct device *bus_find_device_by_devt(struct bus_type *bus,
+						     dev_t devt)
+{
+	return bus_find_device(bus, NULL, &devt, device_match_devt);
+}
+
+#ifdef CONFIG_ACPI
+struct acpi_device;
+
+/**
+ * bus_find_device_by_acpi_dev : device iterator for locating a particular device
+ * matching the ACPI COMPANION device.
+ * @bus: bus type
+ * @adev: ACPI COMPANION device to match.
+ */
+static inline struct device *
+bus_find_device_by_acpi_dev(struct bus_type *bus, const struct acpi_device *adev)
+{
+	return bus_find_device(bus, NULL, adev, device_match_acpi_dev);
+}
+#else
+static inline struct device *
+bus_find_device_by_acpi_dev(struct bus_type *bus, const void *adev)
+{
+	return NULL;
+}
+#endif
+
 struct device *subsys_find_device_by_id(struct bus_type *bus, unsigned int id,
 					struct device *hint);
 int bus_for_each_drv(struct bus_type *bus, struct device_driver *start,
@@ -239,6 +327,12 @@ enum probe_type {
 };
 
 /**
+ * struct device_driver_rh - Red Hat KABI extension struct
+ */
+struct device_driver_rh {
+};
+
+/**
  * struct device_driver - The basic device driver structure
  * @name:	Name of the device driver.
  * @bus:	The bus which the device of this driver belongs to.
@@ -251,6 +345,13 @@ enum probe_type {
  * @probe:	Called to query the existence of a specific device,
  *		whether this driver can work with it, and bind the driver
  *		to a specific device.
+ * @sync_state:	Called to sync device state to software state after all the
+ *		state tracking consumers linked to this device (present at
+ *		the time of late_initcall) have successfully bound to a
+ *		driver. If the device has no consumers, this function will
+ *		be called at late_initcall_sync level. If the device has
+ *		consumers that are never bound to a driver, this function
+ *		will never get called until they do.
  * @remove:	Called when the device is removed from the system to
  *		unbind a device from this driver.
  * @shutdown:	Called at shut-down time to quiesce the device.
@@ -259,6 +360,8 @@ enum probe_type {
  * @resume:	Called to bring a device from sleep mode.
  * @groups:	Default attributes that get created by the driver core
  *		automatically.
+ * @dev_groups:	Additional attributes attached to device instance once the
+ *		it is bound to the driver.
  * @pm:		Power management operations of the device which matched
  *		this driver.
  * @coredump:	Called when sysfs entry is written to. The device driver
@@ -298,6 +401,11 @@ struct device_driver {
 	void (*coredump) (struct device *dev);
 
 	struct driver_private *p;
+	RH_KABI_USE(1, const struct attribute_group **dev_groups)
+	RH_KABI_USE(2, void (*sync_state)(struct device *dev))
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_AUX_PTR(device_driver);
 };
 
 
@@ -336,8 +444,83 @@ extern int __must_check driver_for_each_device(struct device_driver *drv,
 					       int (*fn)(struct device *dev,
 							 void *));
 struct device *driver_find_device(struct device_driver *drv,
-				  struct device *start, void *data,
-				  int (*match)(struct device *dev, void *data));
+				  struct device *start, const void *data,
+				  int (*match)(struct device *dev, const void *data));
+
+#ifdef CONFIG_ACPI
+/**
+ * driver_find_device_by_acpi_dev : device iterator for locating a particular
+ * device matching the ACPI_COMPANION device.
+ * @driver: the driver we're iterating
+ * @adev: ACPI_COMPANION device to match.
+ */
+static inline struct device *
+driver_find_device_by_acpi_dev(struct device_driver *drv,
+			       const struct acpi_device *adev)
+{
+	return driver_find_device(drv, NULL, adev, device_match_acpi_dev);
+}
+#else
+static inline struct device *
+driver_find_device_by_acpi_dev(struct device_driver *drv, const void *adev)
+{
+	return NULL;
+}
+#endif
+
+/**
+ * driver_find_device_by_name - device iterator for locating a particular device
+ * of a specific name.
+ * @driver: the driver we're iterating
+ * @name: name of the device to match
+ */
+static inline struct device *driver_find_device_by_name(struct device_driver *drv,
+							const char *name)
+{
+	return driver_find_device(drv, NULL, name, device_match_name);
+}
+
+/**
+ * driver_find_device_by_of_node- device iterator for locating a particular device
+ * by of_node pointer.
+ * @driver: the driver we're iterating
+ * @np: of_node pointer to match.
+ */
+static inline struct device *
+driver_find_device_by_of_node(struct device_driver *drv,
+			      const struct device_node *np)
+{
+	return driver_find_device(drv, NULL, np, device_match_of_node);
+}
+
+/**
+ * driver_find_device_by_fwnode- device iterator for locating a particular device
+ * by fwnode pointer.
+ * @driver: the driver we're iterating
+ * @fwnode: fwnode pointer to match.
+ */
+static inline struct device *
+driver_find_device_by_fwnode(struct device_driver *drv,
+			     const struct fwnode_handle *fwnode)
+{
+	return driver_find_device(drv, NULL, fwnode, device_match_fwnode);
+}
+
+/**
+ * driver_find_device_by_devt- device iterator for locating a particular device
+ * by devt.
+ * @driver: the driver we're iterating
+ * @devt: devt pointer to match.
+ */
+static inline struct device *driver_find_device_by_devt(struct device_driver *drv,
+							dev_t devt)
+{
+	return driver_find_device(drv, NULL, &devt, device_match_devt);
+}
+
+void driver_deferred_probe_add(struct device *dev);
+int driver_deferred_probe_check_state(struct device *dev);
+int driver_deferred_probe_check_state_continue(struct device *dev);
 
 /**
  * struct subsys_interface - interfaces to device functions
@@ -367,6 +550,12 @@ int subsys_system_register(struct bus_type *subsys,
 			   const struct attribute_group **groups);
 int subsys_virtual_register(struct bus_type *subsys,
 			    const struct attribute_group **groups);
+
+/**
+ * struct class_rh - Red Hat KABI extension struct
+ */
+struct class_rh {
+};
 
 /**
  * struct class - device classes
@@ -416,6 +605,12 @@ struct class {
 	const struct dev_pm_ops *pm;
 
 	struct subsys_private *p;
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_AUX_PTR(class);
 };
 
 struct class_dev_iter {
@@ -458,6 +653,76 @@ extern int class_for_each_device(struct class *class, struct device *start,
 extern struct device *class_find_device(struct class *class,
 					struct device *start, const void *data,
 					int (*match)(struct device *, const void *));
+
+#ifdef CONFIG_ACPI
+struct acpi_device;
+/**
+ * class_find_device_by_acpi_dev : device iterator for locating a particular
+ * device matching the ACPI_COMPANION device.
+ * @class: class type
+ * @adev: ACPI_COMPANION device to match.
+ */
+static inline struct device *
+class_find_device_by_acpi_dev(struct class *class, const struct acpi_device *adev)
+{
+	return class_find_device(class, NULL, adev, device_match_acpi_dev);
+}
+#else
+static inline struct device *
+class_find_device_by_acpi_dev(struct class *class, const void *adev)
+{
+	return NULL;
+}
+#endif
+
+/**
+ * class_find_device_by_name - device iterator for locating a particular device
+ * of a specific name.
+ * @class: class type
+ * @name: name of the device to match
+ */
+static inline struct device *class_find_device_by_name(struct class *class,
+						       const char *name)
+{
+	return class_find_device(class, NULL, name, device_match_name);
+}
+
+/**
+ * class_find_device_by_of_node : device iterator for locating a particular device
+ * matching the of_node.
+ * @class: class type
+ * @np: of_node of the device to match.
+ */
+static inline struct device *
+class_find_device_by_of_node(struct class *class, const struct device_node *np)
+{
+	return class_find_device(class, NULL, np, device_match_of_node);
+}
+
+/**
+ * class_find_device_by_fwnode : device iterator for locating a particular device
+ * matching the fwnode.
+ * @class: class type
+ * @fwnode: fwnode of the device to match.
+ */
+static inline struct device *
+class_find_device_by_fwnode(struct class *class,
+			    const struct fwnode_handle *fwnode)
+{
+	return class_find_device(class, NULL, fwnode, device_match_fwnode);
+}
+
+/**
+ * class_find_device_by_devt : device iterator for locating a particular device
+ * matching the device type.
+ * @class: class type
+ * @devt: device type of the device to match.
+ */
+static inline struct device *class_find_device_by_devt(struct class *class,
+						       dev_t devt)
+{
+	return class_find_device(class, NULL, &devt, device_match_devt);
+}
 
 struct class_attribute {
 	struct attribute attr;
@@ -587,8 +852,12 @@ ssize_t device_store_bool(struct device *dev, struct device_attribute *attr,
 		__ATTR_PREALLOC(_name, _mode, _show, _store)
 #define DEVICE_ATTR_RW(_name) \
 	struct device_attribute dev_attr_##_name = __ATTR_RW(_name)
+#define DEVICE_ATTR_ADMIN_RW(_name) \
+	struct device_attribute dev_attr_##_name = __ATTR_RW_MODE(_name, 0600)
 #define DEVICE_ATTR_RO(_name) \
 	struct device_attribute dev_attr_##_name = __ATTR_RO(_name)
+#define DEVICE_ATTR_ADMIN_RO(_name) \
+	struct device_attribute dev_attr_##_name = __ATTR_RO_MODE(_name, 0400)
 #define DEVICE_ATTR_WO(_name) \
 	struct device_attribute dev_attr_##_name = __ATTR_WO(_name)
 #define DEVICE_ULONG_ATTR(_name, _mode, _var) \
@@ -685,8 +954,10 @@ static inline void *devm_kcalloc(struct device *dev,
 {
 	return devm_kmalloc_array(dev, n, size, flags | __GFP_ZERO);
 }
-extern void devm_kfree(struct device *dev, void *p);
+extern void devm_kfree(struct device *dev, const void *p);
 extern char *devm_kstrdup(struct device *dev, const char *s, gfp_t gfp) __malloc;
+extern const char *devm_kstrdup_const(struct device *dev,
+				      const char *s, gfp_t gfp);
 extern void *devm_kmemdup(struct device *dev, const void *src, size_t len,
 			  gfp_t gfp);
 
@@ -699,6 +970,7 @@ void __iomem *devm_ioremap_resource(struct device *dev, struct resource *res);
 /* allows to add/remove a custom action to devres stack */
 int devm_add_action(struct device *dev, void (*action)(void *), void *data);
 void devm_remove_action(struct device *dev, void (*action)(void *), void *data);
+void devm_release_action(struct device *dev, void (*action)(void *), void *data);
 
 static inline int devm_add_action_or_reset(struct device *dev,
 					   void (*action)(void *), void *data)
@@ -740,27 +1012,14 @@ struct device_dma_parameters {
 	unsigned long segment_boundary_mask;
 };
 
-/**
- * struct device_connection - Device Connection Descriptor
- * @endpoint: The names of the two devices connected together
- * @id: Unique identifier for the connection
- * @list: List head, private, for internal use only
- */
-struct device_connection {
-	const char		*endpoint[2];
-	const char		*id;
-	struct list_head	list;
-};
+typedef void *(*devcon_match_fn_t)(struct fwnode_handle *fwnode, const char *id,
+				   void *data);
 
+void *fwnode_connection_find_match(struct fwnode_handle *fwnode,
+				   const char *con_id, void *data,
+				   devcon_match_fn_t match);
 void *device_connection_find_match(struct device *dev, const char *con_id,
-				void *data,
-				void *(*match)(struct device_connection *con,
-					       int ep, void *data));
-
-struct device *device_connection_find(struct device *dev, const char *con_id);
-
-void device_connection_add(struct device_connection *con);
-void device_connection_remove(struct device_connection *con);
+				   void *data, devcon_match_fn_t match);
 
 /**
  * enum device_link_state - Device link states.
@@ -783,41 +1042,23 @@ enum device_link_state {
 /*
  * Device link flags.
  *
- * STATELESS: The core won't track the presence of supplier/consumer drivers.
- * AUTOREMOVE: Remove this link automatically on consumer driver unbind.
+ * STATELESS: The core will not remove this link automatically.
+ * AUTOREMOVE_CONSUMER: Remove the link automatically on consumer driver unbind.
  * PM_RUNTIME: If set, the runtime PM framework will use this link.
  * RPM_ACTIVE: Run pm_runtime_get_sync() on the supplier during link creation.
+ * AUTOREMOVE_SUPPLIER: Remove the link automatically on supplier driver unbind.
+ * AUTOPROBE_CONSUMER: Probe consumer driver automatically after supplier binds.
+ * MANAGED: The core tracks presence of supplier/consumer drivers (internal).
+ * SYNC_STATE_ONLY: Link only affects sync_state() behavior.
  */
-#define DL_FLAG_STATELESS	BIT(0)
-#define DL_FLAG_AUTOREMOVE	BIT(1)
-#define DL_FLAG_PM_RUNTIME	BIT(2)
-#define DL_FLAG_RPM_ACTIVE	BIT(3)
-
-/**
- * struct device_link - Device link representation.
- * @supplier: The device on the supplier end of the link.
- * @s_node: Hook to the supplier device's list of links to consumers.
- * @consumer: The device on the consumer end of the link.
- * @c_node: Hook to the consumer device's list of links to suppliers.
- * @status: The state of the link (with respect to the presence of drivers).
- * @flags: Link flags.
- * @rpm_active: Whether or not the consumer device is runtime-PM-active.
- * @kref: Count repeated addition of the same link.
- * @rcu_head: An RCU head to use for deferred execution of SRCU callbacks.
- */
-struct device_link {
-	struct device *supplier;
-	struct list_head s_node;
-	struct device *consumer;
-	struct list_head c_node;
-	enum device_link_state status;
-	u32 flags;
-	bool rpm_active;
-	struct kref kref;
-#ifdef CONFIG_SRCU
-	struct rcu_head rcu_head;
-#endif
-};
+#define DL_FLAG_STATELESS		BIT(0)
+#define DL_FLAG_AUTOREMOVE_CONSUMER	BIT(1)
+#define DL_FLAG_PM_RUNTIME		BIT(2)
+#define DL_FLAG_RPM_ACTIVE		BIT(3)
+#define DL_FLAG_AUTOREMOVE_SUPPLIER	BIT(4)
+#define DL_FLAG_AUTOPROBE_CONSUMER	BIT(5)
+#define DL_FLAG_MANAGED			BIT(6)
+#define DL_FLAG_SYNC_STATE_ONLY		BIT(7)
 
 /**
  * enum dl_dev_state - Device driver presence tracking information.
@@ -837,12 +1078,36 @@ enum dl_dev_state {
  * struct dev_links_info - Device data related to device links.
  * @suppliers: List of links to supplier devices.
  * @consumers: List of links to consumer devices.
+ * @needs_suppliers: Hook to global list of devices waiting for suppliers.
+ * @defer_hook: Hook to global list of devices that have deferred sync_state or
+ *             deferred fw_devlink.
  * @status: Driver status information.
  */
 struct dev_links_info {
 	struct list_head suppliers;
 	struct list_head consumers;
 	enum dl_dev_state status;
+};
+
+/** RHEL NOTE:
+ * upstream commit e2ae9bcc4aaa (driver core: Add support for linking devices
+ * during device addition) added 'struct list_head needs_suppliers' to the
+ * dev_links_info struct.  It has not been added here but is instead in one
+ * of the RH_KABI fields of struct device.  If it had been added to
+ * dev_links_info, its use in struct device as an entry (vs a pointer to an
+ * entry) would break kABI.  A shadow struct could have been used instead,
+ * however for just the one entry it seemed overkill; should there be a need
+ * for additional entries to struct dev_links_info, that should be revisited.
+ *
+ * upstream commit bcbbcfd57247 (driver core: Allow a device to wait on optional
+ * suppliers) adds another entry: bool need_for_probe.  Use the same technique
+ * as above for the same reasons.
+ *
+ * upstream commit fc5a251d0fd7 (driver core: Add sync_state driver/bus
+ * callback) * adds yet another entry: defer_hook.  Rinse and repeat.
+ */
+
+struct device_extended_rh {
 };
 
 /**
@@ -886,6 +1151,8 @@ struct dev_links_info {
  * @coherent_dma_mask: Like dma_mask, but for alloc_coherent mapping as not all
  * 		hardware supports 64-bit addresses for consistent allocations
  * 		such descriptors.
+ * @bus_dma_limit: Limit of an upstream bridge or bus which imposes a smaller
+ *		DMA limit than the device itself supports.
  * @dma_pfn_offset: offset of DMA memory range relatively of RAM
  * @dma_parms:	A low level driver may set these to teach IOMMU code about
  * 		segment limitations.
@@ -906,14 +1173,22 @@ struct dev_links_info {
  * 		gone away. This should be set by the allocator of the
  * 		device (i.e. the bus driver that discovered the device).
  * @iommu_group: IOMMU group the device belongs to.
- * @iommu_fwspec: IOMMU-specific properties supplied by firmware.
+ * @iommu:	Per device generic IOMMU runtime data
  *
  * @offline_disabled: If set, the device is permanently online.
  * @offline:	Set after successful invocation of bus type's .offline().
  * @of_node_reused: Set if the device-tree node is shared with an ancestor
  *              device.
- * @dma_32bit_limit: bridge limited to 32bit DMA even if the device itself
- *		indicates support for a higher limit in the dma_mask field.
+ * @state_synced: The hardware state of this device has been synced to match
+ *		  the software state of this device by calling the driver/bus
+ *		  sync_state() callback.
+ * @dma_coherent: this particular device is dma coherent, even if the
+ *		architecture supports non-coherent devices.
+ * @dma_ops_bypass: If set to %true then the dma_ops are bypassed for the
+ *		streaming DMA operations (->map_* / ->unmap_* / ->sync_*),
+ *		and optionall (if the coherent mask is large enough) also
+ *		for dma allocations.  This flag is managed by the dma ops
+ *		instance from ->dma_supported.
  *
  * At the lowest level, every device in a Linux system is represented by an
  * instance of struct device. The device structure contains the information
@@ -967,6 +1242,8 @@ struct device {
 					     not all hardware supports
 					     64 bit addresses for consistent
 					     allocations such descriptors. */
+	u64		RH_KABI_RENAME(bus_dma_mask,
+					bus_dma_limit); /* upstream dma constraint */
 	unsigned long	dma_pfn_offset;
 
 	struct device_dma_parameters *dma_parms;
@@ -997,17 +1274,86 @@ struct device {
 
 	void	(*release)(struct device *dev);
 	struct iommu_group	*iommu_group;
-	struct iommu_fwspec	*iommu_fwspec;
+	RH_KABI_DEPRECATE(struct iommu_fwspec *, iommu_fwspec)
 
+	/* RHEL8 kabi note: Total of 64-bits of bool can be defined. */
 	bool			offline_disabled:1;
 	bool			offline:1;
 	bool			of_node_reused:1;
-	bool			dma_32bit_limit:1;
+	RH_KABI_FILL_HOLE(bool state_synced:1)
+#if defined(CONFIG_ARCH_HAS_SYNC_DMA_FOR_DEVICE) || \
+    defined(CONFIG_ARCH_HAS_SYNC_DMA_FOR_CPU) || \
+    defined(CONFIG_ARCH_HAS_SYNC_DMA_FOR_CPU_ALL)
+	bool			dma_coherent:1;
+#endif
+#ifdef CONFIG_DMA_OPS_BYPASS
+	RH_KABI_FILL_HOLE(bool dma_ops_bypass : 1)
+#endif
+	/* Use device_extended after all RESERVE fields used */
+
+	RH_KABI_USE(1, struct dev_iommu *iommu)
+	RH_KABI_RESERVE(2)
+
+	/* NB: See the note for struct dev_links_info: */
+	RH_KABI_USE(3, 4, struct list_head links_needs_suppliers)
+	RH_KABI_USE(5, bool links_need_for_probe)
+	RH_KABI_USE(6, 7, struct list_head links_defer_hook)
+
+	RH_KABI_RESERVE(8)
+	RH_KABI_RESERVE(9)
+	RH_KABI_RESERVE(10)
+	RH_KABI_RESERVE(11)
+	RH_KABI_RESERVE(12)
+	RH_KABI_RESERVE(13)
+	RH_KABI_RESERVE(14)
+	RH_KABI_RESERVE(15)
+	RH_KABI_RESERVE(16)
+	RH_KABI_AUX_PTR(device_extended)
+};
+
+/**
+ * struct device_link - Device link representation.
+ * @supplier: The device on the supplier end of the link.
+ * @s_node: Hook to the supplier device's list of links to consumers.
+ * @consumer: The device on the consumer end of the link.
+ * @c_node: Hook to the consumer device's list of links to suppliers.
+ * @link_dev: device used to expose link details in sysfs
+ * @status: The state of the link (with respect to the presence of drivers).
+ * @flags: Link flags.
+ * @rpm_active: Whether or not the consumer device is runtime-PM-active.
+ * @kref: Count repeated addition of the same link.
+ * @rcu_head: An RCU head to use for deferred execution of SRCU callbacks.
+ * @supplier_preactivated: Supplier has been made active before consumer probe.
+ */
+struct device_link {
+	struct device *supplier;
+	struct list_head s_node;
+	struct device *consumer;
+	struct list_head c_node;
+	struct device link_dev;
+	enum device_link_state status;
+	u32 flags;
+	refcount_t rpm_active;
+	struct kref kref;
+#ifdef CONFIG_SRCU
+	struct rcu_head rcu_head;
+#endif
+	bool supplier_preactivated; /* Owned by consumer probe. */
 };
 
 static inline struct device *kobj_to_dev(struct kobject *kobj)
 {
 	return container_of(kobj, struct device, kobj);
+}
+
+/**
+ * device_iommu_mapped - Returns true when the device DMA is translated
+ *			 by an IOMMU
+ * @dev: Device to perform the check on
+ */
+static inline bool device_iommu_mapped(struct device *dev)
+{
+	return (dev->iommu_group != NULL);
 }
 
 /* Get the wakeup routines, which depend on struct device */
@@ -1037,7 +1383,7 @@ static inline void set_dev_node(struct device *dev, int node)
 #else
 static inline int dev_to_node(struct device *dev)
 {
-	return -1;
+	return NUMA_NO_NODE;
 }
 static inline void set_dev_node(struct device *dev, int node)
 {
@@ -1107,6 +1453,16 @@ static inline bool device_async_suspend_enabled(struct device *dev)
 	return !!dev->power.async_suspend;
 }
 
+static inline bool device_pm_not_required(struct device *dev)
+{
+	return dev->power.no_pm;
+}
+
+static inline void device_set_pm_not_required(struct device *dev)
+{
+	dev->power.no_pm = true;
+}
+
 static inline void dev_pm_syscore_device(struct device *dev, bool val)
 {
 #ifdef CONFIG_PM_SLEEP
@@ -1158,6 +1514,17 @@ static inline struct device_node *dev_of_node(struct device *dev)
 
 void driver_init(void);
 
+static inline bool dev_has_sync_state(struct device *dev)
+{
+	if (!dev)
+		return false;
+	if (dev->driver && dev->driver->sync_state)
+		return true;
+	if (dev->bus && dev->bus->sync_state)
+		return true;
+	return false;
+}
+
 /*
  * High level routines for use by the bus drivers
  */
@@ -1178,6 +1545,7 @@ extern int device_move(struct device *dev, struct device *new_parent,
 extern const char *device_get_devnode(struct device *dev,
 				      umode_t *mode, kuid_t *uid, kgid_t *gid,
 				      const char **tmp);
+extern int device_is_dependent(struct device *dev, void *target);
 
 static inline bool device_supports_offline(struct device *dev)
 {
@@ -1233,10 +1601,6 @@ extern bool device_is_bound(struct device *dev);
 /*
  * Easy functions for dynamically creating devices on the fly
  */
-extern __printf(5, 0)
-struct device *device_create_vargs(struct class *cls, struct device *parent,
-				   dev_t devt, void *drvdata,
-				   const char *fmt, va_list vargs);
 extern __printf(5, 6)
 struct device *device_create(struct class *cls, struct device *parent,
 			     dev_t devt, void *drvdata,
@@ -1295,6 +1659,7 @@ extern int (*platform_notify_remove)(struct device *dev);
  */
 extern struct device *get_device(struct device *dev);
 extern void put_device(struct device *dev);
+extern bool kill_device(struct device *dev);
 
 #ifdef CONFIG_DEVTMPFS
 extern int devtmpfs_create_node(struct device *dev);
@@ -1316,6 +1681,9 @@ extern const char *dev_driver_string(const struct device *dev);
 struct device_link *device_link_add(struct device *consumer,
 				    struct device *supplier, u32 flags);
 void device_link_del(struct device_link *link);
+void device_link_remove(void *consumer, struct device *supplier);
+void device_links_supplier_sync_state_pause(void);
+void device_links_supplier_sync_state_resume(void);
 
 #ifdef CONFIG_PRINTK
 
@@ -1518,6 +1886,10 @@ do {									\
 #define dev_WARN_ONCE(dev, condition, format, arg...) \
 	WARN_ONCE(condition, "%s %s: " format, \
 			dev_driver_string(dev), dev_name(dev), ## arg)
+
+extern __printf(3, 4)
+int dev_err_probe(const struct device *dev, int err, const char *fmt, ...);
+
 
 /* Create alias, so I can be autoloaded. */
 #define MODULE_ALIAS_CHARDEV(major,minor) \

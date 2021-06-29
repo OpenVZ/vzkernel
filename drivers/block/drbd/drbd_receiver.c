@@ -516,7 +516,7 @@ static int drbd_recv_short(struct socket *sock, void *buf, size_t size, int flag
 	struct msghdr msg = {
 		.msg_flags = (flags ? flags : MSG_WAITALL | MSG_NOSIGNAL)
 	};
-	iov_iter_kvec(&msg.msg_iter, READ | ITER_KVEC, &iov, 1, size);
+	iov_iter_kvec(&msg.msg_iter, READ, &iov, 1, size);
 	return sock_recvmsg(sock, &msg, msg.msg_flags);
 }
 
@@ -1062,8 +1062,8 @@ randomize:
 
 	/* we don't want delays.
 	 * we use TCP_CORK where appropriate, though */
-	drbd_tcp_nodelay(sock.socket);
-	drbd_tcp_nodelay(msock.socket);
+	tcp_sock_set_nodelay(sock.socket->sk);
+	tcp_sock_set_nodelay(msock.socket->sk);
 
 	connection->data.socket = sock.socket;
 	connection->meta.socket = msock.socket;
@@ -2674,8 +2674,7 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_device *device)
 	if (c_min_rate == 0)
 		return false;
 
-	curr_events = (int)part_stat_read(&disk->part0, sectors[0]) +
-		      (int)part_stat_read(&disk->part0, sectors[1]) -
+	curr_events = (int)part_stat_read_accum(&disk->part0, sectors) -
 			atomic_read(&device->rs_sect_ev);
 
 	if (atomic_read(&device->ap_actlog_cnt)
@@ -2790,6 +2789,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		   then we would do something smarter here than reading
 		   the block... */
 		peer_req->flags |= EE_RS_THIN_REQ;
+		/* fall through */
 	case P_RS_DATA_REQUEST:
 		peer_req->w.cb = w_e_end_rsdata_req;
 		fault_type = DRBD_FAULT_RS_RD;
@@ -2968,6 +2968,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 		/* Else fall through to one of the other strategies... */
 		drbd_warn(device, "Discard younger/older primary did not find a decision\n"
 		     "Using discard-least-changes instead\n");
+		/* fall through */
 	case ASB_DISCARD_ZERO_CHG:
 		if (ch_peer == 0 && ch_self == 0) {
 			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags)
@@ -2979,6 +2980,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 		}
 		if (after_sb_0p == ASB_DISCARD_ZERO_CHG)
 			break;
+		/* else: fall through */
 	case ASB_DISCARD_LEAST_CHG:
 		if	(ch_self < ch_peer)
 			rv = -1;
@@ -3756,7 +3758,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	struct disk_conf *old_disk_conf = NULL, *new_disk_conf = NULL;
 	const int apv = connection->agreed_pro_version;
 	struct fifo_buffer *old_plan = NULL, *new_plan = NULL;
-	int fifo_size = 0;
+	unsigned int fifo_size = 0;
 	int err;
 
 	peer_device = conn_peer_device(connection, pi->vnr);

@@ -46,6 +46,8 @@
 #include <asm/fpu/types.h>
 #include <asm/fpu/internal.h>
 
+#include <linux/rh_kabi.h>
+
 static inline void set_cpu_flag(int flag)
 {
 	S390_lowcore.cpu_flags |= (1UL << flag);
@@ -143,6 +145,12 @@ struct thread_struct {
 	struct gs_cb *gs_cb;		/* Current guarded storage cb */
 	struct gs_cb *gs_bc_cb;		/* Broadcast guarded storage cb */
 	unsigned char trap_tdb[256];	/* Transaction abort diagnose block */
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+
 	/*
 	 * Warning: 'fpu' is dynamically-sized. It *MUST* be at
 	 * the end.
@@ -186,6 +194,7 @@ struct stack_frame {
 #define INIT_THREAD {							\
 	.ksp = sizeof(init_stack) + (unsigned long) &init_stack,	\
 	.fpu.regs = (void *) init_task.thread.fpu.fprs,			\
+	.last_break = 1,						\
 }
 
 /*
@@ -242,7 +251,7 @@ static inline unsigned long current_stack_pointer(void)
 	return sp;
 }
 
-static inline unsigned short stap(void)
+static __no_kasan_or_inline unsigned short stap(void)
 {
 	unsigned short cpu_address;
 
@@ -287,7 +296,7 @@ static inline void __load_psw(psw_t psw)
  * Set PSW mask to specified value, while leaving the
  * PSW addr pointing to the next instruction.
  */
-static inline void __load_psw_mask(unsigned long mask)
+static __no_kasan_or_inline void __load_psw_mask(unsigned long mask)
 {
 	unsigned long addr;
 	psw_t psw;

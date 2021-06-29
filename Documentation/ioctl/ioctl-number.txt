@@ -166,6 +166,7 @@ Code  Seq#(hex)	Include File		Comments
 'P'	all	linux/soundcard.h	conflict!
 'P'	60-6F	sound/sscape_ioctl.h	conflict!
 'P'	00-0F	drivers/usb/class/usblp.c	conflict!
+'P'	01-09	drivers/misc/pci_endpoint_test.c	conflict!
 'Q'	all	linux/soundcard.h
 'R'	00-1F	linux/random.h		conflict!
 'R'	01	linux/rfkill.h		conflict!
@@ -274,6 +275,7 @@ Code  Seq#(hex)	Include File		Comments
 'v'	00-1F	linux/ext2_fs.h		conflict!
 'v'	00-1F	linux/fs.h		conflict!
 'v'	00-0F	linux/sonypi.h		conflict!
+'v'	20-27	arch/powerpc/include/uapi/asm/vas-api.h		VAS API
 'v'	C0-FF	linux/meye.h		conflict!
 'w'	all				CERN SCI driver
 'y'	00-1F				packet based user level communications
@@ -308,13 +310,17 @@ Code  Seq#(hex)	Include File		Comments
 					<mailto:tlewis@mindspring.com>
 0xA3	90-9F	linux/dtlk.h
 0xA4	00-1F	uapi/linux/tee.h	Generic TEE subsystem
+0xA4	00-1F	uapi/asm/sgx.h		<mailto:linux-sgx@vger.kernel.org>
 0xAA	00-3F	linux/uapi/linux/userfaultfd.h
 0xAB	00-1F	linux/nbd.h
 0xAC	00-1F	linux/raw.h
 0xAD	00	Netfilter device	in development:
 					<mailto:rusty@rustcorp.com.au>
-0xAE	all	linux/kvm.h		Kernel-based Virtual Machine
+0xAE	00-1F	linux/kvm.h		Kernel-based Virtual Machine
 					<mailto:kvm@vger.kernel.org>
+0xAE	40-FF	linux/kvm.h		Kernel-based Virtual Machine
+					<mailto:kvm@vger.kernel.org>
+0xAE	20-3F	linux/nitro_enclaves.h	Nitro Enclaves
 0xAF	00-1F	linux/fsl_hypervisor.h	Freescale hypervisor
 0xB0	all	RATIO devices		in development:
 					<mailto:vgo@ratio.de>
@@ -322,6 +328,7 @@ Code  Seq#(hex)	Include File		Comments
 0xB3	00	linux/mmc/ioctl.h
 0xB4	00-0F	linux/gpio.h		<mailto:linux-gpio@vger.kernel.org>
 0xB5	00-0F	uapi/linux/rpmsg.h	<mailto:linux-remoteproc@vger.kernel.org>
+0xB6	all	linux/fpga-dfl.h
 0xC0	00-0F	linux/usb/iowarrior.h
 0xCA	00-0F	uapi/misc/cxl.h
 0xCA	10-2F	uapi/misc/ocxl.h
@@ -343,3 +350,4 @@ Code  Seq#(hex)	Include File		Comments
 0xF6	all	LTTng			Linux Trace Toolkit Next Generation
 					<mailto:mathieu.desnoyers@efficios.com>
 0xFD	all	linux/dm-ioctl.h
+0xFE	all	linux/isst_if.h

@@ -343,60 +343,45 @@ struct ea_list {
 	unsigned int ei_size;
 };
 
-static inline unsigned int gfs2_ea_strlen(struct gfs2_ea_header *ea)
-{
-	switch (ea->ea_type) {
-	case GFS2_EATYPE_USR:
-		return 5 + ea->ea_name_len + 1;
-	case GFS2_EATYPE_SYS:
-		return 7 + ea->ea_name_len + 1;
-	case GFS2_EATYPE_SECURITY:
-		return 9 + ea->ea_name_len + 1;
-	default:
-		return 0;
-	}
-}
-
 static int ea_list_i(struct gfs2_inode *ip, struct buffer_head *bh,
 		     struct gfs2_ea_header *ea, struct gfs2_ea_header *prev,
 		     void *private)
 {
 	struct ea_list *ei = private;
 	struct gfs2_ea_request *er = ei->ei_er;
-	unsigned int ea_size = gfs2_ea_strlen(ea);
+	unsigned int ea_size;
+	char *prefix;
+	unsigned int l;
 
 	if (ea->ea_type == GFS2_EATYPE_UNUSED)
 		return 0;
 
-	if (er->er_data_len) {
-		char *prefix = NULL;
-		unsigned int l = 0;
-		char c = 0;
+	switch (ea->ea_type) {
+	case GFS2_EATYPE_USR:
+		prefix = "user.";
+		l = 5;
+		break;
+	case GFS2_EATYPE_SYS:
+		prefix = "system.";
+		l = 7;
+		break;
+	case GFS2_EATYPE_SECURITY:
+		prefix = "security.";
+		l = 9;
+		break;
+	default:
+		BUG();
+	}
 
+	ea_size = l + ea->ea_name_len + 1;
+	if (er->er_data_len) {
 		if (ei->ei_size + ea_size > er->er_data_len)
 			return -ERANGE;
-
-		switch (ea->ea_type) {
-		case GFS2_EATYPE_USR:
-			prefix = "user.";
-			l = 5;
-			break;
-		case GFS2_EATYPE_SYS:
-			prefix = "system.";
-			l = 7;
-			break;
-		case GFS2_EATYPE_SECURITY:
-			prefix = "security.";
-			l = 9;
-			break;
-		}
-
-		BUG_ON(l == 0);
 
 		memcpy(er->er_data + ei->ei_size, prefix, l);
 		memcpy(er->er_data + ei->ei_size + l, GFS2_EA2NAME(ea),
 		       ea->ea_name_len);
-		memcpy(er->er_data + ei->ei_size + ea_size - 1, &c, 1);
+		er->er_data[ei->ei_size + ea_size - 1] = 0;
 	}
 
 	ei->ei_size += ea_size;
@@ -1240,7 +1225,7 @@ static int gfs2_xattr_set(const struct xattr_handler *handler,
 	struct gfs2_holder gh;
 	int ret;
 
-	ret = gfs2_rsqa_alloc(ip);
+	ret = gfs2_qa_get(ip);
 	if (ret)
 		return ret;
 
@@ -1249,15 +1234,19 @@ static int gfs2_xattr_set(const struct xattr_handler *handler,
 	if (!gfs2_glock_is_locked_by_me(ip->i_gl)) {
 		ret = gfs2_glock_nq_init(ip->i_gl, LM_ST_EXCLUSIVE, 0, &gh);
 		if (ret)
-			return ret;
+			goto out;
 	} else {
-		if (WARN_ON_ONCE(ip->i_gl->gl_state != LM_ST_EXCLUSIVE))
-			return -EIO;
+		if (WARN_ON_ONCE(ip->i_gl->gl_state != LM_ST_EXCLUSIVE)) {
+			ret = -EIO;
+			goto out;
+		}
 		gfs2_holder_mark_uninitialized(&gh);
 	}
 	ret = __gfs2_xattr_set(inode, name, value, size, flags, handler->flags);
 	if (gfs2_holder_initialized(&gh))
 		gfs2_glock_dq_uninit(&gh);
+out:
+	gfs2_qa_put(ip);
 	return ret;
 }
 

@@ -1089,14 +1089,11 @@ static void do_attr_changes(struct inode *inode, const struct iattr *attr)
 	if (attr->ia_valid & ATTR_GID)
 		inode->i_gid = attr->ia_gid;
 	if (attr->ia_valid & ATTR_ATIME)
-		inode->i_atime = timespec64_trunc(attr->ia_atime,
-						  inode->i_sb->s_time_gran);
+		inode->i_atime = attr->ia_atime;
 	if (attr->ia_valid & ATTR_MTIME)
-		inode->i_mtime = timespec64_trunc(attr->ia_mtime,
-						  inode->i_sb->s_time_gran);
+		inode->i_mtime = attr->ia_mtime;
 	if (attr->ia_valid & ATTR_CTIME)
-		inode->i_ctime = timespec64_trunc(attr->ia_ctime,
-						  inode->i_sb->s_time_gran);
+		inode->i_ctime = attr->ia_ctime;
 	if (attr->ia_valid & ATTR_MODE) {
 		umode_t mode = attr->ia_mode;
 
@@ -1478,7 +1475,7 @@ static int ubifs_migrate_page(struct address_space *mapping,
 {
 	int rc;
 
-	rc = migrate_page_move_mapping(mapping, newpage, page, NULL, mode, 0);
+	rc = migrate_page_move_mapping(mapping, newpage, page, 0);
 	if (rc != MIGRATEPAGE_SUCCESS)
 		return rc;
 

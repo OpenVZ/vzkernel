@@ -265,6 +265,7 @@
 #include <linux/syscalls.h>
 #include <linux/completion.h>
 #include <linux/uuid.h>
+#include <linux/rcupdate.h>
 #include <crypto/chacha20.h>
 
 #include <asm/processor.h>
@@ -300,6 +301,11 @@
  */
 #define ENTROPY_SHIFT 3
 #define ENTROPY_BITS(r) ((r)->entropy_count >> ENTROPY_SHIFT)
+
+/*
+ * Hook for external RNG.
+ */
+static const struct random_extrng __rcu *extrng;
 
 /*
  * The minimum number of bits of entropy before we wake up a read on
@@ -433,9 +439,9 @@ static int crng_init_cnt = 0;
 static unsigned long crng_global_init_time = 0;
 #define CRNG_INIT_CNT_THRESH (2*CHACHA20_KEY_SIZE)
 static void _extract_crng(struct crng_state *crng,
-			  __u32 out[CHACHA20_BLOCK_WORDS]);
+			  __u8 out[CHACHA20_BLOCK_SIZE]);
 static void _crng_backtrack_protect(struct crng_state *crng,
-				    __u32 tmp[CHACHA20_BLOCK_WORDS], int used);
+				    __u8 tmp[CHACHA20_BLOCK_SIZE], int used);
 static void process_random_ready_list(void);
 static void _get_random_bytes(void *buf, int nbytes);
 
@@ -448,6 +454,9 @@ static int ratelimit_disable __read_mostly;
 
 module_param_named(ratelimit_disable, ratelimit_disable, int, 0644);
 MODULE_PARM_DESC(ratelimit_disable, "Disable random ratelimit suppression");
+
+static const struct file_operations extrng_random_fops;
+static const struct file_operations extrng_urandom_fops;
 
 /**********************************************************************
  *
@@ -778,10 +787,19 @@ static struct crng_state **crng_node_pool __read_mostly;
 #endif
 
 static void invalidate_batched_entropy(void);
+static void numa_crng_init(void);
+
+static bool trust_cpu __ro_after_init = IS_ENABLED(CONFIG_RANDOM_TRUST_CPU);
+static int __init parse_trust_cpu(char *arg)
+{
+	return kstrtobool(arg, &trust_cpu);
+}
+early_param("random.trust_cpu", parse_trust_cpu);
 
 static void crng_initialize(struct crng_state *crng)
 {
 	int		i;
+	int		arch_init = 1;
 	unsigned long	rv;
 
 	memcpy(&crng->state[0], "expand 32-byte k", 16);
@@ -792,9 +810,17 @@ static void crng_initialize(struct crng_state *crng)
 		_get_random_bytes(&crng->state[4], sizeof(__u32) * 12);
 	for (i = 4; i < 16; i++) {
 		if (!arch_get_random_seed_long(&rv) &&
-		    !arch_get_random_long(&rv))
+		    !arch_get_random_long(&rv)) {
 			rv = random_get_entropy();
+			arch_init = 0;
+		}
 		crng->state[i] ^= rv;
+	}
+	if (trust_cpu && arch_init && crng == &primary_crng) {
+		invalidate_batched_entropy();
+		numa_crng_init();
+		crng_init = 2;
+		pr_notice("random: crng done (trusting CPU's manufacturer)\n");
 	}
 	crng->init_time = jiffies - CRNG_RESEED_INTERVAL - 1;
 }
@@ -912,7 +938,7 @@ static void crng_reseed(struct crng_state *crng, struct entropy_store *r)
 	unsigned long	flags;
 	int		i, num;
 	union {
-		__u32	block[CHACHA20_BLOCK_WORDS];
+		__u8	block[CHACHA20_BLOCK_SIZE];
 		__u32	key[8];
 	} buf;
 
@@ -959,7 +985,7 @@ static void crng_reseed(struct crng_state *crng, struct entropy_store *r)
 }
 
 static void _extract_crng(struct crng_state *crng,
-			  __u32 out[CHACHA20_BLOCK_WORDS])
+			  __u8 out[CHACHA20_BLOCK_SIZE])
 {
 	unsigned long v, flags;
 
@@ -976,7 +1002,7 @@ static void _extract_crng(struct crng_state *crng,
 	spin_unlock_irqrestore(&crng->lock, flags);
 }
 
-static void extract_crng(__u32 out[CHACHA20_BLOCK_WORDS])
+static void extract_crng(__u8 out[CHACHA20_BLOCK_SIZE])
 {
 	struct crng_state *crng = NULL;
 
@@ -994,7 +1020,7 @@ static void extract_crng(__u32 out[CHACHA20_BLOCK_WORDS])
  * enough) to mutate the CRNG key to provide backtracking protection.
  */
 static void _crng_backtrack_protect(struct crng_state *crng,
-				    __u32 tmp[CHACHA20_BLOCK_WORDS], int used)
+				    __u8 tmp[CHACHA20_BLOCK_SIZE], int used)
 {
 	unsigned long	flags;
 	__u32		*s, *d;
@@ -1006,14 +1032,14 @@ static void _crng_backtrack_protect(struct crng_state *crng,
 		used = 0;
 	}
 	spin_lock_irqsave(&crng->lock, flags);
-	s = &tmp[used / sizeof(__u32)];
+	s = (__u32 *) &tmp[used];
 	d = &crng->state[4];
 	for (i=0; i < 8; i++)
 		*d++ ^= *s++;
 	spin_unlock_irqrestore(&crng->lock, flags);
 }
 
-static void crng_backtrack_protect(__u32 tmp[CHACHA20_BLOCK_WORDS], int used)
+static void crng_backtrack_protect(__u8 tmp[CHACHA20_BLOCK_SIZE], int used)
 {
 	struct crng_state *crng = NULL;
 
@@ -1029,7 +1055,7 @@ static void crng_backtrack_protect(__u32 tmp[CHACHA20_BLOCK_WORDS], int used)
 static ssize_t extract_crng_user(void __user *buf, size_t nbytes)
 {
 	ssize_t ret = 0, i = CHACHA20_BLOCK_SIZE;
-	__u32 tmp[CHACHA20_BLOCK_WORDS];
+	__u8 tmp[CHACHA20_BLOCK_SIZE] __aligned(4);
 	int large_request = (nbytes > 256);
 
 	while (nbytes) {
@@ -1122,8 +1148,6 @@ static void add_timer_randomness(struct timer_rand_state *state, unsigned num)
 	} sample;
 	long delta, delta2, delta3;
 
-	preempt_disable();
-
 	sample.jiffies = jiffies;
 	sample.cycles = random_get_entropy();
 	sample.num = num;
@@ -1161,8 +1185,6 @@ static void add_timer_randomness(struct timer_rand_state *state, unsigned num)
 	 * and limit entropy entimate to 12 bits.
 	 */
 	credit_entropy_bits(r, min_t(int, fls(delta>>1), 11));
-
-	preempt_enable();
 }
 
 void add_input_randomness(unsigned int type, unsigned int code,
@@ -1244,6 +1266,7 @@ void add_interrupt_randomness(int irq, int irq_flags)
 
 	fast_mix(fast_pool);
 	add_interrupt_bench(cycles);
+	this_cpu_add(net_rand_state.s1, fast_pool->pool[cycles & 3]);
 
 	if (unlikely(crng_init == 0)) {
 		if ((fast_pool->count >= 64) &&
@@ -1417,14 +1440,14 @@ static void extract_buf(struct entropy_store *r, __u8 *out)
 		__u32 w[5];
 		unsigned long l[LONGS(20)];
 	} hash;
-	__u32 workspace[SHA_WORKSPACE_WORDS];
+	__u32 workspace[SHA1_WORKSPACE_WORDS];
 	unsigned long flags;
 
 	/*
 	 * If we have an architectural hardware random number
 	 * generator, use it for SHA's initial vector
 	 */
-	sha_init(hash.w);
+	sha1_init(hash.w);
 	for (i = 0; i < LONGS(20); i++) {
 		unsigned long v;
 		if (!arch_get_random_long(&v))
@@ -1435,7 +1458,7 @@ static void extract_buf(struct entropy_store *r, __u8 *out)
 	/* Generate a hash across the pool, 16 words (512 bits) at a time */
 	spin_lock_irqsave(&r->lock, flags);
 	for (i = 0; i < r->poolinfo->poolwords; i += 16)
-		sha_transform(hash.w, (__u8 *)(r->pool + i), workspace);
+		sha1_transform(hash.w, (__u8 *)(r->pool + i), workspace);
 
 	/*
 	 * We mix the hash back into the pool to prevent backtracking
@@ -1596,8 +1619,9 @@ static void _warn_unseeded_randomness(const char *func_name, void *caller,
 	print_once = true;
 #endif
 	if (__ratelimit(&unseeded_warning))
-		pr_notice("random: %s called from %pS with crng_init=%d\n",
-			  func_name, caller, crng_init);
+		printk_deferred(KERN_NOTICE "random: %s called from %pS "
+				"with crng_init=%d\n", func_name, caller,
+				crng_init);
 }
 
 /*
@@ -1612,7 +1636,7 @@ static void _warn_unseeded_randomness(const char *func_name, void *caller,
  */
 static void _get_random_bytes(void *buf, int nbytes)
 {
-	__u32 tmp[CHACHA20_BLOCK_WORDS];
+	__u8 tmp[CHACHA20_BLOCK_SIZE] __aligned(4);
 
 	trace_get_random_bytes(nbytes, _RET_IP_);
 
@@ -1640,6 +1664,56 @@ void get_random_bytes(void *buf, int nbytes)
 }
 EXPORT_SYMBOL(get_random_bytes);
 
+
+/*
+ * Each time the timer fires, we expect that we got an unpredictable
+ * jump in the cycle counter. Even if the timer is running on another
+ * CPU, the timer activity will be touching the stack of the CPU that is
+ * generating entropy..
+ *
+ * Note that we don't re-arm the timer in the timer itself - we are
+ * happy to be scheduled away, since that just makes the load more
+ * complex, but we do not want the timer to keep ticking unless the
+ * entropy loop is running.
+ *
+ * So the re-arming always happens in the entropy loop itself.
+ */
+static void entropy_timer(struct timer_list *t)
+{
+	credit_entropy_bits(&input_pool, 1);
+}
+
+/*
+ * If we have an actual cycle counter, see if we can
+ * generate enough entropy with timing noise
+ */
+static void try_to_generate_entropy(void)
+{
+	struct {
+		unsigned long now;
+		struct timer_list timer;
+	} stack;
+
+	stack.now = random_get_entropy();
+
+	/* Slow counter - or none. Don't even bother */
+	if (stack.now == random_get_entropy())
+		return;
+
+	timer_setup_on_stack(&stack.timer, entropy_timer, 0);
+	while (!crng_ready()) {
+		if (!timer_pending(&stack.timer))
+			mod_timer(&stack.timer, jiffies+1);
+		mix_pool_bytes(&input_pool, &stack.now, sizeof(stack.now));
+		schedule();
+		stack.now = random_get_entropy();
+	}
+
+	del_timer_sync(&stack.timer);
+	destroy_timer_on_stack(&stack.timer);
+	mix_pool_bytes(&input_pool, &stack.now, sizeof(stack.now));
+}
+
 /*
  * Wait for the urandom pool to be seeded and thus guaranteed to supply
  * cryptographically secure random numbers. This applies to: the /dev/urandom
@@ -1654,9 +1728,34 @@ int wait_for_random_bytes(void)
 {
 	if (likely(crng_ready()))
 		return 0;
-	return wait_event_interruptible(crng_init_wait, crng_ready());
+
+	do {
+		int ret;
+		ret = wait_event_interruptible_timeout(crng_init_wait, crng_ready(), HZ);
+		if (ret)
+			return ret > 0 ? 0 : ret;
+
+		try_to_generate_entropy();
+	} while (!crng_ready());
+
+	return 0;
 }
 EXPORT_SYMBOL(wait_for_random_bytes);
+
+/*
+ * Returns whether or not the urandom pool has been seeded and thus guaranteed
+ * to supply cryptographically secure random numbers. This applies to: the
+ * /dev/urandom device, the get_random_bytes function, and the get_random_{u32,
+ * ,u64,int,long} family of functions.
+ *
+ * Returns: true if the urandom pool has been seeded.
+ *          false if the urandom pool has not been seeded.
+ */
+bool rng_is_initialized(void)
+{
+	return crng_ready();
+}
+EXPORT_SYMBOL(rng_is_initialized);
 
 /*
  * Add a callback function that will be invoked when the nonblocking
@@ -1725,29 +1824,30 @@ EXPORT_SYMBOL(del_random_ready_callback);
  * key known by the NSA).  So it's useful if we need the speed, but
  * only if we're willing to trust the hardware manufacturer not to
  * have put in a back door.
+ *
+ * Return number of bytes filled in.
  */
-void get_random_bytes_arch(void *buf, int nbytes)
+int __must_check get_random_bytes_arch(void *buf, int nbytes)
 {
+	int left = nbytes;
 	char *p = buf;
 
-	trace_get_random_bytes_arch(nbytes, _RET_IP_);
-	while (nbytes) {
+	trace_get_random_bytes_arch(left, _RET_IP_);
+	while (left) {
 		unsigned long v;
-		int chunk = min(nbytes, (int)sizeof(unsigned long));
+		int chunk = min_t(int, left, sizeof(unsigned long));
 
 		if (!arch_get_random_long(&v))
 			break;
-		
+
 		memcpy(p, &v, chunk);
 		p += chunk;
-		nbytes -= chunk;
+		left -= chunk;
 	}
 
-	if (nbytes)
-		get_random_bytes(p, nbytes);
+	return nbytes - left;
 }
 EXPORT_SYMBOL(get_random_bytes_arch);
-
 
 /*
  * init_std_data - initialize pool with system data
@@ -1758,7 +1858,7 @@ EXPORT_SYMBOL(get_random_bytes_arch);
  * data into the pool to prepare it for use. The pool is not cleared
  * as that can only decrease the entropy in the pool.
  */
-static void init_std_data(struct entropy_store *r)
+static void __init init_std_data(struct entropy_store *r)
 {
 	int i;
 	ktime_t now = ktime_get_real();
@@ -1785,7 +1885,7 @@ static void init_std_data(struct entropy_store *r)
  * take care not to overwrite the precious per platform data
  * we were given.
  */
-static int rand_initialize(void)
+int __init rand_initialize(void)
 {
 	init_std_data(&input_pool);
 	init_std_data(&blocking_pool);
@@ -1797,7 +1897,6 @@ static int rand_initialize(void)
 	}
 	return 0;
 }
-early_initcall(rand_initialize);
 
 #ifdef CONFIG_BLOCK
 void rand_initialize_disk(struct gendisk *disk)
@@ -1889,6 +1988,13 @@ random_poll(struct file *file, poll_table * wait)
 	if (ENTROPY_BITS(&input_pool) < random_write_wakeup_bits)
 		mask |= EPOLLOUT | EPOLLWRNORM;
 	return mask;
+}
+
+static __poll_t
+extrng_poll(struct file *file, poll_table * wait)
+{
+	/* extrng pool is always full, always read, no writes */
+	return EPOLLIN | EPOLLRDNORM;
 }
 
 static int
@@ -1995,7 +2101,56 @@ static int random_fasync(int fd, struct file *filp, int on)
 	return fasync_helper(fd, filp, on, &fasync);
 }
 
+static int random_open(struct inode *inode, struct file *filp)
+{
+	const struct random_extrng *rng;
+
+	rcu_read_lock();
+	rng = extrng;
+	if (rng && !try_module_get(rng->owner))
+		rng = NULL;
+	rcu_read_unlock();
+
+	if (!rng)
+		return 0;
+
+	filp->f_op = &extrng_random_fops;
+
+	return 0;
+}
+
+static int urandom_open(struct inode *inode, struct file *filp)
+{
+	const struct random_extrng *rng;
+
+	rcu_read_lock();
+	rng = extrng;
+	if (rng && !try_module_get(rng->owner))
+		rng = NULL;
+	rcu_read_unlock();
+
+	if (!rng)
+		return 0;
+
+	filp->f_op = &extrng_urandom_fops;
+
+	return 0;
+}
+
+static int extrng_release(struct inode *inode, struct file *filp)
+{
+	module_put(extrng->owner);
+	return 0;
+}
+
+static ssize_t
+extrng_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
+{
+	return rcu_dereference_raw(extrng)->extrng_read(buf, nbytes);
+}
+
 const struct file_operations random_fops = {
+	.open  = random_open,
 	.read  = random_read,
 	.write = random_write,
 	.poll  = random_poll,
@@ -2005,6 +2160,7 @@ const struct file_operations random_fops = {
 };
 
 const struct file_operations urandom_fops = {
+	.open  = urandom_open,
 	.read  = urandom_read,
 	.write = random_write,
 	.unlocked_ioctl = random_ioctl,
@@ -2012,9 +2168,31 @@ const struct file_operations urandom_fops = {
 	.llseek = noop_llseek,
 };
 
+static const struct file_operations extrng_random_fops = {
+	.open  = random_open,
+	.read  = extrng_read,
+	.write = random_write,
+	.poll  = extrng_poll,
+	.unlocked_ioctl = random_ioctl,
+	.fasync = random_fasync,
+	.llseek = noop_llseek,
+	.release = extrng_release,
+};
+
+static const struct file_operations extrng_urandom_fops = {
+	.open  = urandom_open,
+	.read  = extrng_read,
+	.write = random_write,
+	.unlocked_ioctl = random_ioctl,
+	.fasync = random_fasync,
+	.llseek = noop_llseek,
+	.release = extrng_release,
+};
+
 SYSCALL_DEFINE3(getrandom, char __user *, buf, size_t, count,
 		unsigned int, flags)
 {
+	const struct random_extrng *rng;
 	int ret;
 
 	if (flags & ~(GRND_NONBLOCK|GRND_RANDOM))
@@ -2022,6 +2200,18 @@ SYSCALL_DEFINE3(getrandom, char __user *, buf, size_t, count,
 
 	if (count > INT_MAX)
 		count = INT_MAX;
+
+	rcu_read_lock();
+	rng = extrng;
+	if (rng && !try_module_get(rng->owner))
+		rng = NULL;
+	rcu_read_unlock();
+
+	if (rng) {
+		ret = rng->extrng_read(buf, count);
+		module_put(extrng->owner);
+		return ret;
+	}
 
 	if (flags & GRND_RANDOM)
 		return _random_read(flags & GRND_NONBLOCK, buf, count);
@@ -2186,8 +2376,8 @@ struct batched_entropy {
 		u32 entropy_u32[CHACHA20_BLOCK_SIZE / sizeof(u32)];
 	};
 	unsigned int position;
+	spinlock_t batch_lock;
 };
-static rwlock_t batched_entropy_reset_lock = __RW_LOCK_UNLOCKED(batched_entropy_reset_lock);
 
 /*
  * Get a random word for internal kernel use only. The quality of the random
@@ -2197,12 +2387,14 @@ static rwlock_t batched_entropy_reset_lock = __RW_LOCK_UNLOCKED(batched_entropy_
  * wait_for_random_bytes() should be called and return 0 at least once
  * at any point prior.
  */
-static DEFINE_PER_CPU(struct batched_entropy, batched_entropy_u64);
+static DEFINE_PER_CPU(struct batched_entropy, batched_entropy_u64) = {
+	.batch_lock	= __SPIN_LOCK_UNLOCKED(batched_entropy_u64.lock),
+};
+
 u64 get_random_u64(void)
 {
 	u64 ret;
-	bool use_lock;
-	unsigned long flags = 0;
+	unsigned long flags;
 	struct batched_entropy *batch;
 	static void *previous;
 
@@ -2217,28 +2409,25 @@ u64 get_random_u64(void)
 
 	warn_unseeded_randomness(&previous);
 
-	use_lock = READ_ONCE(crng_init) < 2;
-	batch = &get_cpu_var(batched_entropy_u64);
-	if (use_lock)
-		read_lock_irqsave(&batched_entropy_reset_lock, flags);
+	batch = raw_cpu_ptr(&batched_entropy_u64);
+	spin_lock_irqsave(&batch->batch_lock, flags);
 	if (batch->position % ARRAY_SIZE(batch->entropy_u64) == 0) {
-		extract_crng((__u32 *)batch->entropy_u64);
+		extract_crng((u8 *)batch->entropy_u64);
 		batch->position = 0;
 	}
 	ret = batch->entropy_u64[batch->position++];
-	if (use_lock)
-		read_unlock_irqrestore(&batched_entropy_reset_lock, flags);
-	put_cpu_var(batched_entropy_u64);
+	spin_unlock_irqrestore(&batch->batch_lock, flags);
 	return ret;
 }
 EXPORT_SYMBOL(get_random_u64);
 
-static DEFINE_PER_CPU(struct batched_entropy, batched_entropy_u32);
+static DEFINE_PER_CPU(struct batched_entropy, batched_entropy_u32) = {
+	.batch_lock	= __SPIN_LOCK_UNLOCKED(batched_entropy_u32.lock),
+};
 u32 get_random_u32(void)
 {
 	u32 ret;
-	bool use_lock;
-	unsigned long flags = 0;
+	unsigned long flags;
 	struct batched_entropy *batch;
 	static void *previous;
 
@@ -2247,18 +2436,14 @@ u32 get_random_u32(void)
 
 	warn_unseeded_randomness(&previous);
 
-	use_lock = READ_ONCE(crng_init) < 2;
-	batch = &get_cpu_var(batched_entropy_u32);
-	if (use_lock)
-		read_lock_irqsave(&batched_entropy_reset_lock, flags);
+	batch = raw_cpu_ptr(&batched_entropy_u32);
+	spin_lock_irqsave(&batch->batch_lock, flags);
 	if (batch->position % ARRAY_SIZE(batch->entropy_u32) == 0) {
-		extract_crng(batch->entropy_u32);
+		extract_crng((u8 *)batch->entropy_u32);
 		batch->position = 0;
 	}
 	ret = batch->entropy_u32[batch->position++];
-	if (use_lock)
-		read_unlock_irqrestore(&batched_entropy_reset_lock, flags);
-	put_cpu_var(batched_entropy_u32);
+	spin_unlock_irqrestore(&batch->batch_lock, flags);
 	return ret;
 }
 EXPORT_SYMBOL(get_random_u32);
@@ -2272,12 +2457,19 @@ static void invalidate_batched_entropy(void)
 	int cpu;
 	unsigned long flags;
 
-	write_lock_irqsave(&batched_entropy_reset_lock, flags);
 	for_each_possible_cpu (cpu) {
-		per_cpu_ptr(&batched_entropy_u32, cpu)->position = 0;
-		per_cpu_ptr(&batched_entropy_u64, cpu)->position = 0;
+		struct batched_entropy *batched_entropy;
+
+		batched_entropy = per_cpu_ptr(&batched_entropy_u32, cpu);
+		spin_lock_irqsave(&batched_entropy->batch_lock, flags);
+		batched_entropy->position = 0;
+		spin_unlock(&batched_entropy->batch_lock);
+
+		batched_entropy = per_cpu_ptr(&batched_entropy_u64, cpu);
+		spin_lock(&batched_entropy->batch_lock);
+		batched_entropy->position = 0;
+		spin_unlock_irqrestore(&batched_entropy->batch_lock, flags);
 	}
-	write_unlock_irqrestore(&batched_entropy_reset_lock, flags);
 }
 
 /**
@@ -2337,3 +2529,16 @@ void add_hwgenerator_randomness(const char *buffer, size_t count,
 	credit_entropy_bits(poolp, entropy);
 }
 EXPORT_SYMBOL_GPL(add_hwgenerator_randomness);
+
+void random_register_extrng(const struct random_extrng *rng)
+{
+	rcu_assign_pointer(extrng, rng);
+}
+EXPORT_SYMBOL_GPL(random_register_extrng);
+
+void random_unregister_extrng(void)
+{
+	RCU_INIT_POINTER(extrng, NULL);
+	synchronize_rcu();
+}
+EXPORT_SYMBOL_GPL(random_unregister_extrng);

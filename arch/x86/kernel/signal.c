@@ -246,7 +246,7 @@ get_sigframe(struct k_sigaction *ka, struct pt_regs *regs, size_t frame_size,
 	unsigned long sp = regs->sp;
 	unsigned long buf_fx = 0;
 	int onsigstack = on_sig_stack(sp);
-	struct fpu *fpu = &current->thread.fpu;
+	int ret;
 
 	/* redzone */
 	if (IS_ENABLED(CONFIG_X86_64))
@@ -265,11 +265,9 @@ get_sigframe(struct k_sigaction *ka, struct pt_regs *regs, size_t frame_size,
 		sp = (unsigned long) ka->sa.sa_restorer;
 	}
 
-	if (fpu->initialized) {
-		sp = fpu__alloc_mathframe(sp, IS_ENABLED(CONFIG_X86_32),
-					  &buf_fx, &math_size);
-		*fpstate = (void __user *)sp;
-	}
+	sp = fpu__alloc_mathframe(sp, IS_ENABLED(CONFIG_X86_32),
+				  &buf_fx, &math_size);
+	*fpstate = (void __user *)sp;
 
 	sp = align_sigframe(sp - frame_size);
 
@@ -281,8 +279,8 @@ get_sigframe(struct k_sigaction *ka, struct pt_regs *regs, size_t frame_size,
 		return (void __user *)-1L;
 
 	/* save i387 and extended state */
-	if (fpu->initialized &&
-	    copy_fpstate_to_sigframe(*fpstate, (void __user *)buf_fx, math_size) < 0)
+	ret = copy_fpstate_to_sigframe(*fpstate, (void __user *)buf_fx, math_size);
+	if (ret < 0)
 		return (void __user *)-1L;
 
 	return (void __user *)sp;
@@ -322,7 +320,7 @@ __setup_frame(int sig, struct ksignal *ksig, sigset_t *set,
 
 	frame = get_sigframe(&ksig->ka, regs, sizeof(*frame), &fpstate);
 
-	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		return -EFAULT;
 
 	if (__put_user(sig, &frame->sig))
@@ -385,7 +383,7 @@ static int __setup_rt_frame(int sig, struct ksignal *ksig,
 
 	frame = get_sigframe(&ksig->ka, regs, sizeof(*frame), &fpstate);
 
-	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		return -EFAULT;
 
 	put_user_try {
@@ -465,7 +463,7 @@ static int __setup_rt_frame(int sig, struct ksignal *ksig,
 
 	frame = get_sigframe(&ksig->ka, regs, sizeof(struct rt_sigframe), &fp);
 
-	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		return -EFAULT;
 
 	if (ksig->ka.sa.sa_flags & SA_SIGINFO) {
@@ -547,7 +545,7 @@ static int x32_setup_rt_frame(struct ksignal *ksig,
 
 	frame = get_sigframe(&ksig->ka, regs, sizeof(*frame), &fpstate);
 
-	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		return -EFAULT;
 
 	if (ksig->ka.sa.sa_flags & SA_SIGINFO) {
@@ -610,7 +608,7 @@ SYSCALL_DEFINE0(sigreturn)
 
 	frame = (struct sigframe __user *)(regs->sp - 8);
 
-	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		goto badframe;
 	if (__get_user(set.sig[0], &frame->sc.oldmask) || (_NSIG_WORDS > 1
 		&& __copy_from_user(&set.sig[1], &frame->extramask,
@@ -642,7 +640,7 @@ SYSCALL_DEFINE0(rt_sigreturn)
 	unsigned long uc_flags;
 
 	frame = (struct rt_sigframe __user *)(regs->sp - sizeof(long));
-	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		goto badframe;
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto badframe;
@@ -763,8 +761,7 @@ handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 		/*
 		 * Ensure the signal handler starts with the new fpu state.
 		 */
-		if (fpu->initialized)
-			fpu__clear(fpu);
+		fpu__clear_user_states(fpu);
 	}
 	signal_setup_done(failed, ksig, stepping);
 }
@@ -871,7 +868,7 @@ asmlinkage long sys32_x32_rt_sigreturn(void)
 
 	frame = (struct rt_sigframe_x32 __user *)(regs->sp - 8);
 
-	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		goto badframe;
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto badframe;

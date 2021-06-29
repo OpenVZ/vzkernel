@@ -208,7 +208,6 @@ static void rt_fibinfo_free_cpus(struct rtable __rcu * __percpu *rtp)
 static void free_fib_info_rcu(struct rcu_head *head)
 {
 	struct fib_info *fi = container_of(head, struct fib_info, rcu);
-	struct dst_metrics *m;
 
 	change_nexthops(fi) {
 		if (nexthop_nh->nh_dev)
@@ -219,9 +218,8 @@ static void free_fib_info_rcu(struct rcu_head *head)
 		rt_fibinfo_free(&nexthop_nh->nh_rth_input);
 	} endfor_nexthops(fi);
 
-	m = fi->fib_metrics;
-	if (m != &dst_default_metrics && refcount_dec_and_test(&m->refcnt))
-		kfree(m);
+	ip_fib_metrics_put(fi->fib_metrics);
+
 	kfree(fi);
 }
 
@@ -408,6 +406,7 @@ void rtmsg_fib(int event, __be32 key, struct fib_alias *fa,
 	       int dst_len, u32 tb_id, const struct nl_info *info,
 	       unsigned int nlm_flags)
 {
+	struct fib_rt_info fri;
 	struct sk_buff *skb;
 	u32 seq = info->nlh ? info->nlh->nlmsg_seq : 0;
 	int err = -ENOBUFS;
@@ -416,9 +415,15 @@ void rtmsg_fib(int event, __be32 key, struct fib_alias *fa,
 	if (!skb)
 		goto errout;
 
-	err = fib_dump_info(skb, info->portid, seq, event, tb_id,
-			    fa->fa_type, key, dst_len,
-			    fa->fa_tos, fa->fa_info, nlm_flags);
+	fri.fi = fa->fa_info;
+	fri.tb_id = tb_id;
+	fri.dst = key;
+	fri.dst_len = dst_len;
+	fri.tos = fa->fa_tos;
+	fri.type = fa->fa_type;
+	fri.offload = fa->offload;
+	fri.trap = fa->trap;
+	err = fib_dump_info(skb, info->portid, seq, event, &fri, nlm_flags);
 	if (err < 0) {
 		/* -EMSGSIZE implies BUG in fib_nlmsg_size() */
 		WARN_ON(err == -EMSGSIZE);
@@ -1018,13 +1023,6 @@ static bool fib_valid_prefsrc(struct fib_config *cfg, __be32 fib_prefsrc)
 	return true;
 }
 
-static int
-fib_convert_metrics(struct fib_info *fi, const struct fib_config *cfg)
-{
-	return ip_metrics_convert(fi->fib_net, cfg->fc_mx, cfg->fc_mx_len,
-				  fi->fib_metrics->metrics);
-}
-
 struct fib_info *fib_create_info(struct fib_config *cfg,
 				 struct netlink_ext_ack *extack)
 {
@@ -1082,16 +1080,14 @@ struct fib_info *fib_create_info(struct fib_config *cfg,
 	fi = kzalloc(sizeof(*fi)+nhs*sizeof(struct fib_nh), GFP_KERNEL);
 	if (!fi)
 		goto failure;
-	if (cfg->fc_mx) {
-		fi->fib_metrics = kzalloc(sizeof(*fi->fib_metrics), GFP_KERNEL);
-		if (unlikely(!fi->fib_metrics)) {
-			kfree(fi);
-			return ERR_PTR(err);
-		}
-		refcount_set(&fi->fib_metrics->refcnt, 1);
-	} else {
-		fi->fib_metrics = (struct dst_metrics *)&dst_default_metrics;
+	fi->fib_metrics = ip_fib_metrics_init(fi->fib_net, cfg->fc_mx,
+					      cfg->fc_mx_len, extack);
+	if (unlikely(IS_ERR(fi->fib_metrics))) {
+		err = PTR_ERR(fi->fib_metrics);
+		kfree(fi);
+		return ERR_PTR(err);
 	}
+
 	fib_info_cnt++;
 	fi->fib_net = net;
 	fi->fib_protocol = cfg->fc_protocol;
@@ -1109,10 +1105,6 @@ struct fib_info *fib_create_info(struct fib_config *cfg,
 		if (!nexthop_nh->nh_pcpu_rth_output)
 			goto failure;
 	} endfor_nexthops(fi)
-
-	err = fib_convert_metrics(fi, cfg);
-	if (err)
-		goto failure;
 
 	if (cfg->fc_mp) {
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
@@ -1289,9 +1281,10 @@ failure:
 }
 
 int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
-		  u32 tb_id, u8 type, __be32 dst, int dst_len, u8 tos,
-		  struct fib_info *fi, unsigned int flags)
+		  struct fib_rt_info *fri, unsigned int flags)
 {
+	struct fib_info *fi = fri->fi;
+	u32 tb_id = fri->tb_id;
 	struct nlmsghdr *nlh;
 	struct rtmsg *rtm;
 
@@ -1301,22 +1294,22 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 
 	rtm = nlmsg_data(nlh);
 	rtm->rtm_family = AF_INET;
-	rtm->rtm_dst_len = dst_len;
+	rtm->rtm_dst_len = fri->dst_len;
 	rtm->rtm_src_len = 0;
-	rtm->rtm_tos = tos;
+	rtm->rtm_tos = fri->tos;
 	if (tb_id < 256)
 		rtm->rtm_table = tb_id;
 	else
 		rtm->rtm_table = RT_TABLE_COMPAT;
 	if (nla_put_u32(skb, RTA_TABLE, tb_id))
 		goto nla_put_failure;
-	rtm->rtm_type = type;
+	rtm->rtm_type = fri->type;
 	rtm->rtm_flags = fi->fib_flags;
 	rtm->rtm_scope = fi->fib_scope;
 	rtm->rtm_protocol = fi->fib_protocol;
 
 	if (rtm->rtm_dst_len &&
-	    nla_put_in_addr(skb, RTA_DST, dst))
+	    nla_put_in_addr(skb, RTA_DST, fri->dst))
 		goto nla_put_failure;
 	if (fi->fib_priority &&
 	    nla_put_u32(skb, RTA_PRIORITY, fi->fib_priority))
@@ -1360,7 +1353,7 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 		struct rtnexthop *rtnh;
 		struct nlattr *mp;
 
-		mp = nla_nest_start(skb, RTA_MULTIPATH);
+		mp = nla_nest_start_noflag(skb, RTA_MULTIPATH);
 		if (!mp)
 			goto nla_put_failure;
 
@@ -1402,6 +1395,12 @@ int fib_dump_info(struct sk_buff *skb, u32 portid, u32 seq, int event,
 		nla_nest_end(skb, mp);
 	}
 #endif
+
+	if (fri->offload)
+		rtm->rtm_flags |= RTM_F_OFFLOAD;
+	if (fri->trap)
+		rtm->rtm_flags |= RTM_F_TRAP;
+
 	nlmsg_end(skb, nlh);
 	return 0;
 
@@ -1421,8 +1420,8 @@ int fib_sync_down_addr(struct net_device *dev, __be32 local)
 	int ret = 0;
 	unsigned int hash = fib_laddr_hashfn(local);
 	struct hlist_head *head = &fib_info_laddrhash[hash];
+	int tb_id = l3mdev_fib_table(dev) ? : RT_TABLE_MAIN;
 	struct net *net = dev_net(dev);
-	int tb_id = l3mdev_fib_table(dev);
 	struct fib_info *fi;
 
 	if (!fib_info_laddrhash || local == 0)
@@ -1468,6 +1467,56 @@ static int call_fib_nh_notifiers(struct fib_nh *fib_nh,
 	}
 
 	return NOTIFY_DONE;
+}
+
+/* Update the PMTU of exceptions when:
+ * - the new MTU of the first hop becomes smaller than the PMTU
+ * - the old MTU was the same as the PMTU, and it limited discovery of
+ *   larger MTUs on the path. With that limit raised, we can now
+ *   discover larger MTUs
+ * A special case is locked exceptions, for which the PMTU is smaller
+ * than the minimal accepted PMTU:
+ * - if the new MTU is greater than the PMTU, don't make any change
+ * - otherwise, unlock and set PMTU
+ */
+static void nh_update_mtu(struct fib_nh *nh, u32 new, u32 orig)
+{
+	struct fnhe_hash_bucket *bucket;
+	int i;
+
+	bucket = rcu_dereference_protected(nh->nh_exceptions, 1);
+	if (!bucket)
+		return;
+
+	for (i = 0; i < FNHE_HASH_SIZE; i++) {
+		struct fib_nh_exception *fnhe;
+
+		for (fnhe = rcu_dereference_protected(bucket[i].chain, 1);
+		     fnhe;
+		     fnhe = rcu_dereference_protected(fnhe->fnhe_next, 1)) {
+			if (fnhe->fnhe_mtu_locked) {
+				if (new <= fnhe->fnhe_pmtu) {
+					fnhe->fnhe_pmtu = new;
+					fnhe->fnhe_mtu_locked = false;
+				}
+			} else if (new < fnhe->fnhe_pmtu ||
+				   orig == fnhe->fnhe_pmtu) {
+				fnhe->fnhe_pmtu = new;
+			}
+		}
+	}
+}
+
+void fib_sync_mtu(struct net_device *dev, u32 orig_mtu)
+{
+	unsigned int hash = fib_devindex_hashfn(dev->ifindex);
+	struct hlist_head *head = &fib_info_devhash[hash];
+	struct fib_nh *nh;
+
+	hlist_for_each_entry(nh, head, nh_hash) {
+		if (nh->nh_dev == dev)
+			nh_update_mtu(nh, dev->mtu, orig_mtu);
+	}
 }
 
 /* Event              force Flags           Description

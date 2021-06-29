@@ -5,13 +5,13 @@
  */
 #include "xfs.h"
 #include "xfs_fs.h"
+#include "xfs_shared.h"
 #include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
 #include "xfs_sb.h"
 #include "xfs_mount.h"
 #include "xfs_inode.h"
-#include "xfs_error.h"
 #include "xfs_trans.h"
 #include "xfs_trans_priv.h"
 #include "xfs_inode_item.h"
@@ -23,8 +23,6 @@
 #include "xfs_dquot.h"
 #include "xfs_reflink.h"
 
-#include <linux/kthread.h>
-#include <linux/freezer.h>
 #include <linux/iversion.h>
 
 /*
@@ -42,11 +40,11 @@ xfs_inode_alloc(
 	 * KM_MAYFAIL and return NULL here on ENOMEM. Set the
 	 * code up to do this anyway.
 	 */
-	ip = kmem_zone_alloc(xfs_inode_zone, KM_SLEEP);
+	ip = kmem_zone_alloc(xfs_inode_zone, 0);
 	if (!ip)
 		return NULL;
 	if (inode_init_always(mp->m_super, VFS_I(ip))) {
-		kmem_zone_free(xfs_inode_zone, ip);
+		kmem_cache_free(xfs_inode_zone, ip);
 		return NULL;
 	}
 
@@ -66,10 +64,15 @@ xfs_inode_alloc(
 	ip->i_cowfp = NULL;
 	ip->i_cnextents = 0;
 	ip->i_cformat = XFS_DINODE_FMT_EXTENTS;
-	memset(&ip->i_df, 0, sizeof(xfs_ifork_t));
+	memset(&ip->i_df, 0, sizeof(ip->i_df));
 	ip->i_flags = 0;
 	ip->i_delayed_blks = 0;
 	memset(&ip->i_d, 0, sizeof(ip->i_d));
+	ip->i_sick = 0;
+	ip->i_checked = 0;
+	INIT_WORK(&ip->i_ioend_work, xfs_end_io);
+	INIT_LIST_HEAD(&ip->i_ioend_list);
+	spin_lock_init(&ip->i_ioend_lock);
 
 	return ip;
 }
@@ -101,7 +104,7 @@ xfs_inode_free_callback(
 		ip->i_itemp = NULL;
 	}
 
-	kmem_zone_free(xfs_inode_zone, ip);
+	kmem_cache_free(xfs_inode_zone, ip);
 }
 
 static void
@@ -416,6 +419,7 @@ xfs_iget_cache_hit(
 		spin_unlock(&ip->i_flags_lock);
 		rcu_read_unlock();
 
+		ASSERT(!rwsem_is_locked(&inode->i_rwsem));
 		error = xfs_reinit_inode(mp, inode);
 		if (error) {
 			bool wake;
@@ -446,9 +450,8 @@ xfs_iget_cache_hit(
 		ip->i_flags |= XFS_INEW;
 		xfs_inode_clear_reclaim_tag(pag, ip->i_ino);
 		inode->i_state = I_NEW;
-
-		ASSERT(!rwsem_is_locked(&inode->i_rwsem));
-		init_rwsem(&inode->i_rwsem);
+		ip->i_sick = 0;
+		ip->i_checked = 0;
 
 		spin_unlock(&ip->i_flags_lock);
 		spin_unlock(&pag->pag_ici_lock);
@@ -470,7 +473,7 @@ xfs_iget_cache_hit(
 		xfs_ilock(ip, lock_flags);
 
 	if (!(flags & XFS_IGET_INCORE))
-		xfs_iflags_clear(ip, XFS_ISTALE | XFS_IDONTCACHE);
+		xfs_iflags_clear(ip, XFS_ISTALE);
 	XFS_STATS_INC(mp, xs_ig_found);
 
 	return 0;
@@ -552,7 +555,7 @@ xfs_iget_cache_miss(
 	 */
 	iflags = XFS_INEW;
 	if (flags & XFS_IGET_DONTCACHE)
-		iflags |= XFS_IDONTCACHE;
+		d_mark_dontcache(VFS_I(ip));
 	ip->i_udquot = NULL;
 	ip->i_gdquot = NULL;
 	ip->i_pdquot = NULL;
@@ -716,7 +719,7 @@ xfs_icache_inode_is_allocated(
 		return error;
 
 	*inuse = !!(VFS_I(ip)->i_mode);
-	IRELE(ip);
+	xfs_irele(ip);
 	return 0;
 }
 
@@ -856,7 +859,7 @@ restart:
 			    xfs_iflags_test(batch[i], XFS_INEW))
 				xfs_inew_wait(batch[i]);
 			error = execute(batch[i], flags, args);
-			IRELE(batch[i]);
+			xfs_irele(batch[i]);
 			if (error == -EAGAIN) {
 				skipped++;
 				continue;
@@ -902,7 +905,12 @@ xfs_eofblocks_worker(
 {
 	struct xfs_mount *mp = container_of(to_delayed_work(work),
 				struct xfs_mount, m_eofblocks_work);
+
+	if (!sb_start_write_trylock(mp->m_super))
+		return;
 	xfs_icache_free_eofblocks(mp, NULL);
+	sb_end_write(mp->m_super);
+
 	xfs_queue_eofblocks(mp);
 }
 
@@ -929,7 +937,12 @@ xfs_cowblocks_worker(
 {
 	struct xfs_mount *mp = container_of(to_delayed_work(work),
 				struct xfs_mount, m_cowblocks_work);
+
+	if (!sb_start_write_trylock(mp->m_super))
+		return;
 	xfs_icache_free_cowblocks(mp, NULL);
+	sb_end_write(mp->m_super);
+
 	xfs_queue_cowblocks(mp);
 }
 
@@ -1414,7 +1427,7 @@ xfs_inode_match_id(
 		return 0;
 
 	if ((eofb->eof_flags & XFS_EOF_FLAGS_PRID) &&
-	    xfs_get_projid(ip) != eofb->eof_prid)
+	    ip->i_d.di_projid != eofb->eof_prid)
 		return 0;
 
 	return 1;
@@ -1438,7 +1451,7 @@ xfs_inode_match_id_union(
 		return 1;
 
 	if ((eofb->eof_flags & XFS_EOF_FLAGS_PRID) &&
-	    xfs_get_projid(ip) == eofb->eof_prid)
+	    ip->i_d.di_projid == eofb->eof_prid)
 		return 1;
 
 	return 0;
@@ -1697,14 +1710,13 @@ xfs_inode_clear_eofblocks_tag(
  */
 static bool
 xfs_prep_free_cowblocks(
-	struct xfs_inode	*ip,
-	struct xfs_ifork	*ifp)
+	struct xfs_inode	*ip)
 {
 	/*
 	 * Just clear the tag if we have an empty cow fork or none at all. It's
 	 * possible the inode was fully unshared since it was originally tagged.
 	 */
-	if (!xfs_is_reflink_inode(ip) || !ifp->if_bytes) {
+	if (!xfs_inode_has_cow_data(ip)) {
 		trace_xfs_inode_free_cowblocks_invalid(ip);
 		xfs_inode_clear_cowblocks_tag(ip);
 		return false;
@@ -1742,11 +1754,10 @@ xfs_inode_free_cowblocks(
 	void			*args)
 {
 	struct xfs_eofblocks	*eofb = args;
-	struct xfs_ifork	*ifp = XFS_IFORK_PTR(ip, XFS_COW_FORK);
 	int			match;
 	int			ret = 0;
 
-	if (!xfs_prep_free_cowblocks(ip, ifp))
+	if (!xfs_prep_free_cowblocks(ip))
 		return 0;
 
 	if (eofb) {
@@ -1771,7 +1782,7 @@ xfs_inode_free_cowblocks(
 	 * Check again, nobody else should be able to dirty blocks or change
 	 * the reflink iflag now that we have the first two locks held.
 	 */
-	if (xfs_prep_free_cowblocks(ip, ifp))
+	if (xfs_prep_free_cowblocks(ip))
 		ret = xfs_reflink_cancel_cow_range(ip, 0, NULLFILEOFF, false);
 
 	xfs_iunlock(ip, XFS_MMAPLOCK_EXCL);
@@ -1817,7 +1828,7 @@ xfs_inode_clear_cowblocks_tag(
 
 /* Disable post-EOF and CoW block auto-reclamation. */
 void
-xfs_icache_disable_reclaim(
+xfs_stop_block_reaping(
 	struct xfs_mount	*mp)
 {
 	cancel_delayed_work_sync(&mp->m_eofblocks_work);
@@ -1826,7 +1837,7 @@ xfs_icache_disable_reclaim(
 
 /* Enable post-EOF and CoW block auto-reclamation. */
 void
-xfs_icache_enable_reclaim(
+xfs_start_block_reaping(
 	struct xfs_mount	*mp)
 {
 	xfs_queue_eofblocks(mp);

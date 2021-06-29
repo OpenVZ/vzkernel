@@ -334,6 +334,8 @@ static int drbd_thread_setup(void *arg)
 		 thi->name[0],
 		 resource->name);
 
+	allow_kernel_signal(DRBD_SIGKILL);
+	allow_kernel_signal(SIGXCPU);
 restart:
 	retval = thi->function(thi);
 
@@ -670,7 +672,7 @@ static int __send_command(struct drbd_connection *connection, int vnr,
 	/* DRBD protocol "pings" are latency critical.
 	 * This is supposed to trigger tcp_push_pending_frames() */
 	if (!err && (cmd == P_PING || cmd == P_PING_ACK))
-		drbd_tcp_nodelay(sock->socket);
+		tcp_sock_set_nodelay(sock->socket->sk);
 
 	return err;
 }
@@ -796,7 +798,6 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 
 	if (nc->tentative && connection->agreed_pro_version < 92) {
 		rcu_read_unlock();
-		mutex_unlock(&sock->mutex);
 		drbd_err(connection, "--dry-run is not supported by peer");
 		return -EOPNOTSUPP;
 	}
@@ -1673,7 +1674,7 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection,
 		return bio->bi_opf & REQ_SYNC ? DP_RW_SYNC : 0;
 }
 
-/* Used to send write or TRIM aka REQ_DISCARD requests
+/* Used to send write or TRIM aka REQ_OP_DISCARD requests
  * R_PRIMARY -> Peer	(P_DATA, P_TRIM)
  */
 int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *req)
@@ -1856,7 +1857,7 @@ int drbd_send(struct drbd_connection *connection, struct socket *sock,
 
 	/* THINK  if (signal_pending) return ... ? */
 
-	iov_iter_kvec(&msg.msg_iter, WRITE | ITER_KVEC, &iov, 1, size);
+	iov_iter_kvec(&msg.msg_iter, WRITE, &iov, 1, size);
 
 	if (sock == connection->data.socket) {
 		rcu_read_lock();
@@ -2103,14 +2104,10 @@ static void drbd_destroy_mempools(void)
 	mempool_exit(&drbd_md_io_page_pool);
 	mempool_exit(&drbd_ee_mempool);
 	mempool_exit(&drbd_request_mempool);
-	if (drbd_ee_cache)
-		kmem_cache_destroy(drbd_ee_cache);
-	if (drbd_request_cache)
-		kmem_cache_destroy(drbd_request_cache);
-	if (drbd_bm_ext_cache)
-		kmem_cache_destroy(drbd_bm_ext_cache);
-	if (drbd_al_ext_cache)
-		kmem_cache_destroy(drbd_al_ext_cache);
+	kmem_cache_destroy(drbd_ee_cache);
+	kmem_cache_destroy(drbd_request_cache);
+	kmem_cache_destroy(drbd_bm_ext_cache);
+	kmem_cache_destroy(drbd_al_ext_cache);
 
 	drbd_ee_cache        = NULL;
 	drbd_request_cache   = NULL;
@@ -2796,7 +2793,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	drbd_init_set_defaults(device);
 
-	q = blk_alloc_queue_node(GFP_KERNEL, NUMA_NO_NODE, &resource->req_lock);
+	q = blk_alloc_queue_rh(drbd_make_request, NUMA_NO_NODE);
 	if (!q)
 		goto out_no_q;
 	device->rq_queue = q;
@@ -2823,7 +2820,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	q->backing_dev_info->congested_fn = drbd_congested;
 	q->backing_dev_info->congested_data = device;
 
-	blk_queue_make_request(q, drbd_make_request);
 	blk_queue_write_cache(q, true, true);
 	/* Setting the max_hw_sectors to an odd value of 8kibyte here
 	   This triggers a max_bio_size message upon first attach or connect */
@@ -3005,8 +3001,7 @@ static int __init drbd_init(void)
 	spin_lock_init(&retry.lock);
 	INIT_LIST_HEAD(&retry.writes);
 
-	if (drbd_debugfs_init())
-		pr_notice("failed to initialize debugfs -- will not be available\n");
+	drbd_debugfs_init();
 
 	pr_info("initialized. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d-%d)\n",
@@ -3410,22 +3405,11 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
  * the meta-data super block. This function sets MD_DIRTY, and starts a
  * timer that ensures that within five seconds you have to call drbd_md_sync().
  */
-#ifdef DEBUG
-void drbd_md_mark_dirty_(struct drbd_device *device, unsigned int line, const char *func)
-{
-	if (!test_and_set_bit(MD_DIRTY, &device->flags)) {
-		mod_timer(&device->md_sync_timer, jiffies + HZ);
-		device->last_md_mark_dirty.line = line;
-		device->last_md_mark_dirty.func = func;
-	}
-}
-#else
 void drbd_md_mark_dirty(struct drbd_device *device)
 {
 	if (!test_and_set_bit(MD_DIRTY, &device->flags))
 		mod_timer(&device->md_sync_timer, jiffies + 5*HZ);
 }
-#endif
 
 void drbd_uuid_move_history(struct drbd_device *device) __must_hold(local)
 {

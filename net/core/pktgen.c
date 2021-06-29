@@ -158,6 +158,7 @@
 #include <linux/etherdevice.h>
 #include <linux/kthread.h>
 #include <linux/prefetch.h>
+#include <linux/mmzone.h>
 #include <net/net_namespace.h>
 #include <net/checksum.h>
 #include <net/ipv6.h>
@@ -2126,9 +2127,11 @@ static void pktgen_setup_inject(struct pktgen_dev *pkt_dev)
 			rcu_read_lock();
 			in_dev = __in_dev_get_rcu(pkt_dev->odev);
 			if (in_dev) {
-				if (in_dev->ifa_list) {
-					pkt_dev->saddr_min =
-					    in_dev->ifa_list->ifa_address;
+				const struct in_ifaddr *ifa;
+
+				ifa = rcu_dereference(in_dev->ifa_list);
+				if (ifa) {
+					pkt_dev->saddr_min = ifa->ifa_address;
 					pkt_dev->saddr_max = pkt_dev->saddr_min;
 				}
 			}
@@ -2162,7 +2165,7 @@ static void spin(struct pktgen_dev *pkt_dev, ktime_t spin_until)
 	s64 remaining;
 	struct hrtimer_sleeper t;
 
-	hrtimer_init_on_stack(&t.timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+	hrtimer_init_sleeper_on_stack(&t, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
 	hrtimer_set_expires(&t.timer, spin_until);
 
 	remaining = ktime_to_ns(hrtimer_expires_remaining(&t.timer));
@@ -2176,11 +2179,9 @@ static void spin(struct pktgen_dev *pkt_dev, ktime_t spin_until)
 			end_time = ktime_get();
 		} while (ktime_compare(end_time, spin_until) < 0);
 	} else {
-		/* see do_nanosleep */
-		hrtimer_init_sleeper(&t, current);
 		do {
 			set_current_state(TASK_INTERRUPTIBLE);
-			hrtimer_start_expires(&t.timer, HRTIMER_MODE_ABS);
+			hrtimer_sleeper_start_expires(&t, HRTIMER_MODE_ABS);
 
 			if (likely(t.task))
 				schedule();
@@ -2255,7 +2256,7 @@ static void get_ipsec_sa(struct pktgen_dev *pkt_dev, int flow)
 			x = xfrm_state_lookup_byspi(pn->net, htonl(pkt_dev->spi), AF_INET);
 		} else {
 			/* slow path: we dont already have xfrm_state */
-			x = xfrm_stateonly_find(pn->net, DUMMY_MARK,
+			x = xfrm_stateonly_find(pn->net, DUMMY_MARK, 0,
 						(xfrm_address_t *)&pkt_dev->cur_daddr,
 						(xfrm_address_t *)&pkt_dev->cur_saddr,
 						AF_INET,
@@ -2522,7 +2523,7 @@ static int pktgen_output_ipsec(struct sk_buff *skb, struct pktgen_dev *pkt_dev)
 		skb->_skb_refdst = (unsigned long)&pkt_dev->xdst.u.dst | SKB_DST_NOREF;
 
 	rcu_read_lock_bh();
-	err = x->outer_mode->output(x, skb);
+	err = pktgen_xfrm_outer_mode_output(x, skb);
 	rcu_read_unlock_bh();
 	if (err) {
 		XFRM_INC_STATS(net, LINUX_MIB_XFRMOUTSTATEMODEERROR);
@@ -3067,7 +3068,13 @@ static int pktgen_wait_thread_run(struct pktgen_thread *t)
 {
 	while (thread_is_running(t)) {
 
+		/* note: 't' will still be around even after the unlock/lock
+		 * cycle because pktgen_thread threads are only cleared at
+		 * net exit
+		 */
+		mutex_unlock(&pktgen_thread_lock);
 		msleep_interruptible(100);
+		mutex_lock(&pktgen_thread_lock);
 
 		if (signal_pending(current))
 			goto signal;
@@ -3082,6 +3089,10 @@ static int pktgen_wait_all_threads_run(struct pktgen_net *pn)
 	struct pktgen_thread *t;
 	int sig = 1;
 
+	/* prevent from racing with rmmod */
+	if (!try_module_get(THIS_MODULE))
+		return sig;
+
 	mutex_lock(&pktgen_thread_lock);
 
 	list_for_each_entry(t, &pn->pktgen_threads, th_list) {
@@ -3095,6 +3106,7 @@ static int pktgen_wait_all_threads_run(struct pktgen_net *pn)
 			t->control |= (T_STOP);
 
 	mutex_unlock(&pktgen_thread_lock);
+	module_put(THIS_MODULE);
 	return sig;
 }
 
@@ -3359,7 +3371,7 @@ static void pktgen_xmit(struct pktgen_dev *pkt_dev)
 			/* skb was 'freed' by stack, so clean few
 			 * bits and reuse it
 			 */
-			skb_reset_tc(skb);
+			skb_reset_redirect(skb);
 		} while (--burst > 0);
 		goto out; /* Skips xmit_mode M_START_XMIT */
 	} else if (pkt_dev->xmit_mode == M_QUEUE_XMIT) {
@@ -3627,7 +3639,7 @@ static int pktgen_add_device(struct pktgen_thread *t, const char *ifname)
 	pkt_dev->svlan_cfi = 0;
 	pkt_dev->svlan_id = 0xffff;
 	pkt_dev->burst = 1;
-	pkt_dev->node = -1;
+	pkt_dev->node = NUMA_NO_NODE;
 
 	err = pktgen_setup_dev(t->net, pkt_dev, ifname);
 	if (err)
@@ -3697,7 +3709,7 @@ static int __net_init pktgen_create_thread(int cpu, struct pktgen_net *pn)
 				   cpu_to_node(cpu),
 				   "kpktgend_%d", cpu);
 	if (IS_ERR(p)) {
-		pr_err("kernel_thread() failed for cpu %d\n", t->cpu);
+		pr_err("kthread_create_on_node() failed for cpu %d\n", t->cpu);
 		list_del(&t->th_list);
 		kfree(t);
 		return PTR_ERR(p);

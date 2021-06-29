@@ -189,6 +189,9 @@ static int net_hwtstamp_validate(struct ifreq *ifr)
 	case HWTSTAMP_TX_ONESTEP_SYNC:
 		tx_type_valid = 1;
 		break;
+	case __HWTSTAMP_TX_CNT:
+		/* not a real value */
+		break;
 	}
 
 	switch (rx_filter) {
@@ -209,6 +212,9 @@ static int net_hwtstamp_validate(struct ifreq *ifr)
 	case HWTSTAMP_FILTER_PTP_V2_DELAY_REQ:
 	case HWTSTAMP_FILTER_NTP_ALL:
 		rx_filter_valid = 1;
+		break;
+	case __HWTSTAMP_FILTER_CNT:
+		/* not a real value */
 		break;
 	}
 
@@ -234,7 +240,7 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 
 	switch (cmd) {
 	case SIOCSIFFLAGS:	/* Set interface flags */
-		return dev_change_flags(dev, ifr->ifr_flags);
+		return dev_change_flags(dev, ifr->ifr_flags, NULL);
 
 	case SIOCSIFMETRIC:	/* Set the metric on the interface
 				   (currently unused) */
@@ -246,7 +252,7 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 	case SIOCSIFHWADDR:
 		if (dev->addr_len > sizeof(struct sockaddr))
 			return -EINVAL;
-		return dev_set_mac_address(dev, &ifr->ifr_hwaddr);
+		return dev_set_mac_address(dev, &ifr->ifr_hwaddr, NULL);
 
 	case SIOCSIFHWBROADCAST:
 		if (ifr->ifr_hwaddr.sa_family != dev->type)

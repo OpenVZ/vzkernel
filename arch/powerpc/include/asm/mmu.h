@@ -29,6 +29,9 @@
  * Individual features below.
  */
 
+/* Guest Translation Shootdown Enable */
+#define MMU_FTR_GTSE			ASM_CONST(0x00001000)
+
 /*
  * Support for 68 bit VA space. We added that from ISA 2.05
  */
@@ -118,6 +121,7 @@
 #define MMU_FTRS_POWER7		MMU_FTRS_POWER6
 #define MMU_FTRS_POWER8		MMU_FTRS_POWER6
 #define MMU_FTRS_POWER9		MMU_FTRS_POWER6
+#define MMU_FTRS_POWER10	MMU_FTRS_POWER6
 #define MMU_FTRS_CELL		MMU_FTRS_DEFAULT_HPTE_ARCH_V2 | \
 				MMU_FTR_CI_LARGE_PAGE
 #define MMU_FTRS_PA6T		MMU_FTRS_DEFAULT_HPTE_ARCH_V2 | \
@@ -144,6 +148,7 @@ enum {
 		MMU_FTR_KERNEL_RO | MMU_FTR_68_BIT_VA |
 #ifdef CONFIG_PPC_RADIX_MMU
 		MMU_FTR_TYPE_RADIX |
+		MMU_FTR_GTSE |
 #endif
 		0,
 };
@@ -226,7 +231,7 @@ extern void radix__mmu_cleanup_all(void);
 /* Functions for creating and updating partition table on POWER9 */
 extern void mmu_partition_table_init(void);
 extern void mmu_partition_table_set_entry(unsigned int lpid, unsigned long dw0,
-					  unsigned long dw1);
+					  unsigned long dw1, bool flush);
 #endif /* CONFIG_PPC64 */
 
 struct mm_struct;
@@ -260,15 +265,17 @@ static inline bool early_radix_enabled(void)
 }
 #endif
 
-#ifdef CONFIG_PPC_MEM_KEYS
-extern u16 get_mm_addr_key(struct mm_struct *mm, unsigned long address);
-#else
-static inline u16 get_mm_addr_key(struct mm_struct *mm, unsigned long address)
+#ifdef CONFIG_STRICT_KERNEL_RWX
+static inline bool strict_kernel_rwx_enabled(void)
 {
-	return 0;
+	return rodata_enabled;
 }
-#endif /* CONFIG_PPC_MEM_KEYS */
-
+#else
+static inline bool strict_kernel_rwx_enabled(void)
+{
+	return false;
+}
+#endif
 #endif /* !__ASSEMBLY__ */
 
 /* The kernel use the constants below to index in the page sizes array.
@@ -324,7 +331,7 @@ static inline void mmu_early_init_devtree(void) { }
 #endif /* __ASSEMBLY__ */
 #endif
 
-#if defined(CONFIG_PPC_STD_MMU_32)
+#if defined(CONFIG_PPC_BOOK3S_32)
 /* 32-bit classic hash table MMU */
 #include <asm/book3s/32/mmu-hash.h>
 #elif defined(CONFIG_40x)

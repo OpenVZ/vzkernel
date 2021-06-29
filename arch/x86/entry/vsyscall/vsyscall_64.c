@@ -99,21 +99,14 @@ static bool write_ok_or_segv(unsigned long ptr, size_t size)
 	 * sig_on_uaccess_err, this could go away.
 	 */
 
-	if (!access_ok(VERIFY_WRITE, (void __user *)ptr, size)) {
-		siginfo_t info;
+	if (!access_ok((void __user *)ptr, size)) {
 		struct thread_struct *thread = &current->thread;
 
 		thread->error_code	= 6;  /* user fault, no page, write */
 		thread->cr2		= ptr;
 		thread->trap_nr		= X86_TRAP_PF;
 
-		clear_siginfo(&info);
-		info.si_signo		= SIGSEGV;
-		info.si_errno		= 0;
-		info.si_code		= SEGV_MAPERR;
-		info.si_addr		= (void __user *)ptr;
-
-		force_sig_info(SIGSEGV, &info, current);
+		force_sig_fault(SIGSEGV, SEGV_MAPERR, (void __user *)ptr, current);
 		return false;
 	} else {
 		return true;
@@ -180,7 +173,7 @@ bool emulate_vsyscall(struct pt_regs *regs, unsigned long address)
 		break;
 
 	case 1:
-		if (!write_ok_or_segv(regs->di, sizeof(time_t))) {
+		if (!write_ok_or_segv(regs->di, sizeof(__kernel_old_time_t))) {
 			ret = -EFAULT;
 			goto check_fault;
 		}

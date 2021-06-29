@@ -2296,10 +2296,10 @@ static int tegra_dc_parse_dt(struct tegra_dc *dc)
 	return 0;
 }
 
-static int tegra_dc_match_by_pipe(struct device *dev, void *data)
+static int tegra_dc_match_by_pipe(struct device *dev, const void *data)
 {
 	struct tegra_dc *dc = dev_get_drvdata(dev);
-	unsigned int pipe = (unsigned long)data;
+	unsigned int pipe = (unsigned long)(void *)data;
 
 	return dc->pipe == pipe;
 }
@@ -2312,7 +2312,7 @@ static int tegra_dc_couple(struct tegra_dc *dc)
 	 * POWER_CONTROL registers during CRTC enabling.
 	 */
 	if (dc->soc->coupled_pm && dc->pipe == 1) {
-		u32 flags = DL_FLAG_PM_RUNTIME | DL_FLAG_AUTOREMOVE;
+		u32 flags = DL_FLAG_PM_RUNTIME | DL_FLAG_AUTOREMOVE_CONSUMER;
 		struct device_link *link;
 		struct device *partner;
 

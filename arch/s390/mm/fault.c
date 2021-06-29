@@ -38,6 +38,7 @@
 #include <asm/irq.h>
 #include <asm/mmu_context.h>
 #include <asm/facility.h>
+#include <asm/uv.h>
 #include "../kernel/entry.h"
 
 #define __FAIL_ADDR_MASK -4096L
@@ -107,7 +108,6 @@ void bust_spinlocks(int yes)
 
 /*
  * Find out which address space caused the exception.
- * Access register mode is impossible, ignore space == 3.
  */
 static inline enum fault_type get_fault_type(struct pt_regs *regs)
 {
@@ -131,6 +131,10 @@ static inline enum fault_type get_fault_type(struct pt_regs *regs)
 			return KERNEL_FAULT;
 		}
 		return VDSO_FAULT;
+	}
+	if (trans_exc_code == 1) {
+		/* access register mode, not used in the kernel */
+		return USER_FAULT;
 	}
 	/* home space exception -> access via kernel ASCE */
 	return KERNEL_FAULT;
@@ -271,16 +275,26 @@ static noinline void do_sigsegv(struct pt_regs *regs, int si_code)
 			current);
 }
 
+const struct exception_table_entry *s390_search_extables(unsigned long addr)
+{
+	const struct exception_table_entry *fixup;
+
+	fixup = search_extable(__start_dma_ex_table,
+			       __stop_dma_ex_table - __start_dma_ex_table,
+			       addr);
+	if (!fixup)
+		fixup = search_exception_tables(addr);
+	return fixup;
+}
+
 static noinline void do_no_context(struct pt_regs *regs)
 {
 	const struct exception_table_entry *fixup;
 
 	/* Are we prepared to handle this kernel fault?  */
-	fixup = search_exception_tables(regs->psw.addr);
-	if (fixup) {
-		regs->psw.addr = extable_fixup(fixup);
+	fixup = s390_search_extables(regs->psw.addr);
+	if (fixup && ex_handle(fixup, regs))
 		return;
-	}
 
 	/*
 	 * Oops. The kernel tried to access some bad page. We'll have to
@@ -341,7 +355,8 @@ static noinline int signal_return(struct pt_regs *regs)
 	return -EACCES;
 }
 
-static noinline void do_fault_error(struct pt_regs *regs, int access, int fault)
+static noinline void do_fault_error(struct pt_regs *regs, int access,
+					vm_fault_t fault)
 {
 	int si_code;
 
@@ -401,7 +416,7 @@ static noinline void do_fault_error(struct pt_regs *regs, int access, int fault)
  *   11       Page translation     ->  Not present       (nullification)
  *   3b       Region third trans.  ->  Not present       (nullification)
  */
-static inline int do_exception(struct pt_regs *regs, int access)
+static inline vm_fault_t do_exception(struct pt_regs *regs, int access)
 {
 	struct gmap *gmap;
 	struct task_struct *tsk;
@@ -411,7 +426,7 @@ static inline int do_exception(struct pt_regs *regs, int access)
 	unsigned long trans_exc_code;
 	unsigned long address;
 	unsigned int flags;
-	int fault;
+	vm_fault_t fault;
 
 	tsk = current;
 	/*
@@ -448,7 +463,7 @@ static inline int do_exception(struct pt_regs *regs, int access)
 
 	address = trans_exc_code & __FAIL_ADDR_MASK;
 	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, address);
-	flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
+	flags = FAULT_FLAG_DEFAULT;
 	if (user_mode(regs))
 		flags |= FAULT_FLAG_USER;
 	if (access == VM_WRITE || (trans_exc_code & store_indication) == 0x400)
@@ -499,9 +514,10 @@ retry:
 	 * the fault.
 	 */
 	fault = handle_mm_fault(vma, address, flags);
-	/* No reason to continue if interrupted by SIGKILL. */
-	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current)) {
+	if (fault_signal_pending(fault, regs)) {
 		fault = VM_FAULT_SIGNAL;
+		if (flags & FAULT_FLAG_RETRY_NOWAIT)
+			goto out_up;
 		goto out;
 	}
 	if (unlikely(fault & VM_FAULT_ERROR))
@@ -531,10 +547,7 @@ retry:
 				fault = VM_FAULT_PFAULT;
 				goto out_up;
 			}
-			/* Clear FAULT_FLAG_ALLOW_RETRY to avoid any risk
-			 * of starvation. */
-			flags &= ~(FAULT_FLAG_ALLOW_RETRY |
-				   FAULT_FLAG_RETRY_NOWAIT);
+			flags &= ~FAULT_FLAG_RETRY_NOWAIT;
 			flags |= FAULT_FLAG_TRIED;
 			down_read(&mm->mmap_sem);
 			goto retry;
@@ -562,7 +575,8 @@ out:
 void do_protection_exception(struct pt_regs *regs)
 {
 	unsigned long trans_exc_code;
-	int access, fault;
+	int access;
+	vm_fault_t fault;
 
 	trans_exc_code = regs->int_parm_long;
 	/*
@@ -597,7 +611,8 @@ NOKPROBE_SYMBOL(do_protection_exception);
 
 void do_dat_exception(struct pt_regs *regs)
 {
-	int access, fault;
+	int access;
+	vm_fault_t fault;
 
 	access = VM_READ | VM_EXEC | VM_WRITE;
 	fault = do_exception(regs, access);
@@ -827,3 +842,80 @@ out_extint:
 early_initcall(pfault_irq_init);
 
 #endif /* CONFIG_PFAULT */
+
+#if IS_ENABLED(CONFIG_PGSTE)
+void do_secure_storage_access(struct pt_regs *regs)
+{
+	unsigned long addr = regs->int_parm_long & __FAIL_ADDR_MASK;
+	struct vm_area_struct *vma;
+	struct mm_struct *mm;
+	struct page *page;
+	int rc;
+
+	switch (get_fault_type(regs)) {
+	case USER_FAULT:
+		mm = current->mm;
+		down_read(&mm->mmap_sem);
+		vma = find_vma(mm, addr);
+		if (!vma) {
+			up_read(&mm->mmap_sem);
+			do_fault_error(regs, VM_READ | VM_WRITE, VM_FAULT_BADMAP);
+			break;
+		}
+		page = follow_page(vma, addr, FOLL_WRITE | FOLL_GET);
+		if (IS_ERR_OR_NULL(page)) {
+			up_read(&mm->mmap_sem);
+			break;
+		}
+		if (arch_make_page_accessible(page))
+			send_sig(SIGSEGV, current, 0);
+		put_page(page);
+		up_read(&mm->mmap_sem);
+		break;
+	case KERNEL_FAULT:
+		page = phys_to_page(addr);
+		if (unlikely(!try_get_page(page)))
+			break;
+		rc = arch_make_page_accessible(page);
+		put_page(page);
+		if (rc)
+			BUG();
+		break;
+	case VDSO_FAULT:
+		/* fallthrough */
+	case GMAP_FAULT:
+		/* fallthrough */
+	default:
+		do_fault_error(regs, VM_READ | VM_WRITE, VM_FAULT_BADMAP);
+		WARN_ON_ONCE(1);
+	}
+}
+NOKPROBE_SYMBOL(do_secure_storage_access);
+
+void do_non_secure_storage_access(struct pt_regs *regs)
+{
+	unsigned long gaddr = regs->int_parm_long & __FAIL_ADDR_MASK;
+	struct gmap *gmap = (struct gmap *)S390_lowcore.gmap;
+
+	if (get_fault_type(regs) != GMAP_FAULT) {
+		do_fault_error(regs, VM_READ | VM_WRITE, VM_FAULT_BADMAP);
+		WARN_ON_ONCE(1);
+		return;
+	}
+
+	if (gmap_convert_to_secure(gmap, gaddr) == -EINVAL)
+		send_sig(SIGSEGV, current, 0);
+}
+NOKPROBE_SYMBOL(do_non_secure_storage_access);
+
+#else
+void do_secure_storage_access(struct pt_regs *regs)
+{
+	default_trap_handler(regs);
+}
+
+void do_non_secure_storage_access(struct pt_regs *regs)
+{
+	default_trap_handler(regs);
+}
+#endif

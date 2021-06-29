@@ -5,6 +5,7 @@
  */
 #include "xfs.h"
 #include "xfs_fs.h"
+#include "xfs_shared.h"
 #include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
@@ -12,11 +13,11 @@
 #include "xfs_inode.h"
 #include "xfs_trans.h"
 #include "xfs_inode_item.h"
-#include "xfs_error.h"
 #include "xfs_trace.h"
 #include "xfs_trans_priv.h"
 #include "xfs_buf_item.h"
 #include "xfs_log.h"
+#include "xfs_error.h"
 
 #include <linux/iversion.h>
 
@@ -194,8 +195,6 @@ xfs_inode_item_format_data_fork(
 			 * to be there by xfs_idata_realloc().
 			 */
 			data_bytes = roundup(ip->i_df.if_bytes, 4);
-			ASSERT(ip->i_df.if_real_bytes == 0 ||
-			       ip->i_df.if_real_bytes >= data_bytes);
 			ASSERT(ip->i_df.if_u1.if_data != NULL);
 			ASSERT(ip->i_d.di_size > 0);
 			xlog_copy_iovec(lv, vecp, XLOG_REG_TYPE_ILOCAL,
@@ -280,8 +279,6 @@ xfs_inode_item_format_attr_fork(
 			 * to be there by xfs_idata_realloc().
 			 */
 			data_bytes = roundup(ip->i_afp->if_bytes, 4);
-			ASSERT(ip->i_afp->if_real_bytes == 0 ||
-			       ip->i_afp->if_real_bytes >= data_bytes);
 			ASSERT(ip->i_afp->if_u1.if_data != NULL);
 			xlog_copy_iovec(lv, vecp, XLOG_REG_TYPE_IATTR_LOCAL,
 					ip->i_afp->if_u1.if_data,
@@ -313,8 +310,8 @@ xfs_inode_to_log_dinode(
 	to->di_format = from->di_format;
 	to->di_uid = from->di_uid;
 	to->di_gid = from->di_gid;
-	to->di_projid_lo = from->di_projid_lo;
-	to->di_projid_hi = from->di_projid_hi;
+	to->di_projid_lo = from->di_projid & 0xffff;
+	to->di_projid_hi = from->di_projid >> 16;
 
 	memset(to->di_pad, 0, sizeof(to->di_pad));
 	memset(to->di_pad3, 0, sizeof(to->di_pad3));
@@ -344,8 +341,8 @@ xfs_inode_to_log_dinode(
 
 	if (from->di_version == 3) {
 		to->di_changecount = inode_peek_iversion(inode);
-		to->di_crtime.t_sec = from->di_crtime.t_sec;
-		to->di_crtime.t_nsec = from->di_crtime.t_nsec;
+		to->di_crtime.t_sec = from->di_crtime.tv_sec;
+		to->di_crtime.t_nsec = from->di_crtime.tv_nsec;
 		to->di_flags2 = from->di_flags2;
 		to->di_cowextsize = from->di_cowextsize;
 		to->di_ino = ip->i_ino;
@@ -569,7 +566,7 @@ out_unlock:
  * Unlock the inode associated with the inode log item.
  */
 STATIC void
-xfs_inode_item_unlock(
+xfs_inode_item_release(
 	struct xfs_log_item	*lip)
 {
 	struct xfs_inode_log_item *iip = INODE_ITEM(lip);
@@ -625,23 +622,21 @@ xfs_inode_item_committed(
 STATIC void
 xfs_inode_item_committing(
 	struct xfs_log_item	*lip,
-	xfs_lsn_t		lsn)
+	xfs_lsn_t		commit_lsn)
 {
-	INODE_ITEM(lip)->ili_last_lsn = lsn;
+	INODE_ITEM(lip)->ili_last_lsn = commit_lsn;
+	return xfs_inode_item_release(lip);
 }
 
-/*
- * This is the ops vector shared by all buf log items.
- */
 static const struct xfs_item_ops xfs_inode_item_ops = {
 	.iop_size	= xfs_inode_item_size,
 	.iop_format	= xfs_inode_item_format,
 	.iop_pin	= xfs_inode_item_pin,
 	.iop_unpin	= xfs_inode_item_unpin,
-	.iop_unlock	= xfs_inode_item_unlock,
+	.iop_release	= xfs_inode_item_release,
 	.iop_committed	= xfs_inode_item_committed,
 	.iop_push	= xfs_inode_item_push,
-	.iop_committing = xfs_inode_item_committing,
+	.iop_committing	= xfs_inode_item_committing,
 	.iop_error	= xfs_inode_item_error
 };
 
@@ -657,7 +652,7 @@ xfs_inode_item_init(
 	struct xfs_inode_log_item *iip;
 
 	ASSERT(ip->i_itemp == NULL);
-	iip = ip->i_itemp = kmem_zone_zalloc(xfs_ili_zone, KM_SLEEP);
+	iip = ip->i_itemp = kmem_zone_zalloc(xfs_ili_zone, 0);
 
 	iip->ili_inode = ip;
 	xfs_log_item_init(mp, &iip->ili_item, XFS_LI_INODE,
@@ -672,7 +667,7 @@ xfs_inode_item_destroy(
 	xfs_inode_t	*ip)
 {
 	kmem_free(ip->i_itemp->ili_item.li_lv_shadow);
-	kmem_zone_free(xfs_ili_zone, ip->i_itemp);
+	kmem_cache_free(xfs_ili_zone, ip->i_itemp);
 }
 
 
@@ -834,8 +829,10 @@ xfs_inode_item_format_convert(
 {
 	struct xfs_inode_log_format_32	*in_f32 = buf->i_addr;
 
-	if (buf->i_len != sizeof(*in_f32))
+	if (buf->i_len != sizeof(*in_f32)) {
+		XFS_ERROR_REPORT(__func__, XFS_ERRLEVEL_LOW, NULL);
 		return -EFSCORRUPTED;
+	}
 
 	in_f->ilf_type = in_f32->ilf_type;
 	in_f->ilf_size = in_f32->ilf_size;

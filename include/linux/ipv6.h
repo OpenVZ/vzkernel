@@ -4,6 +4,8 @@
 
 #include <uapi/linux/ipv6.h>
 
+#include <linux/rh_kabi.h>
+
 #define ipv6_optlen(p)  (((p)->hdrlen+1) << 3)
 #define ipv6_authlen(p) (((p)->hdrlen+2) << 2)
 /*
@@ -76,6 +78,23 @@ struct ipv6_devconf {
 	__s32           ndisc_tclass;
 
 	struct ctl_table_header *sysctl_header;
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+	RH_KABI_RESERVE(8)
+	RH_KABI_RESERVE(9)
+	RH_KABI_RESERVE(10)
+	RH_KABI_RESERVE(11)
+	RH_KABI_RESERVE(12)
+	RH_KABI_RESERVE(13)
+	RH_KABI_RESERVE(14)
+	RH_KABI_RESERVE(15)
+	RH_KABI_RESERVE(16)
 };
 
 struct ipv6_params {
@@ -102,6 +121,12 @@ static inline struct ipv6hdr *inner_ipv6_hdr(const struct sk_buff *skb)
 static inline struct ipv6hdr *ipipv6_hdr(const struct sk_buff *skb)
 {
 	return (struct ipv6hdr *)skb_transport_header(skb);
+}
+
+static inline unsigned int ipv6_transport_len(const struct sk_buff *skb)
+{
+	return ntohs(ipv6_hdr(skb)->payload_len) + sizeof(struct ipv6hdr) -
+	       skb_network_header_len(skb);
 }
 
 /* 
@@ -168,17 +193,6 @@ static inline int inet6_sdif(const struct sk_buff *skb)
 		return IP6CB(skb)->iif;
 #endif
 	return 0;
-}
-
-/* can not be used in TCP layer after tcp_v6_fill_cb */
-static inline bool inet6_exact_dif_match(struct net *net, struct sk_buff *skb)
-{
-#if defined(CONFIG_NET_L3_MASTER_DEV)
-	if (!net->ipv4.sysctl_tcp_l3mdev_accept &&
-	    skb && ipv6_l3mdev_skb(IP6CB(skb)->flags))
-		return true;
-#endif
-	return false;
 }
 
 struct tcp6_request_sock {

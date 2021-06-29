@@ -205,7 +205,8 @@ iser_initialize_task_headers(struct iscsi_task *task,
 		goto out;
 	}
 
-	tx_desc->wr_idx = 0;
+	tx_desc->inv_wr.next = NULL;
+	tx_desc->reg_wr.wr.next = NULL;
 	tx_desc->mapped = true;
 	tx_desc->dma_addr = dma_addr;
 	tx_desc->tx_sg[0].addr   = tx_desc->dma_addr;
@@ -406,13 +407,10 @@ static u8
 iscsi_iser_check_protection(struct iscsi_task *task, sector_t *sector)
 {
 	struct iscsi_iser_task *iser_task = task->dd_data;
+	enum iser_data_dir dir = iser_task->dir[ISER_DIR_IN] ?
+					ISER_DIR_IN : ISER_DIR_OUT;
 
-	if (iser_task->dir[ISER_DIR_IN])
-		return iser_check_task_pi_status(iser_task, ISER_DIR_IN,
-						 sector);
-	else
-		return iser_check_task_pi_status(iser_task, ISER_DIR_OUT,
-						 sector);
+	return iser_check_task_pi_status(iser_task, dir, sector);
 }
 
 /**
@@ -610,12 +608,10 @@ iscsi_iser_session_create(struct iscsi_endpoint *ep,
 			  uint32_t initial_cmdsn)
 {
 	struct iscsi_cls_session *cls_session;
-	struct iscsi_session *session;
 	struct Scsi_Host *shost;
 	struct iser_conn *iser_conn = NULL;
 	struct ib_conn *ib_conn;
 	u32 max_fr_sectors;
-	u16 max_cmds;
 
 	shost = iscsi_host_alloc(&iscsi_iser_sht, 0, 0);
 	if (!shost)
@@ -633,8 +629,8 @@ iscsi_iser_session_create(struct iscsi_endpoint *ep,
 	 */
 	if (ep) {
 		iser_conn = ep->dd_data;
-		max_cmds = iser_conn->max_cmds;
 		shost->sg_tablesize = iser_conn->scsi_sg_tablesize;
+		shost->can_queue = min_t(u16, cmds_max, iser_conn->max_cmds);
 
 		mutex_lock(&iser_conn->state_mutex);
 		if (iser_conn->state != ISER_CONN_UP) {
@@ -648,6 +644,7 @@ iscsi_iser_session_create(struct iscsi_endpoint *ep,
 		if (ib_conn->pi_support) {
 			u32 sig_caps = ib_conn->device->ib_device->attrs.sig_prot_cap;
 
+			shost->sg_prot_tablesize = shost->sg_tablesize;
 			scsi_host_set_prot(shost, iser_dif_prot_caps(sig_caps));
 			scsi_host_set_guard(shost, SHOST_DIX_GUARD_IP |
 						   SHOST_DIX_GUARD_CRC);
@@ -660,7 +657,7 @@ iscsi_iser_session_create(struct iscsi_endpoint *ep,
 		}
 		mutex_unlock(&iser_conn->state_mutex);
 	} else {
-		max_cmds = ISER_DEF_XMIT_CMDS_MAX;
+		shost->can_queue = min_t(u16, cmds_max, ISER_DEF_XMIT_CMDS_MAX);
 		if (iscsi_host_add(shost, NULL))
 			goto free_host;
 	}
@@ -676,21 +673,13 @@ iscsi_iser_session_create(struct iscsi_endpoint *ep,
 		iser_warn("max_sectors was reduced from %u to %u\n",
 			  iser_max_sectors, shost->max_sectors);
 
-	if (cmds_max > max_cmds) {
-		iser_info("cmds_max changed from %u to %u\n",
-			  cmds_max, max_cmds);
-		cmds_max = max_cmds;
-	}
-
 	cls_session = iscsi_session_setup(&iscsi_iser_transport, shost,
-					  cmds_max, 0,
+					  shost->can_queue, 0,
 					  sizeof(struct iscsi_iser_task),
 					  initial_cmdsn, 0);
 	if (!cls_session)
 		goto remove_host;
-	session = cls_session->dd_data;
 
-	shost->can_queue = session->scsi_cmds_max;
 	return cls_session;
 
 remove_host:
@@ -773,7 +762,6 @@ static int iscsi_iser_get_ep_param(struct iscsi_endpoint *ep,
 				   enum iscsi_param param, char *buf)
 {
 	struct iser_conn *iser_conn = ep->dd_data;
-	int len;
 
 	switch (param) {
 	case ISCSI_PARAM_CONN_PORT:
@@ -784,19 +772,17 @@ static int iscsi_iser_get_ep_param(struct iscsi_endpoint *ep,
 		return iscsi_conn_get_addr_param((struct sockaddr_storage *)
 				&iser_conn->ib_conn.cma_id->route.addr.dst_addr,
 				param, buf);
-		break;
 	default:
-		return -ENOSYS;
+		break;
 	}
-
-	return len;
+	return -ENOSYS;
 }
 
 /**
  * iscsi_iser_ep_connect() - Initiate iSER connection establishment
  * @shost:          scsi_host
  * @dst_addr:       destination address
- * @non-blocking:   indicate if routine can block
+ * @non_blocking:   indicate if routine can block
  *
  * Allocate an iscsi endpoint, an iser_conn structure and bind them.
  * After that start RDMA connection establishment via rdma_cm. We
@@ -988,7 +974,7 @@ static int iscsi_iser_slave_alloc(struct scsi_device *sdev)
 	ib_dev = iser_conn->ib_conn.device->ib_device;
 
 	if (!(ib_dev->attrs.device_cap_flags & IB_DEVICE_SG_GAPS_REG))
-		blk_queue_virt_boundary(sdev->request_queue, ~MASK_4K);
+		blk_queue_virt_boundary(sdev->request_queue, SZ_4K - 1);
 
 	mutex_unlock(&unbind_iser_conn_mutex);
 

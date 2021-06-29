@@ -643,7 +643,7 @@ static void bcmgenet_set_rx_coalesce(struct bcmgenet_rx_ring *ring,
 static void bcmgenet_set_ring_rx_coalesce(struct bcmgenet_rx_ring *ring,
 					  struct ethtool_coalesce *ec)
 {
-	struct net_dim_cq_moder moder;
+	struct dim_cq_moder moder;
 	u32 usecs, pkts;
 
 	ring->rx_coalesce_usecs = ec->rx_coalesce_usecs;
@@ -874,7 +874,6 @@ static void bcmgenet_get_drvinfo(struct net_device *dev,
 				 struct ethtool_drvinfo *info)
 {
 	strlcpy(info->driver, "bcmgenet", sizeof(info->driver));
-	strlcpy(info->version, "v2.0", sizeof(info->version));
 }
 
 static int bcmgenet_get_sset_count(struct net_device *dev, int string_set)
@@ -1665,7 +1664,7 @@ static netdev_tx_t bcmgenet_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (ring->free_bds <= (MAX_SKB_FRAGS + 1))
 		netif_tx_stop_queue(txq);
 
-	if (!skb->xmit_more || netif_xmit_stopped(txq))
+	if (!netdev_xmit_more() || netif_xmit_stopped(txq))
 		/* Packets are ready, update producer index */
 		bcmgenet_tdma_ring_writel(priv, ring->index,
 					  ring->prod_index, TDMA_PROD_INDEX);
@@ -1898,7 +1897,7 @@ static int bcmgenet_rx_poll(struct napi_struct *napi, int budget)
 {
 	struct bcmgenet_rx_ring *ring = container_of(napi,
 			struct bcmgenet_rx_ring, napi);
-	struct net_dim_sample dim_sample;
+	struct dim_sample dim_sample = {};
 	unsigned int work_done;
 
 	work_done = bcmgenet_desc_rx(ring, budget);
@@ -1909,8 +1908,8 @@ static int bcmgenet_rx_poll(struct napi_struct *napi, int budget)
 	}
 
 	if (ring->dim.use_dim) {
-		net_dim_sample(ring->dim.event_ctr, ring->dim.packets,
-			       ring->dim.bytes, &dim_sample);
+		dim_update_sample(ring->dim.event_ctr, ring->dim.packets,
+				  ring->dim.bytes, &dim_sample);
 		net_dim(&ring->dim.dim, dim_sample);
 	}
 
@@ -1919,16 +1918,16 @@ static int bcmgenet_rx_poll(struct napi_struct *napi, int budget)
 
 static void bcmgenet_dim_work(struct work_struct *work)
 {
-	struct net_dim *dim = container_of(work, struct net_dim, work);
+	struct dim *dim = container_of(work, struct dim, work);
 	struct bcmgenet_net_dim *ndim =
 			container_of(dim, struct bcmgenet_net_dim, dim);
 	struct bcmgenet_rx_ring *ring =
 			container_of(ndim, struct bcmgenet_rx_ring, dim);
-	struct net_dim_cq_moder cur_profile =
+	struct dim_cq_moder cur_profile =
 			net_dim_get_rx_moderation(dim->mode, dim->profile_ix);
 
 	bcmgenet_set_rx_coalesce(ring, cur_profile.usec, cur_profile.pkts);
-	dim->state = NET_DIM_START_MEASURE;
+	dim->state = DIM_START_MEASURE;
 }
 
 /* Assign skb to RX DMA descriptor. */
@@ -2085,7 +2084,7 @@ static void bcmgenet_init_dim(struct bcmgenet_rx_ring *ring,
 	struct bcmgenet_net_dim *dim = &ring->dim;
 
 	INIT_WORK(&dim->dim.work, cb);
-	dim->dim.mode = NET_DIM_CQ_PERIOD_MODE_START_FROM_EQE;
+	dim->dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
 	dim->event_ctr = 0;
 	dim->packets = 0;
 	dim->bytes = 0;
@@ -2094,7 +2093,7 @@ static void bcmgenet_init_dim(struct bcmgenet_rx_ring *ring,
 static void bcmgenet_init_rx_coalesce(struct bcmgenet_rx_ring *ring)
 {
 	struct bcmgenet_net_dim *dim = &ring->dim;
-	struct net_dim_cq_moder moder;
+	struct dim_cq_moder moder;
 	u32 usecs, pkts;
 
 	usecs = ring->rx_coalesce_usecs;
@@ -2619,10 +2618,8 @@ static void bcmgenet_irq_task(struct work_struct *work)
 	spin_unlock_irq(&priv->lock);
 
 	/* Link UP/DOWN event */
-	if (status & UMAC_IRQ_LINK_EVENT) {
-		priv->dev->phydev->link = !!(status & UMAC_IRQ_LINK_UP);
+	if (status & UMAC_IRQ_LINK_EVENT)
 		phy_mac_interrupt(priv->dev->phydev);
-	}
 }
 
 /* bcmgenet_isr1: handle Rx and Tx priority queues */
@@ -3054,7 +3051,7 @@ static void bcmgenet_dump_tx_queue(struct bcmgenet_tx_ring *ring)
 		  ring->cb_ptr, ring->end_ptr);
 }
 
-static void bcmgenet_timeout(struct net_device *dev)
+static void bcmgenet_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct bcmgenet_priv *priv = netdev_priv(dev);
 	u32 int0_enable = 0;

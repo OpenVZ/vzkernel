@@ -50,7 +50,7 @@
 #include "xfrm.h"
 
 /* Labeled XFRM instance counter */
-atomic_t selinux_xfrm_refcount = ATOMIC_INIT(0);
+atomic_t selinux_xfrm_refcount __read_mostly = ATOMIC_INIT(0);
 
 /*
  * Returns true if the context is an LSM/SELinux context.
@@ -79,7 +79,7 @@ static int selinux_xfrm_alloc_user(struct xfrm_sec_ctx **ctxp,
 				   gfp_t gfp)
 {
 	int rc;
-	const struct task_security_struct *tsec = current_security();
+	const struct task_security_struct *tsec = selinux_cred(current_cred());
 	struct xfrm_sec_ctx *ctx = NULL;
 	u32 str_len;
 
@@ -138,7 +138,7 @@ static void selinux_xfrm_free(struct xfrm_sec_ctx *ctx)
  */
 static int selinux_xfrm_delete(struct xfrm_sec_ctx *ctx)
 {
-	const struct task_security_struct *tsec = current_security();
+	const struct task_security_struct *tsec = selinux_cred(current_cred());
 
 	if (!ctx)
 		return 0;

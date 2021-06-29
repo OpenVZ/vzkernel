@@ -223,12 +223,9 @@ static int btrfs_ioctl_setflags(struct file *file, void __user *arg)
 
 	fsflags = btrfs_mask_fsflags_for_type(inode, fsflags);
 	old_fsflags = btrfs_inode_flags_to_fsflags(binode->flags);
-	if ((fsflags ^ old_fsflags) & (FS_APPEND_FL | FS_IMMUTABLE_FL)) {
-		if (!capable(CAP_LINUX_IMMUTABLE)) {
-			ret = -EPERM;
-			goto out_unlock;
-		}
-	}
+	ret = vfs_ioc_setflags_prepare(inode, old_fsflags, fsflags);
+	if (ret)
+		goto out_unlock;
 
 	if (fsflags & FS_SYNC_FL)
 		binode->flags |= BTRFS_INODE_SYNC;
@@ -379,9 +376,7 @@ static int btrfs_ioctl_fsgetxattr(struct file *file, void __user *arg)
 	struct btrfs_inode *binode = BTRFS_I(file_inode(file));
 	struct fsxattr fa;
 
-	memset(&fa, 0, sizeof(fa));
-	fa.fsx_xflags = btrfs_inode_flags_to_xflags(binode->flags);
-
+	simple_fill_fsxattr(&fa, btrfs_inode_flags_to_xflags(binode->flags));
 	if (copy_to_user(arg, &fa, sizeof(fa)))
 		return -EFAULT;
 
@@ -394,7 +389,7 @@ static int btrfs_ioctl_fssetxattr(struct file *file, void __user *arg)
 	struct btrfs_inode *binode = BTRFS_I(inode);
 	struct btrfs_root *root = binode->root;
 	struct btrfs_trans_handle *trans;
-	struct fsxattr fa;
+	struct fsxattr fa, old_fa;
 	unsigned old_flags;
 	unsigned old_i_flags;
 	int ret = 0;
@@ -405,7 +400,6 @@ static int btrfs_ioctl_fssetxattr(struct file *file, void __user *arg)
 	if (btrfs_root_readonly(root))
 		return -EROFS;
 
-	memset(&fa, 0, sizeof(fa));
 	if (copy_from_user(&fa, arg, sizeof(fa)))
 		return -EFAULT;
 
@@ -425,13 +419,11 @@ static int btrfs_ioctl_fssetxattr(struct file *file, void __user *arg)
 	old_flags = binode->flags;
 	old_i_flags = inode->i_flags;
 
-	/* We need the capabilities to change append-only or immutable inode */
-	if (((old_flags & (BTRFS_INODE_APPEND | BTRFS_INODE_IMMUTABLE)) ||
-	     (fa.fsx_xflags & (FS_XFLAG_APPEND | FS_XFLAG_IMMUTABLE))) &&
-	    !capable(CAP_LINUX_IMMUTABLE)) {
-		ret = -EPERM;
+	simple_fill_fsxattr(&old_fa,
+			    btrfs_inode_flags_to_xflags(binode->flags));
+	ret = vfs_ioc_fssetxattr_check(inode, &old_fa, &fa);
+	if (ret)
 		goto out_unlock;
-	}
 
 	if (fa.fsx_xflags & FS_XFLAG_SYNC)
 		binode->flags |= BTRFS_INODE_SYNC;
@@ -3602,29 +3594,6 @@ out_unlock:
 	return ret;
 }
 
-ssize_t btrfs_dedupe_file_range(struct file *src_file, u64 loff, u64 olen,
-				struct file *dst_file, u64 dst_loff)
-{
-	struct inode *src = file_inode(src_file);
-	struct inode *dst = file_inode(dst_file);
-	u64 bs = BTRFS_I(src)->root->fs_info->sb->s_blocksize;
-	ssize_t res;
-
-	if (WARN_ON_ONCE(bs < PAGE_SIZE)) {
-		/*
-		 * Btrfs does not support blocksize < page_size. As a
-		 * result, btrfs_cmp_data() won't correctly handle
-		 * this situation without an update.
-		 */
-		return -EINVAL;
-	}
-
-	res = btrfs_extent_same(src, loff, olen, dst, dst_loff);
-	if (res)
-		return res;
-	return olen;
-}
-
 static int clone_finish_inode_update(struct btrfs_trans_handle *trans,
 				     struct inode *inode,
 				     u64 endoff,
@@ -4326,10 +4295,34 @@ out_unlock:
 	return ret;
 }
 
-int btrfs_clone_file_range(struct file *src_file, loff_t off,
-		struct file *dst_file, loff_t destoff, u64 len)
+loff_t btrfs_remap_file_range(struct file *src_file, loff_t off,
+		struct file *dst_file, loff_t destoff, loff_t len,
+		unsigned int remap_flags)
 {
-	return btrfs_clone_files(dst_file, src_file, off, len, destoff);
+	int ret;
+
+	if (remap_flags & ~(REMAP_FILE_DEDUP | REMAP_FILE_ADVISORY))
+		return -EINVAL;
+
+	if (remap_flags & REMAP_FILE_DEDUP) {
+		struct inode *src = file_inode(src_file);
+		struct inode *dst = file_inode(dst_file);
+		u64 bs = BTRFS_I(src)->root->fs_info->sb->s_blocksize;
+
+		if (WARN_ON_ONCE(bs < PAGE_SIZE)) {
+			/*
+			 * Btrfs does not support blocksize < page_size. As a
+			 * result, btrfs_cmp_data() won't correctly handle
+			 * this situation without an update.
+			 */
+			return -EINVAL;
+		}
+
+		ret = btrfs_extent_same(src, off, len, dst, destoff);
+	} else {
+		ret = btrfs_clone_files(dst_file, src_file, off, len, destoff);
+	}
+	return ret < 0 ? ret : len;
 }
 
 static long btrfs_ioctl_default_subvol(struct file *file, void __user *argp)

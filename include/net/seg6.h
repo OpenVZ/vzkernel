@@ -18,7 +18,7 @@
 #include <linux/ipv6.h>
 #include <net/lwtunnel.h>
 #include <linux/seg6.h>
-#include <linux/rhashtable.h>
+#include <linux/rhashtable-types.h>
 
 static inline void update_csum_diff4(struct sk_buff *skb, __be32 from,
 				     __be32 to)
@@ -63,7 +63,7 @@ extern void seg6_iptunnel_exit(void);
 extern int seg6_local_init(void);
 extern void seg6_local_exit(void);
 
-extern bool seg6_validate_srh(struct ipv6_sr_hdr *srh, int len);
+extern bool seg6_validate_srh(struct ipv6_sr_hdr *srh, int len, bool reduced);
 extern int seg6_do_srh_encap(struct sk_buff *skb, struct ipv6_sr_hdr *osrh,
 			     int proto);
 extern int seg6_do_srh_inline(struct sk_buff *skb, struct ipv6_sr_hdr *osrh);

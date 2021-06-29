@@ -148,23 +148,20 @@ static void ip_cmsg_recv_security(struct msghdr *msg, struct sk_buff *skb)
 
 static void ip_cmsg_recv_dstaddr(struct msghdr *msg, struct sk_buff *skb)
 {
+	__be16 _ports[2], *ports;
 	struct sockaddr_in sin;
-	const struct iphdr *iph = ip_hdr(skb);
-	__be16 *ports;
-	int end;
-
-	end = skb_transport_offset(skb) + 4;
-	if (end > 0 && !pskb_may_pull(skb, end))
-		return;
 
 	/* All current transport protocols have the port numbers in the
 	 * first four bytes of the transport header and this function is
 	 * written with this assumption in mind.
 	 */
-	ports = (__be16 *)skb_transport_header(skb);
+	ports = skb_header_pointer(skb, skb_transport_offset(skb),
+				   sizeof(_ports), &_ports);
+	if (!ports)
+		return;
 
 	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = iph->daddr;
+	sin.sin_addr.s_addr = ip_hdr(skb)->daddr;
 	sin.sin_port = ports[1];
 	memset(sin.sin_zero, 0, sizeof(sin.sin_zero));
 
@@ -561,6 +558,26 @@ out:
 	return err;
 }
 
+static void __ip_sock_set_tos(struct sock *sk, int val)
+{
+	if (sk->sk_type == SOCK_STREAM) {
+		val &= ~INET_ECN_MASK;
+		val |= inet_sk(sk)->tos & INET_ECN_MASK;
+	}
+	if (inet_sk(sk)->tos != val) {
+		inet_sk(sk)->tos = val;
+		sk->sk_priority = rt_tos2priority(val);
+		sk_dst_reset(sk);
+	}
+}
+
+void ip_sock_set_tos(struct sock *sk, int val)
+{
+	lock_sock(sk);
+	__ip_sock_set_tos(sk, val);
+	release_sock(sk);
+}
+EXPORT_SYMBOL(ip_sock_set_tos);
 
 /*
  *	Socket option code for IP. This is the end of the line after any
@@ -744,15 +761,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			inet->cmsg_flags &= ~IP_CMSG_RECVFRAGSIZE;
 		break;
 	case IP_TOS:	/* This sets both TOS and Precedence */
-		if (sk->sk_type == SOCK_STREAM) {
-			val &= ~INET_ECN_MASK;
-			val |= inet->tos & INET_ECN_MASK;
-		}
-		if (inet->tos != val) {
-			inet->tos = val;
-			sk->sk_priority = rt_tos2priority(val);
-			sk_dst_reset(sk);
-		}
+		__ip_sock_set_tos(sk, val);
 		break;
 	case IP_TTL:
 		if (optlen < 1)
@@ -1247,10 +1256,11 @@ int ip_setsockopt(struct sock *sk, int level,
 		return -ENOPROTOOPT;
 
 	err = do_ip_setsockopt(sk, level, optname, optval, optlen);
-#ifdef CONFIG_BPFILTER
+#if IS_ENABLED(CONFIG_BPFILTER_UMH)
 	if (optname >= BPFILTER_IPT_SO_SET_REPLACE &&
 	    optname < BPFILTER_IPT_SET_MAX)
-		err = bpfilter_ip_set_sockopt(sk, optname, optval, optlen);
+		err = bpfilter_ip_set_sockopt(sk, optname, USER_SOCKPTR(optval),
+					      optlen);
 #endif
 #ifdef CONFIG_NETFILTER
 	/* we need to exclude all possible ENOPROTOOPTs except default case */
@@ -1560,7 +1570,7 @@ int ip_getsockopt(struct sock *sk, int level,
 	int err;
 
 	err = do_ip_getsockopt(sk, level, optname, optval, optlen, 0);
-#ifdef CONFIG_BPFILTER
+#if IS_ENABLED(CONFIG_BPFILTER_UMH)
 	if (optname >= BPFILTER_IPT_SO_GET_INFO &&
 	    optname < BPFILTER_IPT_GET_MAX)
 		err = bpfilter_ip_get_sockopt(sk, optname, optval, optlen);
@@ -1597,7 +1607,7 @@ int compat_ip_getsockopt(struct sock *sk, int level, int optname,
 	err = do_ip_getsockopt(sk, level, optname, optval, optlen,
 		MSG_CMSG_COMPAT);
 
-#ifdef CONFIG_BPFILTER
+#if IS_ENABLED(CONFIG_BPFILTER_UMH)
 	if (optname >= BPFILTER_IPT_SO_GET_INFO &&
 	    optname < BPFILTER_IPT_GET_MAX)
 		err = bpfilter_ip_get_sockopt(sk, optname, optval, optlen);

@@ -32,6 +32,7 @@
 extern int boot_cpuid;
 extern int spinning_secondaries;
 extern u32 *cpu_to_phys_id;
+extern bool coregroup_enabled;
 
 extern void cpu_die(void);
 extern int cpu_to_chip_id(int cpu);
@@ -56,7 +57,6 @@ struct smp_ops_t {
 	int   (*cpu_bootable)(unsigned int nr);
 };
 
-extern void smp_flush_nmi_ipi(u64 delay_us);
 extern int smp_send_nmi_ipi(int cpu, void (*fn)(struct pt_regs *), u64 delay_us);
 extern int smp_send_safe_nmi_ipi(int cpu, void (*fn)(struct pt_regs *), u64 delay_us);
 extern void smp_send_debugger_break(void);
@@ -101,15 +101,11 @@ static inline void set_hard_smp_processor_id(int cpu, int phys)
 DECLARE_PER_CPU(cpumask_var_t, cpu_sibling_map);
 DECLARE_PER_CPU(cpumask_var_t, cpu_l2_cache_map);
 DECLARE_PER_CPU(cpumask_var_t, cpu_core_map);
+DECLARE_PER_CPU(cpumask_var_t, cpu_smallcore_map);
 
 static inline struct cpumask *cpu_sibling_mask(int cpu)
 {
 	return per_cpu(cpu_sibling_map, cpu);
-}
-
-static inline struct cpumask *cpu_core_mask(int cpu)
-{
-	return per_cpu(cpu_core_map, cpu);
 }
 
 static inline struct cpumask *cpu_l2_cache_mask(int cpu)
@@ -117,7 +113,26 @@ static inline struct cpumask *cpu_l2_cache_mask(int cpu)
 	return per_cpu(cpu_l2_cache_map, cpu);
 }
 
+static inline struct cpumask *cpu_smallcore_mask(int cpu)
+{
+	return per_cpu(cpu_smallcore_map, cpu);
+}
+
 extern int cpu_to_core_id(int cpu);
+
+extern bool has_big_cores;
+extern bool thread_group_shares_l2;
+
+#define cpu_smt_mask cpu_smt_mask
+#ifdef CONFIG_SCHED_SMT
+static inline const struct cpumask *cpu_smt_mask(int cpu)
+{
+	if (has_big_cores)
+		return per_cpu(cpu_smallcore_map, cpu);
+
+	return per_cpu(cpu_sibling_map, cpu);
+}
+#endif /* CONFIG_SCHED_SMT */
 
 /* Since OpenPIC has only 4 IPIs, we use slightly different message numbers.
  *
@@ -160,6 +175,7 @@ extern void __cpu_die(unsigned int cpu);
 /* for UP */
 #define hard_smp_processor_id()		get_hard_smp_processor_id(0)
 #define smp_setup_cpu_maps()
+#define thread_group_shares_l2  0
 static inline void inhibit_secondary_onlining(void) {}
 static inline void uninhibit_secondary_onlining(void) {}
 static inline const struct cpumask *cpu_sibling_mask(int cpu)
@@ -167,6 +183,15 @@ static inline const struct cpumask *cpu_sibling_mask(int cpu)
 	return cpumask_of(cpu);
 }
 
+static inline const struct cpumask *cpu_smallcore_mask(int cpu)
+{
+	return cpumask_of(cpu);
+}
+
+static inline const struct cpumask *cpu_l2_cache_mask(int cpu)
+{
+	return cpumask_of(cpu);
+}
 #endif /* CONFIG_SMP */
 
 #ifdef CONFIG_PPC64

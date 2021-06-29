@@ -49,6 +49,7 @@ struct prefix_info {
 	struct in6_addr		prefix;
 };
 
+#include <linux/ipv6.h>
 #include <linux/netdevice.h>
 #include <net/if_inet6.h>
 #include <net/ipv6.h>
@@ -95,6 +96,9 @@ bool ipv6_chk_custom_prefix(const struct in6_addr *addr,
 
 int ipv6_chk_prefix(const struct in6_addr *addr, struct net_device *dev);
 
+struct net_device *ipv6_dev_find(struct net *net, const struct in6_addr *addr,
+				 struct net_device *dev);
+
 struct inet6_ifaddr *ipv6_get_ifaddr(struct net *net,
 				     const struct in6_addr *addr,
 				     struct net_device *dev, int strict);
@@ -108,6 +112,7 @@ int ipv6_get_lladdr(struct net_device *dev, struct in6_addr *addr,
 		    u32 banned_flags);
 bool inet_rcv_saddr_equal(const struct sock *sk, const struct sock *sk2,
 			  bool match_wildcard);
+bool inet_rcv_saddr_any(const struct sock *sk);
 void addrconf_join_solict(struct net_device *dev, const struct in6_addr *addr);
 void addrconf_leave_solict(struct inet6_dev *idev, const struct in6_addr *addr);
 
@@ -200,6 +205,15 @@ u32 ipv6_addr_label(struct net *net, const struct in6_addr *addr,
 /*
  *	multicast prototypes (mcast.c)
  */
+static inline int ipv6_mc_may_pull(struct sk_buff *skb,
+				   unsigned int len)
+{
+	if (skb_transport_offset(skb) + ipv6_transport_len(skb) < len)
+		return 0;
+
+	return pskb_may_pull(skb, len);
+}
+
 int ipv6_sock_mc_join(struct sock *sk, int ifindex,
 		      const struct in6_addr *addr);
 int ipv6_sock_mc_drop(struct sock *sk, int ifindex,
@@ -218,54 +232,13 @@ void ipv6_mc_unmap(struct inet6_dev *idev);
 void ipv6_mc_remap(struct inet6_dev *idev);
 void ipv6_mc_init_dev(struct inet6_dev *idev);
 void ipv6_mc_destroy_dev(struct inet6_dev *idev);
-int ipv6_mc_check_mld(struct sk_buff *skb, struct sk_buff **skb_trimmed);
+int ipv6_mc_check_mld(struct sk_buff *skb);
 void addrconf_dad_failure(struct sk_buff *skb, struct inet6_ifaddr *ifp);
 
 bool ipv6_chk_mcast_addr(struct net_device *dev, const struct in6_addr *group,
 			 const struct in6_addr *src_addr);
 
 void ipv6_mc_dad_complete(struct inet6_dev *idev);
-
-/* A stub used by vxlan module. This is ugly, ideally these
- * symbols should be built into the core kernel.
- */
-struct ipv6_stub {
-	int (*ipv6_sock_mc_join)(struct sock *sk, int ifindex,
-				 const struct in6_addr *addr);
-	int (*ipv6_sock_mc_drop)(struct sock *sk, int ifindex,
-				 const struct in6_addr *addr);
-	int (*ipv6_dst_lookup)(struct net *net, struct sock *sk,
-			       struct dst_entry **dst, struct flowi6 *fl6);
-
-	struct fib6_table *(*fib6_get_table)(struct net *net, u32 id);
-	struct fib6_info *(*fib6_lookup)(struct net *net, int oif,
-					 struct flowi6 *fl6, int flags);
-	struct fib6_info *(*fib6_table_lookup)(struct net *net,
-					      struct fib6_table *table,
-					      int oif, struct flowi6 *fl6,
-					      int flags);
-	struct fib6_info *(*fib6_multipath_select)(const struct net *net,
-						   struct fib6_info *f6i,
-						   struct flowi6 *fl6, int oif,
-						   const struct sk_buff *skb,
-						   int strict);
-	u32 (*ip6_mtu_from_fib6)(struct fib6_info *f6i, struct in6_addr *daddr,
-				 struct in6_addr *saddr);
-
-	void (*udpv6_encap_enable)(void);
-	void (*ndisc_send_na)(struct net_device *dev, const struct in6_addr *daddr,
-			      const struct in6_addr *solicited_addr,
-			      bool router, bool solicited, bool override, bool inc_opt);
-	struct neigh_table *nd_tbl;
-};
-extern const struct ipv6_stub *ipv6_stub __read_mostly;
-
-/* A stub used by bpf helpers. Similarly ugly as ipv6_stub */
-struct ipv6_bpf_stub {
-	int (*inet6_bind)(struct sock *sk, struct sockaddr *uaddr, int addr_len,
-			  bool force_bind_address_no_port, bool with_lock);
-};
-extern const struct ipv6_bpf_stub *ipv6_bpf_stub __read_mostly;
 
 /*
  * identify MLD packets for MLD filter exceptions
@@ -302,6 +275,7 @@ int ipv6_sock_ac_join(struct sock *sk, int ifindex,
 		      const struct in6_addr *addr);
 int ipv6_sock_ac_drop(struct sock *sk, int ifindex,
 		      const struct in6_addr *addr);
+void __ipv6_sock_ac_close(struct sock *sk);
 void ipv6_sock_ac_close(struct sock *sk);
 
 int __ipv6_dev_ac_inc(struct inet6_dev *idev, const struct in6_addr *addr);

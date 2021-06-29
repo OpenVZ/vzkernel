@@ -23,6 +23,8 @@
  *
  */
 
+#include <linux/slab.h>
+
 #include "dm_services.h"
 
 /*
@@ -43,8 +45,13 @@
 #include "dce80/hw_factory_dce80.h"
 #include "dce110/hw_factory_dce110.h"
 #include "dce120/hw_factory_dce120.h"
-#if defined(CONFIG_DRM_AMD_DC_DCN1_0)
+#if defined(CONFIG_DRM_AMD_DC_DCN)
 #include "dcn10/hw_factory_dcn10.h"
+#include "dcn20/hw_factory_dcn20.h"
+#include "dcn21/hw_factory_dcn21.h"
+#endif
+#if defined(CONFIG_DRM_AMD_DC_DCN3_0)
+#include "dcn30/hw_factory_dcn30.h"
 #endif
 
 #include "diagnostics/hw_factory_diag.h"
@@ -79,14 +86,27 @@ bool dal_hw_factory_init(
 		dal_hw_factory_dce110_init(factory);
 		return true;
 	case DCE_VERSION_12_0:
+	case DCE_VERSION_12_1:
 		dal_hw_factory_dce120_init(factory);
 		return true;
-#if defined(CONFIG_DRM_AMD_DC_DCN1_0)
+#if defined(CONFIG_DRM_AMD_DC_DCN)
 	case DCN_VERSION_1_0:
+	case DCN_VERSION_1_01:
 		dal_hw_factory_dcn10_init(factory);
 		return true;
-#endif
 
+	case DCN_VERSION_2_0:
+		dal_hw_factory_dcn20_init(factory);
+		return true;
+	case DCN_VERSION_2_1:
+		dal_hw_factory_dcn21_init(factory);
+		return true;
+#endif
+#if defined(CONFIG_DRM_AMD_DC_DCN3_0)
+	case DCN_VERSION_3_0:
+		dal_hw_factory_dcn30_init(factory);
+		return true;
+#endif
 	default:
 		ASSERT_CRITICAL(false);
 		return false;

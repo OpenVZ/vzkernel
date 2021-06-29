@@ -64,13 +64,10 @@ int main(void)
 	BLANK();
 #undef ENTRY
 
-	OFFSET(TSS_ist, tss_struct, x86_tss.ist);
-	OFFSET(TSS_sp0, tss_struct, x86_tss.sp0);
-	OFFSET(TSS_sp1, tss_struct, x86_tss.sp1);
 	BLANK();
 
 #ifdef CONFIG_STACKPROTECTOR
-	DEFINE(stack_canary_offset, offsetof(union irq_stack_union, stack_canary));
+	DEFINE(stack_canary_offset, offsetof(struct fixed_percpu_data, stack_canary));
 	BLANK();
 #endif
 

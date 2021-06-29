@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /****************************************************************************
  * Driver for Solarflare network controllers and boards
  * Copyright 2005-2006 Fen Systems Ltd.
  * Copyright 2006-2012 Solarflare Communications Inc.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation, incorporated herein by reference.
  */
 
 #include <linux/netdevice.h>
@@ -21,6 +18,8 @@
 #include <linux/slab.h>
 #include "net_driver.h"
 #include "efx.h"
+#include "efx_common.h"
+#include "efx_channels.h"
 #include "nic.h"
 #include "selftest.h"
 #include "workarounds.h"
@@ -446,7 +445,7 @@ static int efx_begin_loopback(struct efx_tx_queue *tx_queue)
 		if (rc != NETDEV_TX_OK) {
 			netif_err(efx, drv, efx->net_dev,
 				  "TX queue %d could not transmit packet %d of "
-				  "%d in %s loopback test\n", tx_queue->queue,
+				  "%d in %s loopback test\n", tx_queue->label,
 				  i + 1, state->packet_count,
 				  LOOPBACK_MODE(efx));
 
@@ -498,7 +497,7 @@ static int efx_end_loopback(struct efx_tx_queue *tx_queue,
 		netif_err(efx, drv, efx->net_dev,
 			  "TX queue %d saw only %d out of an expected %d "
 			  "TX completion events in %s loopback test\n",
-			  tx_queue->queue, tx_done, state->packet_count,
+			  tx_queue->label, tx_done, state->packet_count,
 			  LOOPBACK_MODE(efx));
 		rc = -ETIMEDOUT;
 		/* Allow to fall through so we see the RX errors as well */
@@ -509,15 +508,15 @@ static int efx_end_loopback(struct efx_tx_queue *tx_queue,
 		netif_dbg(efx, drv, efx->net_dev,
 			  "TX queue %d saw only %d out of an expected %d "
 			  "received packets in %s loopback test\n",
-			  tx_queue->queue, rx_good, state->packet_count,
+			  tx_queue->label, rx_good, state->packet_count,
 			  LOOPBACK_MODE(efx));
 		rc = -ETIMEDOUT;
 		/* Fall through */
 	}
 
 	/* Update loopback test structure */
-	lb_tests->tx_sent[tx_queue->queue] += state->packet_count;
-	lb_tests->tx_done[tx_queue->queue] += tx_done;
+	lb_tests->tx_sent[tx_queue->label] += state->packet_count;
+	lb_tests->tx_done[tx_queue->label] += tx_done;
 	lb_tests->rx_good += rx_good;
 	lb_tests->rx_bad += rx_bad;
 
@@ -543,8 +542,8 @@ efx_test_loopback(struct efx_tx_queue *tx_queue,
 		state->flush = false;
 
 		netif_dbg(efx, drv, efx->net_dev,
-			  "TX queue %d testing %s loopback with %d packets\n",
-			  tx_queue->queue, LOOPBACK_MODE(efx),
+			  "TX queue %d (hw %d) testing %s loopback with %d packets\n",
+			  tx_queue->label, tx_queue->queue, LOOPBACK_MODE(efx),
 			  state->packet_count);
 
 		efx_iterate_state(efx);
@@ -571,7 +570,7 @@ efx_test_loopback(struct efx_tx_queue *tx_queue,
 
 	netif_dbg(efx, drv, efx->net_dev,
 		  "TX queue %d passed %s loopback test with a burst length "
-		  "of %d packets\n", tx_queue->queue, LOOPBACK_MODE(efx),
+		  "of %d packets\n", tx_queue->label, LOOPBACK_MODE(efx),
 		  state->packet_count);
 
 	return 0;
@@ -661,7 +660,7 @@ static int efx_test_loopbacks(struct efx_nic *efx, struct efx_self_tests *tests,
 
 		/* Test all enabled types of TX queue */
 		efx_for_each_channel_tx_queue(tx_queue, channel) {
-			state->offload_csum = (tx_queue->queue &
+			state->offload_csum = (tx_queue->label &
 					       EFX_TXQ_TYPE_OFFLOAD);
 			rc = efx_test_loopback(tx_queue,
 					       &tests->loopback[mode]);
@@ -786,7 +785,7 @@ void efx_selftest_async_cancel(struct efx_nic *efx)
 	cancel_delayed_work_sync(&efx->selftest_work);
 }
 
-void efx_selftest_async_work(struct work_struct *data)
+static void efx_selftest_async_work(struct work_struct *data)
 {
 	struct efx_nic *efx = container_of(data, struct efx_nic,
 					   selftest_work.work);
@@ -804,4 +803,9 @@ void efx_selftest_async_work(struct work_struct *data)
 				  "channel %d triggered interrupt on CPU %d\n",
 				  channel->channel, cpu);
 	}
+}
+
+void efx_selftest_async_init(struct efx_nic *efx)
+{
+	INIT_DELAYED_WORK(&efx->selftest_work, efx_selftest_async_work);
 }

@@ -30,13 +30,20 @@
  *
  */
 
-#include <drm/drmP.h>
-#include <drm/i810_drm.h>
-#include "i810_drv.h"
-#include <linux/interrupt.h>	/* For task queue support */
 #include <linux/delay.h>
-#include <linux/slab.h>
-#include <linux/pagemap.h>
+#include <linux/mman.h>
+#include <linux/pci.h>
+
+#include <drm/drm_agpsupport.h>
+#include <drm/drm_device.h>
+#include <drm/drm_drv.h>
+#include <drm/drm_file.h>
+#include <drm/drm_ioctl.h>
+#include <drm/drm_irq.h>
+#include <drm/drm_print.h>
+#include <drm/i810_drm.h>
+
+#include "i810_drv.h"
 
 #define I810_BUF_FREE		2
 #define I810_BUF_CLIENT		1
@@ -213,9 +220,9 @@ static int i810_dma_cleanup(struct drm_device *dev)
 		if (dev_priv->ring.virtual_start)
 			drm_legacy_ioremapfree(&dev_priv->ring.map, dev);
 		if (dev_priv->hw_status_page) {
-			pci_free_consistent(dev->pdev, PAGE_SIZE,
-					    dev_priv->hw_status_page,
-					    dev_priv->dma_status_page);
+			dma_free_coherent(&dev->pdev->dev, PAGE_SIZE,
+					  dev_priv->hw_status_page,
+					  dev_priv->dma_status_page);
 		}
 		kfree(dev->dev_private);
 		dev->dev_private = NULL;
@@ -391,8 +398,8 @@ static int i810_dma_initialize(struct drm_device *dev,
 
 	/* Program Hardware Status Page */
 	dev_priv->hw_status_page =
-		pci_zalloc_consistent(dev->pdev, PAGE_SIZE,
-				      &dev_priv->dma_status_page);
+		dma_alloc_coherent(&dev->pdev->dev, PAGE_SIZE,
+				   &dev_priv->dma_status_page, GFP_KERNEL);
 	if (!dev_priv->hw_status_page) {
 		dev->dev_private = (void *)dev_priv;
 		i810_dma_cleanup(dev);
@@ -721,7 +728,7 @@ static void i810_dma_dispatch_vertex(struct drm_device *dev,
 	if (nbox > I810_NR_SAREA_CLIPRECTS)
 		nbox = I810_NR_SAREA_CLIPRECTS;
 
-	if (used > 4 * 1024)
+	if (used < 0 || used > 4 * 1024)
 		used = 0;
 
 	if (sarea_priv->dirty)
@@ -934,7 +941,7 @@ static int i810_dma_vertex(struct drm_device *dev, void *data,
 	DRM_DEBUG("idx %d used %d discard %d\n",
 		  vertex->idx, vertex->used, vertex->discard);
 
-	if (vertex->idx < 0 || vertex->idx > dma->buf_count)
+	if (vertex->idx < 0 || vertex->idx >= dma->buf_count)
 		return -EINVAL;
 
 	i810_dma_dispatch_vertex(dev,
@@ -1041,7 +1048,7 @@ static void i810_dma_dispatch_mc(struct drm_device *dev, struct drm_buf *buf, in
 	if (u != I810_BUF_CLIENT)
 		DRM_DEBUG("MC found buffer that isn't mine!\n");
 
-	if (used > 4 * 1024)
+	if (used < 0 || used > 4 * 1024)
 		used = 0;
 
 	sarea_priv->dirty = 0x7f;

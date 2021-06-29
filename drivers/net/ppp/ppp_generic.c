@@ -1419,6 +1419,8 @@ static void __ppp_xmit_process(struct ppp *ppp, struct sk_buff *skb)
 			netif_wake_queue(ppp->dev);
 		else
 			netif_stop_queue(ppp->dev);
+	} else {
+		kfree_skb(skb);
 	}
 	ppp_xmit_unlock(ppp);
 }
@@ -2400,7 +2402,7 @@ ppp_mp_reconstruct(struct ppp *ppp)
 
 	if (ppp->mrru == 0)	/* do nothing until mrru is set */
 		return NULL;
-	head = list->next;
+	head = __skb_peek(list);
 	tail = NULL;
 	skb_queue_walk_safe(list, p, tmp) {
 	again:

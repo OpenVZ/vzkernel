@@ -5,6 +5,8 @@
 #ifndef __NET_NET_NAMESPACE_H
 #define __NET_NET_NAMESPACE_H
 
+#include <linux/rh_kabi.h>
+
 #include <linux/atomic.h>
 #include <linux/refcount.h>
 #include <linux/workqueue.h>
@@ -30,9 +32,13 @@
 #include <net/netns/xfrm.h>
 #include <net/netns/mpls.h>
 #include <net/netns/can.h>
+#include RH_KABI_HIDE_INCLUDE(<net/netns/xdp.h>)
+#include <net/netns/bpf.h>
 #include <linux/ns_common.h>
 #include <linux/idr.h>
 #include <linux/skbuff.h>
+#include <linux/notifier.h>
+#include <linux/siphash.h>
 
 struct user_namespace;
 struct proc_dir_entry;
@@ -42,6 +48,7 @@ struct ctl_table_header;
 struct net_generic;
 struct uevent_sock;
 struct netns_ipvs;
+struct bpf_prog;
 
 
 #define NETDEV_HASHBITS    8
@@ -56,7 +63,7 @@ struct net {
 						 */
 	spinlock_t		rules_mod_lock;
 
-	atomic64_t		cookie_gen;
+	RH_KABI_DEPRECATE(atomic64_t,		cookie_gen)
 
 	struct list_head	list;		/* list of network namespaces */
 	struct list_head	exit_list;	/* To linked to call pernet exit
@@ -89,6 +96,7 @@ struct net {
 	struct list_head 	dev_base_head;
 	struct hlist_head 	*dev_name_head;
 	struct hlist_head	*dev_index_head;
+
 	unsigned int		dev_base_seq;	/* protected by rtnl_mutex */
 	int			ifindex;
 	unsigned int		dev_unreg_count;
@@ -96,9 +104,8 @@ struct net {
 	/* core fib_rules */
 	struct list_head	rules_ops;
 
-	struct list_head	fib_notifier_ops;  /* Populated by
-						    * register_pernet_subsys()
-						    */
+	RH_KABI_DEPRECATE(struct list_head, fib_notifier_ops)
+
 	struct net_device       *loopback_dev;          /* The loopback */
 	struct netns_core	core;
 	struct netns_mib	mib;
@@ -159,6 +166,30 @@ struct net {
 #endif
 	struct sock		*diag_nlsk;
 	atomic_t		fnhe_genid;
+
+	RH_KABI_EXTEND(int	ipv4_sysctl_ip_fwd_update_priority)
+	RH_KABI_EXTEND(int	ipv4_sysctl_tcp_min_snd_mss)
+	RH_KABI_EXTEND(void *rh_unused)		/* available for reuse */
+	RH_KABI_EXTEND(siphash_key_t ipv4_ip_id_key)
+	RH_KABI_EXTEND(u32	hash_mix)
+	RH_KABI_EXTEND_WITH_SIZE(struct netns_xdp xdp, 21)
+	RH_KABI_EXTEND(int	sctp_ecn_enable)
+	RH_KABI_EXTEND(struct list_head        xfrm_inexact_bins)
+	RH_KABI_EXTEND(struct raw_notifier_head	netdev_chain)
+	RH_KABI_EXTEND(struct list_head		nft_module_list)
+	RH_KABI_EXTEND(struct list_head		nft_notify_list)
+	RH_KABI_EXTEND(struct mutex		nft_commit_mutex)
+#ifdef CONFIG_NF_CT_PROTO_GRE
+	RH_KABI_EXTEND(struct nf_gre_net	nf_ct_gre)
+#endif
+	RH_KABI_EXTEND(DEFINE_SNMP_STAT(struct linux_tls_mib, mib_tls_statistics))
+#ifdef CONFIG_MPTCP
+	RH_KABI_EXTEND(struct netns_mptcp_mib  mptcp_mib)
+#endif
+	RH_KABI_EXTEND(atomic64_t		net_cookie) /* written once */
+	RH_KABI_EXTEND(int	sctp_pf_expose)
+	RH_KABI_EXTEND(int	sctp_ps_retrans)
+	RH_KABI_EXTEND_WITH_SIZE(struct netns_bpf bpf, 128)
 } __randomize_layout;
 
 #include <linux/seq_file_net.h>
@@ -190,6 +221,8 @@ extern struct list_head net_namespace_list;
 
 struct net *get_net_ns_by_pid(pid_t pid);
 struct net *get_net_ns_by_fd(int fd);
+
+u64 net_gen_cookie(struct net *net);
 
 #ifdef CONFIG_SYSCTL
 void ipx_register_sysctl(void);
@@ -295,7 +328,8 @@ static inline struct net *read_pnet(const possible_net_t *pnet)
 /* Protected by net_rwsem */
 #define for_each_net(VAR)				\
 	list_for_each_entry(VAR, &net_namespace_list, list)
-
+#define for_each_net_continue_reverse(VAR)		\
+	list_for_each_entry_continue_reverse(VAR, &net_namespace_list, list)
 #define for_each_net_rcu(VAR)				\
 	list_for_each_entry_rcu(VAR, &net_namespace_list, list)
 
@@ -311,10 +345,10 @@ static inline struct net *read_pnet(const possible_net_t *pnet)
 #define __net_initconst	__initconst
 #endif
 
-int peernet2id_alloc(struct net *net, struct net *peer);
-int peernet2id(struct net *net, struct net *peer);
-bool peernet_has_id(struct net *net, struct net *peer);
-struct net *get_net_ns_by_id(struct net *net, int id);
+int peernet2id_alloc(struct net *net, struct net *peer, gfp_t gfp);
+int peernet2id(const struct net *net, struct net *peer);
+bool peernet_has_id(const struct net *net, struct net *peer);
+struct net *get_net_ns_by_id(const struct net *net, int id);
 
 struct pernet_operations {
 	struct list_head list;
@@ -335,8 +369,13 @@ struct pernet_operations {
 	 * synchronize_rcu() related to these pernet_operations,
 	 * instead of separate synchronize_rcu() for every net.
 	 * Please, avoid synchronize_rcu() at all, where it's possible.
+	 *
+	 * Note that a combination of pre_exit() and exit() can
+	 * be used, since a synchronize_rcu() is guaranteed between
+	 * the calls.
 	 */
 	int (*init)(struct net *net);
+	void (*pre_exit)(struct net *net);
 	void (*exit)(struct net *net);
 	void (*exit_batch)(struct list_head *net_exit_list);
 	unsigned int *id;
@@ -387,7 +426,7 @@ static inline void unregister_net_sysctl_table(struct ctl_table_header *header)
 }
 #endif
 
-static inline int rt_genid_ipv4(struct net *net)
+static inline int rt_genid_ipv4(const struct net *net)
 {
 	return atomic_read(&net->ipv4.rt_genid);
 }
@@ -419,7 +458,7 @@ static inline void rt_genid_bump_all(struct net *net)
 	rt_genid_bump_ipv6(net);
 }
 
-static inline int fnhe_genid(struct net *net)
+static inline int fnhe_genid(const struct net *net)
 {
 	return atomic_read(&net->fnhe_genid);
 }

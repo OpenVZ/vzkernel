@@ -324,16 +324,18 @@ out:
 }
 EXPORT_SYMBOL_GPL(fib_rules_lookup);
 
-static int call_fib_rule_notifier(struct notifier_block *nb, struct net *net,
+static int call_fib_rule_notifier(struct notifier_block *nb,
 				  enum fib_event_type event_type,
-				  struct fib_rule *rule, int family)
+				  struct fib_rule *rule, int family,
+				  struct netlink_ext_ack *extack)
 {
 	struct fib_rule_notifier_info info = {
 		.info.family = family,
+		.info.extack = extack,
 		.rule = rule,
 	};
 
-	return call_fib_notifier(nb, net, event_type, &info.info);
+	return call_fib_notifier(nb, event_type, &info.info);
 }
 
 static int call_fib_rule_notifiers(struct net *net,
@@ -353,20 +355,25 @@ static int call_fib_rule_notifiers(struct net *net,
 }
 
 /* Called with rcu_read_lock() */
-int fib_rules_dump(struct net *net, struct notifier_block *nb, int family)
+int fib_rules_dump(struct net *net, struct notifier_block *nb, int family,
+		   struct netlink_ext_ack *extack)
 {
 	struct fib_rules_ops *ops;
 	struct fib_rule *rule;
+	int err = 0;
 
 	ops = lookup_rules_ops(net, family);
 	if (!ops)
 		return -EAFNOSUPPORT;
-	list_for_each_entry_rcu(rule, &ops->rules_list, list)
-		call_fib_rule_notifier(nb, net, FIB_EVENT_RULE_ADD, rule,
-				       family);
+	list_for_each_entry_rcu(rule, &ops->rules_list, list) {
+		err = call_fib_rule_notifier(nb, FIB_EVENT_RULE_ADD,
+					     rule, family, extack);
+		if (err)
+			break;
+	}
 	rules_ops_put(ops);
 
-	return 0;
+	return err;
 }
 EXPORT_SYMBOL_GPL(fib_rules_dump);
 
@@ -746,7 +753,8 @@ int fib_nl_newrule(struct sk_buff *skb, struct nlmsghdr *nlh,
 		goto errout;
 	}
 
-	err = nlmsg_parse(nlh, sizeof(*frh), tb, FRA_MAX, ops->policy, extack);
+	err = nlmsg_parse_deprecated(nlh, sizeof(*frh), tb, FRA_MAX,
+				     ops->policy, extack);
 	if (err < 0) {
 		NL_SET_ERR_MSG(extack, "Error parsing msg");
 		goto errout;
@@ -853,7 +861,8 @@ int fib_nl_delrule(struct sk_buff *skb, struct nlmsghdr *nlh,
 		goto errout;
 	}
 
-	err = nlmsg_parse(nlh, sizeof(*frh), tb, FRA_MAX, ops->policy, extack);
+	err = nlmsg_parse_deprecated(nlh, sizeof(*frh), tb, FRA_MAX,
+				     ops->policy, extack);
 	if (err < 0) {
 		NL_SET_ERR_MSG(extack, "Error parsing msg");
 		goto errout;
@@ -1064,13 +1073,47 @@ skip:
 	return err;
 }
 
+static int fib_valid_dumprule_req(const struct nlmsghdr *nlh,
+				   struct netlink_ext_ack *extack)
+{
+	struct fib_rule_hdr *frh;
+
+	if (nlh->nlmsg_len < nlmsg_msg_size(sizeof(*frh))) {
+		NL_SET_ERR_MSG(extack, "Invalid header for fib rule dump request");
+		return -EINVAL;
+	}
+
+	frh = nlmsg_data(nlh);
+	if (frh->dst_len || frh->src_len || frh->tos || frh->table ||
+	    frh->res1 || frh->res2 || frh->action || frh->flags) {
+		NL_SET_ERR_MSG(extack,
+			       "Invalid values in header for fib rule dump request");
+		return -EINVAL;
+	}
+
+	if (nlmsg_attrlen(nlh, sizeof(*frh))) {
+		NL_SET_ERR_MSG(extack, "Invalid data after header in fib rule dump request");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int fib_nl_dumprule(struct sk_buff *skb, struct netlink_callback *cb)
 {
+	const struct nlmsghdr *nlh = cb->nlh;
 	struct net *net = sock_net(skb->sk);
 	struct fib_rules_ops *ops;
 	int idx = 0, family;
 
-	family = rtnl_msg_family(cb->nlh);
+	if (cb->strict_check) {
+		int err = fib_valid_dumprule_req(nlh, cb->extack);
+
+		if (err < 0)
+			return err;
+	}
+
+	family = rtnl_msg_family(nlh);
 	if (family != AF_UNSPEC) {
 		/* Protocol specific dump request */
 		ops = lookup_rules_ops(net, family);

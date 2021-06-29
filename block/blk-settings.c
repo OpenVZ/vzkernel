@@ -6,7 +6,7 @@
 #include <linux/init.h>
 #include <linux/bio.h>
 #include <linux/blkdev.h>
-#include <linux/bootmem.h>	/* for max_pfn/max_low_pfn */
+#include <linux/memblock.h>	/* for max_pfn/max_low_pfn */
 #include <linux/gcd.h>
 #include <linux/lcm.h>
 #include <linux/jiffies.h>
@@ -20,64 +20,11 @@ EXPORT_SYMBOL(blk_max_low_pfn);
 
 unsigned long blk_max_pfn;
 
-/**
- * blk_queue_prep_rq - set a prepare_request function for queue
- * @q:		queue
- * @pfn:	prepare_request function
- *
- * It's possible for a queue to register a prepare_request callback which
- * is invoked before the request is handed to the request_fn. The goal of
- * the function is to prepare a request for I/O, it can be used to build a
- * cdb from the request data for instance.
- *
- */
-void blk_queue_prep_rq(struct request_queue *q, prep_rq_fn *pfn)
-{
-	q->prep_rq_fn = pfn;
-}
-EXPORT_SYMBOL(blk_queue_prep_rq);
-
-/**
- * blk_queue_unprep_rq - set an unprepare_request function for queue
- * @q:		queue
- * @ufn:	unprepare_request function
- *
- * It's possible for a queue to register an unprepare_request callback
- * which is invoked before the request is finally completed. The goal
- * of the function is to deallocate any data that was allocated in the
- * prepare_request callback.
- *
- */
-void blk_queue_unprep_rq(struct request_queue *q, unprep_rq_fn *ufn)
-{
-	q->unprep_rq_fn = ufn;
-}
-EXPORT_SYMBOL(blk_queue_unprep_rq);
-
-void blk_queue_softirq_done(struct request_queue *q, softirq_done_fn *fn)
-{
-	q->softirq_done_fn = fn;
-}
-EXPORT_SYMBOL(blk_queue_softirq_done);
-
 void blk_queue_rq_timeout(struct request_queue *q, unsigned int timeout)
 {
 	q->rq_timeout = timeout;
 }
 EXPORT_SYMBOL_GPL(blk_queue_rq_timeout);
-
-void blk_queue_rq_timed_out(struct request_queue *q, rq_timed_out_fn *fn)
-{
-	WARN_ON_ONCE(q->mq_ops);
-	q->rq_timed_out_fn = fn;
-}
-EXPORT_SYMBOL_GPL(blk_queue_rq_timed_out);
-
-void blk_queue_lld_busy(struct request_queue *q, lld_busy_fn *fn)
-{
-	q->lld_busy_fn = fn;
-}
-EXPORT_SYMBOL_GPL(blk_queue_lld_busy);
 
 /**
  * blk_set_default_limits - reset limits to default values
@@ -99,6 +46,7 @@ void blk_set_default_limits(struct queue_limits *lim)
 	lim->chunk_sectors = 0;
 	lim->max_write_same_sectors = 0;
 	lim->max_write_zeroes_sectors = 0;
+	lim->max_zone_append_sectors = 0;
 	lim->max_discard_sectors = 0;
 	lim->max_hw_discard_sectors = 0;
 	lim->discard_granularity = 0;
@@ -128,13 +76,14 @@ void blk_set_stacking_limits(struct queue_limits *lim)
 
 	/* Inherit limits from component devices */
 	lim->max_segments = USHRT_MAX;
-	lim->max_discard_segments = 1;
+	lim->max_discard_segments = USHRT_MAX;
 	lim->max_hw_sectors = UINT_MAX;
 	lim->max_segment_size = UINT_MAX;
 	lim->max_sectors = UINT_MAX;
 	lim->max_dev_sectors = UINT_MAX;
 	lim->max_write_same_sectors = UINT_MAX;
 	lim->max_write_zeroes_sectors = UINT_MAX;
+	lim->max_zone_append_sectors = UINT_MAX;
 }
 EXPORT_SYMBOL(blk_set_stacking_limits);
 
@@ -169,8 +118,6 @@ void blk_queue_make_request(struct request_queue *q, make_request_fn *mfn)
 
 	q->make_request_fn = mfn;
 	blk_queue_dma_alignment(q, 511);
-	blk_queue_congestion_threshold(q);
-	q->nr_batching = BLK_BATCH_REQ;
 
 	blk_set_default_limits(&q->limits);
 }
@@ -260,15 +207,13 @@ EXPORT_SYMBOL(blk_queue_max_hw_sectors);
  *
  * Description:
  *    If a driver doesn't want IOs to cross a given chunk size, it can set
- *    this limit and prevent merging across chunks. Note that the chunk size
- *    must currently be a power-of-2 in sectors. Also note that the block
- *    layer must accept a page worth of data at any offset. So if the
- *    crossing of chunks is a hard limitation in the driver, it must still be
- *    prepared to split single page bios.
+ *    this limit and prevent merging across chunks. Note that the block layer
+ *    must accept a page worth of data at any offset. So if the crossing of
+ *    chunks is a hard limitation in the driver, it must still be prepared
+ *    to split single page bios.
  **/
 void blk_queue_chunk_sectors(struct request_queue *q, unsigned int chunk_sectors)
 {
-	BUG_ON(!is_power_of_2(chunk_sectors));
 	q->limits.chunk_sectors = chunk_sectors;
 }
 EXPORT_SYMBOL(blk_queue_chunk_sectors);
@@ -310,6 +255,33 @@ void blk_queue_max_write_zeroes_sectors(struct request_queue *q,
 	q->limits.max_write_zeroes_sectors = max_write_zeroes_sectors;
 }
 EXPORT_SYMBOL(blk_queue_max_write_zeroes_sectors);
+
+/**
+ * blk_queue_max_zone_append_sectors - set max sectors for a single zone append
+ * @q:  the request queue for the device
+ * @max_zone_append_sectors: maximum number of sectors to write per command
+ **/
+void blk_queue_max_zone_append_sectors(struct request_queue *q,
+		unsigned int max_zone_append_sectors)
+{
+	unsigned int max_sectors;
+
+	if (WARN_ON(!blk_queue_is_zoned(q)))
+		return;
+
+	max_sectors = min(q->limits.max_hw_sectors, max_zone_append_sectors);
+	max_sectors = min(q->limits.chunk_sectors, max_sectors);
+
+	/*
+	 * Signal eventual driver bugs resulting in the max_zone_append sectors limit
+	 * being 0 due to a 0 argument, the chunk_sectors limit (zone size) not set,
+	 * or the max_hw_sectors limit not set.
+	 */
+	WARN_ON(!max_sectors);
+
+	q->limits.max_zone_append_sectors = max_sectors;
+}
+EXPORT_SYMBOL_GPL(blk_queue_max_zone_append_sectors);
 
 /**
  * blk_queue_max_segments - set max hw segments for a request for this queue
@@ -557,6 +529,8 @@ int blk_stack_limits(struct queue_limits *t, struct queue_limits *b,
 					b->max_write_same_sectors);
 	t->max_write_zeroes_sectors = min(t->max_write_zeroes_sectors,
 					b->max_write_zeroes_sectors);
+	t->max_zone_append_sectors = min(t->max_zone_append_sectors,
+					b->max_zone_append_sectors);
 	t->bounce_pfn = min_not_zero(t->bounce_pfn, b->bounce_pfn);
 
 	t->seg_boundary_mask = min_not_zero(t->seg_boundary_mask,
@@ -602,6 +576,10 @@ int blk_stack_limits(struct queue_limits *t, struct queue_limits *b,
 	t->io_min = max(t->io_min, b->io_min);
 	t->io_opt = lcm_not_zero(t->io_opt, b->io_opt);
 
+	/* Set non-power-of-2 compatible chunk_sectors boundary */
+	if (b->chunk_sectors)
+		t->chunk_sectors = gcd(t->chunk_sectors, b->chunk_sectors);
+
 	t->cluster &= b->cluster;
 
 	/* Physical block size a multiple of the logical block size? */
@@ -621,6 +599,13 @@ int blk_stack_limits(struct queue_limits *t, struct queue_limits *b,
 	/* Optimal I/O a multiple of the physical block size? */
 	if (t->io_opt & (t->physical_block_size - 1)) {
 		t->io_opt = 0;
+		t->misaligned = 1;
+		ret = -1;
+	}
+
+	/* chunk_sectors a multiple of the physical block size? */
+	if ((t->chunk_sectors << 9) & (t->physical_block_size - 1)) {
+		t->chunk_sectors = 0;
 		t->misaligned = 1;
 		ret = -1;
 	}
@@ -662,10 +647,6 @@ int blk_stack_limits(struct queue_limits *t, struct queue_limits *b,
 		t->discard_alignment = lcm_not_zero(t->discard_alignment, alignment) %
 			t->discard_granularity;
 	}
-
-	if (b->chunk_sectors)
-		t->chunk_sectors = min_not_zero(t->chunk_sectors,
-						b->chunk_sectors);
 
 	return ret;
 }
@@ -717,6 +698,9 @@ void disk_stack_limits(struct gendisk *disk, struct block_device *bdev,
 		printk(KERN_NOTICE "%s: Warning: Device %s is misaligned\n",
 		       top, bottom);
 	}
+
+	t->backing_dev_info->io_pages =
+		t->limits.max_sectors >> (PAGE_SHIFT - 9);
 }
 EXPORT_SYMBOL(disk_stack_limits);
 
@@ -857,15 +841,6 @@ void blk_queue_update_dma_alignment(struct request_queue *q, int mask)
 }
 EXPORT_SYMBOL(blk_queue_update_dma_alignment);
 
-void blk_queue_flush_queueable(struct request_queue *q, bool queueable)
-{
-	if (queueable)
-		blk_queue_flag_clear(QUEUE_FLAG_FLUSH_NQ, q);
-	else
-		blk_queue_flag_set(QUEUE_FLAG_FLUSH_NQ, q);
-}
-EXPORT_SYMBOL_GPL(blk_queue_flush_queueable);
-
 /**
  * blk_set_queue_depth - tell the block layer about the device queue depth
  * @q:		the request queue for the device
@@ -875,7 +850,7 @@ EXPORT_SYMBOL_GPL(blk_queue_flush_queueable);
 void blk_set_queue_depth(struct request_queue *q, unsigned int depth)
 {
 	q->queue_depth = depth;
-	wbt_set_queue_depth(q->rq_wb, depth);
+	rq_qos_queue_depth_changed(q);
 }
 EXPORT_SYMBOL(blk_set_queue_depth);
 
@@ -889,20 +864,34 @@ EXPORT_SYMBOL(blk_set_queue_depth);
  */
 void blk_queue_write_cache(struct request_queue *q, bool wc, bool fua)
 {
-	spin_lock_irq(q->queue_lock);
 	if (wc)
-		queue_flag_set(QUEUE_FLAG_WC, q);
+		blk_queue_flag_set(QUEUE_FLAG_WC, q);
 	else
-		queue_flag_clear(QUEUE_FLAG_WC, q);
+		blk_queue_flag_clear(QUEUE_FLAG_WC, q);
 	if (fua)
-		queue_flag_set(QUEUE_FLAG_FUA, q);
+		blk_queue_flag_set(QUEUE_FLAG_FUA, q);
 	else
-		queue_flag_clear(QUEUE_FLAG_FUA, q);
-	spin_unlock_irq(q->queue_lock);
+		blk_queue_flag_clear(QUEUE_FLAG_FUA, q);
 
-	wbt_set_write_cache(q->rq_wb, test_bit(QUEUE_FLAG_WC, &q->queue_flags));
+	wbt_set_write_cache(q, test_bit(QUEUE_FLAG_WC, &q->queue_flags));
 }
 EXPORT_SYMBOL_GPL(blk_queue_write_cache);
+
+/**
+ * blk_queue_required_elevator_features - Set a queue required elevator features
+ * @q:		the request queue for the target device
+ * @features:	Required elevator features OR'ed together
+ *
+ * Tell the block layer that for the device controlled through @q, only the
+ * only elevators that can be used are those that implement at least the set of
+ * features specified by @features.
+ */
+void blk_queue_required_elevator_features(struct request_queue *q,
+					  unsigned int features)
+{
+	q->required_elevator_features = features;
+}
+EXPORT_SYMBOL_GPL(blk_queue_required_elevator_features);
 
 static int __init blk_settings_init(void)
 {

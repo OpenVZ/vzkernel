@@ -29,7 +29,7 @@
 #include <linux/string.h>
 #include <linux/ioport.h>
 #include <linux/platform_device.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/pci.h>
 #include <linux/seq_file.h>
 #include <linux/root_dev.h>
@@ -293,7 +293,7 @@ move_initrd(unsigned long mem_limit)
 	unsigned long size;
 
 	size = initrd_end - initrd_start;
-	start = __alloc_bootmem(PAGE_ALIGN(size), PAGE_SIZE, 0);
+	start = memblock_alloc_from(PAGE_ALIGN(size), PAGE_SIZE, 0);
 	if (!start || __pa(start) + size > mem_limit) {
 		initrd_start = initrd_end = 0;
 		return NULL;
@@ -505,6 +505,15 @@ register_cpus(void)
 
 arch_initcall(register_cpus);
 
+#ifdef CONFIG_MAGIC_SYSRQ
+static struct sysrq_key_op srm_sysrq_reboot_op = {
+	.handler	= machine_halt,
+	.help_msg       = "reboot(b)",
+	.action_msg     = "Resetting",
+	.enable_mask    = SYSRQ_ENABLE_BOOT,
+};
+#endif
+
 void __init
 setup_arch(char **cmdline_p)
 {
@@ -625,8 +634,8 @@ setup_arch(char **cmdline_p)
 	/* If we're using SRM, make sysrq-b halt back to the prom,
 	   not auto-reboot.  */
 	if (alpha_using_srm) {
-		struct sysrq_key_op *op = __sysrq_get_key_op('b');
-		op->handler = (void *) machine_halt;
+		unregister_sysrq_key('b', __sysrq_reboot_op);
+		register_sysrq_key('b', &srm_sysrq_reboot_op);
 	}
 #endif
 

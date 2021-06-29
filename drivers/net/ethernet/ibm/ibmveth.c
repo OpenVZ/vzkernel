@@ -1024,6 +1024,23 @@ static int ibmveth_send(struct ibmveth_adapter *adapter,
 	return 0;
 }
 
+static int ibmveth_is_packet_unsupported(struct sk_buff *skb,
+					 struct net_device *netdev)
+{
+	struct ethhdr *ether_header;
+	int ret = 0;
+
+	ether_header = eth_hdr(skb);
+
+	if (ether_addr_equal(ether_header->h_dest, netdev->dev_addr)) {
+		netdev_dbg(netdev, "veth doesn't support loopback packets, dropping packet.\n");
+		netdev->stats.tx_dropped++;
+		ret = -EOPNOTSUPP;
+	}
+
+	return ret;
+}
+
 static netdev_tx_t ibmveth_start_xmit(struct sk_buff *skb,
 				      struct net_device *netdev)
 {
@@ -1034,6 +1051,9 @@ static netdev_tx_t ibmveth_start_xmit(struct sk_buff *skb,
 	int force_bounce = 0;
 	dma_addr_t dma_addr;
 	unsigned long mss = 0;
+
+	if (ibmveth_is_packet_unsupported(skb, netdev))
+		goto out;
 
 	/* veth doesn't handle frag_list, so linearize the skb.
 	 * When GRO is enabled SKB's can have frag_list.
@@ -1172,11 +1192,15 @@ out:
 
 map_failed_frags:
 	last = i+1;
-	for (i = 0; i < last; i++)
+	for (i = 1; i < last; i++)
 		dma_unmap_page(&adapter->vdev->dev, descs[i].fields.address,
 			       descs[i].fields.flags_len & IBMVETH_BUF_LEN_MASK,
 			       DMA_TO_DEVICE);
 
+	dma_unmap_single(&adapter->vdev->dev,
+			 descs[0].fields.address,
+			 descs[0].fields.flags_len & IBMVETH_BUF_LEN_MASK,
+			 DMA_TO_DEVICE);
 map_failed:
 	if (!firmware_has_feature(FW_FEATURE_CMO))
 		netdev_err(netdev, "tx: unable to map xmit buffer\n");
@@ -1310,7 +1334,6 @@ static int ibmveth_poll(struct napi_struct *napi, int budget)
 	unsigned long lpar_rc;
 	u16 mss = 0;
 
-restart_poll:
 	while (frames_processed < budget) {
 		if (!ibmveth_rxq_pending_buffer(adapter))
 			break;
@@ -1327,6 +1350,7 @@ restart_poll:
 			int offset = ibmveth_rxq_frame_offset(adapter);
 			int csum_good = ibmveth_rxq_csum_good(adapter);
 			int lrg_pkt = ibmveth_rxq_large_packet(adapter);
+			__sum16 iph_check = 0;
 
 			skb = ibmveth_rxq_get_buffer(adapter);
 
@@ -1363,14 +1387,24 @@ restart_poll:
 			skb_put(skb, length);
 			skb->protocol = eth_type_trans(skb, netdev);
 
+			/* PHYP without PLSO support places a -1 in the ip
+			 * checksum for large send frames.
+			 */
+			if (skb->protocol == cpu_to_be16(ETH_P_IP)) {
+				struct iphdr *iph = (struct iphdr *)skb->data;
+
+				iph_check = iph->check;
+			}
+
+			if ((length > netdev->mtu + ETH_HLEN) ||
+			    lrg_pkt || iph_check == 0xffff) {
+				ibmveth_rx_mss_helper(skb, mss, lrg_pkt);
+				adapter->rx_large_packets++;
+			}
+
 			if (csum_good) {
 				skb->ip_summed = CHECKSUM_UNNECESSARY;
 				ibmveth_rx_csum_helper(skb, adapter);
-			}
-
-			if (length > netdev->mtu + ETH_HLEN) {
-				ibmveth_rx_mss_helper(skb, mss, lrg_pkt);
-				adapter->rx_large_packets++;
 			}
 
 			napi_gro_receive(napi, skb);	/* send it up */
@@ -1398,7 +1432,6 @@ restart_poll:
 		    napi_reschedule(napi)) {
 			lpar_rc = h_vio_signal(adapter->vdev->unit_address,
 					       VIO_IRQ_DISABLE);
-			goto restart_poll;
 		}
 	}
 
@@ -1692,7 +1725,7 @@ static int ibmveth_probe(struct vio_dev *dev, const struct vio_device_id *id)
 	}
 
 	netdev->min_mtu = IBMVETH_MIN_MTU;
-	netdev->max_mtu = ETH_MAX_MTU;
+	netdev->max_mtu = ETH_MAX_MTU - IBMVETH_BUFF_OH;
 
 	memcpy(netdev->dev_addr, mac_addr_p, ETH_ALEN);
 

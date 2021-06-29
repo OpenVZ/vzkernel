@@ -202,7 +202,7 @@ static int pkcs1pad_encrypt_sign_complete(struct akcipher_request *req, int err)
 	sg_copy_from_buffer(req->dst,
 			    sg_nents_for_len(req->dst, ctx->key_size),
 			    out_buf, ctx->key_size);
-	kzfree(out_buf);
+	kfree_sensitive(out_buf);
 
 out:
 	req->dst_len = ctx->key_size;
@@ -334,7 +334,7 @@ static int pkcs1pad_decrypt_complete(struct akcipher_request *req, int err)
 				out_buf + pos, req->dst_len);
 
 done:
-	kzfree(req_ctx->out_buf);
+	kfree_sensitive(req_ctx->out_buf);
 
 	return err;
 }
@@ -435,7 +435,7 @@ static int pkcs1pad_sign(struct akcipher_request *req)
 	akcipher_request_set_crypt(&req_ctx->child_req, req_ctx->in_sg,
 				   req->dst, ctx->key_size - 1, req->dst_len);
 
-	err = crypto_akcipher_sign(&req_ctx->child_req);
+	err = crypto_akcipher_decrypt(&req_ctx->child_req);
 	if (err != -EINPROGRESS && err != -EBUSY)
 		return pkcs1pad_encrypt_sign_complete(req, err);
 
@@ -500,7 +500,7 @@ static int pkcs1pad_verify_complete(struct akcipher_request *req, int err)
 				sg_nents_for_len(req->dst, req->dst_len),
 				out_buf + pos, req->dst_len);
 done:
-	kzfree(req_ctx->out_buf);
+	kfree_sensitive(req_ctx->out_buf);
 
 	return err;
 }
@@ -554,7 +554,7 @@ static int pkcs1pad_verify(struct akcipher_request *req)
 				   req_ctx->out_sg, req->src_len,
 				   ctx->key_size);
 
-	err = crypto_akcipher_verify(&req_ctx->child_req);
+	err = crypto_akcipher_encrypt(&req_ctx->child_req);
 	if (err != -EINPROGRESS && err != -EBUSY)
 		return pkcs1pad_verify_complete(req, err);
 

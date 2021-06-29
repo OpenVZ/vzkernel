@@ -260,7 +260,7 @@ __SYSCALL(117, sys_ni_syscall)
 #define __NR_fsync 118
 __SYSCALL(__NR_fsync, sys_fsync)
 #define __NR_sigreturn 119
-__SYSCALL(__NR_sigreturn, compat_sys_sigreturn_wrapper)
+__SYSCALL(__NR_sigreturn, compat_sys_sigreturn)
 #define __NR_clone 120
 __SYSCALL(__NR_clone, sys_clone)
 #define __NR_setdomainname 121
@@ -368,7 +368,7 @@ __SYSCALL(__NR_getresgid, sys_getresgid16)
 #define __NR_prctl 172
 __SYSCALL(__NR_prctl, sys_prctl)
 #define __NR_rt_sigreturn 173
-__SYSCALL(__NR_rt_sigreturn, compat_sys_rt_sigreturn_wrapper)
+__SYSCALL(__NR_rt_sigreturn, compat_sys_rt_sigreturn)
 #define __NR_rt_sigaction 174
 __SYSCALL(__NR_rt_sigaction, compat_sys_rt_sigaction)
 #define __NR_rt_sigprocmask 175
@@ -382,9 +382,9 @@ __SYSCALL(__NR_rt_sigqueueinfo, compat_sys_rt_sigqueueinfo)
 #define __NR_rt_sigsuspend 179
 __SYSCALL(__NR_rt_sigsuspend, compat_sys_rt_sigsuspend)
 #define __NR_pread64 180
-__SYSCALL(__NR_pread64, compat_sys_pread64_wrapper)
+__SYSCALL(__NR_pread64, compat_sys_aarch32_pread64)
 #define __NR_pwrite64 181
-__SYSCALL(__NR_pwrite64, compat_sys_pwrite64_wrapper)
+__SYSCALL(__NR_pwrite64, compat_sys_aarch32_pwrite64)
 #define __NR_chown 182
 __SYSCALL(__NR_chown, sys_chown16)
 #define __NR_getcwd 183
@@ -406,11 +406,11 @@ __SYSCALL(__NR_vfork, sys_vfork)
 #define __NR_ugetrlimit 191	/* SuS compliant getrlimit */
 __SYSCALL(__NR_ugetrlimit, compat_sys_getrlimit)		/* SuS compliant getrlimit */
 #define __NR_mmap2 192
-__SYSCALL(__NR_mmap2, compat_sys_mmap2_wrapper)
+__SYSCALL(__NR_mmap2, compat_sys_aarch32_mmap2)
 #define __NR_truncate64 193
-__SYSCALL(__NR_truncate64, compat_sys_truncate64_wrapper)
+__SYSCALL(__NR_truncate64, compat_sys_aarch32_truncate64)
 #define __NR_ftruncate64 194
-__SYSCALL(__NR_ftruncate64, compat_sys_ftruncate64_wrapper)
+__SYSCALL(__NR_ftruncate64, compat_sys_aarch32_ftruncate64)
 #define __NR_stat64 195
 __SYSCALL(__NR_stat64, sys_stat64)
 #define __NR_lstat64 196
@@ -472,7 +472,7 @@ __SYSCALL(223, sys_ni_syscall)
 #define __NR_gettid 224
 __SYSCALL(__NR_gettid, sys_gettid)
 #define __NR_readahead 225
-__SYSCALL(__NR_readahead, compat_sys_readahead_wrapper)
+__SYSCALL(__NR_readahead, compat_sys_aarch32_readahead)
 #define __NR_setxattr 226
 __SYSCALL(__NR_setxattr, sys_setxattr)
 #define __NR_lsetxattr 227
@@ -554,15 +554,15 @@ __SYSCALL(__NR_clock_getres, compat_sys_clock_getres)
 #define __NR_clock_nanosleep 265
 __SYSCALL(__NR_clock_nanosleep, compat_sys_clock_nanosleep)
 #define __NR_statfs64 266
-__SYSCALL(__NR_statfs64, compat_sys_statfs64_wrapper)
+__SYSCALL(__NR_statfs64, compat_sys_aarch32_statfs64)
 #define __NR_fstatfs64 267
-__SYSCALL(__NR_fstatfs64, compat_sys_fstatfs64_wrapper)
+__SYSCALL(__NR_fstatfs64, compat_sys_aarch32_fstatfs64)
 #define __NR_tgkill 268
 __SYSCALL(__NR_tgkill, sys_tgkill)
 #define __NR_utimes 269
 __SYSCALL(__NR_utimes, compat_sys_utimes)
 #define __NR_arm_fadvise64_64 270
-__SYSCALL(__NR_arm_fadvise64_64, compat_sys_fadvise64_64_wrapper)
+__SYSCALL(__NR_arm_fadvise64_64, compat_sys_aarch32_fadvise64_64)
 #define __NR_pciconfig_iobase 271
 __SYSCALL(__NR_pciconfig_iobase, sys_pciconfig_iobase)
 #define __NR_pciconfig_read 272
@@ -704,7 +704,7 @@ __SYSCALL(__NR_get_robust_list, compat_sys_get_robust_list)
 #define __NR_splice 340
 __SYSCALL(__NR_splice, sys_splice)
 #define __NR_sync_file_range2 341
-__SYSCALL(__NR_sync_file_range2, compat_sys_sync_file_range2_wrapper)
+__SYSCALL(__NR_sync_file_range2, compat_sys_aarch32_sync_file_range2)
 #define __NR_tee 342
 __SYSCALL(__NR_tee, sys_tee)
 #define __NR_vmsplice 343
@@ -726,7 +726,7 @@ __SYSCALL(__NR_timerfd_create, sys_timerfd_create)
 #define __NR_eventfd 351
 __SYSCALL(__NR_eventfd, sys_eventfd)
 #define __NR_fallocate 352
-__SYSCALL(__NR_fallocate, compat_sys_fallocate_wrapper)
+__SYSCALL(__NR_fallocate, compat_sys_aarch32_fallocate)
 #define __NR_timerfd_settime 353
 __SYSCALL(__NR_timerfd_settime, compat_sys_timerfd_settime)
 #define __NR_timerfd_gettime 354
@@ -817,6 +817,63 @@ __SYSCALL(__NR_pkey_alloc, sys_pkey_alloc)
 __SYSCALL(__NR_pkey_free, sys_pkey_free)
 #define __NR_statx 397
 __SYSCALL(__NR_statx, sys_statx)
+#define __NR_rseq 398
+__SYSCALL(__NR_rseq, sys_rseq)
+/* 402 is unused */
+#define __NR_clock_gettime64 403
+__SYSCALL(__NR_clock_gettime64, sys_clock_gettime)
+#define __NR_clock_settime64 404
+__SYSCALL(__NR_clock_settime64, sys_clock_settime)
+#define __NR_clock_adjtime64 405
+__SYSCALL(__NR_clock_adjtime64, sys_clock_adjtime)
+#define __NR_clock_getres_time64 406
+__SYSCALL(__NR_clock_getres_time64, sys_clock_getres)
+#define __NR_clock_nanosleep_time64 407
+__SYSCALL(__NR_clock_nanosleep_time64, sys_clock_nanosleep)
+#define __NR_timer_gettime64 408
+__SYSCALL(__NR_timer_gettime64, sys_timer_gettime)
+#define __NR_timer_settime64 409
+__SYSCALL(__NR_timer_settime64, sys_timer_settime)
+#define __NR_timerfd_gettime64 410
+__SYSCALL(__NR_timerfd_gettime64, sys_timerfd_gettime)
+#define __NR_timerfd_settime64 411
+__SYSCALL(__NR_timerfd_settime64, sys_timerfd_settime)
+#define __NR_utimensat_time64 412
+__SYSCALL(__NR_utimensat_time64, sys_utimensat)
+#define __NR_io_pgetevents_time64 416
+__SYSCALL(__NR_io_pgetevents_time64, sys_io_pgetevents)
+#define __NR_mq_timedsend_time64 418
+__SYSCALL(__NR_mq_timedsend_time64, sys_mq_timedsend)
+#define __NR_mq_timedreceive_time64 419
+__SYSCALL(__NR_mq_timedreceive_time64, sys_mq_timedreceive)
+#define __NR_semtimedop_time64 420
+__SYSCALL(__NR_semtimedop_time64, sys_semtimedop)
+#define __NR_futex_time64 422
+__SYSCALL(__NR_futex_time64, sys_futex)
+#define __NR_sched_rr_get_interval_time64 423
+__SYSCALL(__NR_sched_rr_get_interval_time64, sys_sched_rr_get_interval)
+#define __NR_io_uring_setup 425
+__SYSCALL(__NR_io_uring_setup, sys_io_uring_setup)
+#define __NR_io_uring_enter 426
+__SYSCALL(__NR_io_uring_enter, sys_io_uring_enter)
+#define __NR_io_uring_register 427
+__SYSCALL(__NR_io_uring_register, sys_io_uring_register)
+#define __NR_open_tree 428
+__SYSCALL(__NR_open_tree, sys_open_tree)
+#define __NR_move_mount 429
+__SYSCALL(__NR_move_mount, sys_move_mount)
+#define __NR_fsopen 430
+__SYSCALL(__NR_fsopen, sys_fsopen)
+#define __NR_fsconfig 431
+__SYSCALL(__NR_fsconfig, sys_fsconfig)
+#define __NR_fsmount 432
+__SYSCALL(__NR_fsmount, sys_fsmount)
+#define __NR_fspick 433
+__SYSCALL(__NR_fspick, sys_fspick)
+#define __NR_close_range 436
+__SYSCALL(__NR_close_range, sys_close_range)
+#define __NR_faccessat2 439
+__SYSCALL(__NR_faccessat2, sys_faccessat2)
 
 /*
  * Please add new compat syscalls above this comment and update

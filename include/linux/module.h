@@ -20,12 +20,10 @@
 #include <linux/export.h>
 #include <linux/rbtree_latch.h>
 #include <linux/error-injection.h>
+#include <linux/rh_kabi.h>
 
 #include <linux/percpu.h>
 #include <asm/module.h>
-
-/* In stripped ARM and x86-64 modules, ~ is surprisingly rare. */
-#define MODULE_SIG_STRING "~Module signature appended~\n"
 
 /* Not Yet Implemented */
 #define MODULE_SUPPORTED_DEVICE(name)
@@ -340,6 +338,7 @@ struct module {
 	struct module_attribute *modinfo_attrs;
 	const char *version;
 	const char *srcversion;
+	const char *rhelversion;
 	struct kobject *holders_dir;
 
 	/* Exported symbols */
@@ -481,6 +480,10 @@ struct module {
 	struct error_injection_entry *ei_funcs;
 	unsigned int num_ei_funcs;
 #endif
+	RH_KABI_USE(1, unsigned int num_bpf_raw_events);
+	RH_KABI_USE(2, struct bpf_raw_event_map *bpf_raw_events);
+	RH_KABI_RESERVE(3);
+	RH_KABI_RESERVE(4);
 } ____cacheline_aligned __randomize_layout;
 #ifndef MODULE_ARCH_INIT
 #define MODULE_ARCH_INIT {}
@@ -649,6 +652,7 @@ static inline bool is_livepatch_module(struct module *mod)
 #endif /* CONFIG_LIVEPATCH */
 
 bool is_module_sig_enforced(void);
+void set_module_sig_enforced(void);
 
 #else /* !CONFIG_MODULES... */
 
@@ -678,6 +682,12 @@ static inline bool __is_module_percpu_address(unsigned long addr, unsigned long 
 }
 
 static inline bool is_module_text_address(unsigned long addr)
+{
+	return false;
+}
+
+static inline bool within_module_core(unsigned long addr,
+				      const struct module *mod)
 {
 	return false;
 }
@@ -767,6 +777,10 @@ static inline bool module_requested_async_probing(struct module *module)
 static inline bool is_module_sig_enforced(void)
 {
 	return false;
+}
+
+static inline void set_module_sig_enforced(void)
+{
 }
 
 /* Dereference module function descriptor */

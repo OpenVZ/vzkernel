@@ -281,6 +281,9 @@ static netdev_tx_t ipip_tunnel_xmit(struct sk_buff *skb,
 	const struct iphdr  *tiph = &tunnel->parms.iph;
 	u8 ipproto;
 
+	if (!pskb_inet_may_pull(skb))
+		goto tx_error;
+
 	switch (skb->protocol) {
 	case htons(ETH_P_IP):
 		ipproto = IPPROTO_IPIP;
@@ -303,7 +306,7 @@ static netdev_tx_t ipip_tunnel_xmit(struct sk_buff *skb,
 	skb_set_inner_ipproto(skb, ipproto);
 
 	if (tunnel->collect_md)
-		ip_md_tunnel_xmit(skb, dev, ipproto);
+		ip_md_tunnel_xmit(skb, dev, ipproto, 0);
 	else
 		ip_tunnel_xmit(skb, dev, tiph, ipproto);
 	return NETDEV_TX_OK;
@@ -701,7 +704,7 @@ out:
 
 rtnl_link_failed:
 #if IS_ENABLED(CONFIG_MPLS)
-	xfrm4_tunnel_deregister(&mplsip_handler, AF_INET);
+	xfrm4_tunnel_deregister(&mplsip_handler, AF_MPLS);
 xfrm_tunnel_mplsip_failed:
 
 #endif

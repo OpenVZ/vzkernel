@@ -68,14 +68,27 @@ bool __kprobes aarch64_insn_is_nop(u32 insn)
 		return false;
 
 	switch (insn & 0xFE0) {
-	case AARCH64_INSN_HINT_YIELD:
-	case AARCH64_INSN_HINT_WFE:
-	case AARCH64_INSN_HINT_WFI:
-	case AARCH64_INSN_HINT_SEV:
-	case AARCH64_INSN_HINT_SEVL:
-		return false;
-	default:
+	case AARCH64_INSN_HINT_XPACLRI:
+	case AARCH64_INSN_HINT_PACIA_1716:
+	case AARCH64_INSN_HINT_PACIB_1716:
+	case AARCH64_INSN_HINT_AUTIA_1716:
+	case AARCH64_INSN_HINT_AUTIB_1716:
+	case AARCH64_INSN_HINT_PACIAZ:
+	case AARCH64_INSN_HINT_PACIASP:
+	case AARCH64_INSN_HINT_PACIBZ:
+	case AARCH64_INSN_HINT_PACIBSP:
+	case AARCH64_INSN_HINT_AUTIAZ:
+	case AARCH64_INSN_HINT_AUTIASP:
+	case AARCH64_INSN_HINT_AUTIBZ:
+	case AARCH64_INSN_HINT_AUTIBSP:
+	case AARCH64_INSN_HINT_BTI:
+	case AARCH64_INSN_HINT_BTIC:
+	case AARCH64_INSN_HINT_BTIJ:
+	case AARCH64_INSN_HINT_BTIJC:
+	case AARCH64_INSN_HINT_NOP:
 		return true;
+	default:
+		return false;
 	}
 }
 
@@ -216,8 +229,8 @@ int __kprobes aarch64_insn_patch_text_nosync(void *addr, u32 insn)
 
 	ret = aarch64_insn_write(tp, insn);
 	if (ret == 0)
-		flush_icache_range((uintptr_t)tp,
-				   (uintptr_t)tp + AARCH64_INSN_SIZE);
+		__flush_icache_range((uintptr_t)tp,
+				     (uintptr_t)tp + AARCH64_INSN_SIZE);
 
 	return ret;
 }
@@ -283,18 +296,8 @@ int __kprobes aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
 		if (ret)
 			return ret;
 
-		if (aarch64_insn_hotpatch_safe(insn, insns[0])) {
-			/*
-			 * ARMv8 architecture doesn't guarantee all CPUs see
-			 * the new instruction after returning from function
-			 * aarch64_insn_patch_text_nosync(). So send IPIs to
-			 * all other CPUs to achieve instruction
-			 * synchronization.
-			 */
-			ret = aarch64_insn_patch_text_nosync(addrs[0], insns[0]);
-			kick_all_cpus_sync();
-			return ret;
-		}
+		if (aarch64_insn_hotpatch_safe(insn, insns[0]))
+			return aarch64_insn_patch_text_nosync(addrs[0], insns[0]);
 	}
 
 	return aarch64_insn_patch_text_sync(addrs, insns, cnt);
@@ -635,7 +638,7 @@ u32 aarch64_insn_gen_cond_branch_imm(unsigned long pc, unsigned long addr,
 					     offset >> 2);
 }
 
-u32 __kprobes aarch64_insn_gen_hint(enum aarch64_insn_hint_op op)
+u32 __kprobes aarch64_insn_gen_hint(enum aarch64_insn_hint_cr_op op)
 {
 	return aarch64_insn_get_hint_value() | op;
 }
@@ -796,6 +799,46 @@ u32 aarch64_insn_gen_load_store_ex(enum aarch64_insn_register reg,
 
 	return aarch64_insn_encode_register(AARCH64_INSN_REGTYPE_RS, insn,
 					    state);
+}
+
+u32 aarch64_insn_gen_ldadd(enum aarch64_insn_register result,
+			   enum aarch64_insn_register address,
+			   enum aarch64_insn_register value,
+			   enum aarch64_insn_size_type size)
+{
+	u32 insn = aarch64_insn_get_ldadd_value();
+
+	switch (size) {
+	case AARCH64_INSN_SIZE_32:
+	case AARCH64_INSN_SIZE_64:
+		break;
+	default:
+		pr_err("%s: unimplemented size encoding %d\n", __func__, size);
+		return AARCH64_BREAK_FAULT;
+	}
+
+	insn = aarch64_insn_encode_ldst_size(size, insn);
+
+	insn = aarch64_insn_encode_register(AARCH64_INSN_REGTYPE_RT, insn,
+					    result);
+
+	insn = aarch64_insn_encode_register(AARCH64_INSN_REGTYPE_RN, insn,
+					    address);
+
+	return aarch64_insn_encode_register(AARCH64_INSN_REGTYPE_RS, insn,
+					    value);
+}
+
+u32 aarch64_insn_gen_stadd(enum aarch64_insn_register address,
+			   enum aarch64_insn_register value,
+			   enum aarch64_insn_size_type size)
+{
+	/*
+	 * STADD is simply encoded as an alias for LDADD with XZR as
+	 * the destination register.
+	 */
+	return aarch64_insn_gen_ldadd(AARCH64_INSN_REG_ZR, address,
+				      value, size);
 }
 
 static u32 aarch64_insn_encode_prfm_imm(enum aarch64_insn_prfm_type type,
@@ -1514,16 +1557,10 @@ static u32 aarch64_encode_immediate(u64 imm,
 				    u32 insn)
 {
 	unsigned int immr, imms, n, ones, ror, esz, tmp;
-	u64 mask = ~0UL;
-
-	/* Can't encode full zeroes or full ones */
-	if (!imm || !~imm)
-		return AARCH64_BREAK_FAULT;
+	u64 mask;
 
 	switch (variant) {
 	case AARCH64_INSN_VARIANT_32BIT:
-		if (upper_32_bits(imm))
-			return AARCH64_BREAK_FAULT;
 		esz = 32;
 		break;
 	case AARCH64_INSN_VARIANT_64BIT:
@@ -1534,6 +1571,12 @@ static u32 aarch64_encode_immediate(u64 imm,
 		pr_err("%s: unknown variant encoding %d\n", __func__, variant);
 		return AARCH64_BREAK_FAULT;
 	}
+
+	mask = GENMASK(esz - 1, 0);
+
+	/* Can't encode full zeroes, full ones, or value wider than the mask */
+	if (!imm || imm == mask || imm & ~mask)
+		return AARCH64_BREAK_FAULT;
 
 	/*
 	 * Inverse of Replicate(). Try to spot a repeating pattern

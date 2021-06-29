@@ -22,6 +22,8 @@
 #include <linux/utsname.h>
 #include <linux/stackprotector.h>
 #include <linux/cpuidle.h>
+#include <linux/acpi.h>
+#include <linux/elf-randomize.h>
 #include <trace/events/power.h>
 #include <linux/hw_breakpoint.h>
 #include <asm/cpu.h>
@@ -39,6 +41,10 @@
 #include <asm/desc.h>
 #include <asm/prctl.h>
 #include <asm/spec-ctrl.h>
+#include <asm/spec_ctrl.h>
+#include <asm/proto.h>
+
+#include "process.h"
 
 /*
  * per-CPU TSS segments. Threads are completely 'soft' on Linux,
@@ -57,14 +63,12 @@ __visible DEFINE_PER_CPU_PAGE_ALIGNED(struct tss_struct, cpu_tss_rw) = {
 		 */
 		.sp0 = (1UL << (BITS_PER_LONG-1)) + 1,
 
-#ifdef CONFIG_X86_64
 		/*
 		 * .sp1 is cpu_current_top_of_stack.  The init task never
 		 * runs user code, but cpu_current_top_of_stack should still
 		 * be well defined before the first context switch.
 		 */
 		.sp1 = TOP_OF_INIT_STACK,
-#endif
 
 #ifdef CONFIG_X86_32
 		.ss0 = __KERNEL_DS,
@@ -98,7 +102,7 @@ int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 	dst->thread.vm86 = NULL;
 #endif
 
-	return fpu__copy(&dst->thread.fpu, &src->thread.fpu);
+	return fpu__copy(dst, src);
 }
 
 /*
@@ -129,6 +133,108 @@ void exit_thread(struct task_struct *tsk)
 	fpu__drop(fpu);
 }
 
+static int set_new_tls(struct task_struct *p, unsigned long tls)
+{
+	struct user_desc __user *utls = (struct user_desc __user *)tls;
+
+	if (in_ia32_syscall())
+		return do_set_thread_area(p, -1, utls, 0);
+	else
+		return do_set_thread_area_64(p, ARCH_SET_FS, tls);
+}
+
+static inline int copy_io_bitmap(struct task_struct *tsk)
+{
+	if (likely(!test_tsk_thread_flag(current, TIF_IO_BITMAP)))
+		return 0;
+
+	tsk->thread.io_bitmap_ptr = kmemdup(current->thread.io_bitmap_ptr,
+					    IO_BITMAP_BYTES, GFP_KERNEL);
+	if (!tsk->thread.io_bitmap_ptr) {
+		tsk->thread.io_bitmap_max = 0;
+		return -ENOMEM;
+	}
+	set_tsk_thread_flag(tsk, TIF_IO_BITMAP);
+	return 0;
+}
+
+static inline void free_io_bitmap(struct task_struct *tsk)
+{
+	if (tsk->thread.io_bitmap_ptr) {
+		kfree(tsk->thread.io_bitmap_ptr);
+		tsk->thread.io_bitmap_ptr = NULL;
+		tsk->thread.io_bitmap_max = 0;
+	}
+}
+
+int copy_thread_tls(unsigned long clone_flags, unsigned long sp,
+		    unsigned long arg, struct task_struct *p, unsigned long tls)
+{
+	struct inactive_task_frame *frame;
+	struct fork_frame *fork_frame;
+	struct pt_regs *childregs;
+	int ret;
+
+	childregs = task_pt_regs(p);
+	fork_frame = container_of(childregs, struct fork_frame, regs);
+	frame = &fork_frame->frame;
+
+	/*
+	 * For a new task use the RESET flags value since there is no before.
+	 * All the status flags are zero; DF and all the system flags must also
+	 * be 0, specifically IF must be 0 because we context switch to the new
+	 * task with interrupts disabled.
+	 */
+	frame->flags = X86_EFLAGS_FIXED;
+	frame->bp = 0;
+	frame->ret_addr = (unsigned long) ret_from_fork;
+	p->thread.sp = (unsigned long) fork_frame;
+	p->thread.io_bitmap_ptr = NULL;
+	memset(p->thread.ptrace_bps, 0, sizeof(p->thread.ptrace_bps));
+
+#ifdef CONFIG_X86_64
+	current_save_fsgs();
+	p->thread.fsindex = current->thread.fsindex;
+	p->thread.fsbase = current->thread.fsbase;
+	p->thread.gsindex = current->thread.gsindex;
+	p->thread.gsbase = current->thread.gsbase;
+
+	savesegment(es, p->thread.es);
+	savesegment(ds, p->thread.ds);
+#else
+	p->thread.sp0 = (unsigned long) (childregs + 1);
+#endif
+
+	/* Kernel thread ? */
+	if (unlikely(p->flags & PF_KTHREAD)) {
+		memset(childregs, 0, sizeof(struct pt_regs));
+		kthread_frame_init(frame, sp, arg);
+		return 0;
+	}
+
+	frame->bx = 0;
+	*childregs = *current_pt_regs();
+	childregs->ax = 0;
+	if (sp)
+		childregs->sp = sp;
+
+#ifdef CONFIG_X86_32
+	task_user_gs(p) = get_user_gs(current_pt_regs());
+#endif
+
+	ret = copy_io_bitmap(p);
+	if (ret)
+		return ret;
+
+	/* Set a new TLS for the child thread? */
+	if (clone_flags & CLONE_SETTLS) {
+		ret = set_new_tls(p, tls);
+		if (ret)
+			free_io_bitmap(p);
+	}
+	return ret;
+}
+
 void flush_thread(void)
 {
 	struct task_struct *tsk = current;
@@ -136,7 +242,7 @@ void flush_thread(void)
 	flush_ptrace_hw_breakpoint(tsk);
 	memset(tsk->thread.tls_array, 0, sizeof(tsk->thread.tls_array));
 
-	fpu__clear(&tsk->thread.fpu);
+	fpu__clear_all(&tsk->thread.fpu);
 }
 
 void disable_TSC(void)
@@ -252,13 +358,26 @@ void arch_setup_new_exec(void)
 	/* If cpuid was previously disabled for this task, re-enable it. */
 	if (test_thread_flag(TIF_NOCPUID))
 		enable_cpuid();
+
+	/*
+	 * Don't inherit TIF_SSBD across exec boundary when
+	 * PR_SPEC_DISABLE_NOEXEC is used.
+	 */
+	if (test_thread_flag(TIF_SSBD) &&
+	    task_spec_ssb_noexec(current)) {
+		clear_thread_flag(TIF_SSBD);
+		task_clear_spec_ssb_disable(current);
+		task_clear_spec_ssb_noexec(current);
+		speculation_ctrl_update(task_thread_info(current)->flags);
+	}
 }
 
-static inline void switch_to_bitmap(struct tss_struct *tss,
-				    struct thread_struct *prev,
+static inline void switch_to_bitmap(struct thread_struct *prev,
 				    struct thread_struct *next,
 				    unsigned long tifp, unsigned long tifn)
 {
+	struct tss_struct *tss = this_cpu_ptr(&cpu_tss_rw);
+
 	if (tifn & _TIF_IO_BITMAP) {
 		/*
 		 * Copy the relevant range of the IO bitmap.
@@ -397,32 +516,84 @@ static __always_inline void amd_set_ssb_virt_state(unsigned long tifn)
 	wrmsrl(MSR_AMD64_VIRT_SPEC_CTRL, ssbd_tif_to_spec_ctrl(tifn));
 }
 
-static __always_inline void intel_set_ssb_state(unsigned long tifn)
+/*
+ * Update the MSRs managing speculation control, during context switch.
+ *
+ * tifp: Previous task's thread flags
+ * tifn: Next task's thread flags
+ */
+static __always_inline void __speculation_ctrl_update(unsigned long tifp,
+						      unsigned long tifn)
 {
-	u64 msr = x86_spec_ctrl_base | ssbd_tif_to_spec_ctrl(tifn);
+	unsigned long tif_diff = tifp ^ tifn;
+	u64 msr = x86_spec_ctrl_base;
+	bool updmsr = false;
 
-	wrmsrl(MSR_IA32_SPEC_CTRL, msr);
+	lockdep_assert_irqs_disabled();
+
+	/* Handle change of TIF_SSBD depending on the mitigation method. */
+	if (static_cpu_has(X86_FEATURE_VIRT_SSBD)) {
+		if (tif_diff & _TIF_SSBD)
+			amd_set_ssb_virt_state(tifn);
+	} else if (static_cpu_has(X86_FEATURE_LS_CFG_SSBD)) {
+		if (tif_diff & _TIF_SSBD)
+			amd_set_core_ssb_state(tifn);
+	} else if (static_cpu_has(X86_FEATURE_SPEC_CTRL_SSBD) ||
+		   static_cpu_has(X86_FEATURE_AMD_SSBD)) {
+		updmsr |= !!(tif_diff & _TIF_SSBD);
+		msr |= ssbd_tif_to_spec_ctrl(tifn);
+	}
+
+	/* Only evaluate TIF_SPEC_IB if conditional STIBP is enabled. */
+	if (IS_ENABLED(CONFIG_SMP) &&
+	    static_branch_unlikely(&switch_to_cond_stibp)) {
+		updmsr |= !!(tif_diff & _TIF_SPEC_IB);
+		msr |= stibp_tif_to_spec_ctrl(tifn);
+	}
+
+	if (updmsr) {
+		if (static_cpu_has(X86_FEATURE_SPEC_CTRL_ENTRY))
+			spec_ctrl_update(msr);
+		wrmsrl(MSR_IA32_SPEC_CTRL, msr);
+	}
 }
 
-static __always_inline void __speculative_store_bypass_update(unsigned long tifn)
+static unsigned long speculation_ctrl_update_tif(struct task_struct *tsk)
 {
-	if (static_cpu_has(X86_FEATURE_VIRT_SSBD))
-		amd_set_ssb_virt_state(tifn);
-	else if (static_cpu_has(X86_FEATURE_LS_CFG_SSBD))
-		amd_set_core_ssb_state(tifn);
-	else
-		intel_set_ssb_state(tifn);
+	if (test_and_clear_tsk_thread_flag(tsk, TIF_SPEC_FORCE_UPDATE)) {
+		if (task_spec_ssb_disable(tsk))
+			set_tsk_thread_flag(tsk, TIF_SSBD);
+		else
+			clear_tsk_thread_flag(tsk, TIF_SSBD);
+
+		if (task_spec_ib_disable(tsk))
+			set_tsk_thread_flag(tsk, TIF_SPEC_IB);
+		else
+			clear_tsk_thread_flag(tsk, TIF_SPEC_IB);
+	}
+	/* Return the updated threadinfo flags*/
+	return task_thread_info(tsk)->flags;
 }
 
-void speculative_store_bypass_update(unsigned long tif)
+void speculation_ctrl_update(unsigned long tif)
+{
+	unsigned long flags;
+
+	/* Forced update. Make sure all relevant TIF flags are different */
+	local_irq_save(flags);
+	__speculation_ctrl_update(~tif, tif);
+	local_irq_restore(flags);
+}
+
+/* Called from seccomp/prctl update */
+void speculation_ctrl_update_current(void)
 {
 	preempt_disable();
-	__speculative_store_bypass_update(tif);
+	speculation_ctrl_update(speculation_ctrl_update_tif(current));
 	preempt_enable();
 }
 
-void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p,
-		      struct tss_struct *tss)
+void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p)
 {
 	struct thread_struct *prev, *next;
 	unsigned long tifp, tifn;
@@ -432,7 +603,7 @@ void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p,
 
 	tifn = READ_ONCE(task_thread_info(next_p)->flags);
 	tifp = READ_ONCE(task_thread_info(prev_p)->flags);
-	switch_to_bitmap(tss, prev, next, tifp, tifn);
+	switch_to_bitmap(prev, next, tifp, tifn);
 
 	propagate_user_return_notify(prev_p, next_p);
 
@@ -453,8 +624,18 @@ void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p,
 	if ((tifp ^ tifn) & _TIF_NOCPUID)
 		set_cpuid_faulting(!!(tifn & _TIF_NOCPUID));
 
-	if ((tifp ^ tifn) & _TIF_SSBD)
-		__speculative_store_bypass_update(tifn);
+	if (likely(!((tifp | tifn) & _TIF_SPEC_FORCE_UPDATE))) {
+		__speculation_ctrl_update(tifp, tifn);
+	} else {
+		speculation_ctrl_update_tif(prev_p);
+		tifn = speculation_ctrl_update_tif(next_p);
+
+		/* Enforce MSR update to ensure consistent state */
+		__speculation_ctrl_update(~tifn, tifn);
+	}
+
+	if ((tifp ^ tifn) & _TIF_SLD)
+		switch_to_sld(tifn);
 }
 
 /*
@@ -496,11 +677,9 @@ void arch_cpu_idle(void)
  */
 void __cpuidle default_idle(void)
 {
-	trace_cpu_idle_rcuidle(1, smp_processor_id());
 	safe_halt();
-	trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, smp_processor_id());
 }
-#ifdef CONFIG_APM_MODULE
+#if defined(CONFIG_APM_MODULE) || defined(CONFIG_HALTPOLL_CPUIDLE_MODULE)
 EXPORT_SYMBOL(default_idle);
 #endif
 
@@ -604,7 +783,6 @@ static int prefer_mwait_c1_over_halt(const struct cpuinfo_x86 *c)
 static __cpuidle void mwait_idle(void)
 {
 	if (!current_set_polling_and_test()) {
-		trace_cpu_idle_rcuidle(1, smp_processor_id());
 		if (this_cpu_has(X86_BUG_CLFLUSH_MONITOR)) {
 			mb(); /* quirk */
 			clflush((void *)&current_thread_info()->flags);
@@ -616,7 +794,6 @@ static __cpuidle void mwait_idle(void)
 			__sti_mwait(0, 0);
 		else
 			local_irq_enable();
-		trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, smp_processor_id());
 	} else {
 		local_irq_enable();
 	}

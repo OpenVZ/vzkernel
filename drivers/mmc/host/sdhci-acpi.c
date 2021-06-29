@@ -246,7 +246,7 @@ static const struct sdhci_acpi_chip sdhci_acpi_chip_int = {
 static bool sdhci_acpi_byt(void)
 {
 	static const struct x86_cpu_id byt[] = {
-		{ X86_VENDOR_INTEL, 6, INTEL_FAM6_ATOM_SILVERMONT1 },
+		X86_MATCH_INTEL_FAM6_MODEL(ATOM_SILVERMONT, NULL),
 		{}
 	};
 
@@ -256,7 +256,7 @@ static bool sdhci_acpi_byt(void)
 static bool sdhci_acpi_cht(void)
 {
 	static const struct x86_cpu_id cht[] = {
-		{ X86_VENDOR_INTEL, 6, INTEL_FAM6_ATOM_AIRMONT },
+		X86_MATCH_INTEL_FAM6_MODEL(ATOM_AIRMONT, NULL),
 		{}
 	};
 
@@ -488,6 +488,7 @@ static int amd_select_drive_strength(struct mmc_card *card,
 				     unsigned int max_dtr, int host_drv,
 				     int card_drv, int *drv_type)
 {
+	*drv_type = MMC_SET_DRIVER_TYPE_A;
 	return MMC_SET_DRIVER_TYPE_A;
 }
 

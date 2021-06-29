@@ -384,12 +384,11 @@ static int nvm_create_tgt(struct nvm_dev *dev, struct nvm_ioctl_create *create)
 		goto err_dev;
 	}
 
-	tqueue = blk_alloc_queue_node(GFP_KERNEL, dev->q->node, NULL);
+	tqueue = blk_alloc_queue_rh(tt->make_rq, dev->q->node);
 	if (!tqueue) {
 		ret = -ENOMEM;
 		goto err_disk;
 	}
-	blk_queue_make_request(tqueue, tt->make_rq);
 
 	strlcpy(tdisk->disk_name, create->tgtname, sizeof(tdisk->disk_name));
 	tdisk->flags = GENHD_FL_EXT_DEVT;
@@ -772,21 +771,43 @@ int nvm_submit_io(struct nvm_tgt_dev *tgt_dev, struct nvm_rq *rqd)
 }
 EXPORT_SYMBOL(nvm_submit_io);
 
+static void nvm_sync_end_io(struct nvm_rq *rqd)
+{
+	struct completion *waiting = rqd->private;
+
+	complete(waiting);
+}
+
+static int nvm_submit_io_wait(struct nvm_dev *dev, struct nvm_rq *rqd)
+{
+	DECLARE_COMPLETION_ONSTACK(wait);
+	int ret = 0;
+
+	rqd->end_io = nvm_sync_end_io;
+	rqd->private = &wait;
+
+	ret = dev->ops->submit_io(dev, rqd);
+	if (ret)
+		return ret;
+
+	wait_for_completion_io(&wait);
+
+	return 0;
+}
+
 int nvm_submit_io_sync(struct nvm_tgt_dev *tgt_dev, struct nvm_rq *rqd)
 {
 	struct nvm_dev *dev = tgt_dev->parent;
 	int ret;
 
-	if (!dev->ops->submit_io_sync)
+	if (!dev->ops->submit_io)
 		return -ENODEV;
 
 	nvm_rq_tgt_to_dev(tgt_dev, rqd);
 
 	rqd->dev = tgt_dev;
 
-	/* In case of error, fail with right address format */
-	ret = dev->ops->submit_io_sync(dev, rqd);
-	nvm_rq_dev_to_tgt(tgt_dev, rqd);
+	ret = nvm_submit_io_wait(dev, rqd);
 
 	return ret;
 }
@@ -933,15 +954,16 @@ int nvm_register(struct nvm_dev *dev)
 	if (!dev->q || !dev->ops)
 		return -EINVAL;
 
+	ret = nvm_init(dev);
+	if (ret)
+		return ret;
+
 	dev->dma_pool = dev->ops->create_dma_pool(dev, "ppalist");
 	if (!dev->dma_pool) {
 		pr_err("nvm: could not create dma pool\n");
+		nvm_free(dev);
 		return -ENOMEM;
 	}
-
-	ret = nvm_init(dev);
-	if (ret)
-		goto err_init;
 
 	/* register device with a supported media manager */
 	down_write(&nvm_lock);
@@ -949,9 +971,6 @@ int nvm_register(struct nvm_dev *dev)
 	up_write(&nvm_lock);
 
 	return 0;
-err_init:
-	dev->ops->destroy_dma_pool(dev->dma_pool);
-	return ret;
 }
 EXPORT_SYMBOL(nvm_register);
 

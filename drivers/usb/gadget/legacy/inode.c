@@ -12,6 +12,7 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/fs.h>
+#include <linux/fs_context.h>
 #include <linux/pagemap.h>
 #include <linux/uts.h>
 #include <linux/wait.h>
@@ -20,7 +21,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/poll.h>
-#include <linux/mmu_context.h>
+#include <linux/kthread.h>
 #include <linux/aio.h>
 #include <linux/uio.h>
 #include <linux/refcount.h>
@@ -461,9 +462,9 @@ static void ep_user_copy_worker(struct work_struct *work)
 	struct kiocb *iocb = priv->iocb;
 	size_t ret;
 
-	use_mm(mm);
+	kthread_use_mm(mm);
 	ret = copy_to_iter(priv->buf, priv->actual, &priv->to);
-	unuse_mm(mm);
+	kthread_unuse_mm(mm);
 	if (!ret)
 		ret = -EFAULT;
 
@@ -1218,27 +1219,27 @@ ep0_poll (struct file *fd, poll_table *wait)
 	if (dev->state <= STATE_DEV_OPENED)
 		return DEFAULT_POLLMASK;
 
-       poll_wait(fd, &dev->wait, wait);
+	poll_wait(fd, &dev->wait, wait);
 
-       spin_lock_irq (&dev->lock);
+	spin_lock_irq(&dev->lock);
 
-       /* report fd mode change before acting on it */
-       if (dev->setup_abort) {
-               dev->setup_abort = 0;
-               mask = EPOLLHUP;
-               goto out;
-       }
+	/* report fd mode change before acting on it */
+	if (dev->setup_abort) {
+		dev->setup_abort = 0;
+		mask = EPOLLHUP;
+		goto out;
+	}
 
-       if (dev->state == STATE_DEV_SETUP) {
-               if (dev->setup_in || dev->setup_can_stall)
-                       mask = EPOLLOUT;
-       } else {
-               if (dev->ev_next != 0)
-                       mask = EPOLLIN;
-       }
+	if (dev->state == STATE_DEV_SETUP) {
+		if (dev->setup_in || dev->setup_can_stall)
+			mask = EPOLLOUT;
+	} else {
+		if (dev->ev_next != 0)
+			mask = EPOLLIN;
+	}
 out:
-       spin_unlock_irq(&dev->lock);
-       return mask;
+	spin_unlock_irq(&dev->lock);
+	return mask;
 }
 
 static long dev_ioctl (struct file *fd, unsigned code, unsigned long value)
@@ -1990,7 +1991,7 @@ static const struct super_operations gadget_fs_operations = {
 };
 
 static int
-gadgetfs_fill_super (struct super_block *sb, void *opts, int silent)
+gadgetfs_fill_super (struct super_block *sb, struct fs_context *fc)
 {
 	struct inode	*inode;
 	struct dev_data	*dev;
@@ -2044,11 +2045,19 @@ Enomem:
 }
 
 /* "mount -t gadgetfs path /dev/gadget" ends up here */
-static struct dentry *
-gadgetfs_mount (struct file_system_type *t, int flags,
-		const char *path, void *opts)
+static int gadgetfs_get_tree(struct fs_context *fc)
 {
-	return mount_single (t, flags, opts, gadgetfs_fill_super);
+	return get_tree_single(fc, gadgetfs_fill_super);
+}
+
+static const struct fs_context_operations gadgetfs_context_ops = {
+	.get_tree	= gadgetfs_get_tree,
+};
+
+static int gadgetfs_init_fs_context(struct fs_context *fc)
+{
+	fc->ops = &gadgetfs_context_ops;
+	return 0;
 }
 
 static void
@@ -2068,7 +2077,7 @@ gadgetfs_kill_sb (struct super_block *sb)
 static struct file_system_type gadgetfs_type = {
 	.owner		= THIS_MODULE,
 	.name		= shortname,
-	.mount		= gadgetfs_mount,
+	.init_fs_context = gadgetfs_init_fs_context,
 	.kill_sb	= gadgetfs_kill_sb,
 };
 MODULE_ALIAS_FS("gadgetfs");

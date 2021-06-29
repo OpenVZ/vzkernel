@@ -51,8 +51,8 @@ static void mpage_end_io(struct bio *bio)
 
 	bio_for_each_segment_all(bv, bio, i) {
 		struct page *page = bv->bv_page;
-		page_endio(page, op_is_write(bio_op(bio)),
-				blk_status_to_errno(bio->bi_status));
+		page_endio(page, bio_op(bio),
+			   blk_status_to_errno(bio->bi_status));
 	}
 
 	bio_put(bio);
@@ -62,7 +62,7 @@ static struct bio *mpage_bio_submit(int op, int op_flags, struct bio *bio)
 {
 	bio->bi_end_io = mpage_end_io;
 	bio_set_op_attrs(bio, op, op_flags);
-	guard_bio_eod(op, bio);
+	guard_bio_eod(bio);
 	submit_bio(bio);
 	return NULL;
 }
@@ -633,7 +633,7 @@ alloc_new:
 	 * the confused fail path above (OOM) will be very confused when
 	 * it finds all bh marked clean (i.e. it will not write anything)
 	 */
-	wbc_account_io(wbc, page, PAGE_SIZE);
+	wbc_account_cgroup_owner(wbc, page, PAGE_SIZE);
 	length = first_unmapped << blkbits;
 	if (bio_add_page(bio, page, length, 0) < length) {
 		bio = mpage_bio_submit(REQ_OP_WRITE, op_flags, bio);

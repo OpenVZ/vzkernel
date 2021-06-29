@@ -463,7 +463,7 @@ static void ath9k_enable_rmw_buffer(void *hw_priv)
 	atomic_inc(&priv->wmi->m_rmw_cnt);
 }
 
-static u32 ath9k_reg_rmw_single(void *hw_priv,
+static void ath9k_reg_rmw_single(void *hw_priv,
 				 u32 reg_offset, u32 set, u32 clr)
 {
 	struct ath_hw *ah = hw_priv;
@@ -471,7 +471,6 @@ static u32 ath9k_reg_rmw_single(void *hw_priv,
 	struct ath9k_htc_priv *priv = (struct ath9k_htc_priv *) common->priv;
 	struct register_rmw buf, buf_ret;
 	int ret;
-	u32 val = 0;
 
 	buf.reg = cpu_to_be32(reg_offset);
 	buf.set = cpu_to_be32(set);
@@ -485,7 +484,6 @@ static u32 ath9k_reg_rmw_single(void *hw_priv,
 		ath_dbg(common, WMI, "REGISTER RMW FAILED:(0x%04x, %d)\n",
 			reg_offset, ret);
 	}
-	return val;
 }
 
 static u32 ath9k_reg_rmw(void *hw_priv, u32 reg_offset, u32 set, u32 clr)
@@ -782,6 +780,8 @@ static void ath9k_set_hw_capab(struct ath9k_htc_priv *priv,
 	SET_IEEE80211_PERM_ADDR(hw, common->macaddr);
 
 	wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_CQM_RSSI_LIST);
+	wiphy_ext_feature_set(hw->wiphy,
+			      NL80211_EXT_FEATURE_MULTICAST_REGISTRATIONS);
 }
 
 static int ath9k_init_firmware_version(struct ath9k_htc_priv *priv)
@@ -933,8 +933,9 @@ err_init:
 int ath9k_htc_probe_device(struct htc_target *htc_handle, struct device *dev,
 			   u16 devid, char *product, u32 drv_info)
 {
-	struct ieee80211_hw *hw;
+	struct hif_device_usb *hif_dev;
 	struct ath9k_htc_priv *priv;
+	struct ieee80211_hw *hw;
 	int ret;
 
 	hw = ieee80211_alloc_hw(sizeof(struct ath9k_htc_priv), &ath9k_htc_ops);
@@ -969,7 +970,10 @@ int ath9k_htc_probe_device(struct htc_target *htc_handle, struct device *dev,
 	return 0;
 
 err_init:
-	ath9k_deinit_wmi(priv);
+	ath9k_stop_wmi(priv);
+	hif_dev = (struct hif_device_usb *)htc_handle->hif_dev;
+	ath9k_hif_usb_dealloc_urbs(hif_dev);
+	ath9k_destoy_wmi(priv);
 err_free:
 	ieee80211_free_hw(hw);
 	return ret;
@@ -984,7 +988,7 @@ void ath9k_htc_disconnect_device(struct htc_target *htc_handle, bool hotunplug)
 			htc_handle->drv_priv->ah->ah_flags |= AH_UNPLUGGED;
 
 		ath9k_deinit_device(htc_handle->drv_priv);
-		ath9k_deinit_wmi(htc_handle->drv_priv);
+		ath9k_stop_wmi(htc_handle->drv_priv);
 		ieee80211_free_hw(htc_handle->drv_priv->hw);
 	}
 }

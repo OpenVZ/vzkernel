@@ -22,6 +22,7 @@ available subsections can be seen below.
    device_connection
    dma-buf
    device_link
+   component
    message-based
    sound
    frame-buffer
@@ -29,9 +30,11 @@ available subsections can be seen below.
    iio/index
    input
    usb/index
-   pci
+   pci/index
    spi
    i2c
+   ipmb
+   ipmi
    hsi
    edac
    scsi
@@ -39,6 +42,7 @@ available subsections can be seen below.
    target
    mtdnand
    miscellaneous
+   mei/index
    w1
    rapidio
    s390-drivers
@@ -47,6 +51,7 @@ available subsections can be seen below.
    uio-howto
    firmware/index
    pinctl
+   pldmfw/index
    gpio/index
    misc_devices
    dmaengine/index

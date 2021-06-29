@@ -54,7 +54,6 @@ typedef struct xfs_alloc_arg {
 	struct xfs_mount *mp;		/* file system mount point */
 	struct xfs_buf	*agbp;		/* buffer for a.g. freelist header */
 	struct xfs_perag *pag;		/* per-ag struct for this agno */
-	struct xfs_inode *ip;		/* for userdata zeroing method */
 	xfs_fsblock_t	fsbno;		/* file system block number */
 	xfs_agnumber_t	agno;		/* allocation group number */
 	xfs_agblock_t	agbno;		/* allocation group-relative block # */
@@ -74,7 +73,6 @@ typedef struct xfs_alloc_arg {
 	int		datatype;	/* mask defining data type treatment */
 	char		wasdel;		/* set if allocation was prev delayed */
 	char		wasfromfl;	/* set if allocation is from freelist */
-	xfs_fsblock_t	firstblock;	/* io first block allocated */
 	struct xfs_owner_info	oinfo;	/* owner of blocks being allocated */
 	enum xfs_ag_resv_type	resv;	/* block reservation to use */
 } xfs_alloc_arg_t;
@@ -84,20 +82,7 @@ typedef struct xfs_alloc_arg {
  */
 #define XFS_ALLOC_USERDATA		(1 << 0)/* allocation is for user data*/
 #define XFS_ALLOC_INITIAL_USER_DATA	(1 << 1)/* special case start of file */
-#define XFS_ALLOC_USERDATA_ZERO		(1 << 2)/* zero extent on allocation */
-#define XFS_ALLOC_NOBUSY		(1 << 3)/* Busy extents not allowed */
-
-static inline bool
-xfs_alloc_is_userdata(int datatype)
-{
-	return (datatype & ~XFS_ALLOC_NOBUSY) != 0;
-}
-
-static inline bool
-xfs_alloc_allow_busy_reuse(int datatype)
-{
-	return (datatype & XFS_ALLOC_NOBUSY) == 0;
-}
+#define XFS_ALLOC_NOBUSY		(1 << 2)/* Busy extents not allowed */
 
 /* freespace limit calculations */
 #define XFS_ALLOC_AGFL_RESERVE	4
@@ -183,7 +168,7 @@ __xfs_free_extent(
 	struct xfs_trans	*tp,	/* transaction pointer */
 	xfs_fsblock_t		bno,	/* starting block number of extent */
 	xfs_extlen_t		len,	/* length of extent */
-	struct xfs_owner_info	*oinfo,	/* extent owner */
+	const struct xfs_owner_info	*oinfo,	/* extent owner */
 	enum xfs_ag_resv_type	type,	/* block reservation type */
 	bool			skip_discard);
 
@@ -192,7 +177,7 @@ xfs_free_extent(
 	struct xfs_trans	*tp,
 	xfs_fsblock_t		bno,
 	xfs_extlen_t		len,
-	struct xfs_owner_info	*oinfo,
+	const struct xfs_owner_info	*oinfo,
 	enum xfs_ag_resv_type	type)
 {
 	return __xfs_free_extent(tp, bno, len, oinfo, type, false);

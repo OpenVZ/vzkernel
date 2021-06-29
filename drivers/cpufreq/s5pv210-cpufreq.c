@@ -544,7 +544,8 @@ static int s5pv210_cpu_init(struct cpufreq_policy *policy)
 	s5pv210_dram_conf[1].freq = clk_get_rate(dmc1_clk);
 
 	policy->suspend_freq = SLEEP_FREQ;
-	return cpufreq_generic_init(policy, s5pv210_freq_table, 40000);
+	cpufreq_generic_init(policy, s5pv210_freq_table, 40000);
+	return 0;
 
 out_dmc1:
 	clk_put(dmc0_clk);
@@ -557,8 +558,17 @@ static int s5pv210_cpufreq_reboot_notifier_event(struct notifier_block *this,
 						 unsigned long event, void *ptr)
 {
 	int ret;
+	struct cpufreq_policy *policy;
 
-	ret = cpufreq_driver_target(cpufreq_cpu_get(0), SLEEP_FREQ, 0);
+	policy = cpufreq_cpu_get(0);
+	if (!policy) {
+		pr_debug("cpufreq: get no policy for cpu0\n");
+		return NOTIFY_BAD;
+	}
+
+	ret = cpufreq_driver_target(policy, SLEEP_FREQ, 0);
+	cpufreq_cpu_put(policy);
+
 	if (ret < 0)
 		return NOTIFY_BAD;
 
@@ -611,8 +621,8 @@ static int s5pv210_cpufreq_probe(struct platform_device *pdev)
 	for_each_compatible_node(np, NULL, "samsung,s5pv210-dmc") {
 		id = of_alias_get_id(np, "dmc");
 		if (id < 0 || id >= ARRAY_SIZE(dmc_base)) {
-			pr_err("%s: failed to get alias of dmc node '%s'\n",
-				__func__, np->name);
+			pr_err("%s: failed to get alias of dmc node '%pOFn'\n",
+				__func__, np);
 			of_node_put(np);
 			return id;
 		}

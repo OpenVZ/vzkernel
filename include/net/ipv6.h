@@ -554,34 +554,6 @@ static inline bool ipv6_prefix_equal(const struct in6_addr *addr1,
 }
 #endif
 
-struct inet_frag_queue;
-
-enum ip6_defrag_users {
-	IP6_DEFRAG_LOCAL_DELIVER,
-	IP6_DEFRAG_CONNTRACK_IN,
-	__IP6_DEFRAG_CONNTRACK_IN	= IP6_DEFRAG_CONNTRACK_IN + USHRT_MAX,
-	IP6_DEFRAG_CONNTRACK_OUT,
-	__IP6_DEFRAG_CONNTRACK_OUT	= IP6_DEFRAG_CONNTRACK_OUT + USHRT_MAX,
-	IP6_DEFRAG_CONNTRACK_BRIDGE_IN,
-	__IP6_DEFRAG_CONNTRACK_BRIDGE_IN = IP6_DEFRAG_CONNTRACK_BRIDGE_IN + USHRT_MAX,
-};
-
-void ip6_frag_init(struct inet_frag_queue *q, const void *a);
-extern const struct rhashtable_params ip6_rhash_params;
-
-/*
- *	Equivalent of ipv4 struct ip
- */
-struct frag_queue {
-	struct inet_frag_queue	q;
-
-	int			iif;
-	__u16			nhoffset;
-	u8			ecn;
-};
-
-void ip6_expire_frag_queue(struct net *net, struct frag_queue *fq);
-
 static inline bool ipv6_addr_any(const struct in6_addr *a)
 {
 #if defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS) && BITS_PER_LONG == 64
@@ -960,11 +932,17 @@ static inline struct sk_buff *ip6_finish_skb(struct sock *sk)
 
 int ip6_dst_lookup(struct net *net, struct sock *sk, struct dst_entry **dst,
 		   struct flowi6 *fl6);
-struct dst_entry *ip6_dst_lookup_flow(const struct sock *sk, struct flowi6 *fl6,
+struct dst_entry *ip6_dst_lookup_flow(struct net *net, const struct sock *sk, struct flowi6 *fl6,
 				      const struct in6_addr *final_dst);
 struct dst_entry *ip6_sk_dst_lookup_flow(struct sock *sk, struct flowi6 *fl6,
 					 const struct in6_addr *final_dst,
 					 bool connected);
+struct dst_entry *ip6_dst_lookup_tunnel(struct sk_buff *skb,
+					struct net_device *dev,
+					struct net *net, struct socket *sock,
+					struct in6_addr *saddr,
+					const struct ip_tunnel_info *info,
+					u8 protocol, bool use_cache);
 struct dst_entry *ip6_blackhole_route(struct net *net,
 				      struct dst_entry *orig_dst);
 
@@ -976,6 +954,8 @@ int ip6_output(struct net *net, struct sock *sk, struct sk_buff *skb);
 int ip6_forward(struct sk_buff *skb);
 int ip6_input(struct sk_buff *skb);
 int ip6_mc_input(struct sk_buff *skb);
+void ip6_protocol_deliver_rcu(struct net *net, struct sk_buff *skb, int nexthdr,
+			      bool have_final);
 
 int __ip6_local_out(struct net *net, struct sock *sk, struct sk_buff *skb);
 int ip6_local_out(struct net *net, struct sock *sk, struct sk_buff *skb);
@@ -1049,6 +1029,9 @@ int inet6_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg);
 
 int inet6_hash_connect(struct inet_timewait_death_row *death_row,
 			      struct sock *sk);
+int inet6_sendmsg(struct socket *sock, struct msghdr *msg, size_t size);
+int inet6_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
+		  int flags);
 
 /*
  * reassembly.c

@@ -34,6 +34,11 @@
  * page_waitqueue(page) is a wait queue of all tasks waiting for the page
  * to become unlocked.
  *
+ * PG_swapbacked is set when a page uses swap as a backing storage.  This are
+ * usually PageAnon or shmem pages but please note that even anonymous pages
+ * might lose their PG_swapbacked flag when they simply can be dropped (e.g. as
+ * a result of MADV_FREE).
+ *
  * PG_uptodate tells whether the page's contents is valid.  When a read
  * completes, the page becomes uptodate, unless a disk I/O error happened.
  *
@@ -101,6 +106,13 @@ enum pageflags {
 	PG_young,
 	PG_idle,
 #endif
+#ifndef __GENKSYMS__
+	/*
+	 * RHEL8: New page flags should be put here to avoid changing
+	 * kABI signature.
+	 */
+	PG_workingset,
+#endif
 	__NR_PAGEFLAGS,
 
 	/* Filesystems */
@@ -131,6 +143,9 @@ enum pageflags {
 
 	/* non-lru isolated movable page */
 	PG_isolated = PG_reclaim,
+
+	/* Only valid for buddy pages. Used to track pages that are reported */
+	PG_reported = PG_uptodate,
 };
 
 #ifndef __GENERATING_BOUNDS_H
@@ -161,6 +176,14 @@ static inline int PagePoisoned(const struct page *page)
 {
 	return page->flags == PAGE_POISON_PATTERN;
 }
+
+#ifdef CONFIG_DEBUG_VM
+void page_init_poison(struct page *page, size_t size);
+#else
+static inline void page_init_poison(struct page *page, size_t size)
+{
+}
+#endif
 
 /*
  * Page flags policies wrt compound pages
@@ -280,6 +303,8 @@ PAGEFLAG(Dirty, dirty, PF_HEAD) TESTSCFLAG(Dirty, dirty, PF_HEAD)
 PAGEFLAG(LRU, lru, PF_HEAD) __CLEARPAGEFLAG(LRU, lru, PF_HEAD)
 PAGEFLAG(Active, active, PF_HEAD) __CLEARPAGEFLAG(Active, active, PF_HEAD)
 	TESTCLEARFLAG(Active, active, PF_HEAD)
+PAGEFLAG(Workingset, workingset, PF_HEAD)
+	TESTCLEARFLAG(Workingset, workingset, PF_HEAD)
 __PAGEFLAG(Slab, slab, PF_NO_TAIL)
 __PAGEFLAG(SlobFree, slob_free, PF_NO_TAIL)
 PAGEFLAG(Checked, checked, PF_NO_COMPOUND)	   /* Used by some filesystems */
@@ -292,6 +317,7 @@ PAGEFLAG(Foreign, foreign, PF_NO_COMPOUND);
 
 PAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
 	__CLEARPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
+	__SETPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
 PAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
 	__CLEARPAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
 	__SETPAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
@@ -369,6 +395,7 @@ PAGEFLAG_FALSE(Uncached)
 PAGEFLAG(HWPoison, hwpoison, PF_ANY)
 TESTSCFLAG(HWPoison, hwpoison, PF_ANY)
 #define __PG_HWPOISON (1UL << PG_hwpoison)
+extern bool take_page_off_buddy(struct page *page);
 #else
 PAGEFLAG_FALSE(HWPoison)
 #define __PG_HWPOISON 0
@@ -380,6 +407,14 @@ SETPAGEFLAG(Young, young, PF_ANY)
 TESTCLEARFLAG(Young, young, PF_ANY)
 PAGEFLAG(Idle, idle, PF_ANY)
 #endif
+
+/*
+ * PageReported() is used to track reported free pages within the Buddy
+ * allocator. We can use the non-atomic version of the test and set
+ * operations as both should be shielded with the zone lock to prevent
+ * any possible races on the setting or clearing of the bit.
+ */
+__PAGEFLAG(Reported, reported, PF_NO_COMPOUND)
 
 /*
  * On an anonymous page mapped into a user virtual memory area,
@@ -572,12 +607,28 @@ static inline int PageTransCompound(struct page *page)
  *
  * Unlike PageTransCompound, this is safe to be called only while
  * split_huge_pmd() cannot run from under us, like if protected by the
- * MMU notifier, otherwise it may result in page->_mapcount < 0 false
+ * MMU notifier, otherwise it may result in page->_mapcount check false
  * positives.
+ *
+ * We have to treat page cache THP differently since every subpage of it
+ * would get _mapcount inc'ed once it is PMD mapped.  But, it may be PTE
+ * mapped in the current process so comparing subpage's _mapcount to
+ * compound_mapcount to filter out PTE mapped case.
  */
 static inline int PageTransCompoundMap(struct page *page)
 {
-	return PageTransCompound(page) && atomic_read(&page->_mapcount) < 0;
+	struct page *head;
+
+	if (!PageTransCompound(page))
+		return 0;
+
+	if (PageAnon(page))
+		return atomic_read(&page->_mapcount) < 0;
+
+	head = compound_head(page);
+	/* File THP is PMD mapped and not PTE mapped */
+	return atomic_read(&page->_mapcount) ==
+	       atomic_read(compound_mapcount_ptr(head));
 }
 
 /*
@@ -652,13 +703,20 @@ PAGEFLAG_FALSE(DoubleMap)
 
 #define PAGE_TYPE_BASE	0xf0000000
 /* Reserve		0x0000007f to catch underflows of page_mapcount */
+#define PAGE_MAPCOUNT_RESERVE	-128
 #define PG_buddy	0x00000080
-#define PG_balloon	0x00000100
+#define PG_offline	0x00000100
 #define PG_kmemcg	0x00000200
 #define PG_table	0x00000400
+#define PG_guard	0x00000800
 
 #define PageType(page, flag)						\
 	((page->page_type & (PAGE_TYPE_BASE | flag)) == PAGE_TYPE_BASE)
+
+static inline int page_has_type(struct page *page)
+{
+	return (int)page->page_type < PAGE_MAPCOUNT_RESERVE;
+}
 
 #define PAGE_TYPE_OPS(uname, lname)					\
 static __always_inline int Page##uname(struct page *page)		\
@@ -683,10 +741,13 @@ static __always_inline void __ClearPage##uname(struct page *page)	\
 PAGE_TYPE_OPS(Buddy, buddy)
 
 /*
- * PageBalloon() is true for pages that are on the balloon page list
- * (see mm/balloon_compaction.c).
+ * PageOffline() indicates that the page is logically offline although the
+ * containing section is online. (e.g. inflated in a balloon driver or
+ * not onlined when onlining the section).
+ * The content of these pages is effectively stale. Such pages should not
+ * be touched (read/write/dump/save) except by their owner.
  */
-PAGE_TYPE_OPS(Balloon, balloon)
+PAGE_TYPE_OPS(Offline, offline)
 
 /*
  * If kmemcg is enabled, the buddy allocator will set PageKmemcg() on
@@ -698,6 +759,11 @@ PAGE_TYPE_OPS(Kmemcg, kmemcg)
  * Marks pages in use as page tables.
  */
 PAGE_TYPE_OPS(Table, table)
+
+/*
+ * Marks guardpages used with debug_pagealloc.
+ */
+PAGE_TYPE_OPS(Guard, guard)
 
 extern bool is_free_buddy_page(struct page *page);
 

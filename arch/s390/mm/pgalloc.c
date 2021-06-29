@@ -28,7 +28,7 @@ static struct ctl_table page_table_sysctl[] = {
 		.data		= &page_table_allocate_pgste,
 		.maxlen		= sizeof(int),
 		.mode		= S_IRUGO | S_IWUSR,
-		.proc_handler	= proc_dointvec,
+		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &page_table_allocate_pgste_min,
 		.extra2		= &page_table_allocate_pgste_max,
 	},
@@ -72,8 +72,20 @@ static void __crst_table_upgrade(void *arg)
 {
 	struct mm_struct *mm = arg;
 
-	if (current->active_mm == mm)
-		set_user_asce(mm);
+	/* we must change all active ASCEs to avoid the creation of new TLBs */
+	if (current->active_mm == mm) {
+		S390_lowcore.user_asce = mm->context.asce;
+		if (current->thread.mm_segment == USER_DS) {
+			__ctl_load(S390_lowcore.user_asce, 1, 1);
+			/* Mark user-ASCE present in CR1 */
+			clear_cpu_flag(CIF_ASCE_PRIMARY);
+		}
+		if (current->thread.mm_segment == USER_DS_SACF) {
+			__ctl_load(S390_lowcore.user_asce, 7, 7);
+			/* enable_sacf_uaccess does all or nothing */
+			WARN_ON(!test_cpu_flag(CIF_ASCE_SECONDARY));
+		}
+	}
 	__tlb_flush_local();
 }
 
@@ -101,6 +113,7 @@ int crst_table_upgrade(struct mm_struct *mm, unsigned long end)
 			mm->context.asce_limit = _REGION1_SIZE;
 			mm->context.asce = __pa(mm->pgd) | _ASCE_TABLE_LENGTH |
 				_ASCE_USER_BITS | _ASCE_TYPE_REGION2;
+			mm_inc_nr_puds(mm);
 		} else {
 			crst_table_init(table, _REGION1_ENTRY_EMPTY);
 			pgd_populate(mm, (pgd_t *) table, (p4d_t *) pgd);
@@ -288,7 +301,7 @@ void page_table_free_rcu(struct mmu_gather *tlb, unsigned long *table,
 	tlb_remove_table(tlb, table);
 }
 
-static void __tlb_remove_table(void *_table)
+void __tlb_remove_table(void *_table)
 {
 	unsigned int mask = (unsigned long) _table & 3;
 	void *table = (void *)((unsigned long) _table ^ mask);
@@ -312,67 +325,6 @@ static void __tlb_remove_table(void *_table)
 		__free_page(page);
 		break;
 	}
-}
-
-static void tlb_remove_table_smp_sync(void *arg)
-{
-	/* Simply deliver the interrupt */
-}
-
-static void tlb_remove_table_one(void *table)
-{
-	/*
-	 * This isn't an RCU grace period and hence the page-tables cannot be
-	 * assumed to be actually RCU-freed.
-	 *
-	 * It is however sufficient for software page-table walkers that rely
-	 * on IRQ disabling. See the comment near struct mmu_table_batch.
-	 */
-	smp_call_function(tlb_remove_table_smp_sync, NULL, 1);
-	__tlb_remove_table(table);
-}
-
-static void tlb_remove_table_rcu(struct rcu_head *head)
-{
-	struct mmu_table_batch *batch;
-	int i;
-
-	batch = container_of(head, struct mmu_table_batch, rcu);
-
-	for (i = 0; i < batch->nr; i++)
-		__tlb_remove_table(batch->tables[i]);
-
-	free_page((unsigned long)batch);
-}
-
-void tlb_table_flush(struct mmu_gather *tlb)
-{
-	struct mmu_table_batch **batch = &tlb->batch;
-
-	if (*batch) {
-		call_rcu_sched(&(*batch)->rcu, tlb_remove_table_rcu);
-		*batch = NULL;
-	}
-}
-
-void tlb_remove_table(struct mmu_gather *tlb, void *table)
-{
-	struct mmu_table_batch **batch = &tlb->batch;
-
-	tlb->mm->context.flush_mm = 1;
-	if (*batch == NULL) {
-		*batch = (struct mmu_table_batch *)
-			__get_free_page(GFP_NOWAIT | __GFP_NOWARN);
-		if (*batch == NULL) {
-			__tlb_flush_mm_lazy(tlb->mm);
-			tlb_remove_table_one(table);
-			return;
-		}
-		(*batch)->nr = 0;
-	}
-	(*batch)->tables[(*batch)->nr++] = table;
-	if ((*batch)->nr == MAX_TABLE_BATCH)
-		tlb_flush_mmu(tlb);
 }
 
 /*

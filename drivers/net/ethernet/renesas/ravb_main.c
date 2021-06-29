@@ -730,7 +730,6 @@ static irqreturn_t ravb_emac_interrupt(int irq, void *dev_id)
 
 	spin_lock(&priv->lock);
 	ravb_emac_interrupt_unlocked(ndev);
-	mmiowb();
 	spin_unlock(&priv->lock);
 	return IRQ_HANDLED;
 }
@@ -849,7 +848,6 @@ static irqreturn_t ravb_interrupt(int irq, void *dev_id)
 		result = IRQ_HANDLED;
 	}
 
-	mmiowb();
 	spin_unlock(&priv->lock);
 	return result;
 }
@@ -882,7 +880,6 @@ static irqreturn_t ravb_multi_interrupt(int irq, void *dev_id)
 		result = IRQ_HANDLED;
 	}
 
-	mmiowb();
 	spin_unlock(&priv->lock);
 	return result;
 }
@@ -899,7 +896,6 @@ static irqreturn_t ravb_dma_interrupt(int irq, void *dev_id, int q)
 	if (ravb_queue_interrupt(ndev, q))
 		result = IRQ_HANDLED;
 
-	mmiowb();
 	spin_unlock(&priv->lock);
 	return result;
 }
@@ -944,7 +940,6 @@ static int ravb_poll(struct napi_struct *napi, int budget)
 			ravb_write(ndev, ~mask, TIS);
 			ravb_tx_free(ndev, q, true);
 			netif_wake_subqueue(ndev, q);
-			mmiowb();
 			spin_unlock_irqrestore(&priv->lock, flags);
 		}
 	}
@@ -960,7 +955,6 @@ static int ravb_poll(struct napi_struct *napi, int budget)
 		ravb_write(ndev, mask, RIE0);
 		ravb_write(ndev, mask, TIE);
 	}
-	mmiowb();
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	/* Receive error message handling */
@@ -1016,7 +1010,6 @@ static void ravb_adjust_link(struct net_device *ndev)
 	if (priv->no_avb_link && phydev->link)
 		ravb_rcv_snd_enable(ndev);
 
-	mmiowb();
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	if (new_state && netif_msg_link(priv))
@@ -1076,8 +1069,11 @@ static int ravb_phy_init(struct net_device *ndev)
 		netdev_info(ndev, "limited PHY to 100Mbit/s\n");
 	}
 
-	/* 10BASE is not supported */
-	phydev->supported &= ~PHY_10BT_FEATURES;
+	/* 10BASE, Pause and Asym Pause is not supported */
+	phy_remove_link_mode(phydev, ETHTOOL_LINK_MODE_10baseT_Half_BIT);
+	phy_remove_link_mode(phydev, ETHTOOL_LINK_MODE_10baseT_Full_BIT);
+	phy_remove_link_mode(phydev, ETHTOOL_LINK_MODE_Pause_BIT);
+	phy_remove_link_mode(phydev, ETHTOOL_LINK_MODE_Asym_Pause_BIT);
 
 	phy_attached_info(phydev);
 
@@ -1440,7 +1436,7 @@ out_napi_off:
 }
 
 /* Timeout function for Ethernet AVB */
-static void ravb_tx_timeout(struct net_device *ndev)
+static void ravb_tx_timeout(struct net_device *ndev, unsigned int txqueue)
 {
 	struct ravb_private *priv = netdev_priv(ndev);
 
@@ -1583,7 +1579,6 @@ static netdev_tx_t ravb_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 		netif_stop_subqueue(ndev, q);
 
 exit:
-	mmiowb();
 	spin_unlock_irqrestore(&priv->lock, flags);
 	return NETDEV_TX_OK;
 
@@ -1597,7 +1592,8 @@ drop:
 }
 
 static u16 ravb_select_queue(struct net_device *ndev, struct sk_buff *skb,
-			     void *accel_priv, select_queue_fallback_t fallback)
+			     struct net_device *sb_dev,
+			     select_queue_fallback_t fallback)
 {
 	/* If skb needs TX timestamp, it is handled in network control queue */
 	return (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) ? RAVB_NC :
@@ -1654,7 +1650,6 @@ static void ravb_set_rx_mode(struct net_device *ndev)
 	spin_lock_irqsave(&priv->lock, flags);
 	ravb_modify(ndev, ECMR, ECMR_PRM,
 		    ndev->flags & IFF_PROMISC ? ECMR_PRM : 0);
-	mmiowb();
 	spin_unlock_irqrestore(&priv->lock, flags);
 }
 

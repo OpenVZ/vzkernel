@@ -44,7 +44,7 @@ void __user *get_sigframe(struct ksignal *ksig, unsigned long sp,
 	newsp = (oldsp - frame_size) & ~0xFUL;
 
 	/* Check access */
-	if (!access_ok(VERIFY_WRITE, (void __user *)newsp, oldsp - newsp))
+	if (!access_ok((void __user *)newsp, oldsp - newsp))
 		return NULL;
 
         return (void __user *)newsp;
@@ -122,15 +122,20 @@ static void do_signal(struct task_struct *tsk)
 		return;               /* no signals delivered */
 	}
 
-#ifndef CONFIG_PPC_ADV_DEBUG_REGS
         /*
 	 * Reenable the DABR before delivering the signal to
 	 * user space. The DABR will have been cleared if it
 	 * triggered inside the kernel.
 	 */
-	if (tsk->thread.hw_brk.address && tsk->thread.hw_brk.type)
-		__set_breakpoint(&tsk->thread.hw_brk);
-#endif
+	if (!IS_ENABLED(CONFIG_PPC_ADV_DEBUG_REGS)) {
+		int i;
+
+		for (i = 0; i < nr_wp_slots(); i++) {
+			if (tsk->thread.hw_brk[i].address && tsk->thread.hw_brk[i].type)
+				__set_breakpoint(i, &tsk->thread.hw_brk[i]);
+		}
+	}
+
 	/* Re-enable the breakpoints for the signal stack */
 	thread_change_pc(tsk, tsk->thread.regs);
 
@@ -200,14 +205,27 @@ unsigned long get_tm_stackpointer(struct task_struct *tsk)
 	 * normal/non-checkpointed stack pointer.
 	 */
 
+	unsigned long ret = tsk->thread.regs->gpr[1];
+
 #ifdef CONFIG_PPC_TRANSACTIONAL_MEM
 	BUG_ON(tsk != current);
 
 	if (MSR_TM_ACTIVE(tsk->thread.regs->msr)) {
+		preempt_disable();
 		tm_reclaim_current(TM_CAUSE_SIGNAL);
 		if (MSR_TM_TRANSACTIONAL(tsk->thread.regs->msr))
-			return tsk->thread.ckpt_regs.gpr[1];
+			ret = tsk->thread.ckpt_regs.gpr[1];
+
+		/*
+		 * If we treclaim, we must clear the current thread's TM bits
+		 * before re-enabling preemption. Otherwise we might be
+		 * preempted and have the live MSR[TS] changed behind our back
+		 * (tm_recheckpoint_new_task() would recheckpoint). Besides, we
+		 * enter the signal handler in non-transactional state.
+		 */
+		tsk->thread.regs->msr &= ~MSR_TS_MASK;
+		preempt_enable();
 	}
 #endif
-	return tsk->thread.regs->gpr[1];
+	return ret;
 }

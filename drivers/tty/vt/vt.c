@@ -317,6 +317,171 @@ void schedule_console_callback(void)
 	schedule_work(&console_work);
 }
 
+/*
+ * Code to manage unicode-based screen buffers
+ */
+
+#ifdef NO_VC_UNI_SCREEN
+/* this disables and optimizes related code away at compile time */
+#define get_vc_uniscr(vc) NULL
+#else
+#define get_vc_uniscr(vc) vc->vc_uni_screen
+#endif
+
+typedef uint32_t char32_t;
+
+/*
+ * Our screen buffer is preceded by an array of line pointers so that
+ * scrolling only implies some pointer shuffling.
+ */
+struct uni_screen {
+	char32_t *lines[0];
+};
+
+static struct uni_screen *vc_uniscr_alloc(unsigned int cols, unsigned int rows)
+{
+	struct uni_screen *uniscr;
+	void *p;
+	unsigned int memsize, i;
+
+	/* allocate everything in one go */
+	memsize = cols * rows * sizeof(char32_t);
+	memsize += rows * sizeof(char32_t *);
+	p = kmalloc(memsize, GFP_KERNEL);
+	if (!p)
+		return NULL;
+
+	/* initial line pointers */
+	uniscr = p;
+	p = uniscr->lines + rows;
+	for (i = 0; i < rows; i++) {
+		uniscr->lines[i] = p;
+		p += cols * sizeof(char32_t);
+	}
+	return uniscr;
+}
+
+static void vc_uniscr_set(struct vc_data *vc, struct uni_screen *new_uniscr)
+{
+	kfree(vc->vc_uni_screen);
+	vc->vc_uni_screen = new_uniscr;
+}
+
+static void vc_uniscr_putc(struct vc_data *vc, char32_t uc)
+{
+	struct uni_screen *uniscr = get_vc_uniscr(vc);
+
+	if (uniscr)
+		uniscr->lines[vc->vc_y][vc->vc_x] = uc;
+}
+
+static void vc_uniscr_insert(struct vc_data *vc, unsigned int nr)
+{
+	struct uni_screen *uniscr = get_vc_uniscr(vc);
+
+	if (uniscr) {
+		char32_t *ln = uniscr->lines[vc->vc_y];
+		unsigned int x = vc->vc_x, cols = vc->vc_cols;
+
+		memmove(&ln[x + nr], &ln[x], (cols - x - nr) * sizeof(*ln));
+		memset32(&ln[x], ' ', nr);
+	}
+}
+
+static void vc_uniscr_delete(struct vc_data *vc, unsigned int nr)
+{
+	struct uni_screen *uniscr = get_vc_uniscr(vc);
+
+	if (uniscr) {
+		char32_t *ln = uniscr->lines[vc->vc_y];
+		unsigned int x = vc->vc_x, cols = vc->vc_cols;
+
+		memcpy(&ln[x], &ln[x + nr], (cols - x - nr) * sizeof(*ln));
+		memset32(&ln[cols - nr], ' ', nr);
+	}
+}
+
+static void vc_uniscr_clear_line(struct vc_data *vc, unsigned int x,
+				 unsigned int nr)
+{
+	struct uni_screen *uniscr = get_vc_uniscr(vc);
+
+	if (uniscr) {
+		char32_t *ln = uniscr->lines[vc->vc_y];
+
+		memset32(&ln[x], ' ', nr);
+	}
+}
+
+static void vc_uniscr_clear_lines(struct vc_data *vc, unsigned int y,
+				  unsigned int nr)
+{
+	struct uni_screen *uniscr = get_vc_uniscr(vc);
+
+	if (uniscr) {
+		unsigned int cols = vc->vc_cols;
+
+		while (nr--)
+			memset32(uniscr->lines[y++], ' ', cols);
+	}
+}
+
+static void vc_uniscr_scroll(struct vc_data *vc, unsigned int t, unsigned int b,
+			     enum con_scroll dir, unsigned int nr)
+{
+	struct uni_screen *uniscr = get_vc_uniscr(vc);
+
+	if (uniscr) {
+		unsigned int s, d, rescue, clear;
+		char32_t *save[nr];
+
+		s = clear = t;
+		d = t + nr;
+		rescue = b - nr;
+		if (dir == SM_UP) {
+			swap(s, d);
+			swap(clear, rescue);
+		}
+		memcpy(save, uniscr->lines + rescue, nr * sizeof(*save));
+		memmove(uniscr->lines + d, uniscr->lines + s,
+			(b - t - nr) * sizeof(*uniscr->lines));
+		memcpy(uniscr->lines + clear, save, nr * sizeof(*save));
+		vc_uniscr_clear_lines(vc, clear, nr);
+	}
+}
+
+static void vc_uniscr_copy_area(struct uni_screen *dst,
+				unsigned int dst_cols,
+				unsigned int dst_rows,
+				struct uni_screen *src,
+				unsigned int src_cols,
+				unsigned int src_top_row,
+				unsigned int src_bot_row)
+{
+	unsigned int dst_row = 0;
+
+	if (!dst)
+		return;
+
+	while (src_top_row < src_bot_row) {
+		char32_t *src_line = src->lines[src_top_row];
+		char32_t *dst_line = dst->lines[dst_row];
+
+		memcpy(dst_line, src_line, src_cols * sizeof(char32_t));
+		if (dst_cols - src_cols)
+			memset32(dst_line + src_cols, ' ', dst_cols - src_cols);
+		src_top_row++;
+		dst_row++;
+	}
+	while (dst_row < dst_rows) {
+		char32_t *dst_line = dst->lines[dst_row];
+
+		memset32(dst_line, ' ', dst_cols);
+		dst_row++;
+	}
+}
+
+
 static void con_scroll(struct vc_data *vc, unsigned int t, unsigned int b,
 		enum con_scroll dir, unsigned int nr)
 {
@@ -326,6 +491,7 @@ static void con_scroll(struct vc_data *vc, unsigned int t, unsigned int b,
 		nr = b - t - 1;
 	if (b > vc->vc_rows || t >= b || nr < 1)
 		return;
+	vc_uniscr_scroll(vc, t, b, dir, nr);
 	if (con_is_visible(vc) && vc->vc_sw->con_scroll(vc, t, b, dir, nr))
 		return;
 
@@ -533,6 +699,7 @@ static void insert_char(struct vc_data *vc, unsigned int nr)
 {
 	unsigned short *p = (unsigned short *) vc->vc_pos;
 
+	vc_uniscr_insert(vc, nr);
 	scr_memmovew(p + nr, p, (vc->vc_cols - vc->vc_x - nr) * 2);
 	scr_memsetw(p, vc->vc_video_erase_char, nr * 2);
 	vc->vc_need_wrap = 0;
@@ -545,6 +712,7 @@ static void delete_char(struct vc_data *vc, unsigned int nr)
 {
 	unsigned short *p = (unsigned short *) vc->vc_pos;
 
+	vc_uniscr_delete(vc, nr);
 	scr_memcpyw(p, p + nr, (vc->vc_cols - vc->vc_x - nr) * 2);
 	scr_memsetw(p + vc->vc_cols - vc->vc_x - nr, vc->vc_video_erase_char,
 			nr * 2);
@@ -586,8 +754,9 @@ static void hide_softcursor(struct vc_data *vc)
 
 static void hide_cursor(struct vc_data *vc)
 {
-	if (vc == sel_cons)
+	if (vc_is_sel(vc))
 		clear_selection();
+
 	vc->vc_sw->con_cursor(vc, CM_ERASE);
 	hide_softcursor(vc);
 }
@@ -597,7 +766,7 @@ static void set_cursor(struct vc_data *vc)
 	if (!con_is_fg(vc) || console_blanked || vc->vc_mode == KD_GRAPHICS)
 		return;
 	if (vc->vc_deccm) {
-		if (vc == sel_cons)
+		if (vc_is_sel(vc))
 			clear_selection();
 		add_softcursor(vc);
 		if ((vc->vc_cursor_type & 0x0f) != 1)
@@ -700,9 +869,7 @@ void redraw_screen(struct vc_data *vc, int is_switch)
 			clear_buffer_attributes(vc);
 		}
 
-		/* Forcibly update if we're panicing */
-		if ((update && vc->vc_mode != KD_GRAPHICS) ||
-		    vt_force_oops_output(vc))
+		if (update && vc->vc_mode != KD_GRAPHICS)
 			do_update_region(vc, vc->vc_origin, vc->vc_screenbuf_size / 2);
 	}
 	set_cursor(vc);
@@ -742,7 +909,6 @@ static void visual_init(struct vc_data *vc, int num, int init)
 	vc->vc_hi_font_mask = 0;
 	vc->vc_complement_mask = 0;
 	vc->vc_can_do_color = 0;
-	vc->vc_panic_force_write = false;
 	vc->vc_cur_blink_ms = DEFAULT_CURSOR_BLINK_MS;
 	vc->vc_sw->con_init(vc, init);
 	if (!vc->vc_complement_mask)
@@ -751,6 +917,24 @@ static void visual_init(struct vc_data *vc, int num, int init)
 	vc->vc_size_row = vc->vc_cols << 1;
 	vc->vc_screenbuf_size = vc->vc_rows * vc->vc_size_row;
 }
+
+
+static void visual_deinit(struct vc_data *vc)
+{
+	vc->vc_sw->con_deinit(vc);
+	module_put(vc->vc_sw->owner);
+}
+
+static void vc_port_destruct(struct tty_port *port)
+{
+	struct vc_data *vc = container_of(port, struct vc_data, port);
+
+	kfree(vc);
+}
+
+static const struct tty_port_operations vc_port_ops = {
+	.destruct = vc_port_destruct,
+};
 
 int vc_allocate(unsigned int currcons)	/* return 0 on success */
 {
@@ -777,6 +961,7 @@ int vc_allocate(unsigned int currcons)	/* return 0 on success */
 
 	vc_cons[currcons].d = vc;
 	tty_port_init(&vc->port);
+	vc->port.ops = &vc_port_ops;
 	INIT_WORK(&vc_cons[currcons].SAK_work, vc_SAK);
 
 	visual_init(vc, currcons, 1);
@@ -799,6 +984,7 @@ int vc_allocate(unsigned int currcons)	/* return 0 on success */
 
 	return 0;
 err_free:
+	visual_deinit(vc);
 	kfree(vc);
 	vc_cons[currcons].d = NULL;
 	return -ENOMEM;
@@ -845,10 +1031,11 @@ static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
 {
 	unsigned long old_origin, new_origin, new_scr_end, rlth, rrem, err = 0;
 	unsigned long end;
-	unsigned int old_rows, old_row_size;
+	unsigned int old_rows, old_row_size, first_copied_row;
 	unsigned int new_cols, new_rows, new_row_size, new_screen_size;
 	unsigned int user;
 	unsigned short *newscreen;
+	struct uni_screen *new_uniscr = NULL;
 
 	WARN_CONSOLE_UNLOCKED();
 
@@ -875,7 +1062,15 @@ static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
 	if (!newscreen)
 		return -ENOMEM;
 
-	if (vc == sel_cons)
+	if (get_vc_uniscr(vc)) {
+		new_uniscr = vc_uniscr_alloc(new_cols, new_rows);
+		if (!new_uniscr) {
+			kfree(newscreen);
+			return -ENOMEM;
+		}
+	}
+
+	if (vc_is_sel(vc))
 		clear_selection();
 
 	old_rows = vc->vc_rows;
@@ -884,6 +1079,7 @@ static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
 	err = resize_screen(vc, new_cols, new_rows, user);
 	if (err) {
 		kfree(newscreen);
+		kfree(new_uniscr);
 		return err;
 	}
 
@@ -904,17 +1100,23 @@ static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
 			 * Cursor near the bottom, copy contents from the
 			 * bottom of buffer
 			 */
-			old_origin += (old_rows - new_rows) * old_row_size;
+			first_copied_row = (old_rows - new_rows);
 		} else {
 			/*
 			 * Cursor is in no man's land, copy 1/2 screenful
 			 * from the top and bottom of cursor position
 			 */
-			old_origin += (vc->vc_y - new_rows/2) * old_row_size;
+			first_copied_row = (vc->vc_y - new_rows/2);
 		}
-	}
-
+		old_origin += first_copied_row * old_row_size;
+	} else
+		first_copied_row = 0;
 	end = old_origin + old_row_size * min(old_rows, new_rows);
+
+	vc_uniscr_copy_area(new_uniscr, new_cols, new_rows,
+			    get_vc_uniscr(vc), rlth/2, first_copied_row,
+			    min(old_rows, new_rows));
+	vc_uniscr_set(vc, new_uniscr);
 
 	update_attr(vc);
 
@@ -1010,9 +1212,9 @@ struct vc_data *vc_deallocate(unsigned int currcons)
 		param.vc = vc = vc_cons[currcons].d;
 		atomic_notifier_call_chain(&vt_notifier_list, VT_DEALLOCATE, &param);
 		vcs_remove_sysfs(currcons);
-		vc->vc_sw->con_deinit(vc);
+		visual_deinit(vc);
 		put_pid(vc->vt_pid);
-		module_put(vc->vc_sw->owner);
+		vc_uniscr_set(vc, NULL);
 		kfree(vc->vc_screenbuf);
 		vc_cons[currcons].d = NULL;
 	}
@@ -1171,15 +1373,22 @@ static void csi_J(struct vc_data *vc, int vpar)
 
 	switch (vpar) {
 		case 0:	/* erase from cursor to end of display */
+			vc_uniscr_clear_line(vc, vc->vc_x,
+					     vc->vc_cols - vc->vc_x);
+			vc_uniscr_clear_lines(vc, vc->vc_y + 1,
+					      vc->vc_rows - vc->vc_y - 1);
 			count = (vc->vc_scr_end - vc->vc_pos) >> 1;
 			start = (unsigned short *)vc->vc_pos;
 			break;
 		case 1:	/* erase from start to cursor */
+			vc_uniscr_clear_line(vc, 0, vc->vc_x + 1);
+			vc_uniscr_clear_lines(vc, 0, vc->vc_y);
 			count = ((vc->vc_pos - vc->vc_origin) >> 1) + 1;
 			start = (unsigned short *)vc->vc_origin;
 			break;
 		case 2: /* erase whole display */
 		case 3: /* (and scrollback buffer later) */
+			vc_uniscr_clear_lines(vc, 0, vc->vc_rows);
 			count = vc->vc_cols * vc->vc_rows;
 			start = (unsigned short *)vc->vc_origin;
 			break;
@@ -1200,28 +1409,30 @@ static void csi_J(struct vc_data *vc, int vpar)
 static void csi_K(struct vc_data *vc, int vpar)
 {
 	unsigned int count;
-	unsigned short * start;
+	unsigned short *start = (unsigned short *)vc->vc_pos;
+	int offset;
 
 	switch (vpar) {
 		case 0:	/* erase from cursor to end of line */
+			offset = 0;
 			count = vc->vc_cols - vc->vc_x;
-			start = (unsigned short *)vc->vc_pos;
 			break;
 		case 1:	/* erase from start of line to cursor */
-			start = (unsigned short *)(vc->vc_pos - (vc->vc_x << 1));
+			offset = -vc->vc_x;
 			count = vc->vc_x + 1;
 			break;
 		case 2: /* erase whole line */
-			start = (unsigned short *)(vc->vc_pos - (vc->vc_x << 1));
+			offset = -vc->vc_x;
 			count = vc->vc_cols;
 			break;
 		default:
 			return;
 	}
-	scr_memsetw(start, vc->vc_video_erase_char, 2 * count);
+	vc_uniscr_clear_line(vc, vc->vc_x + offset, count);
+	scr_memsetw(start + offset, vc->vc_video_erase_char, 2 * count);
 	vc->vc_need_wrap = 0;
 	if (con_should_update(vc))
-		do_update_region(vc, (unsigned long) start, count);
+		do_update_region(vc, (unsigned long)(start + offset), count);
 }
 
 static void csi_X(struct vc_data *vc, int vpar) /* erase the following vpar positions */
@@ -1232,6 +1443,7 @@ static void csi_X(struct vc_data *vc, int vpar) /* erase the following vpar posi
 		vpar++;
 	count = (vpar > vc->vc_cols - vc->vc_x) ? (vc->vc_cols - vc->vc_x) : vpar;
 
+	vc_uniscr_clear_line(vc, vc->vc_x, count);
 	scr_memsetw((unsigned short *)vc->vc_pos, vc->vc_video_erase_char, 2 * count);
 	if (con_should_update(vc))
 		vc->vc_sw->con_clear(vc, vc->vc_y, vc->vc_x, 1, count);
@@ -1474,7 +1686,7 @@ void mouse_report(struct tty_struct *tty, int butt, int mrx, int mry)
 	respond_string(buf, tty->port);
 }
 
-/* invoked via ioctl(TIOCLINUX) and through set_selection */
+/* invoked via ioctl(TIOCLINUX) and through set_selection_user */
 int mouse_reporting(void)
 {
 	return vc_cons[fg_console].d->vc_report_mouse;
@@ -2188,7 +2400,7 @@ static void con_flush(struct vc_data *vc, unsigned long draw_from,
 /* acquires console_lock */
 static int do_con_write(struct tty_struct *tty, const unsigned char *buf, int count)
 {
-	int c, tc, ok, n = 0, draw_x = -1;
+	int c, next_c, tc, ok, n = 0, draw_x = -1;
 	unsigned int currcons;
 	unsigned long draw_from = 0, draw_to = 0;
 	struct vc_data *vc;
@@ -2382,6 +2594,7 @@ rescan_last_byte:
 				con_flush(vc, draw_from, draw_to, &draw_x);
 			}
 
+			next_c = c;
 			while (1) {
 				if (vc->vc_need_wrap || vc->vc_decim)
 					con_flush(vc, draw_from, draw_to,
@@ -2392,6 +2605,7 @@ rescan_last_byte:
 				}
 				if (vc->vc_decim)
 					insert_char(vc, 1);
+				vc_uniscr_putc(vc, next_c);
 				scr_writew(himask ?
 					     ((vc_attr << 8) & ~himask) + ((tc & 0x100) ? himask : 0) + (tc & 0xff) :
 					     (vc_attr << 8) + tc,
@@ -2412,6 +2626,7 @@ rescan_last_byte:
 
 				tc = conv_uni_to_pc(vc, ' '); /* A space is printed in the second column */
 				if (tc < 0) tc = ' ';
+				next_c = ' ';
 			}
 			notify_write(vc, c);
 
@@ -2576,7 +2791,7 @@ static void vt_console_print(struct console *co, const char *b, unsigned count)
 		goto quit;
 	}
 
-	if (vc->vc_mode != KD_TEXT && !vt_force_oops_output(vc))
+	if (vc->vc_mode != KD_TEXT)
 		goto quit;
 
 	/* undraw cursor first */
@@ -2666,7 +2881,7 @@ static struct console vt_console_driver = {
  * There are some functions which can sleep for arbitrary periods
  * (paste_selection) but we don't need the lock there anyway.
  *
- * set_selection has locking, and definitely needs it
+ * set_selection_user has locking, and definitely needs it
  */
 
 int tioclinux(struct tty_struct *tty, unsigned long arg)
@@ -2685,9 +2900,8 @@ int tioclinux(struct tty_struct *tty, unsigned long arg)
 	switch (type)
 	{
 		case TIOCL_SETSEL:
-			console_lock();
-			ret = set_selection((struct tiocl_selection __user *)(p+1), tty);
-			console_unlock();
+			ret = set_selection_user((struct tiocl_selection
+						 __user *)(p+1), tty);
 			break;
 		case TIOCL_PASTESEL:
 			ret = paste_selection(tty);
@@ -2893,6 +3107,7 @@ static int con_install(struct tty_driver *driver, struct tty_struct *tty)
 
 	tty->driver_data = vc;
 	vc->port.tty = tty;
+	tty_port_get(&vc->port);
 
 	if (!tty->winsize.ws_row && !tty->winsize.ws_col) {
 		tty->winsize.ws_row = vc_cons[currcons].d->vc_rows;
@@ -2926,6 +3141,13 @@ static void con_shutdown(struct tty_struct *tty)
 	console_lock();
 	vc->port.tty = NULL;
 	console_unlock();
+}
+
+static void con_cleanup(struct tty_struct *tty)
+{
+	struct vc_data *vc = tty->driver_data;
+
+	tty_port_put(&vc->port);
 }
 
 static int default_color           = 7; /* white */
@@ -3052,7 +3274,8 @@ static const struct tty_operations con_ops = {
 	.throttle = con_throttle,
 	.unthrottle = con_unthrottle,
 	.resize = vt_resize,
-	.shutdown = con_shutdown
+	.shutdown = con_shutdown,
+	.cleanup = con_cleanup,
 };
 
 static struct cdev vc0_cdev;
@@ -3894,8 +4117,7 @@ void do_unblank_screen(int leaving_gfx)
 		return;
 	}
 	vc = vc_cons[fg_console].d;
-	/* Try to unblank in oops case too */
-	if (vc->vc_mode != KD_TEXT && !vt_force_oops_output(vc))
+	if (vc->vc_mode != KD_TEXT)
 		return; /* but leave console_blanked != 0 */
 
 	if (blankinterval) {
@@ -3904,7 +4126,7 @@ void do_unblank_screen(int leaving_gfx)
 	}
 
 	console_blanked = 0;
-	if (vc->vc_sw->con_blank(vc, 0, leaving_gfx) || vt_force_oops_output(vc))
+	if (vc->vc_sw->con_blank(vc, 0, leaving_gfx))
 		/* Low-level driver cannot restore -> do it ourselves */
 		update_screen(vc);
 	if (console_blank_hook)
@@ -4205,27 +4427,6 @@ static int con_font_default(struct vc_data *vc, struct console_font_op *op)
 	return rc;
 }
 
-static int con_font_copy(struct vc_data *vc, struct console_font_op *op)
-{
-	int con = op->height;
-	int rc;
-
-
-	console_lock();
-	if (vc->vc_mode != KD_TEXT)
-		rc = -EINVAL;
-	else if (!vc->vc_sw->con_font_copy)
-		rc = -ENOSYS;
-	else if (con < 0 || !vc_cons_allocated(con))
-		rc = -ENOTTY;
-	else if (con == vc->vc_num)	/* nothing to do */
-		rc = 0;
-	else
-		rc = vc->vc_sw->con_font_copy(vc, con);
-	console_unlock();
-	return rc;
-}
-
 int con_font_op(struct vc_data *vc, struct console_font_op *op)
 {
 	switch (op->op) {
@@ -4236,7 +4437,8 @@ int con_font_op(struct vc_data *vc, struct console_font_op *op)
 	case KD_FONT_OP_SET_DEFAULT:
 		return con_font_default(vc, op);
 	case KD_FONT_OP_COPY:
-		return con_font_copy(vc, op);
+		/* was buggy and never really used */
+		return -EINVAL;
 	}
 	return -ENOSYS;
 }
@@ -4256,6 +4458,16 @@ u16 screen_glyph(struct vc_data *vc, int offset)
 	return c;
 }
 EXPORT_SYMBOL_GPL(screen_glyph);
+
+u32 screen_glyph_unicode(struct vc_data *vc, int n)
+{
+	struct uni_screen *uniscr = get_vc_uniscr(vc);
+
+	if (uniscr)
+		return uniscr->lines[n / vc->vc_cols][n % vc->vc_cols];
+	return inverse_translate(vc, screen_glyph(vc, n * 2), 1);
+}
+EXPORT_SYMBOL_GPL(screen_glyph_unicode);
 
 /* used by vcs - note the word offset */
 unsigned short *screen_pos(struct vc_data *vc, int w_offset, int viewed)

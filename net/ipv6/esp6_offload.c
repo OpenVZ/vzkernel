@@ -49,8 +49,8 @@ static __u16 esp6_nexthdr_esp_offset(struct ipv6hdr *ipv6_hdr, int nhlen)
 	return 0;
 }
 
-static struct sk_buff **esp6_gro_receive(struct sk_buff **head,
-					 struct sk_buff *skb)
+static struct sk_buff *esp6_gro_receive(struct list_head *head,
+					struct sk_buff *skb)
 {
 	int offset = skb_gro_offset(skb);
 	struct xfrm_offload *xo;
@@ -73,22 +73,22 @@ static struct sk_buff **esp6_gro_receive(struct sk_buff **head,
 			goto out;
 
 		if (skb->sp->len == XFRM_MAX_DEPTH)
-			goto out;
+			goto out_reset;
 
 		x = xfrm_state_lookup(dev_net(skb->dev), skb->mark,
 				      (xfrm_address_t *)&ipv6_hdr(skb)->daddr,
 				      spi, IPPROTO_ESP, AF_INET6);
 		if (!x)
-			goto out;
+			goto out_reset;
+
+		skb->mark = xfrm_smark_get(skb->mark, x);
 
 		skb->sp->xvec[skb->sp->len++] = x;
 		skb->sp->olen++;
 
 		xo = xfrm_offload(skb);
-		if (!xo) {
-			xfrm_state_put(x);
-			goto out;
-		}
+		if (!xo)
+			goto out_reset;
 	}
 
 	xo->flags |= XFRM_GRO;
@@ -108,6 +108,8 @@ static struct sk_buff **esp6_gro_receive(struct sk_buff **head,
 	xfrm_input(skb, IPPROTO_ESP, spi, -2);
 
 	return ERR_PTR(-EINPROGRESS);
+out_reset:
+	secpath_reset(skb);
 out:
 	skb_push(skb, offset);
 	NAPI_GRO_CB(skb)->same_flow = 0;
@@ -121,9 +123,16 @@ static void esp6_gso_encap(struct xfrm_state *x, struct sk_buff *skb)
 	struct ip_esp_hdr *esph;
 	struct ipv6hdr *iph = ipv6_hdr(skb);
 	struct xfrm_offload *xo = xfrm_offload(skb);
-	int proto = iph->nexthdr;
+	u8 proto = iph->nexthdr;
 
 	skb_push(skb, -skb_network_offset(skb));
+
+	if (x->outer_mode->encap == XFRM_MODE_TRANSPORT) {
+		__be16 frag;
+
+		ipv6_skip_exthdr(skb, sizeof(struct ipv6hdr), &proto, &frag);
+	}
+
 	esph = ip_esp_hdr(skb);
 	*skb_mac_header(skb) = IPPROTO_ESP;
 
@@ -131,6 +140,88 @@ static void esp6_gso_encap(struct xfrm_state *x, struct sk_buff *skb)
 	esph->seq_no = htonl(XFRM_SKB_CB(skb)->seq.output.low);
 
 	xo->proto = proto;
+}
+
+static struct sk_buff *xfrm6_tunnel_gso_segment(struct xfrm_state *x,
+						struct sk_buff *skb,
+						netdev_features_t features)
+{
+	__skb_push(skb, skb->mac_len);
+	return skb_mac_gso_segment(skb, features);
+}
+
+static struct sk_buff *xfrm6_transport_gso_segment(struct xfrm_state *x,
+						   struct sk_buff *skb,
+						   netdev_features_t features)
+{
+	const struct net_offload *ops;
+	struct sk_buff *segs = ERR_PTR(-EINVAL);
+	struct xfrm_offload *xo = xfrm_offload(skb);
+
+	skb->transport_header += x->props.header_len;
+	ops = rcu_dereference(inet6_offloads[xo->proto]);
+	if (likely(ops && ops->callbacks.gso_segment))
+		segs = ops->callbacks.gso_segment(skb, features);
+
+	return segs;
+}
+
+static struct sk_buff *xfrm6_beet_gso_segment(struct xfrm_state *x,
+					      struct sk_buff *skb,
+					      netdev_features_t features)
+{
+	struct xfrm_offload *xo = xfrm_offload(skb);
+	struct sk_buff *segs = ERR_PTR(-EINVAL);
+	const struct net_offload *ops;
+	u8 proto = xo->proto;
+
+	skb->transport_header += x->props.header_len;
+
+	if (x->sel.family != AF_INET6) {
+		skb->transport_header -=
+			(sizeof(struct ipv6hdr) - sizeof(struct iphdr));
+
+		if (proto == IPPROTO_BEETPH) {
+			struct ip_beet_phdr *ph =
+				(struct ip_beet_phdr *)skb->data;
+
+			skb->transport_header += ph->hdrlen * 8;
+			proto = ph->nexthdr;
+		} else {
+			skb->transport_header -= IPV4_BEET_PHMAXLEN;
+		}
+
+		if (proto == IPPROTO_TCP)
+			skb_shinfo(skb)->gso_type |= SKB_GSO_TCPV6;
+	} else {
+		__be16 frag;
+
+		skb->transport_header +=
+			ipv6_skip_exthdr(skb, 0, &proto, &frag);
+	}
+
+	__skb_pull(skb, skb_transport_offset(skb));
+	ops = rcu_dereference(inet6_offloads[proto]);
+	if (likely(ops && ops->callbacks.gso_segment))
+		segs = ops->callbacks.gso_segment(skb, features);
+
+	return segs;
+}
+
+static struct sk_buff *xfrm6_outer_mode_gso_segment(struct xfrm_state *x,
+						    struct sk_buff *skb,
+						    netdev_features_t features)
+{
+	switch (x->outer_mode->encap) {
+	case XFRM_MODE_TUNNEL:
+		return xfrm6_tunnel_gso_segment(x, skb, features);
+	case XFRM_MODE_TRANSPORT:
+		return xfrm6_transport_gso_segment(x, skb, features);
+	case XFRM_MODE_BEET:
+		return xfrm6_beet_gso_segment(x, skb, features);
+	}
+
+	return ERR_PTR(-EOPNOTSUPP);
 }
 
 static struct sk_buff *esp6_gso_segment(struct sk_buff *skb,
@@ -162,15 +253,14 @@ static struct sk_buff *esp6_gso_segment(struct sk_buff *skb,
 
 	skb->encap_hdr_csum = 1;
 
-	if (!(features & NETIF_F_HW_ESP) || !x->xso.offload_handle ||
-	    (x->xso.dev != skb->dev))
+	if (!(features & NETIF_F_HW_ESP) || x->xso.dev != skb->dev)
 		esp_features = features & ~(NETIF_F_SG | NETIF_F_CSUM_MASK);
 	else if (!(features & NETIF_F_HW_ESP_TX_CSUM))
 		esp_features = features & ~NETIF_F_CSUM_MASK;
 
 	xo->flags |= XFRM_GSO_SEGMENT;
 
-	return x->outer_mode->gso_segment(x, skb, esp_features);
+	return xfrm6_outer_mode_gso_segment(x, skb, esp_features);
 }
 
 static int esp6_input_tail(struct xfrm_state *x, struct sk_buff *skb)
@@ -194,7 +284,6 @@ static int esp6_xmit(struct xfrm_state *x, struct sk_buff *skb,  netdev_features
 	int alen;
 	int blksize;
 	struct xfrm_offload *xo;
-	struct ip_esp_hdr *esph;
 	struct crypto_aead *aead;
 	struct esp_info esp;
 	bool hw_offload = true;
@@ -207,8 +296,7 @@ static int esp6_xmit(struct xfrm_state *x, struct sk_buff *skb,  netdev_features
 	if (!xo)
 		return -EINVAL;
 
-	if (!(features & NETIF_F_HW_ESP) || !x->xso.offload_handle ||
-	    (x->xso.dev != skb->dev)) {
+	if (!(features & NETIF_F_HW_ESP) || x->xso.dev != skb->dev) {
 		xo->flags |= CRYPTO_FALLBACK;
 		hw_offload = false;
 	}
@@ -236,13 +324,13 @@ static int esp6_xmit(struct xfrm_state *x, struct sk_buff *skb,  netdev_features
 
 	seq = xo->seq.low;
 
-	esph = ip_esp_hdr(skb);
-	esph->spi = x->id.spi;
+	esp.esph = ip_esp_hdr(skb);
+	esp.esph->spi = x->id.spi;
 
 	skb_push(skb, -skb_network_offset(skb));
 
 	if (xo->flags & XFRM_GSO_SEGMENT) {
-		esph->seq_no = htonl(seq);
+		esp.esph->seq_no = htonl(seq);
 
 		if (!skb_is_gso(skb))
 			xo->seq.low++;

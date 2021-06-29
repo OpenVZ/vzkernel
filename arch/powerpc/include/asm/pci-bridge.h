@@ -10,6 +10,7 @@
 #include <linux/pci.h>
 #include <linux/list.h>
 #include <linux/ioport.h>
+#include <linux/numa.h>
 
 struct device_node;
 
@@ -43,8 +44,11 @@ struct pci_controller_ops {
 	void		(*teardown_msi_irqs)(struct pci_dev *pdev);
 #endif
 
-	int             (*dma_set_mask)(struct pci_dev *pdev, u64 dma_mask);
-	u64		(*dma_get_required_mask)(struct pci_dev *pdev);
+	RH_KABI_DEPRECATE_FN(int, dma_set_mask, struct pci_dev *pdev,
+			     u64 dma_mask)
+	RH_KABI_REPLACE(u64 (*dma_get_required_mask)(struct pci_dev *pdev),
+			bool (*iommu_bypass_supported)(struct pci_dev *pdev,
+				u64 mask))
 
 	void		(*shutdown)(struct pci_controller *hose);
 };
@@ -129,6 +133,7 @@ struct pci_controller {
 #endif	/* CONFIG_PPC64 */
 
 	void *private_data;
+	RH_KABI_EXTEND(struct npu *npu)
 };
 
 /* These are used for config access before all the PCI probing
@@ -185,6 +190,7 @@ struct iommu_table;
 struct pci_dn {
 	int     flags;
 #define PCI_DN_FLAG_IOV_VF	0x01
+#define PCI_DN_FLAG_DEAD	0x02    /* Device has been hot-removed */
 
 	int	busno;			/* pci bus number */
 	int	devfn;			/* pci device and function number */
@@ -264,7 +270,7 @@ extern int pcibios_map_io_space(struct pci_bus *bus);
 #ifdef CONFIG_NUMA
 #define PHB_SET_NODE(PHB, NODE)		((PHB)->node = (NODE))
 #else
-#define PHB_SET_NODE(PHB, NODE)		((PHB)->node = -1)
+#define PHB_SET_NODE(PHB, NODE)		((PHB)->node = NUMA_NO_NODE)
 #endif
 
 #endif	/* CONFIG_PPC64 */
@@ -272,6 +278,8 @@ extern int pcibios_map_io_space(struct pci_bus *bus);
 /* Get the PCI host controller for an OF device */
 extern struct pci_controller *pci_find_hose_for_OF_device(
 			struct device_node* node);
+
+extern struct pci_controller *pci_find_controller_for_domain(int domain_nr);
 
 /* Fill up host controller resources from the OF node */
 extern void pci_process_bridge_OF_ranges(struct pci_controller *hose,

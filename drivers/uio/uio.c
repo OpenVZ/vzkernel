@@ -443,13 +443,10 @@ static irqreturn_t uio_interrupt(int irq, void *dev_id)
 	struct uio_device *idev = (struct uio_device *)dev_id;
 	irqreturn_t ret;
 
-	mutex_lock(&idev->info_lock);
-
 	ret = idev->info->handler(irq, idev->info);
 	if (ret == IRQ_HANDLED)
 		uio_event_notify(idev->info);
 
-	mutex_unlock(&idev->info_lock);
 	return ret;
 }
 
@@ -744,7 +741,8 @@ static int uio_mmap_physical(struct vm_area_struct *vma)
 		return -EINVAL;
 
 	vma->vm_ops = &uio_physical_vm_ops;
-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+	if (idev->info->mem[mi].memtype == UIO_MEM_PHYS)
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 
 	/*
 	 * We cannot use the vm_iomap_memory() helper here,
@@ -801,18 +799,19 @@ static int uio_mmap(struct file *filep, struct vm_area_struct *vma)
 	}
 
 	switch (idev->info->mem[mi].memtype) {
-		case UIO_MEM_PHYS:
-			ret = uio_mmap_physical(vma);
-			break;
-		case UIO_MEM_LOGICAL:
-		case UIO_MEM_VIRTUAL:
-			ret = uio_mmap_logical(vma);
-			break;
-		default:
-			ret = -EINVAL;
+	case UIO_MEM_IOVA:
+	case UIO_MEM_PHYS:
+		ret = uio_mmap_physical(vma);
+		break;
+	case UIO_MEM_LOGICAL:
+	case UIO_MEM_VIRTUAL:
+		ret = uio_mmap_logical(vma);
+		break;
+	default:
+		ret = -EINVAL;
 	}
 
-out:
+ out:
 	mutex_unlock(&idev->info_lock);
 	return 0;
 }
@@ -969,9 +968,8 @@ int __uio_register_device(struct module *owner,
 		 * FDs at the time of unregister and therefore may not be
 		 * freed until they are released.
 		 */
-		ret = request_threaded_irq(info->irq, NULL, uio_interrupt,
-					   info->irq_flags, info->name, idev);
-
+		ret = request_irq(info->irq, uio_interrupt,
+				  info->irq_flags, info->name, idev);
 		if (ret)
 			goto err_request_irq;
 	}

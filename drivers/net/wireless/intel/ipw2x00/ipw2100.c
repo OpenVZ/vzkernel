@@ -1,22 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /******************************************************************************
 
   Copyright(c) 2003 - 2006 Intel Corporation. All rights reserved.
 
-  This program is free software; you can redistribute it and/or modify it
-  under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
-
-  This program is distributed in the hope that it will be useful, but WITHOUT
-  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-  more details.
-
-  You should have received a copy of the GNU General Public License along with
-  this program; if not, write to the Free Software Foundation, Inc., 59
-  Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-
-  The full GNU General Public License is included in this distribution in the
-  file called LICENSE.
 
   Contact Information:
   Intel Linux Wireless <ilw@linux.intel.com>
@@ -1744,7 +1730,7 @@ static int ipw2100_up(struct ipw2100_priv *priv, int deferred)
 	/* the ipw2100 hardware really doesn't want power management delays
 	 * longer than 175usec
 	 */
-	pm_qos_update_request(&ipw2100_pm_qos_req, 175);
+	cpu_latency_qos_update_request(&ipw2100_pm_qos_req, 175);
 
 	/* If the interrupt is enabled, turn it off... */
 	spin_lock_irqsave(&priv->low_lock, flags);
@@ -1889,7 +1875,8 @@ static void ipw2100_down(struct ipw2100_priv *priv)
 	ipw2100_disable_interrupts(priv);
 	spin_unlock_irqrestore(&priv->low_lock, flags);
 
-	pm_qos_update_request(&ipw2100_pm_qos_req, PM_QOS_DEFAULT_VALUE);
+	cpu_latency_qos_update_request(&ipw2100_pm_qos_req,
+				       PM_QOS_DEFAULT_VALUE);
 
 	/* We have to signal any supplicant if we are disassociating */
 	if (associated)
@@ -5854,7 +5841,7 @@ static int ipw2100_close(struct net_device *dev)
 /*
  * TODO:  Fix this function... its just wrong
  */
-static void ipw2100_tx_timeout(struct net_device *dev)
+static void ipw2100_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct ipw2100_priv *priv = libipw_priv(dev);
 
@@ -6586,8 +6573,7 @@ static int __init ipw2100_init(void)
 	printk(KERN_INFO DRV_NAME ": %s, %s\n", DRV_DESCRIPTION, DRV_VERSION);
 	printk(KERN_INFO DRV_NAME ": %s\n", DRV_COPYRIGHT);
 
-	pm_qos_add_request(&ipw2100_pm_qos_req, PM_QOS_CPU_DMA_LATENCY,
-			   PM_QOS_DEFAULT_VALUE);
+	cpu_latency_qos_add_request(&ipw2100_pm_qos_req, PM_QOS_DEFAULT_VALUE);
 
 	ret = pci_register_driver(&ipw2100_pci_driver);
 	if (ret)
@@ -6614,7 +6600,7 @@ static void __exit ipw2100_exit(void)
 			   &driver_attr_debug_level);
 #endif
 	pci_unregister_driver(&ipw2100_pci_driver);
-	pm_qos_remove_request(&ipw2100_pm_qos_req);
+	cpu_latency_qos_remove_request(&ipw2100_pm_qos_req);
 }
 
 module_init(ipw2100_init);

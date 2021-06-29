@@ -1558,7 +1558,7 @@ static netdev_tx_t alx_start_xmit(struct sk_buff *skb,
 	return alx_start_xmit_ring(skb, alx_tx_queue_mapping(alx, skb));
 }
 
-static void alx_tx_timeout(struct net_device *dev)
+static void alx_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct alx_priv *alx = netdev_priv(dev);
 
@@ -1966,8 +1966,6 @@ static pci_ers_result_t alx_pci_error_slot_reset(struct pci_dev *pdev)
 	if (!alx_reset_mac(hw))
 		rc = PCI_ERS_RESULT_RECOVERED;
 out:
-	pci_cleanup_aer_uncorrect_error_status(pdev);
-
 	rtnl_unlock();
 
 	return rc;

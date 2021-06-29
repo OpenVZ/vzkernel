@@ -6,6 +6,7 @@
 #include <linux/err.h>
 #include <linux/sched.h>
 #include <linux/sched/mm.h>
+#include RH_KABI_HIDE_INCLUDE(<linux/sched/signal.h>)
 #include <linux/sched/task_stack.h>
 #include <linux/security.h>
 #include <linux/swap.h>
@@ -15,16 +16,9 @@
 #include <linux/vmalloc.h>
 #include <linux/userfaultfd_k.h>
 
-#include <asm/sections.h>
 #include <linux/uaccess.h>
 
 #include "internal.h"
-
-static inline int is_kernel_rodata(unsigned long addr)
-{
-	return addr >= (unsigned long)__start_rodata &&
-		addr < (unsigned long)__end_rodata;
-}
 
 /**
  * kfree_const - conditionally free memory
@@ -43,6 +37,8 @@ EXPORT_SYMBOL(kfree_const);
  * kstrdup - allocate space for and copy an existing string
  * @s: the string to duplicate
  * @gfp: the GFP mask used in the kmalloc() call when allocating memory
+ *
+ * Return: newly allocated copy of @s or %NULL in case of error
  */
 char *kstrdup(const char *s, gfp_t gfp)
 {
@@ -65,9 +61,10 @@ EXPORT_SYMBOL(kstrdup);
  * @s: the string to duplicate
  * @gfp: the GFP mask used in the kmalloc() call when allocating memory
  *
- * Function returns source string if it is in .rodata section otherwise it
- * fallbacks to kstrdup.
- * Strings allocated by kstrdup_const should be freed by kfree_const.
+ * Note: Strings allocated by kstrdup_const should be freed by kfree_const.
+ *
+ * Return: source string if it is in .rodata section otherwise
+ * fallback to kstrdup.
  */
 const char *kstrdup_const(const char *s, gfp_t gfp)
 {
@@ -85,6 +82,8 @@ EXPORT_SYMBOL(kstrdup_const);
  * @gfp: the GFP mask used in the kmalloc() call when allocating memory
  *
  * Note: Use kmemdup_nul() instead if the size is known exactly.
+ *
+ * Return: newly allocated copy of @s or %NULL in case of error
  */
 char *kstrndup(const char *s, size_t max, gfp_t gfp)
 {
@@ -110,6 +109,8 @@ EXPORT_SYMBOL(kstrndup);
  * @src: memory region to duplicate
  * @len: memory region length
  * @gfp: GFP mask to use
+ *
+ * Return: newly allocated copy of @src or %NULL in case of error
  */
 void *kmemdup(const void *src, size_t len, gfp_t gfp)
 {
@@ -127,6 +128,9 @@ EXPORT_SYMBOL(kmemdup);
  * @s: The data to stringify
  * @len: The size of the data
  * @gfp: the GFP mask used in the kmalloc() call when allocating memory
+ *
+ * Return: newly allocated copy of @s with NUL-termination or %NULL in
+ * case of error
  */
 char *kmemdup_nul(const char *s, size_t len, gfp_t gfp)
 {
@@ -150,7 +154,7 @@ EXPORT_SYMBOL(kmemdup_nul);
  * @src: source address in user space
  * @len: number of bytes to copy
  *
- * Returns an ERR_PTR() on failure.  Result is physically
+ * Return: an ERR_PTR() on failure.  Result is physically
  * contiguous, to be freed by kfree().
  */
 void *memdup_user(const void __user *src, size_t len)
@@ -176,7 +180,7 @@ EXPORT_SYMBOL(memdup_user);
  * @src: source address in user space
  * @len: number of bytes to copy
  *
- * Returns an ERR_PTR() on failure.  Result may be not
+ * Return: an ERR_PTR() on failure.  Result may be not
  * physically contiguous.  Use kvfree() to free.
  */
 void *vmemdup_user(const void __user *src, size_t len)
@@ -200,6 +204,8 @@ EXPORT_SYMBOL(vmemdup_user);
  * strndup_user - duplicate an existing string from user space
  * @s: The string to duplicate
  * @n: Maximum number of bytes to copy, including the trailing NUL.
+ *
+ * Return: newly allocated copy of @s or %NULL in case of error
  */
 char *strndup_user(const char __user *s, long n)
 {
@@ -231,7 +237,7 @@ EXPORT_SYMBOL(strndup_user);
  * @src: source address in user space
  * @len: number of bytes to copy
  *
- * Returns an ERR_PTR() on failure.
+ * Return: an ERR_PTR() on failure.
  */
 void *memdup_user_nul(const void __user *src, size_t len)
 {
@@ -294,52 +300,79 @@ void arch_pick_mmap_layout(struct mm_struct *mm, struct rlimit *rlim_stack)
 }
 #endif
 
-/*
- * Like get_user_pages_fast() except its IRQ-safe in that it won't fall
- * back to the regular GUP.
- * Note a difference with get_user_pages_fast: this always returns the
- * number of pages pinned, 0 if no pages were pinned.
- * If the architecture does not support this function, simply return with no
- * pages pinned.
+/**
+ * __account_locked_vm - account locked pages to an mm's locked_vm
+ * @mm:          mm to account against
+ * @pages:       number of pages to account
+ * @inc:         %true if @pages should be considered positive, %false if not
+ * @task:        task used to check RLIMIT_MEMLOCK
+ * @bypass_rlim: %true if checking RLIMIT_MEMLOCK should be skipped
+ *
+ * Assumes @task and @mm are valid (i.e. at least one reference on each), and
+ * that mmap_sem is held as writer.
+ *
+ * Return:
+ * * 0       on success
+ * * -ENOMEM if RLIMIT_MEMLOCK would be exceeded.
  */
-int __weak __get_user_pages_fast(unsigned long start,
-				 int nr_pages, int write, struct page **pages)
+int __account_locked_vm(struct mm_struct *mm, unsigned long pages, bool inc,
+			struct task_struct *task, bool bypass_rlim)
 {
-	return 0;
+	unsigned long locked_vm, limit;
+	int ret = 0;
+
+	lockdep_assert_held_exclusive(&mm->mmap_sem);
+
+	locked_vm = mm->locked_vm;
+	if (inc) {
+		if (!bypass_rlim) {
+			limit = task_rlimit(task, RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+			if (locked_vm + pages > limit)
+				ret = -ENOMEM;
+		}
+		if (!ret)
+			mm->locked_vm = locked_vm + pages;
+	} else {
+		WARN_ON_ONCE(pages > locked_vm);
+		mm->locked_vm = locked_vm - pages;
+	}
+
+	pr_debug("%s: [%d] caller %ps %c%lu %lu/%lu%s\n", __func__, task->pid,
+		 (void *)_RET_IP_, (inc) ? '+' : '-', pages << PAGE_SHIFT,
+		 locked_vm << PAGE_SHIFT, task_rlimit(task, RLIMIT_MEMLOCK),
+		 ret ? " - exceeded" : "");
+
+	return ret;
 }
-EXPORT_SYMBOL_GPL(__get_user_pages_fast);
+EXPORT_SYMBOL_GPL(__account_locked_vm);
 
 /**
- * get_user_pages_fast() - pin user pages in memory
- * @start:	starting user address
- * @nr_pages:	number of pages from start to pin
- * @write:	whether pages will be written to
- * @pages:	array that receives pointers to the pages pinned.
- *		Should be at least nr_pages long.
+ * account_locked_vm - account locked pages to an mm's locked_vm
+ * @mm:          mm to account against, may be NULL
+ * @pages:       number of pages to account
+ * @inc:         %true if @pages should be considered positive, %false if not
  *
- * Returns number of pages pinned. This may be fewer than the number
- * requested. If nr_pages is 0 or negative, returns 0. If no pages
- * were pinned, returns -errno.
+ * Assumes a non-NULL @mm is valid (i.e. at least one reference on it).
  *
- * get_user_pages_fast provides equivalent functionality to get_user_pages,
- * operating on current and current->mm, with force=0 and vma=NULL. However
- * unlike get_user_pages, it must be called without mmap_sem held.
- *
- * get_user_pages_fast may take mmap_sem and page table locks, so no
- * assumptions can be made about lack of locking. get_user_pages_fast is to be
- * implemented in a way that is advantageous (vs get_user_pages()) when the
- * user memory area is already faulted in and present in ptes. However if the
- * pages have to be faulted in, it may turn out to be slightly slower so
- * callers need to carefully consider what to use. On many architectures,
- * get_user_pages_fast simply falls back to get_user_pages.
+ * Return:
+ * * 0       on success, or if mm is NULL
+ * * -ENOMEM if RLIMIT_MEMLOCK would be exceeded.
  */
-int __weak get_user_pages_fast(unsigned long start,
-				int nr_pages, int write, struct page **pages)
+int account_locked_vm(struct mm_struct *mm, unsigned long pages, bool inc)
 {
-	return get_user_pages_unlocked(start, nr_pages, pages,
-				       write ? FOLL_WRITE : 0);
+	int ret;
+
+	if (pages == 0 || !mm)
+		return 0;
+
+	down_write(&mm->mmap_sem);
+	ret = __account_locked_vm(mm, pages, inc, current,
+				  capable(CAP_IPC_LOCK));
+	up_write(&mm->mmap_sem);
+
+	return ret;
 }
-EXPORT_SYMBOL_GPL(get_user_pages_fast);
+EXPORT_SYMBOL_GPL(account_locked_vm);
 
 unsigned long vm_mmap_pgoff(struct file *file, unsigned long addr,
 	unsigned long len, unsigned long prot,
@@ -393,6 +426,8 @@ EXPORT_SYMBOL(vm_mmap);
  *
  * Please note that any use of gfp flags outside of GFP_KERNEL is careful to not
  * fall back to vmalloc.
+ *
+ * Return: pointer to the allocated memory of %NULL in case of failure
  */
 void *kvmalloc_node(size_t size, gfp_t flags, int node)
 {
@@ -475,7 +510,7 @@ bool page_mapped(struct page *page)
 		return true;
 	if (PageHuge(page))
 		return false;
-	for (i = 0; i < hpage_nr_pages(page); i++) {
+	for (i = 0; i < compound_nr(page); i++) {
 		if (atomic_read(&page[i]._mapcount) >= 0)
 			return true;
 	}
@@ -590,7 +625,7 @@ unsigned long vm_commit_limit(void)
 	if (sysctl_overcommit_kbytes)
 		allowed = sysctl_overcommit_kbytes >> (PAGE_SHIFT - 10);
 	else
-		allowed = ((totalram_pages - hugetlb_total_pages())
+		allowed = ((totalram_pages() - hugetlb_total_pages())
 			   * sysctl_overcommit_ratio / 100);
 	allowed += total_swap_pages;
 
@@ -635,7 +670,7 @@ EXPORT_SYMBOL_GPL(vm_memory_committed);
  */
 int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 {
-	long free, allowed, reserve;
+	long allowed;
 
 	VM_WARN_ONCE(percpu_counter_read(&vm_committed_as) <
 			-(s64)vm_committed_as_batch * num_online_cpus(),
@@ -650,52 +685,9 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 		return 0;
 
 	if (sysctl_overcommit_memory == OVERCOMMIT_GUESS) {
-		free = global_zone_page_state(NR_FREE_PAGES);
-		free += global_node_page_state(NR_FILE_PAGES);
-
-		/*
-		 * shmem pages shouldn't be counted as free in this
-		 * case, they can't be purged, only swapped out, and
-		 * that won't affect the overall amount of available
-		 * memory in the system.
-		 */
-		free -= global_node_page_state(NR_SHMEM);
-
-		free += get_nr_swap_pages();
-
-		/*
-		 * Any slabs which are created with the
-		 * SLAB_RECLAIM_ACCOUNT flag claim to have contents
-		 * which are reclaimable, under pressure.  The dentry
-		 * cache and most inode caches should fall into this
-		 */
-		free += global_node_page_state(NR_SLAB_RECLAIMABLE);
-
-		/*
-		 * Part of the kernel memory, which can be released
-		 * under memory pressure.
-		 */
-		free += global_node_page_state(
-			NR_INDIRECTLY_RECLAIMABLE_BYTES) >> PAGE_SHIFT;
-
-		/*
-		 * Leave reserved pages. The pages are not for anonymous pages.
-		 */
-		if (free <= totalreserve_pages)
+		if (pages > totalram_pages() + total_swap_pages)
 			goto error;
-		else
-			free -= totalreserve_pages;
-
-		/*
-		 * Reserve some for root
-		 */
-		if (!cap_sys_admin)
-			free -= sysctl_admin_reserve_kbytes >> (PAGE_SHIFT - 10);
-
-		if (free > pages)
-			return 0;
-
-		goto error;
+		return 0;
 	}
 
 	allowed = vm_commit_limit();
@@ -709,7 +701,8 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 	 * Don't let a single process grow so big a user can't recover
 	 */
 	if (mm) {
-		reserve = sysctl_user_reserve_kbytes >> (PAGE_SHIFT - 10);
+		long reserve = sysctl_user_reserve_kbytes >> (PAGE_SHIFT - 10);
+
 		allowed -= min_t(long, mm->total_vm / 32, reserve);
 	}
 
@@ -727,7 +720,8 @@ error:
  * @buffer:   the buffer to copy to.
  * @buflen:   the length of the buffer. Larger cmdline values are truncated
  *            to this length.
- * Returns the size of the cmdline field copied. Note that the copy does
+ *
+ * Return: the size of the cmdline field copied. Note that the copy does
  * not guarantee an ending NULL byte.
  */
 int get_cmdline(struct task_struct *task, char *buffer, int buflen)
@@ -741,12 +735,12 @@ int get_cmdline(struct task_struct *task, char *buffer, int buflen)
 	if (!mm->arg_end)
 		goto out_mm;	/* Shh! No looking before we're done */
 
-	down_read(&mm->mmap_sem);
+	spin_lock(&mm->arg_lock);
 	arg_start = mm->arg_start;
 	arg_end = mm->arg_end;
 	env_start = mm->env_start;
 	env_end = mm->env_end;
-	up_read(&mm->mmap_sem);
+	spin_unlock(&mm->arg_lock);
 
 	len = arg_end - arg_start;
 
@@ -777,4 +771,17 @@ out_mm:
 	mmput(mm);
 out:
 	return res;
+}
+
+int memcmp_pages(struct page *page1, struct page *page2)
+{
+	char *addr1, *addr2;
+	int ret;
+
+	addr1 = kmap_atomic(page1);
+	addr2 = kmap_atomic(page2);
+	ret = memcmp(addr1, addr2, PAGE_SIZE);
+	kunmap_atomic(addr2);
+	kunmap_atomic(addr1);
+	return ret;
 }

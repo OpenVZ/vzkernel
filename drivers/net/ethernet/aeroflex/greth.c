@@ -613,7 +613,6 @@ static irqreturn_t greth_interrupt(int irq, void *dev_id)
 		napi_schedule(&greth->napi);
 	}
 
-	mmiowb();
 	spin_unlock(&greth->devlock);
 
 	return retval;
@@ -1279,11 +1278,11 @@ static int greth_mdio_probe(struct net_device *dev)
 	}
 
 	if (greth->gbit_mac)
-		phy->supported &= PHY_GBIT_FEATURES;
+		phy_set_max_speed(phy, SPEED_1000);
 	else
-		phy->supported &= PHY_BASIC_FEATURES;
+		phy_set_max_speed(phy, SPEED_100);
 
-	phy->advertising = phy->supported;
+	linkmode_copy(phy->advertising, phy->supported);
 
 	greth->link = 0;
 	greth->speed = 0;

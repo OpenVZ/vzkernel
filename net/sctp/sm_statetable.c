@@ -79,7 +79,7 @@ static const struct sctp_sm_table_entry bug = {
 
 const struct sctp_sm_table_entry *sctp_sm_lookup_event(
 					struct net *net,
-					enum sctp_event event_type,
+					enum sctp_event_type event_type,
 					enum sctp_state state,
 					union sctp_subtype event_subtype)
 {
@@ -991,26 +991,22 @@ static const struct sctp_sm_table_entry *sctp_chunk_event_lookup(
 	if (cid <= SCTP_CID_BASE_MAX)
 		return &chunk_event_table[cid][state];
 
-	if (net->sctp.prsctp_enable) {
-		if (cid == SCTP_CID_FWD_TSN || cid == SCTP_CID_I_FWD_TSN)
-			return &prsctp_chunk_event_table[0][state];
-	}
+	switch ((u16)cid) {
+	case SCTP_CID_FWD_TSN:
+	case SCTP_CID_I_FWD_TSN:
+		return &prsctp_chunk_event_table[0][state];
 
-	if (net->sctp.addip_enable) {
-		if (cid == SCTP_CID_ASCONF)
-			return &addip_chunk_event_table[0][state];
+	case SCTP_CID_ASCONF:
+		return &addip_chunk_event_table[0][state];
 
-		if (cid == SCTP_CID_ASCONF_ACK)
-			return &addip_chunk_event_table[1][state];
-	}
+	case SCTP_CID_ASCONF_ACK:
+		return &addip_chunk_event_table[1][state];
 
-	if (net->sctp.reconf_enable)
-		if (cid == SCTP_CID_RECONF)
-			return &reconf_chunk_event_table[0][state];
+	case SCTP_CID_RECONF:
+		return &reconf_chunk_event_table[0][state];
 
-	if (net->sctp.auth_enable) {
-		if (cid == SCTP_CID_AUTH)
-			return &auth_chunk_event_table[0][state];
+	case SCTP_CID_AUTH:
+		return &auth_chunk_event_table[0][state];
 	}
 
 	return &chunk_event_table_unknown[state];

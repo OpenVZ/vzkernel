@@ -14,12 +14,6 @@ config LOCKDEP_SUPPORT
 config STACKTRACE_SUPPORT
 	def_bool y
 
-config RWSEM_GENERIC_SPINLOCK
-	bool
-
-config RWSEM_XCHGADD_ALGORITHM
-	def_bool y
-
 config ARCH_HAS_ILOG2_U32
 	def_bool n
 
@@ -56,6 +50,12 @@ config PCI_QUIRKS
 config ARCH_SUPPORTS_UPROBES
 	def_bool y
 
+config KASAN_SHADOW_OFFSET
+	hex
+	depends on KASAN
+	default 0x18000000000000 if KASAN_S390_4_LEVEL_PAGING
+	default 0x30000000000
+
 config S390
 	def_bool y
 	select ARCH_BINFMT_ELF_STATE
@@ -63,8 +63,9 @@ config S390
 	select ARCH_HAS_ELF_RANDOMIZE
 	select ARCH_HAS_FORTIFY_SOURCE
 	select ARCH_HAS_GCOV_PROFILE_ALL
-	select ARCH_HAS_GIGANTIC_PAGE if (MEMORY_ISOLATION && COMPACTION) || CMA
+	select ARCH_HAS_GIGANTIC_PAGE if CONTIG_ALLOC
 	select ARCH_HAS_KCOV
+	select ARCH_HAS_MEM_ENCRYPT
 	select ARCH_HAS_PTE_SPECIAL
 	select ARCH_HAS_SET_MEMORY
 	select ARCH_HAS_SG_CHAIN
@@ -106,6 +107,7 @@ config S390
 	select ARCH_USE_BUILTIN_BSWAP
 	select ARCH_USE_CMPXCHG_LOCKREF
 	select ARCH_WANTS_DYNAMIC_TASK_STRUCT
+	select ARCH_WANT_DEFAULT_BPF_JIT
 	select ARCH_WANT_IPC_PARSE_VERSION
 	select BUILDTIME_EXTABLE_SORT
 	select CLONE_BACKWARDS2
@@ -120,6 +122,7 @@ config S390
 	select HAVE_ALIGNED_STRUCT_PAGE if SLUB
 	select HAVE_ARCH_AUDITSYSCALL
 	select HAVE_ARCH_JUMP_LABEL
+	select HAVE_ARCH_KASAN
 	select CPU_NO_EFFICIENT_FFS if !HAVE_MARCH_Z9_109_FEATURES
 	select HAVE_ARCH_SECCOMP_FILTER
 	select HAVE_ARCH_SOFT_DIRTY
@@ -131,9 +134,9 @@ config S390
 	select HAVE_COPY_THREAD_TLS
 	select HAVE_DEBUG_KMEMLEAK
 	select HAVE_DMA_CONTIGUOUS
-	select DMA_DIRECT_OPS
 	select HAVE_DYNAMIC_FTRACE
 	select HAVE_DYNAMIC_FTRACE_WITH_REGS
+	select HAVE_FAST_GUP
 	select HAVE_EFFICIENT_UNALIGNED_ACCESS
 	select HAVE_FTRACE_MCOUNT_RECORD
 	select HAVE_FUNCTION_GRAPH_TRACER
@@ -145,25 +148,26 @@ config S390
 	select HAVE_KERNEL_LZ4
 	select HAVE_KERNEL_LZMA
 	select HAVE_KERNEL_LZO
+	select HAVE_KERNEL_UNCOMPRESSED
 	select HAVE_KERNEL_XZ
 	select HAVE_KPROBES
+	select HAVE_KPROBES_ON_FTRACE
 	select HAVE_KRETPROBES
 	select HAVE_KVM
 	select HAVE_LIVEPATCH
 	select HAVE_PERF_REGS
 	select HAVE_PERF_USER_STACK_DUMP
-	select HAVE_MEMBLOCK
-	select HAVE_MEMBLOCK_NODE_MAP
 	select HAVE_MEMBLOCK_PHYS_MAP
+	select HAVE_MMU_GATHER_NO_GATHER
 	select HAVE_MOD_ARCH_SPECIFIC
 	select HAVE_OPROFILE
 	select HAVE_PERF_EVENTS
+	select HAVE_RCU_TABLE_FREE
 	select HAVE_REGS_AND_STACK_ACCESS_API
 	select HAVE_RSEQ
 	select HAVE_SYSCALL_TRACEPOINTS
 	select HAVE_VIRT_CPU_ACCOUNTING
 	select MODULES_USE_ELF_RELA
-	select NO_BOOTMEM
 	select OLD_SIGACTION
 	select OLD_SIGSUSPEND3
 	select SPARSE_IRQ
@@ -174,6 +178,9 @@ config S390
 	select ARCH_HAS_SCALED_CPUTIME
 	select VIRT_TO_BUS
 	select HAVE_NMI
+	select ARCH_HAS_FORCE_DMA_UNENCRYPTED
+	select SWIOTLB
+	select GENERIC_ALLOCATOR
 
 
 config SCHED_OMIT_FRAME_POINTER
@@ -221,6 +228,10 @@ config HAVE_MARCH_Z13_FEATURES
 config HAVE_MARCH_Z14_FEATURES
 	def_bool n
 	select HAVE_MARCH_Z13_FEATURES
+
+config HAVE_MARCH_Z15_FEATURES
+	def_bool n
+	select HAVE_MARCH_Z14_FEATURES
 
 choice
 	prompt "Processor type"
@@ -290,6 +301,14 @@ config MARCH_Z14
 	  and 3906 series). The kernel will be slightly faster but will not
 	  work on older machines.
 
+config MARCH_Z15
+	bool "IBM z15"
+	select HAVE_MARCH_Z15_FEATURES
+	help
+	  Select this to enable optimizations for IBM z15 (8562
+	  and 8561 series). The kernel will be slightly faster but will not
+	  work on older machines.
+
 endchoice
 
 config MARCH_Z900_TUNE
@@ -315,6 +334,9 @@ config MARCH_Z13_TUNE
 
 config MARCH_Z14_TUNE
 	def_bool TUNE_Z14 || MARCH_Z14 && TUNE_DEFAULT
+
+config MARCH_Z15_TUNE
+	def_bool TUNE_Z15 || MARCH_Z15 && TUNE_DEFAULT
 
 choice
 	prompt "Tune code generation"
@@ -356,6 +378,9 @@ config TUNE_Z13
 
 config TUNE_Z14
 	bool "IBM z14"
+
+config TUNE_Z15
+	bool "IBM z15"
 
 endchoice
 
@@ -538,6 +563,17 @@ config ARCH_HAS_KEXEC_PURGATORY
 	def_bool y
 	depends on KEXEC_FILE
 
+config KEXEC_SIG
+	bool "Verify kernel signature during kexec_file_load() syscall"
+	depends on KEXEC_FILE && MODULE_SIG_FORMAT
+	help
+	  This option makes kernel signature verification mandatory for
+	  the kexec_file_load() syscall.
+
+	  In addition to that option, you need to enable signature
+	  verification for the corresponding kernel image type being
+	  loaded in order for this to work.
+
 config ARCH_RANDOM
 	def_bool y
 	prompt "s390 architectural random number generation API"
@@ -597,6 +633,29 @@ config EXPOLINE_FULL
 	bool "spectre_v2=on"
 
 endchoice
+
+config RELOCATABLE
+	bool "Build a relocatable kernel"
+	select MODULE_REL_CRCS if MODVERSIONS
+	default y
+	help
+	  This builds a kernel image that retains relocation information
+	  so it can be loaded at an arbitrary address.
+	  The kernel is linked as a position-independent executable (PIE)
+	  and contains dynamic relocations which are processed early in the
+	  bootup process.
+	  The relocations make the kernel image about 15% larger (compressed
+	  10%), but are discarded at runtime.
+
+config RANDOMIZE_BASE
+	bool "Randomize the address of the kernel image (KASLR)"
+	depends on RELOCATABLE
+	default y
+	help
+	  In support of Kernel Address Space Layout Randomization (KASLR),
+	  this randomizes the address at which the kernel image is loaded,
+	  as a security feature that deters exploit attempts relying on
+	  knowledge of the location of kernel internals.
 
 endmenu
 
@@ -778,6 +837,17 @@ config VFIO_CCW
 	  To compile this driver as a module, choose M here: the
 	  module will be called vfio_ccw.
 
+config VFIO_AP
+	def_tristate n
+	prompt "VFIO support for AP devices"
+	depends on S390_AP_IOMMU && VFIO_MDEV_DEVICE && KVM
+	help
+		This driver grants access to Adjunct Processor (AP) devices
+		via the VFIO mediated device interface.
+
+		To compile this driver as a module, choose M here: the module
+		will be called vfio_ap.
+
 endmenu
 
 menu "Dump support"
@@ -791,9 +861,9 @@ config CRASH_DUMP
 	  Crash dump kernels are loaded in the main kernel with kexec-tools
 	  into a specially reserved region and then later executed after
 	  a crash by kdump/kexec.
-	  Refer to <file:Documentation/s390/zfcpdump.txt> for more details on this.
+	  Refer to <file:Documentation/s390/zfcpdump.rst> for more details on this.
 	  This option also enables s390 zfcpdump.
-	  See also <file:Documentation/s390/zfcpdump.txt>
+	  See also <file:Documentation/s390/zfcpdump.rst>
 
 endmenu
 
@@ -854,6 +924,17 @@ source "crypto/Kconfig"
 source "lib/Kconfig"
 
 menu "Virtualization"
+
+config PROTECTED_VIRTUALIZATION_GUEST
+	def_bool n
+	prompt "Protected virtualization guest support"
+	help
+	  Select this option, if you want to be able to run this
+	  kernel as a protected virtualization KVM guest.
+	  Protected virtualization capable machines have a mini hypervisor
+	  located at machine level (an ultravisor). With help of the
+	  Ultravisor, KVM will be able to run "protected" VMs, special
+	  VMs whose memory and management data are unavailable to KVM.
 
 config PFAULT
 	def_bool y

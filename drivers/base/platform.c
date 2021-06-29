@@ -16,7 +16,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/dma-mapping.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
@@ -79,6 +79,26 @@ struct resource *platform_get_resource(struct platform_device *dev,
 EXPORT_SYMBOL_GPL(platform_get_resource);
 
 /**
+ * devm_platform_ioremap_resource - call devm_ioremap_resource() for a platform
+ *				    device
+ *
+ * @pdev: platform device to use both for memory resource lookup as well as
+ *        resource managemend
+ * @index: resource index
+ */
+#ifdef CONFIG_HAS_IOMEM
+void __iomem *devm_platform_ioremap_resource(struct platform_device *pdev,
+					     unsigned int index)
+{
+	struct resource *res;
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, index);
+	return devm_ioremap_resource(&pdev->dev, res);
+}
+EXPORT_SYMBOL_GPL(devm_platform_ioremap_resource);
+#endif /* CONFIG_HAS_IOMEM */
+
+/**
  * platform_get_irq - get an IRQ for a device
  * @dev: platform device
  * @num: IRQ number index
@@ -132,6 +152,29 @@ int platform_get_irq(struct platform_device *dev, unsigned int num)
 EXPORT_SYMBOL_GPL(platform_get_irq);
 
 /**
+ * platform_get_irq_optional - get an optional IRQ for a device
+ * @dev: platform device
+ * @num: IRQ number index
+ *
+ * Gets an IRQ for a platform device. Device drivers should check the return
+ * value for errors so as to not pass a negative integer value to the
+ * request_irq() APIs. This is the same as platform_get_irq(), except that it
+ * does not print an error message if an IRQ can not be obtained.
+ *
+ * Example:
+ *		int irq = platform_get_irq_optional(pdev, 0);
+ *		if (irq < 0)
+ *			return irq;
+ *
+ * Return: IRQ number on success, negative error number on failure.
+ */
+int platform_get_irq_optional(struct platform_device *dev, unsigned int num)
+{
+	return platform_get_irq(dev, num);
+}
+EXPORT_SYMBOL_GPL(platform_get_irq_optional);
+
+/**
  * platform_irq_count - Count the number of IRQs a platform device uses
  * @dev: platform device
  *
@@ -176,12 +219,8 @@ struct resource *platform_get_resource_byname(struct platform_device *dev,
 }
 EXPORT_SYMBOL_GPL(platform_get_resource_byname);
 
-/**
- * platform_get_irq_byname - get an IRQ for a device by name
- * @dev: platform device
- * @name: IRQ name
- */
-int platform_get_irq_byname(struct platform_device *dev, const char *name)
+static int __platform_get_irq_byname(struct platform_device *dev,
+				     const char *name)
 {
 	struct resource *r;
 
@@ -194,9 +233,49 @@ int platform_get_irq_byname(struct platform_device *dev, const char *name)
 	}
 
 	r = platform_get_resource_byname(dev, IORESOURCE_IRQ, name);
-	return r ? r->start : -ENXIO;
+	if (r)
+		return r->start;
+
+	return -ENXIO;
+}
+
+/**
+ * platform_get_irq_byname - get an IRQ for a device by name
+ * @dev: platform device
+ * @name: IRQ name
+ *
+ * Get an IRQ like platform_get_irq(), but then by name rather then by index.
+ *
+ * Return: IRQ number on success, negative error number on failure.
+ */
+int platform_get_irq_byname(struct platform_device *dev, const char *name)
+{
+	int ret;
+
+	ret = __platform_get_irq_byname(dev, name);
+	if (ret < 0 && ret != -EPROBE_DEFER)
+		dev_err(&dev->dev, "IRQ %s not found\n", name);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(platform_get_irq_byname);
+
+/**
+ * platform_get_irq_byname_optional - get an optional IRQ for a device by name
+ * @dev: platform device
+ * @name: IRQ name
+ *
+ * Get an optional IRQ by name like platform_get_irq_byname(). Except that it
+ * does not print an error message if an IRQ can not be obtained.
+ *
+ * Return: IRQ number on success, negative error number on failure.
+ */
+int platform_get_irq_byname_optional(struct platform_device *dev,
+				     const char *name)
+{
+	return __platform_get_irq_byname(dev, name);
+}
+EXPORT_SYMBOL_GPL(platform_get_irq_byname_optional);
 
 /**
  * platform_add_devices - add a numbers of platform devices
@@ -1138,8 +1217,7 @@ int platform_dma_configure(struct device *dev)
 		ret = of_dma_configure(dev, dev->of_node, true);
 	} else if (has_acpi_companion(dev)) {
 		attr = acpi_get_dma_attr(to_acpi_device_node(dev->fwnode));
-		if (attr != DEV_DMA_NOT_SUPPORTED)
-			ret = acpi_dma_configure(dev, attr);
+		ret = acpi_dma_configure(dev, attr);
 	}
 
 	return ret;
@@ -1178,28 +1256,6 @@ int __init platform_bus_init(void)
 	of_platform_register_reconfig_notifier();
 	return error;
 }
-
-#ifndef ARCH_HAS_DMA_GET_REQUIRED_MASK
-u64 dma_get_required_mask(struct device *dev)
-{
-	u32 low_totalram = ((max_pfn - 1) << PAGE_SHIFT);
-	u32 high_totalram = ((max_pfn - 1) >> (32 - PAGE_SHIFT));
-	u64 mask;
-
-	if (!high_totalram) {
-		/* convert to mask just covering totalram */
-		low_totalram = (1 << (fls(low_totalram) - 1));
-		low_totalram += low_totalram - 1;
-		mask = low_totalram;
-	} else {
-		high_totalram = (1 << (fls(high_totalram) - 1));
-		high_totalram += high_totalram - 1;
-		mask = (((u64)high_totalram) << 32) + 0xffffffff;
-	}
-	return mask;
-}
-EXPORT_SYMBOL_GPL(dma_get_required_mask);
-#endif
 
 static __initdata LIST_HEAD(early_platform_driver_list);
 static __initdata LIST_HEAD(early_platform_device_list);

@@ -31,6 +31,7 @@
 #include <linux/acpi.h>
 #include <linux/ucs2_string.h>
 #include <linux/memblock.h>
+#include <linux/kernel.h>
 
 #include <asm/early_ioremap.h>
 
@@ -44,7 +45,6 @@ struct efi __read_mostly efi = {
 	.boot_info		= EFI_INVALID_TABLE_ADDR,
 	.hcdp			= EFI_INVALID_TABLE_ADDR,
 	.uga			= EFI_INVALID_TABLE_ADDR,
-	.uv_systab		= EFI_INVALID_TABLE_ADDR,
 	.fw_vendor		= EFI_INVALID_TABLE_ADDR,
 	.runtime		= EFI_INVALID_TABLE_ADDR,
 	.config_table		= EFI_INVALID_TABLE_ADDR,
@@ -52,28 +52,14 @@ struct efi __read_mostly efi = {
 	.properties_table	= EFI_INVALID_TABLE_ADDR,
 	.mem_attr_table		= EFI_INVALID_TABLE_ADDR,
 	.rng_seed		= EFI_INVALID_TABLE_ADDR,
-	.tpm_log		= EFI_INVALID_TABLE_ADDR
+	.tpm_log		= EFI_INVALID_TABLE_ADDR,
+	.tpm_final_log		= EFI_INVALID_TABLE_ADDR,
+	.mem_reserve		= EFI_INVALID_TABLE_ADDR,
+#ifdef CONFIG_LOAD_UEFI_KEYS
+	.mokvar_table		= EFI_INVALID_TABLE_ADDR,
+#endif
 };
 EXPORT_SYMBOL(efi);
-
-static unsigned long *efi_tables[] = {
-	&efi.mps,
-	&efi.acpi,
-	&efi.acpi20,
-	&efi.smbios,
-	&efi.smbios3,
-	&efi.sal_systab,
-	&efi.boot_info,
-	&efi.hcdp,
-	&efi.uga,
-	&efi.uv_systab,
-	&efi.fw_vendor,
-	&efi.runtime,
-	&efi.config_table,
-	&efi.esrt,
-	&efi.properties_table,
-	&efi.mem_attr_table,
-};
 
 struct mm_struct efi_mm = {
 	.mm_rb			= RB_ROOT,
@@ -82,7 +68,10 @@ struct mm_struct efi_mm = {
 	.mmap_sem		= __RWSEM_INITIALIZER(efi_mm.mmap_sem),
 	.page_table_lock	= __SPIN_LOCK_UNLOCKED(efi_mm.page_table_lock),
 	.mmlist			= LIST_HEAD_INIT(efi_mm.mmlist),
+	.cpu_bitmap		= { [BITS_TO_LONGS(NR_CPUS)] = 0},
 };
+
+struct workqueue_struct *efi_rts_wq;
 
 static bool disable_runtime;
 static int __init setup_noefi(char *arg)
@@ -97,6 +86,11 @@ bool efi_runtime_disabled(void)
 	return disable_runtime;
 }
 
+bool __pure __efi_soft_reserve_enabled(void)
+{
+	return !efi_enabled(EFI_MEM_NO_SOFT_RESERVE);
+}
+
 static int __init parse_efi_cmdline(char *str)
 {
 	if (!str) {
@@ -109,6 +103,9 @@ static int __init parse_efi_cmdline(char *str)
 
 	if (parse_option_str(str, "noruntime"))
 		disable_runtime = true;
+
+	if (parse_option_str(str, "nosoftreserve"))
+		set_bit(EFI_MEM_NO_SOFT_RESERVE, &efi.flags);
 
 	return 0;
 }
@@ -238,6 +235,11 @@ static void generic_ops_unregister(void)
 static char efivar_ssdt[EFIVAR_SSDT_NAME_MAX] __initdata;
 static int __init efivar_ssdt_setup(char *str)
 {
+	int ret = kernel_is_locked_down("Modifying ACPI tables");
+
+	if (ret)
+		return ret;
+
 	if (strlen(str) < sizeof(efivar_ssdt))
 		memcpy(efivar_ssdt, str, strlen(str));
 	else
@@ -304,7 +306,7 @@ static __init int efivar_ssdt_load(void)
 			goto free_data;
 		}
 
-		ret = acpi_load_table(data);
+		ret = acpi_load_table(data, NULL);
 		if (ret) {
 			pr_err("failed to load table: %d\n", ret);
 			goto free_data;
@@ -336,6 +338,18 @@ static int __init efisubsys_init(void)
 
 	if (!efi_enabled(EFI_BOOT))
 		return 0;
+
+	/*
+	 * Since we process only one efi_runtime_service() at a time, an
+	 * ordered workqueue (which creates only one execution context)
+	 * should suffice all our needs.
+	 */
+	efi_rts_wq = alloc_ordered_workqueue("efi_rts_wq", 0);
+	if (!efi_rts_wq) {
+		pr_err("Creating efi_rts_wq failed, EFI runtime services disabled.\n");
+		clear_bit(EFI_RUNTIME_SERVICES, &efi.flags);
+		return 0;
+	}
 
 	/* We register the efi directory at /sys/firmware/efi */
 	efi_kobj = kobject_create_and_add("efi", firmware_kobj);
@@ -388,7 +402,7 @@ subsys_initcall(efisubsys_init);
  * and if so, populate the supplied memory descriptor with the appropriate
  * data.
  */
-int __init efi_mem_desc_lookup(u64 phys_addr, efi_memory_desc_t *out_md)
+int efi_mem_desc_lookup(u64 phys_addr, efi_memory_desc_t *out_md)
 {
 	efi_memory_desc_t *md;
 
@@ -405,12 +419,6 @@ int __init efi_mem_desc_lookup(u64 phys_addr, efi_memory_desc_t *out_md)
 	for_each_efi_memory_desc(md) {
 		u64 size;
 		u64 end;
-
-		if (!(md->attribute & EFI_MEMORY_RUNTIME) &&
-		    md->type != EFI_BOOT_SERVICES_DATA &&
-		    md->type != EFI_RUNTIME_SERVICES_DATA) {
-			continue;
-		}
 
 		size = md->num_pages << EFI_PAGE_SHIFT;
 		end = md->phys_addr + size;
@@ -475,6 +483,14 @@ static __initdata efi_config_table_type_t common_tables[] = {
 	{EFI_MEMORY_ATTRIBUTES_TABLE_GUID, "MEMATTR", &efi.mem_attr_table},
 	{LINUX_EFI_RANDOM_SEED_TABLE_GUID, "RNG", &efi.rng_seed},
 	{LINUX_EFI_TPM_EVENT_LOG_GUID, "TPMEventLog", &efi.tpm_log},
+	{LINUX_EFI_TPM_FINAL_LOG_GUID, "TPMFinalLog", &efi.tpm_final_log},
+	{LINUX_EFI_MEMRESERVE_TABLE_GUID, "MEMRESERVE", &efi.mem_reserve},
+#ifdef CONFIG_EFI_RCI2_TABLE
+	{DELLEMC_EFI_RCI2_TABLE_GUID, NULL, &rci2_table_phys},
+#endif
+#ifdef CONFIG_LOAD_UEFI_KEYS
+	{LINUX_EFI_MOK_VARIABLE_TABLE_GUID, "MOKvar", &efi.mokvar_table},
+#endif
 	{NULL_GUID, NULL, NULL},
 };
 
@@ -580,6 +596,41 @@ int __init efi_config_parse_tables(void *config_tables, int count, int sz,
 			set_bit(EFI_NX_PE_DATA, &efi.flags);
 
 		early_memunmap(tbl, sizeof(*tbl));
+	}
+
+	if (efi.mem_reserve != EFI_INVALID_TABLE_ADDR) {
+		unsigned long prsv = efi.mem_reserve;
+
+		while (prsv) {
+			struct linux_efi_memreserve *rsv;
+			u8 *p;
+			int i;
+
+			/*
+			 * Just map a full page: that is what we will get
+			 * anyway, and it permits us to map the entire entry
+			 * before knowing its size.
+			 */
+			p = early_memremap(ALIGN_DOWN(prsv, PAGE_SIZE),
+					   PAGE_SIZE);
+			if (p == NULL) {
+				pr_err("Could not map UEFI memreserve entry!\n");
+				return -ENOMEM;
+			}
+
+			rsv = (void *)(p + prsv % PAGE_SIZE);
+
+			/* reserve the entry itself */
+			memblock_reserve(prsv, EFI_MEMRESERVE_SIZE(rsv->size));
+
+			for (i = 0; i < atomic_read(&rsv->count); i++) {
+				memblock_reserve(rsv->entry[i].base,
+						 rsv->entry[i].size);
+			}
+
+			prsv = rsv->next;
+			early_memunmap(p, PAGE_SIZE);
+		}
 	}
 
 	return 0;
@@ -802,15 +853,16 @@ char * __init efi_md_typeattr_format(char *buf, size_t size,
 	if (attr & ~(EFI_MEMORY_UC | EFI_MEMORY_WC | EFI_MEMORY_WT |
 		     EFI_MEMORY_WB | EFI_MEMORY_UCE | EFI_MEMORY_RO |
 		     EFI_MEMORY_WP | EFI_MEMORY_RP | EFI_MEMORY_XP |
-		     EFI_MEMORY_NV |
+		     EFI_MEMORY_NV | EFI_MEMORY_SP |
 		     EFI_MEMORY_RUNTIME | EFI_MEMORY_MORE_RELIABLE))
 		snprintf(pos, size, "|attr=0x%016llx]",
 			 (unsigned long long)attr);
 	else
 		snprintf(pos, size,
-			 "|%3s|%2s|%2s|%2s|%2s|%2s|%2s|%3s|%2s|%2s|%2s|%2s]",
+			 "|%3s|%2s|%2s|%2s|%2s|%2s|%2s|%2s|%3s|%2s|%2s|%2s|%2s]",
 			 attr & EFI_MEMORY_RUNTIME ? "RUN" : "",
 			 attr & EFI_MEMORY_MORE_RELIABLE ? "MR" : "",
+			 attr & EFI_MEMORY_SP      ? "SP"  : "",
 			 attr & EFI_MEMORY_NV      ? "NV"  : "",
 			 attr & EFI_MEMORY_XP      ? "XP"  : "",
 			 attr & EFI_MEMORY_RP      ? "RP"  : "",
@@ -914,19 +966,108 @@ int efi_status_to_err(efi_status_t status)
 	return err;
 }
 
-bool efi_is_table_address(unsigned long phys_addr)
+static DEFINE_SPINLOCK(efi_mem_reserve_persistent_lock);
+static struct linux_efi_memreserve *efi_memreserve_root __ro_after_init;
+
+static int __init efi_memreserve_map_root(void)
 {
-	unsigned int i;
+	if (efi.mem_reserve == EFI_INVALID_TABLE_ADDR)
+		return -ENODEV;
 
-	if (phys_addr == EFI_INVALID_TABLE_ADDR)
-		return false;
-
-	for (i = 0; i < ARRAY_SIZE(efi_tables); i++)
-		if (*(efi_tables[i]) == phys_addr)
-			return true;
-
-	return false;
+	efi_memreserve_root = memremap(efi.mem_reserve,
+				       sizeof(*efi_memreserve_root),
+				       MEMREMAP_WB);
+	if (WARN_ON_ONCE(!efi_memreserve_root))
+		return -ENOMEM;
+	return 0;
 }
+
+static int efi_mem_reserve_iomem(phys_addr_t addr, u64 size)
+{
+	struct resource *res, *parent;
+
+	res = kzalloc(sizeof(struct resource), GFP_ATOMIC);
+	if (!res)
+		return -ENOMEM;
+
+	res->name	= "reserved";
+	res->flags	= IORESOURCE_MEM;
+	res->start	= addr;
+	res->end	= addr + size - 1;
+
+	/* we expect a conflict with a 'System RAM' region */
+	parent = request_resource_conflict(&iomem_resource, res);
+	return parent ? request_resource(parent, res) : 0;
+}
+
+int __ref efi_mem_reserve_persistent(phys_addr_t addr, u64 size)
+{
+	struct linux_efi_memreserve *rsv;
+	unsigned long prsv;
+	int rc, index;
+
+	if (efi_memreserve_root == (void *)ULONG_MAX)
+		return -ENODEV;
+
+	if (!efi_memreserve_root) {
+		rc = efi_memreserve_map_root();
+		if (rc)
+			return rc;
+	}
+
+	/* first try to find a slot in an existing linked list entry */
+	for (prsv = efi_memreserve_root->next; prsv; prsv = rsv->next) {
+		rsv = memremap(prsv, sizeof(*rsv), MEMREMAP_WB);
+		index = atomic_fetch_add_unless(&rsv->count, 1, rsv->size);
+		if (index < rsv->size) {
+			rsv->entry[index].base = addr;
+			rsv->entry[index].size = size;
+
+			memunmap(rsv);
+			return efi_mem_reserve_iomem(addr, size);
+		}
+		memunmap(rsv);
+	}
+
+	/* no slot found - allocate a new linked list entry */
+	rsv = (struct linux_efi_memreserve *)__get_free_page(GFP_ATOMIC);
+	if (!rsv)
+		return -ENOMEM;
+
+	rc = efi_mem_reserve_iomem(__pa(rsv), SZ_4K);
+	if (rc) {
+		free_page((unsigned long)rsv);
+		return rc;
+	}
+
+	/*
+	 * The memremap() call above assumes that a linux_efi_memreserve entry
+	 * never crosses a page boundary, so let's ensure that this remains true
+	 * even when kexec'ing a 4k pages kernel from a >4k pages kernel, by
+	 * using SZ_4K explicitly in the size calculation below.
+	 */
+	rsv->size = EFI_MEMRESERVE_COUNT(SZ_4K);
+	atomic_set(&rsv->count, 1);
+	rsv->entry[0].base = addr;
+	rsv->entry[0].size = size;
+
+	spin_lock(&efi_mem_reserve_persistent_lock);
+	rsv->next = efi_memreserve_root->next;
+	efi_memreserve_root->next = __pa(rsv);
+	spin_unlock(&efi_mem_reserve_persistent_lock);
+
+	return efi_mem_reserve_iomem(addr, size);
+}
+
+static int __init efi_memreserve_root_init(void)
+{
+	if (efi_memreserve_root)
+		return 0;
+	if (efi_memreserve_map_root())
+		efi_memreserve_root = (void *)ULONG_MAX;
+	return 0;
+}
+early_initcall(efi_memreserve_root_init);
 
 #ifdef CONFIG_KEXEC
 static int update_efi_random_seed(struct notifier_block *nb,

@@ -24,13 +24,11 @@ config XTENSA
 	select HAVE_FUTEX_CMPXCHG if !MMU
 	select HAVE_HW_BREAKPOINT if PERF_EVENTS
 	select HAVE_IRQ_TIME_ACCOUNTING
-	select HAVE_MEMBLOCK
 	select HAVE_OPROFILE
 	select HAVE_PERF_EVENTS
 	select HAVE_STACKPROTECTOR
 	select IRQ_DOMAIN
 	select MODULES_USE_ELF_RELA
-	select NO_BOOTMEM
 	select PERF_USE_VMALLOC
 	select VIRT_TO_BUS
 	help
@@ -40,9 +38,6 @@ config XTENSA
 	  architecture supports all processor configurations and extensions,
 	  with reasonable minimum requirements.  The Xtensa Linux project has
 	  a home page at <http://www.linux-xtensa.org/>.
-
-config RWSEM_XCHGADD_ALGORITHM
-	def_bool y
 
 config GENERIC_HWEIGHT
 	def_bool y

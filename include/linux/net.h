@@ -25,8 +25,11 @@
 #include <linux/rcupdate.h>
 #include <linux/once.h>
 #include <linux/fs.h>
+#include <linux/mm.h>
 
 #include <uapi/linux/net.h>
+
+#include <linux/rh_kabi.h>
 
 struct poll_table_struct;
 struct pipe_inode_info;
@@ -83,6 +86,12 @@ enum sock_type {
 
 #endif /* ARCH_HAS_SOCKET_TYPES */
 
+/**
+ * enum sock_shutdown_cmd - Shutdown types
+ * @SHUT_RD: shutdown receptions
+ * @SHUT_WR: shutdown transmissions
+ * @SHUT_RDWR: shutdown receptions/transmissions
+ */
 enum sock_shutdown_cmd {
 	SHUT_RD,
 	SHUT_WR,
@@ -129,6 +138,9 @@ struct module;
 struct sk_buff;
 typedef int (*sk_read_actor_t)(read_descriptor_t *, struct sk_buff *,
 			       unsigned int, size_t);
+
+struct proto_ops_extended_rh {
+};
 
 struct proto_ops {
 	int		family;
@@ -198,6 +210,15 @@ struct proto_ops {
 	int		(*sendmsg_locked)(struct sock *sk, struct msghdr *msg,
 					  size_t size);
 	int		(*set_rcvlowat)(struct sock *sk, int val);
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+	RH_KABI_AUX_EMBED(proto_ops_extended)
 };
 
 #define DECLARE_SOCKADDR(type, dst, src)	\
@@ -283,6 +304,21 @@ do {									\
 	get_random_once((buf), (nbytes))
 #define net_get_random_once_wait(buf, nbytes)			\
 	get_random_once_wait((buf), (nbytes))
+
+/*
+ * E.g. XFS meta- & log-data is in slab pages, or bcache meta
+ * data pages, or other high order pages allocated by
+ * __get_free_pages() without __GFP_COMP, which have a page_count
+ * of 0 and/or have PageSlab() set. We cannot use send_page for
+ * those, as that does get_page(); put_page(); and would cause
+ * either a VM_BUG directly, or __page_cache_release a page that
+ * would actually still be referenced by someone, leading to some
+ * obscure delayed Oops somewhere else.
+ */
+static inline bool sendpage_ok(struct page *page)
+{
+	return !PageSlab(page) && page_count(page) >= 1;
+}
 
 int kernel_sendmsg(struct socket *sock, struct msghdr *msg, struct kvec *vec,
 		   size_t num, size_t len);

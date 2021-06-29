@@ -169,25 +169,31 @@ static int vrf_ip6_local_out(struct net *net, struct sock *sk,
 static netdev_tx_t vrf_process_v6_outbound(struct sk_buff *skb,
 					   struct net_device *dev)
 {
-	const struct ipv6hdr *iph = ipv6_hdr(skb);
+	const struct ipv6hdr *iph;
 	struct net *net = dev_net(skb->dev);
-	struct flowi6 fl6 = {
-		/* needed to match OIF rule */
-		.flowi6_oif = dev->ifindex,
-		.flowi6_iif = LOOPBACK_IFINDEX,
-		.daddr = iph->daddr,
-		.saddr = iph->saddr,
-		.flowlabel = ip6_flowinfo(iph),
-		.flowi6_mark = skb->mark,
-		.flowi6_proto = iph->nexthdr,
-		.flowi6_flags = FLOWI_FLAG_SKIP_NH_OIF,
-	};
+	struct flowi6 fl6;
 	int ret = NET_XMIT_DROP;
 	struct dst_entry *dst;
 	struct dst_entry *dst_null = &net->ipv6.ip6_null_entry->dst;
 
-	dst = ip6_route_output(net, NULL, &fl6);
-	if (dst == dst_null)
+	if (!pskb_may_pull(skb, ETH_HLEN + sizeof(struct ipv6hdr)))
+		goto err;
+
+	iph = ipv6_hdr(skb);
+
+	memset(&fl6, 0, sizeof(fl6));
+	/* needed to match OIF rule */
+	fl6.flowi6_oif = dev->ifindex;
+	fl6.flowi6_iif = LOOPBACK_IFINDEX;
+	fl6.daddr = iph->daddr;
+	fl6.saddr = iph->saddr;
+	fl6.flowlabel = ip6_flowinfo(iph);
+	fl6.flowi6_mark = skb->mark;
+	fl6.flowi6_proto = iph->nexthdr;
+	fl6.flowi6_flags = FLOWI_FLAG_SKIP_NH_OIF;
+
+	dst = ip6_dst_lookup_flow(net, NULL, &fl6, NULL);
+	if (IS_ERR(dst) || dst == dst_null)
 		goto err;
 
 	skb_dst_drop(skb);
@@ -241,20 +247,26 @@ static int vrf_ip_local_out(struct net *net, struct sock *sk,
 static netdev_tx_t vrf_process_v4_outbound(struct sk_buff *skb,
 					   struct net_device *vrf_dev)
 {
-	struct iphdr *ip4h = ip_hdr(skb);
+	struct iphdr *ip4h;
 	int ret = NET_XMIT_DROP;
-	struct flowi4 fl4 = {
-		/* needed to match OIF rule */
-		.flowi4_oif = vrf_dev->ifindex,
-		.flowi4_iif = LOOPBACK_IFINDEX,
-		.flowi4_tos = RT_TOS(ip4h->tos),
-		.flowi4_flags = FLOWI_FLAG_ANYSRC | FLOWI_FLAG_SKIP_NH_OIF,
-		.flowi4_proto = ip4h->protocol,
-		.daddr = ip4h->daddr,
-		.saddr = ip4h->saddr,
-	};
+	struct flowi4 fl4;
 	struct net *net = dev_net(vrf_dev);
 	struct rtable *rt;
+
+	if (!pskb_may_pull(skb, ETH_HLEN + sizeof(struct iphdr)))
+		goto err;
+
+	ip4h = ip_hdr(skb);
+
+	memset(&fl4, 0, sizeof(fl4));
+	/* needed to match OIF rule */
+	fl4.flowi4_oif = vrf_dev->ifindex;
+	fl4.flowi4_iif = LOOPBACK_IFINDEX;
+	fl4.flowi4_tos = RT_TOS(ip4h->tos);
+	fl4.flowi4_flags = FLOWI_FLAG_ANYSRC | FLOWI_FLAG_SKIP_NH_OIF;
+	fl4.flowi4_proto = ip4h->protocol;
+	fl4.daddr = ip4h->daddr;
+	fl4.saddr = ip4h->saddr;
 
 	rt = ip_route_output_flow(net, &fl4, NULL);
 	if (IS_ERR(rt))
@@ -354,8 +366,8 @@ static int vrf_finish_output6(struct net *net, struct sock *sk,
 {
 	struct dst_entry *dst = skb_dst(skb);
 	struct net_device *dev = dst->dev;
+	const struct in6_addr *nexthop;
 	struct neighbour *neigh;
-	struct in6_addr *nexthop;
 	int ret;
 
 	nf_reset(skb);
@@ -466,7 +478,8 @@ static struct sk_buff *vrf_ip6_out(struct net_device *vrf_dev,
 	if (rt6_need_strict(&ipv6_hdr(skb)->daddr))
 		return skb;
 
-	if (qdisc_tx_is_default(vrf_dev))
+	if (qdisc_tx_is_default(vrf_dev) ||
+	    IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED)
 		return vrf_ip6_out_direct(vrf_dev, sk, skb);
 
 	return vrf_ip6_out_redirect(vrf_dev, skb);
@@ -680,7 +693,8 @@ static struct sk_buff *vrf_ip_out(struct net_device *vrf_dev,
 	    ipv4_is_lbcast(ip_hdr(skb)->daddr))
 		return skb;
 
-	if (qdisc_tx_is_default(vrf_dev))
+	if (qdisc_tx_is_default(vrf_dev) ||
+	    IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)
 		return vrf_ip_out_direct(vrf_dev, sk, skb);
 
 	return vrf_ip_out_redirect(vrf_dev, skb);
@@ -747,7 +761,8 @@ static int vrf_rtable_create(struct net_device *dev)
 /**************************** device handling ********************/
 
 /* cycle interface to flush neighbor cache and move routes across tables */
-static void cycle_netdev(struct net_device *dev)
+static void cycle_netdev(struct net_device *dev,
+			 struct netlink_ext_ack *extack)
 {
 	unsigned int flags = dev->flags;
 	int ret;
@@ -755,9 +770,9 @@ static void cycle_netdev(struct net_device *dev)
 	if (!netif_running(dev))
 		return;
 
-	ret = dev_change_flags(dev, flags & ~IFF_UP);
+	ret = dev_change_flags(dev, flags & ~IFF_UP, extack);
 	if (ret >= 0)
-		ret = dev_change_flags(dev, flags);
+		ret = dev_change_flags(dev, flags, extack);
 
 	if (ret < 0) {
 		netdev_err(dev,
@@ -785,7 +800,7 @@ static int do_vrf_add_slave(struct net_device *dev, struct net_device *port_dev,
 	if (ret < 0)
 		goto err;
 
-	cycle_netdev(port_dev);
+	cycle_netdev(port_dev, extack);
 
 	return 0;
 
@@ -815,7 +830,7 @@ static int do_vrf_del_slave(struct net_device *dev, struct net_device *port_dev)
 	netdev_upper_dev_unlink(port_dev, dev);
 	port_dev->priv_flags &= ~IFF_L3MDEV_SLAVE;
 
-	cycle_netdev(port_dev);
+	cycle_netdev(port_dev, NULL);
 
 	return 0;
 }

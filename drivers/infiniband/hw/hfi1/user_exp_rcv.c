@@ -1,4 +1,5 @@
 /*
+ * Copyright(c) 2020 Cornelis Networks, Inc.
  * Copyright(c) 2015-2018 Intel Corporation.
  *
  * This file is provided under a dual BSD/GPLv2 license.  When using or
@@ -90,9 +91,6 @@ int hfi1_user_exp_rcv_init(struct hfi1_filedata *fd,
 	struct hfi1_devdata *dd = uctxt->dd;
 	int ret = 0;
 
-	spin_lock_init(&fd->tid_lock);
-	spin_lock_init(&fd->invalid_lock);
-
 	fd->entry_to_rb = kcalloc(uctxt->expected_count,
 				  sizeof(struct rb_node *),
 				  GFP_KERNEL);
@@ -114,7 +112,7 @@ int hfi1_user_exp_rcv_init(struct hfi1_filedata *fd,
 		 * Register MMU notifier callbacks. If the registration
 		 * fails, continue without TID caching for this context.
 		 */
-		ret = hfi1_mmu_rb_register(fd, fd->mm, &tid_rb_ops,
+		ret = hfi1_mmu_rb_register(fd, &tid_rb_ops,
 					   dd->pport->hfi1_wq,
 					   &fd->handler);
 		if (ret) {
@@ -165,10 +163,12 @@ void hfi1_user_exp_rcv_free(struct hfi1_filedata *fd)
 	if (fd->handler) {
 		hfi1_mmu_rb_unregister(fd->handler);
 	} else {
+		mutex_lock(&uctxt->exp_mutex);
 		if (!EXP_TID_SET_EMPTY(uctxt->tid_full_list))
 			unlock_exp_tids(uctxt, &uctxt->tid_full_list, fd);
 		if (!EXP_TID_SET_EMPTY(uctxt->tid_used_list))
 			unlock_exp_tids(uctxt, &uctxt->tid_used_list, fd);
+		mutex_unlock(&uctxt->exp_mutex);
 	}
 
 	kfree(fd->invalid_tids);
@@ -198,15 +198,18 @@ static void unpin_rcv_pages(struct hfi1_filedata *fd,
 {
 	struct page **pages;
 	struct hfi1_devdata *dd = fd->uctxt->dd;
+	struct mm_struct *mm;
 
 	if (mapped) {
 		pci_unmap_single(dd->pcidev, node->dma_addr,
 				 node->mmu.len, PCI_DMA_FROMDEVICE);
 		pages = &node->pages[idx];
+		mm = mm_from_tid_node(node);
 	} else {
 		pages = &tidbuf->pages[idx];
+		mm = current->mm;
 	}
-	hfi1_release_user_pages(fd->mm, pages, npages, mapped);
+	hfi1_release_user_pages(mm, pages, npages, mapped);
 	fd->tid_n_pinned -= npages;
 }
 
@@ -231,13 +234,6 @@ static int pin_rcv_pages(struct hfi1_filedata *fd, struct tid_user_buf *tidbuf)
 		return -EINVAL;
 	}
 
-	/* Verify that access is OK for the user buffer */
-	if (!access_ok(VERIFY_WRITE, (void __user *)vaddr,
-		       npages * PAGE_SIZE)) {
-		dd_dev_err(dd, "Fail vaddr %p, %u pages, !access_ok\n",
-			   (void *)vaddr, npages);
-		return -EFAULT;
-	}
 	/* Allocate the array of struct page pointers needed for pinning */
 	pages = kcalloc(npages, sizeof(*pages), GFP_KERNEL);
 	if (!pages)
@@ -248,12 +244,12 @@ static int pin_rcv_pages(struct hfi1_filedata *fd, struct tid_user_buf *tidbuf)
 	 * pages, accept the amount pinned so far and program only that.
 	 * User space knows how to deal with partially programmed buffers.
 	 */
-	if (!hfi1_can_pin_pages(dd, fd->mm, fd->tid_n_pinned, npages)) {
+	if (!hfi1_can_pin_pages(dd, current->mm, fd->tid_n_pinned, npages)) {
 		kfree(pages);
 		return -ENOMEM;
 	}
 
-	pinned = hfi1_acquire_user_pages(fd->mm, vaddr, npages, true, pages);
+	pinned = hfi1_acquire_user_pages(current->mm, vaddr, npages, true, pages);
 	if (pinned <= 0) {
 		kfree(pages);
 		return pinned;
@@ -323,6 +319,9 @@ int hfi1_user_exp_rcv_setup(struct hfi1_filedata *fd,
 		tididx = 0, mapped, mapped_pages = 0;
 	u32 *tidlist = NULL;
 	struct tid_user_buf *tidbuf;
+
+	if (!PAGE_ALIGNED(tinfo->vaddr))
+		return -EINVAL;
 
 	tidbuf = kzalloc(sizeof(*tidbuf), GFP_KERNEL);
 	if (!tidbuf)

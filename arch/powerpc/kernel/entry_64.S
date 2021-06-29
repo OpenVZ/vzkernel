@@ -25,6 +25,7 @@
 #include <asm/page.h>
 #include <asm/mmu.h>
 #include <asm/thread_info.h>
+#include <asm/code-patching-asm.h>
 #include <asm/ppc_asm.h>
 #include <asm/asm-offsets.h>
 #include <asm/cputable.h>
@@ -383,10 +384,9 @@ END_FTR_SECTION_IFSET(CPU_FTR_HAS_PPR)
 
 4:	/* Anything else left to do? */
 BEGIN_FTR_SECTION
-	lis	r3,INIT_PPR@highest	/* Set thread.ppr = 3 */
-	ld	r10,PACACURRENT(r13)
+	lis	r3,DEFAULT_PPR@highest	/* Set default PPR */
 	sldi	r3,r3,32	/* bits 11-13 are used for ppr */
-	std	r3,TASKTHREADPPR(r10)
+	std	r3,_PPR(r1)
 END_FTR_SECTION_IFSET(CPU_FTR_HAS_PPR)
 
 	andi.	r0,r9,(_TIF_SYSCALL_DOTRACE|_TIF_SINGLESTEP)
@@ -504,6 +504,64 @@ _GLOBAL(ret_from_kernel_thread)
 	li	r3,0
 	b	.Lsyscall_exit
 
+#ifdef CONFIG_PPC_BOOK3S_64
+
+#define FLUSH_COUNT_CACHE	\
+1:	nop;			\
+	patch_site 1b, patch__call_flush_branch_caches1; \
+1:	nop;			\
+	patch_site 1b, patch__call_flush_branch_caches2; \
+1:	nop;			\
+	patch_site 1b, patch__call_flush_branch_caches3
+
+.macro nops number
+	.rept \number
+	nop
+	.endr
+.endm
+
+.balign 32
+.global flush_branch_caches
+flush_branch_caches:
+	/* Save LR into r9 */
+	mflr	r9
+
+	// Flush the link stack
+	.rept 64
+	bl	.+4
+	.endr
+	b	1f
+	nops	6
+
+	.balign 32
+	/* Restore LR */
+1:	mtlr	r9
+
+	// If we're just flushing the link stack, return here
+3:	nop
+	patch_site 3b patch__flush_link_stack_return
+
+	li	r9,0x7fff
+	mtctr	r9
+
+	PPC_BCCTR_FLUSH
+
+2:	nop
+	patch_site 2b patch__flush_count_cache_return
+
+	nops	3
+
+	.rept 278
+	.balign 32
+	PPC_BCCTR_FLUSH
+	nops	7
+	.endr
+
+	blr
+#else
+#define FLUSH_COUNT_CACHE
+#endif /* CONFIG_PPC_BOOK3S_64 */
+
 /*
  * This routine switches between two different tasks.  The process
  * state of one is saved on its kernel stack.  Then the state
@@ -534,6 +592,8 @@ _GLOBAL(_switch)
 	mfcr	r23
 	std	r23,_CCR(r1)
 	std	r1,KSP(r3)	/* Set old stack pointer */
+
+	FLUSH_COUNT_CACHE	/* Clobbers r9, ctr */
 
 	/*
 	 * On SMP kernels, care must be taken because a task may be
@@ -568,6 +628,10 @@ _GLOBAL(_switch)
 
 	addi	r6,r4,-THREAD	/* Convert THREAD to 'current' */
 	std	r6,PACACURRENT(r13)	/* Set new 'current' */
+#if defined(CONFIG_STACKPROTECTOR)
+	ld	r6, TASK_CANARY(r6)
+	std	r6, PACA_CANARY(r13)
+#endif
 
 	ld	r8,KSP(r4)	/* new stack pointer */
 #ifdef CONFIG_PPC_BOOK3S_64
@@ -880,12 +944,6 @@ fast_exception_return:
 	andi.	r0,r3,MSR_RI
 	beq-	.Lunrecov_restore
 
-	/* Load PPR from thread struct before we clear MSR:RI */
-BEGIN_FTR_SECTION
-	ld	r2,PACACURRENT(r13)
-	ld	r2,TASKTHREADPPR(r2)
-END_FTR_SECTION_IFSET(CPU_FTR_HAS_PPR)
-
 	/*
 	 * Clear RI before restoring r13.  If we are returning to
 	 * userspace and we take an exception after restoring r13,
@@ -906,7 +964,9 @@ END_FTR_SECTION_IFSET(CPU_FTR_HAS_PPR)
 	andi.	r0,r3,MSR_PR
 	beq	1f
 BEGIN_FTR_SECTION
-	mtspr	SPRN_PPR,r2	/* Restore PPR */
+	/* Restore PPR */
+	ld	r2,_PPR(r1)
+	mtspr	SPRN_PPR,r2
 END_FTR_SECTION_IFSET(CPU_FTR_HAS_PPR)
 	ACCOUNT_CPU_USER_EXIT(r13, r2, r4)
 	REST_GPR(13, r1)
@@ -932,6 +992,13 @@ END_FTR_SECTION_IFSET(CPU_FTR_HAS_PPR)
 	mtcrf	0xFF,r2
 	ld	r2,_NIP(r1)
 	mtspr	SPRN_SRR0,r2
+
+	/*
+	 * Leaving a stale exception_marker on the stack can confuse
+	 * the reliable stack unwinder later on. Clear it.
+	 */
+	li	r2,0
+	std	r2,STACK_FRAME_OVERHEAD-16(r1)
 
 	ld	r0,GPR0(r1)
 	ld	r2,GPR2(r1)
@@ -1054,7 +1121,7 @@ _ASM_NOKPROBE_SYMBOL(fast_exception_return);
 _GLOBAL(enter_rtas)
 	mflr	r0
 	std	r0,16(r1)
-        stdu	r1,-RTAS_FRAME_SIZE(r1)	/* Save SP and create stack space. */
+        stdu	r1,-SWITCH_FRAME_SIZE(r1) /* Save SP and create stack space. */
 
 	/* Because RTAS is running in 32b mode, it clobbers the high order half
 	 * of all registers that it saves.  We therefore save those registers
@@ -1186,7 +1253,7 @@ rtas_restore_regs:
 	ld	r8,_DSISR(r1)
 	mtdsisr	r8
 
-        addi	r1,r1,RTAS_FRAME_SIZE	/* Unstack our frame */
+        addi	r1,r1,SWITCH_FRAME_SIZE	/* Unstack our frame */
 	ld	r0,16(r1)		/* get return address */
 
 	mtlr    r0
@@ -1197,7 +1264,7 @@ rtas_restore_regs:
 _GLOBAL(enter_prom)
 	mflr	r0
 	std	r0,16(r1)
-        stdu	r1,-PROM_FRAME_SIZE(r1)	/* Save SP and create stack space */
+        stdu	r1,-SWITCH_FRAME_SIZE(r1) /* Save SP and create stack space */
 
 	/* Because PROM is running in 32b mode, it clobbers the high order half
 	 * of all registers that it saves.  We therefore save those registers
@@ -1254,8 +1321,8 @@ _GLOBAL(enter_prom)
 	REST_10GPRS(22, r1)
 	ld	r4,_CCR(r1)
 	mtcr	r4
-	
-        addi	r1,r1,PROM_FRAME_SIZE
+
+        addi	r1,r1,SWITCH_FRAME_SIZE
 	ld	r0,16(r1)
 	mtlr    r0
         blr

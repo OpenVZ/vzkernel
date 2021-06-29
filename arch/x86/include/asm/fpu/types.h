@@ -5,6 +5,8 @@
 #ifndef _ASM_X86_FPU_H
 #define _ASM_X86_FPU_H
 
+#include <linux/rh_kabi.h>
+
 /*
  * The legacy x87 FPU state format, as saved by FSAVE and
  * restored by the FRSTOR instructions:
@@ -114,6 +116,7 @@ enum xfeature {
 	XFEATURE_Hi16_ZMM,
 	XFEATURE_PT_UNIMPLEMENTED_SO_FAR,
 	XFEATURE_PKRU,
+	XFEATURE_PASID,
 
 	XFEATURE_MAX,
 };
@@ -128,6 +131,7 @@ enum xfeature {
 #define XFEATURE_MASK_Hi16_ZMM		(1 << XFEATURE_Hi16_ZMM)
 #define XFEATURE_MASK_PT		(1 << XFEATURE_PT_UNIMPLEMENTED_SO_FAR)
 #define XFEATURE_MASK_PKRU		(1 << XFEATURE_PKRU)
+#define XFEATURE_MASK_PASID		(1 << XFEATURE_PASID)
 
 #define XFEATURE_MASK_FPSSE		(XFEATURE_MASK_FP | XFEATURE_MASK_SSE)
 #define XFEATURE_MASK_AVX512		(XFEATURE_MASK_OPMASK \
@@ -229,6 +233,14 @@ struct pkru_state {
 	u32				pad;
 } __packed;
 
+/*
+ * State component 10 is supervisor state used for context-switching the
+ * PASID state.
+ */
+struct ia32_pasid_state {
+	u64 pasid;
+} __packed;
+
 struct xstate_header {
 	u64				xfeatures;
 	u64				xcomp_bv;
@@ -293,14 +305,7 @@ struct fpu {
 	 */
 	unsigned int			last_cpu;
 
-	/*
-	 * @initialized:
-	 *
-	 * This flag indicates whether this context is initialized: if the task
-	 * is not running then we can restore from this context, if the task
-	 * is running then we should save into this context.
-	 */
-	unsigned char			initialized;
+	RH_KABI_DEPRECATE(unsigned char, initialized)
 
 	/*
 	 * @state:

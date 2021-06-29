@@ -176,6 +176,15 @@ int rt2x00mac_start(struct ieee80211_hw *hw)
 	if (!test_bit(DEVICE_STATE_PRESENT, &rt2x00dev->flags))
 		return 0;
 
+	if (test_bit(DEVICE_STATE_STARTED, &rt2x00dev->flags)) {
+		/*
+		 * This is special case for ieee80211_restart_hw(), otherwise
+		 * mac80211 never call start() two times in row without stop();
+		 */
+		set_bit(DEVICE_STATE_RESET, &rt2x00dev->flags);
+		rt2x00dev->ops->lib->pre_reset_hw(rt2x00dev);
+		rt2x00lib_stop(rt2x00dev);
+	}
 	return rt2x00lib_start(rt2x00dev);
 }
 EXPORT_SYMBOL_GPL(rt2x00mac_start);
@@ -190,6 +199,17 @@ void rt2x00mac_stop(struct ieee80211_hw *hw)
 	rt2x00lib_stop(rt2x00dev);
 }
 EXPORT_SYMBOL_GPL(rt2x00mac_stop);
+
+void
+rt2x00mac_reconfig_complete(struct ieee80211_hw *hw,
+			    enum ieee80211_reconfig_type reconfig_type)
+{
+	struct rt2x00_dev *rt2x00dev = hw->priv;
+
+	if (reconfig_type == IEEE80211_RECONFIG_TYPE_RESTART)
+		clear_bit(DEVICE_STATE_RESET, &rt2x00dev->flags);
+}
+EXPORT_SYMBOL_GPL(rt2x00mac_reconfig_complete);
 
 int rt2x00mac_add_interface(struct ieee80211_hw *hw,
 			    struct ieee80211_vif *vif)
@@ -459,7 +479,8 @@ int rt2x00mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	if (!test_bit(DEVICE_STATE_PRESENT, &rt2x00dev->flags))
 		return 0;
 
-	if (!rt2x00_has_cap_hw_crypto(rt2x00dev))
+	/* The hardware can't do MFP */
+	if (!rt2x00_has_cap_hw_crypto(rt2x00dev) || (sta && sta->mfp))
 		return -EOPNOTSUPP;
 
 	/*
@@ -526,24 +547,6 @@ int rt2x00mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 }
 EXPORT_SYMBOL_GPL(rt2x00mac_set_key);
 #endif /* CONFIG_RT2X00_LIB_CRYPTO */
-
-int rt2x00mac_sta_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-		      struct ieee80211_sta *sta)
-{
-	struct rt2x00_dev *rt2x00dev = hw->priv;
-
-	return rt2x00dev->ops->lib->sta_add(rt2x00dev, vif, sta);
-}
-EXPORT_SYMBOL_GPL(rt2x00mac_sta_add);
-
-int rt2x00mac_sta_remove(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-			 struct ieee80211_sta *sta)
-{
-	struct rt2x00_dev *rt2x00dev = hw->priv;
-
-	return rt2x00dev->ops->lib->sta_remove(rt2x00dev, sta);
-}
-EXPORT_SYMBOL_GPL(rt2x00mac_sta_remove);
 
 void rt2x00mac_sw_scan_start(struct ieee80211_hw *hw,
 			     struct ieee80211_vif *vif,
@@ -660,17 +663,7 @@ void rt2x00mac_bss_info_changed(struct ieee80211_hw *hw,
 			rt2x00dev->intf_associated--;
 
 		rt2x00leds_led_assoc(rt2x00dev, !!rt2x00dev->intf_associated);
-
-		clear_bit(CONFIG_QOS_DISABLED, &rt2x00dev->flags);
 	}
-
-	/*
-	 * Check for access point which do not support 802.11e . We have to
-	 * generate data frames sequence number in S/W for such AP, because
-	 * of H/W bug.
-	 */
-	if (changes & BSS_CHANGED_QOS && !bss_conf->qos)
-		set_bit(CONFIG_QOS_DISABLED, &rt2x00dev->flags);
 
 	/*
 	 * When the erp information has changed, we should perform
@@ -738,8 +731,12 @@ void rt2x00mac_flush(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	if (!test_bit(DEVICE_STATE_PRESENT, &rt2x00dev->flags))
 		return;
 
+	set_bit(DEVICE_STATE_FLUSHING, &rt2x00dev->flags);
+
 	tx_queue_for_each(rt2x00dev, queue)
 		rt2x00queue_flush_queue(queue, drop);
+
+	clear_bit(DEVICE_STATE_FLUSHING, &rt2x00dev->flags);
 }
 EXPORT_SYMBOL_GPL(rt2x00mac_flush);
 

@@ -46,12 +46,12 @@ static inline ulong kvmppc_get_gpr(struct kvm_vcpu *vcpu, int num)
 
 static inline void kvmppc_set_cr(struct kvm_vcpu *vcpu, u32 val)
 {
-	vcpu->arch.cr = val;
+	vcpu->arch.regs.ccr = val;
 }
 
 static inline u32 kvmppc_get_cr(struct kvm_vcpu *vcpu)
 {
-	return vcpu->arch.cr;
+	return vcpu->arch.regs.ccr;
 }
 
 static inline void kvmppc_set_xer(struct kvm_vcpu *vcpu, ulong val)
@@ -100,10 +100,12 @@ static inline ulong kvmppc_get_pc(struct kvm_vcpu *vcpu)
 	return vcpu->arch.regs.nip;
 }
 
+#ifdef CONFIG_BOOKE
 static inline ulong kvmppc_get_fault_dar(struct kvm_vcpu *vcpu)
 {
 	return vcpu->arch.fault_dear;
 }
+#endif
 
 static inline bool kvmppc_supports_magic_page(struct kvm_vcpu *vcpu)
 {

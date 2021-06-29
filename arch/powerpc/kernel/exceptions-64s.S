@@ -111,7 +111,9 @@ EXC_VIRT_NONE(0x4000, 0x100)
 	mfspr	r10,SPRN_SRR1 ;						\
 	rlwinm.	r10,r10,47-31,30,31 ;					\
 	beq-	1f ;							\
-	cmpwi	cr3,r10,2 ;						\
+	cmpwi	cr1,r10,2 ;						\
+	mfspr	r3,SPRN_SRR1 ;						\
+	bltlr	cr1 ;	/* no state loss, return to idle caller */	\
 	BRANCH_TO_C000(r10, system_reset_idle_common) ;			\
 1:									\
 	KVMTEST_PR(n) ;							\
@@ -135,8 +137,11 @@ TRAMP_KVM(PACA_EXNMI, 0x100)
 
 #ifdef CONFIG_PPC_P7_NAP
 EXC_COMMON_BEGIN(system_reset_idle_common)
-	mfspr	r12,SPRN_SRR1
-	b	pnv_powersave_wakeup
+	/*
+	 * This must be a direct branch (without linker branch stub) because
+	 * we can not use TOC at this point as r2 may not be restored yet.
+	 */
+	b	idle_return_gpr_loss
 #endif
 
 /*
@@ -243,14 +248,13 @@ EXC_REAL_BEGIN(machine_check, 0x200, 0x100)
 	SET_SCRATCH0(r13)		/* save r13 */
 	EXCEPTION_PROLOG_0(PACA_EXMC)
 BEGIN_FTR_SECTION
-	b	machine_check_powernv_early
+	b	machine_check_common_early
 FTR_SECTION_ELSE
 	b	machine_check_pSeries_0
 ALT_FTR_SECTION_END_IFSET(CPU_FTR_HVMODE)
 EXC_REAL_END(machine_check, 0x200, 0x100)
 EXC_VIRT_NONE(0x4200, 0x100)
-TRAMP_REAL_BEGIN(machine_check_powernv_early)
-BEGIN_FTR_SECTION
+TRAMP_REAL_BEGIN(machine_check_common_early)
 	EXCEPTION_PROLOG_1(PACA_EXMC, NOTEST, 0x200)
 	/*
 	 * Register contents:
@@ -276,9 +280,7 @@ BEGIN_FTR_SECTION
 	 *
 	 * This interrupt can wake directly from idle. If that is the case,
 	 * the machine check is handled then the idle wakeup code is called
-	 * to restore state. In that case, the POWER9 DD1 idle PACA workaround
-	 * is not applied in the early machine check code, which will cause
-	 * bugs.
+	 * to restore state.
 	 */
 	mr	r11,r1			/* Save r1 */
 	lhz	r10,PACA_IN_MCE(r13)
@@ -306,7 +308,9 @@ BEGIN_FTR_SECTION
 	/* Save r9 through r13 from EXMC save area to stack frame. */
 	EXCEPTION_PROLOG_COMMON_2(PACA_EXMC)
 	mfmsr	r11			/* get MSR value */
+BEGIN_FTR_SECTION
 	ori	r11,r11,MSR_ME		/* turn on ME bit */
+END_FTR_SECTION_IFSET(CPU_FTR_HVMODE)
 	ori	r11,r11,MSR_RI		/* turn on RI bit */
 	LOAD_HANDLER(r12, machine_check_handle_early)
 1:	mtspr	SPRN_SRR0,r12
@@ -325,13 +329,15 @@ BEGIN_FTR_SECTION
 	andc	r11,r11,r10		/* Turn off MSR_ME */
 	b	1b
 	b	.	/* prevent speculative execution */
-END_FTR_SECTION_IFSET(CPU_FTR_HVMODE)
 
 TRAMP_REAL_BEGIN(machine_check_pSeries)
 	.globl machine_check_fwnmi
 machine_check_fwnmi:
 	SET_SCRATCH0(r13)		/* save r13 */
 	EXCEPTION_PROLOG_0(PACA_EXMC)
+BEGIN_FTR_SECTION
+	b	machine_check_common_early
+END_FTR_SECTION_IFCLR(CPU_FTR_HVMODE)
 machine_check_pSeries_0:
 	EXCEPTION_PROLOG_1(PACA_EXMC, KVMTEST_PR, 0x200)
 	/*
@@ -417,17 +423,17 @@ EXC_COMMON_BEGIN(machine_check_idle_common)
 	 * Then decrement MCE nesting after finishing with the stack.
 	 */
 	ld	r3,_MSR(r1)
+	ld	r4,_LINK(r1)
 
 	lhz	r11,PACA_IN_MCE(r13)
 	subi	r11,r11,1
 	sth	r11,PACA_IN_MCE(r13)
 
-	/* Turn off the RI bit because SRR1 is used by idle wakeup code. */
-	/* Recoverability could be improved by reducing the use of SRR1. */
-	li	r11,0
-	mtmsrd	r11,1
-
-	b	pnv_powersave_wakeup_mce
+	mtlr	r4
+	rlwinm	r10,r3,47-31,30,31
+	cmpwi	cr1,r10,2
+	bltlr	cr1	/* no state loss, return to idle caller */
+	b	idle_return_gpr_loss
 #endif
 	/*
 	 * Handle machine check early in real mode. We come here with
@@ -441,6 +447,9 @@ EXC_COMMON_BEGIN(machine_check_handle_early)
 	bl	machine_check_early
 	std	r3,RESULT(r1)	/* Save result */
 	ld	r12,_MSR(r1)
+BEGIN_FTR_SECTION
+	b	4f
+END_FTR_SECTION_IFCLR(CPU_FTR_HVMODE)
 
 #ifdef	CONFIG_PPC_P7_NAP
 	/*
@@ -464,11 +473,12 @@ EXC_COMMON_BEGIN(machine_check_handle_early)
 	 */
 	rldicl.	r11,r12,4,63		/* See if MC hit while in HV mode. */
 	beq	5f
-	andi.	r11,r12,MSR_PR		/* See if coming from user. */
+4:	andi.	r11,r12,MSR_PR		/* See if coming from user. */
 	bne	9f			/* continue in V mode if we are. */
 
 5:
 #ifdef CONFIG_KVM_BOOK3S_64_HANDLER
+BEGIN_FTR_SECTION
 	/*
 	 * We are coming from kernel context. Check if we are coming from
 	 * guest. if yes, then we can continue. We will fall through
@@ -477,6 +487,7 @@ EXC_COMMON_BEGIN(machine_check_handle_early)
 	lbz	r11,HSTATE_IN_GUEST(r13)
 	cmpwi	r11,0			/* Check if coming from guest */
 	bne	9f			/* continue if we are. */
+END_FTR_SECTION_IFSET(CPU_FTR_HVMODE)
 #endif
 	/*
 	 * At this point we are not sure about what context we come from.
@@ -511,6 +522,7 @@ EXC_COMMON_BEGIN(machine_check_handle_early)
 	cmpdi	r3,0		/* see if we handled MCE successfully */
 
 	beq	1b		/* if !handled then panic */
+BEGIN_FTR_SECTION
 	/*
 	 * Return from MC interrupt.
 	 * Queue up the MCE event so that we can log it later, while
@@ -519,10 +531,24 @@ EXC_COMMON_BEGIN(machine_check_handle_early)
 	bl	machine_check_queue_event
 	MACHINE_CHECK_HANDLER_WINDUP
 	RFI_TO_USER_OR_KERNEL
+FTR_SECTION_ELSE
+	/*
+	 * pSeries: Return from MC interrupt. Before that stay on emergency
+	 * stack and call machine_check_exception to log the MCE event.
+	 */
+	LOAD_HANDLER(r10,mce_return)
+	mtspr	SPRN_SRR0,r10
+	ld	r10,PACAKMSR(r13)
+	mtspr	SPRN_SRR1,r10
+	RFI_TO_KERNEL
+	b	.
+ALT_FTR_SECTION_END_IFSET(CPU_FTR_HVMODE)
 9:
 	/* Deliver the machine check to host kernel in V mode. */
 	MACHINE_CHECK_HANDLER_WINDUP
-	b	machine_check_pSeries
+	SET_SCRATCH0(r13)		/* save r13 */
+	EXCEPTION_PROLOG_0(PACA_EXMC)
+	b	machine_check_pSeries_0
 
 EXC_COMMON_BEGIN(unrecover_mce)
 	/* Invoke machine_check_exception to print MCE event and panic. */
@@ -536,6 +562,13 @@ EXC_COMMON_BEGIN(unrecover_mce)
 	bl	unrecoverable_exception
 	b	1b
 
+EXC_COMMON_BEGIN(mce_return)
+	/* Invoke machine_check_exception to print MCE event and return. */
+	addi	r3,r1,STACK_FRAME_OVERHEAD
+	bl	machine_check_exception
+	MACHINE_CHECK_HANDLER_WINDUP
+	RFI_TO_KERNEL
+	b	.
 
 EXC_REAL(data_access, 0x300, 0x80)
 EXC_VIRT(data_access, 0x4300, 0x80, 0x300)
@@ -862,7 +895,8 @@ EXC_COMMON_BEGIN(fp_unavailable_common)
 	RECONCILE_IRQ_STATE(r10, r11)
 	addi	r3,r1,STACK_FRAME_OVERHEAD
 	bl	kernel_fp_unavailable_exception
-	BUG_OPCODE
+0:	trap
+	EMIT_BUG_ENTRY 0b, __FILE__, __LINE__, 0
 1:
 #ifdef CONFIG_PPC_TRANSACTIONAL_MEM
 BEGIN_FTR_SECTION
@@ -1090,7 +1124,16 @@ EXC_COMMON_BEGIN(h_data_storage_common)
 	bl      save_nvgprs
 	RECONCILE_IRQ_STATE(r10, r11)
 	addi    r3,r1,STACK_FRAME_OVERHEAD
+BEGIN_MMU_FTR_SECTION
+	ld	r4,PACA_EXGEN+EX_DAR(r13)
+	lwz	r5,PACA_EXGEN+EX_DSISR(r13)
+	std	r4,_DAR(r1)
+	std	r5,_DSISR(r1)
+	li	r5,SIGSEGV
+	bl      bad_page_fault
+MMU_FTR_SECTION_ELSE
 	bl      unknown_exception
+ALT_MMU_FTR_SECTION_END_IFSET(MMU_FTR_TYPE_RADIX)
 	b       ret_from_except
 
 
@@ -1321,9 +1364,7 @@ EXC_REAL_BEGIN(denorm_exception_hv, 0x1500, 0x100)
 
 #ifdef CONFIG_PPC_DENORMALISATION
 	mfspr	r10,SPRN_HSRR1
-	mfspr	r11,SPRN_HSRR0		/* save HSRR0 */
 	andis.	r10,r10,(HSRR1_DENORM)@h /* denorm? */
-	addi	r11,r11,-4		/* HSRR0 is next instruction */
 	bne+	denorm_assist
 #endif
 
@@ -1389,6 +1430,8 @@ END_FTR_SECTION_IFCLR(CPU_FTR_ARCH_207S)
  */
 	XVCPSGNDP32(32)
 denorm_done:
+	mfspr	r11,SPRN_HSRR0
+	subi	r11,r11,4
 	mtspr	SPRN_HSRR0,r11
 	mtcrf	0x80,r9
 	ld	r9,PACA_EXGEN+EX_R9(r13)
@@ -1706,10 +1749,18 @@ do_hash_page:
 	ori	r0,r0,DSISR_BAD_FAULT_64S@l
 	and.	r0,r4,r0		/* weird error? */
 	bne-	handle_page_fault	/* if not, try to insert a HPTE */
+
+	/*
+	 * If we are in an "NMI" (e.g., an interrupt when soft-disabled), then
+	 * don't call hash_page, just fail the fault. This is required to
+	 * prevent re-entrancy problems in the hash code, namely perf
+	 * interrupts hitting while something holds H_PAGE_BUSY, and taking a
+	 * hash fault. See the comment in hash_preload().
+	 */
 	CURRENT_THREAD_INFO(r11, r1)
-	lwz	r0,TI_PREEMPT(r11)	/* If we're in an "NMI" */
-	andis.	r0,r0,NMI_MASK@h	/* (i.e. an irq when soft-disabled) */
-	bne	77f			/* then don't call hash_page now */
+	lwz	r0,TI_PREEMPT(r11)
+	andis.	r0,r0,NMI_MASK@h
+	bne	77f
 
 	/*
 	 * r3 contains the faulting address
@@ -1743,7 +1794,7 @@ handle_page_fault:
 	addi	r3,r1,STACK_FRAME_OVERHEAD
 	bl	do_page_fault
 	cmpdi	r3,0
-	beq+	12f
+	beq+	ret_from_except_lite
 	bl	save_nvgprs
 	mr	r5,r3
 	addi	r3,r1,STACK_FRAME_OVERHEAD
@@ -1758,7 +1809,12 @@ handle_dabr_fault:
 	ld      r5,_DSISR(r1)
 	addi    r3,r1,STACK_FRAME_OVERHEAD
 	bl      do_break
-12:	b       ret_from_except_lite
+	/*
+	 * do_break() may have changed the NV GPRS while handling a breakpoint.
+	 * If so, we need to restore them with their updated values. Don't use
+	 * ret_from_except_lite here.
+	 */
+	b       ret_from_except
 
 
 #ifdef CONFIG_PPC_BOOK3S_64

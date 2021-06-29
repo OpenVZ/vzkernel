@@ -326,6 +326,7 @@ struct sbridge_info {
 	const struct interleave_pkg *interleave_pkg;
 	u8		max_sad;
 	u8		(*get_node_id)(struct sbridge_pvt *pvt);
+	u8		(*get_ha)(u8 bank);
 	enum mem_type	(*get_memory_type)(struct sbridge_pvt *pvt);
 	enum dev_type	(*get_width)(struct sbridge_pvt *pvt, u32 mtr);
 	struct pci_dev	*pci_vtd;
@@ -352,6 +353,7 @@ struct pci_id_table {
 
 struct sbridge_dev {
 	struct list_head	list;
+	int			seg;
 	u8			bus, mc;
 	u8			node_id, source_id;
 	struct pci_dev		**pdev;
@@ -729,7 +731,8 @@ static inline int numcol(u32 mtr)
 	return 1 << cols;
 }
 
-static struct sbridge_dev *get_sbridge_dev(u8 bus, enum domain dom, int multi_bus,
+static struct sbridge_dev *get_sbridge_dev(int seg, u8 bus, enum domain dom,
+					   int multi_bus,
 					   struct sbridge_dev *prev)
 {
 	struct sbridge_dev *sbridge_dev;
@@ -747,14 +750,15 @@ static struct sbridge_dev *get_sbridge_dev(u8 bus, enum domain dom, int multi_bu
 				      : sbridge_edac_list.next, struct sbridge_dev, list);
 
 	list_for_each_entry_from(sbridge_dev, &sbridge_edac_list, list) {
-		if (sbridge_dev->bus == bus && (dom == SOCK || dom == sbridge_dev->dom))
+		if ((sbridge_dev->seg == seg) && (sbridge_dev->bus == bus) &&
+				(dom == SOCK || dom == sbridge_dev->dom))
 			return sbridge_dev;
 	}
 
 	return NULL;
 }
 
-static struct sbridge_dev *alloc_sbridge_dev(u8 bus, enum domain dom,
+static struct sbridge_dev *alloc_sbridge_dev(int seg, u8 bus, enum domain dom,
 					     const struct pci_id_table *table)
 {
 	struct sbridge_dev *sbridge_dev;
@@ -771,6 +775,7 @@ static struct sbridge_dev *alloc_sbridge_dev(u8 bus, enum domain dom,
 		return NULL;
 	}
 
+	sbridge_dev->seg = seg;
 	sbridge_dev->bus = bus;
 	sbridge_dev->dom = dom;
 	sbridge_dev->n_devs = table->n_devs_per_imc;
@@ -998,6 +1003,39 @@ static u8 knl_get_node_id(struct sbridge_pvt *pvt)
 	return GET_BITFIELD(reg, 0, 2);
 }
 
+/*
+ * Use the reporting bank number to determine which memory
+ * controller (also known as "ha" for "home agent"). Sandy
+ * Bridge only has one memory controller per socket, so the
+ * answer is always zero.
+ */
+static u8 sbridge_get_ha(u8 bank)
+{
+	return 0;
+}
+
+/*
+ * On Ivy Bridge, Haswell and Broadwell the error may be in a
+ * home agent bank (7, 8), or one of the per-channel memory
+ * controller banks (9 .. 16).
+ */
+static u8 ibridge_get_ha(u8 bank)
+{
+	switch (bank) {
+	case 7 ... 8:
+		return bank - 7;
+	case 9 ... 16:
+		return (bank - 9) / 4;
+	default:
+		return 0xff;
+	}
+}
+
+/* Not used, but included for safety/symmetry */
+static u8 knl_get_ha(u8 bank)
+{
+	return 0xff;
+}
 
 static u64 haswell_get_tolm(struct sbridge_pvt *pvt)
 {
@@ -1618,7 +1656,7 @@ static int __populate_dimms(struct mem_ctl_info *mci,
 				size = ((u64)rows * cols * banks * ranks) >> (20 - 3);
 				npages = MiB_TO_PAGES(size);
 
-				edac_dbg(0, "mc#%d: ha %d channel %d, dimm %d, %lld Mb (%d pages) bank: %d, rank: %d, row: %#x, col: %#x\n",
+				edac_dbg(0, "mc#%d: ha %d channel %d, dimm %d, %lld MiB (%d pages) bank: %d, rank: %d, row: %#x, col: %#x\n",
 					 pvt->sbridge_dev->mc, pvt->sbridge_dev->dom, i, j,
 					 size, npages,
 					 banks, ranks, rows, cols);
@@ -2203,6 +2241,60 @@ static int get_memory_error_data(struct mem_ctl_info *mci,
 	return 0;
 }
 
+static int get_memory_error_data_from_mce(struct mem_ctl_info *mci,
+					  const struct mce *m, u8 *socket,
+					  u8 *ha, long *channel_mask,
+					  char *msg)
+{
+	u32 reg, channel = GET_BITFIELD(m->status, 0, 3);
+	struct mem_ctl_info *new_mci;
+	struct sbridge_pvt *pvt;
+	struct pci_dev *pci_ha;
+	bool tad0;
+
+	if (channel >= NUM_CHANNELS) {
+		sprintf(msg, "Invalid channel 0x%x", channel);
+		return -EINVAL;
+	}
+
+	pvt = mci->pvt_info;
+	if (!pvt->info.get_ha) {
+		sprintf(msg, "No get_ha()");
+		return -EINVAL;
+	}
+	*ha = pvt->info.get_ha(m->bank);
+	if (*ha != 0 && *ha != 1) {
+		sprintf(msg, "Impossible bank %d", m->bank);
+		return -EINVAL;
+	}
+
+	*socket = m->socketid;
+	new_mci = get_mci_for_node_id(*socket, *ha);
+	if (!new_mci) {
+		strcpy(msg, "mci socket got corrupted!");
+		return -EINVAL;
+	}
+
+	pvt = new_mci->pvt_info;
+	pci_ha = pvt->pci_ha;
+	pci_read_config_dword(pci_ha, tad_dram_rule[0], &reg);
+	tad0 = m->addr <= TAD_LIMIT(reg);
+
+	*channel_mask = 1 << channel;
+	if (pvt->mirror_mode == FULL_MIRRORING ||
+	    (pvt->mirror_mode == ADDR_RANGE_MIRRORING && tad0)) {
+		*channel_mask |= 1 << ((channel + 2) % 4);
+		pvt->is_cur_addr_mirrored = true;
+	} else {
+		pvt->is_cur_addr_mirrored = false;
+	}
+
+	if (pvt->is_lockstep)
+		*channel_mask |= 1 << ((channel + 1) % 4);
+
+	return 0;
+}
+
 /****************************************************************************
 	Device initialization routines: put/get, init/exit
  ****************************************************************************/
@@ -2246,6 +2338,7 @@ static int sbridge_get_onedevice(struct pci_dev **prev,
 	struct sbridge_dev *sbridge_dev = NULL;
 	const struct pci_id_descr *dev_descr = &table->descr[devno];
 	struct pci_dev *pdev = NULL;
+	int seg = 0;
 	u8 bus = 0;
 	int i = 0;
 
@@ -2276,10 +2369,12 @@ static int sbridge_get_onedevice(struct pci_dev **prev,
 		/* End of list, leave */
 		return -ENODEV;
 	}
+	seg = pci_domain_nr(pdev->bus);
 	bus = pdev->bus->number;
 
 next_imc:
-	sbridge_dev = get_sbridge_dev(bus, dev_descr->dom, multi_bus, sbridge_dev);
+	sbridge_dev = get_sbridge_dev(seg, bus, dev_descr->dom,
+				      multi_bus, sbridge_dev);
 	if (!sbridge_dev) {
 		/* If the HA1 wasn't found, don't create EDAC second memory controller */
 		if (dev_descr->dom == IMC1 && devno != 1) {
@@ -2292,7 +2387,7 @@ next_imc:
 		if (dev_descr->dom == SOCK)
 			goto out_imc;
 
-		sbridge_dev = alloc_sbridge_dev(bus, dev_descr->dom, table);
+		sbridge_dev = alloc_sbridge_dev(seg, bus, dev_descr->dom, table);
 		if (!sbridge_dev) {
 			pci_dev_put(pdev);
 			return -ENOMEM;
@@ -2870,10 +2965,16 @@ static void sbridge_mce_output_error(struct mem_ctl_info *mci,
 	u32 errcode = GET_BITFIELD(m->status, 0, 15);
 	u32 channel = GET_BITFIELD(m->status, 0, 3);
 	u32 optypenum = GET_BITFIELD(m->status, 4, 6);
+	/*
+	 * Bits 5-0 of MCi_MISC give the least significant bit that is valid.
+	 * A value 6 is for cache line aligned address, a value 12 is for page
+	 * aligned address reported by patrol scrubber.
+	 */
+	u32 lsb = GET_BITFIELD(m->misc, 0, 5);
 	long channel_mask, first_channel;
-	u8  rank, socket, ha;
+	u8  rank = 0xff, socket, ha;
 	int rc, dimm;
-	char *area_type = NULL;
+	char *area_type = "DRAM";
 
 	if (pvt->info.type != SANDY_BRIDGE)
 		recoverable = true;
@@ -2881,6 +2982,7 @@ static void sbridge_mce_output_error(struct mem_ctl_info *mci,
 		recoverable = GET_BITFIELD(m->status, 56, 56);
 
 	if (uncorrected_error) {
+		core_err_cnt = 1;
 		if (ripv) {
 			type = "FATAL";
 			tp_event = HW_EVENT_ERR_FATAL;
@@ -2965,9 +3067,13 @@ static void sbridge_mce_output_error(struct mem_ctl_info *mci,
 				optype, msg);
 		}
 		return;
-	} else {
+	} else if (lsb < 12) {
 		rc = get_memory_error_data(mci, m->addr, &socket, &ha,
-				&channel_mask, &rank, &area_type, msg);
+					   &channel_mask, &rank,
+					   &area_type, msg);
+	} else {
+		rc = get_memory_error_data_from_mce(mci, m, &socket, &ha,
+						    &channel_mask, msg);
 	}
 
 	if (rc < 0)
@@ -2982,13 +3088,14 @@ static void sbridge_mce_output_error(struct mem_ctl_info *mci,
 
 	first_channel = find_first_bit(&channel_mask, NUM_CHANNELS);
 
-	if (rank < 4)
+	if (rank == 0xff)
+		dimm = -1;
+	else if (rank < 4)
 		dimm = 0;
 	else if (rank < 8)
 		dimm = 1;
 	else
 		dimm = 2;
-
 
 	/*
 	 * FIXME: On some memory configurations (mirror, lockstep), the
@@ -3166,6 +3273,7 @@ static int sbridge_register_mci(struct sbridge_dev *sbridge_dev, enum type type)
 		pvt->info.dram_rule = ibridge_dram_rule;
 		pvt->info.get_memory_type = get_memory_type;
 		pvt->info.get_node_id = get_node_id;
+		pvt->info.get_ha = ibridge_get_ha;
 		pvt->info.rir_limit = rir_limit;
 		pvt->info.sad_limit = sad_limit;
 		pvt->info.interleave_mode = interleave_mode;
@@ -3190,6 +3298,7 @@ static int sbridge_register_mci(struct sbridge_dev *sbridge_dev, enum type type)
 		pvt->info.dram_rule = sbridge_dram_rule;
 		pvt->info.get_memory_type = get_memory_type;
 		pvt->info.get_node_id = get_node_id;
+		pvt->info.get_ha = sbridge_get_ha;
 		pvt->info.rir_limit = rir_limit;
 		pvt->info.sad_limit = sad_limit;
 		pvt->info.interleave_mode = interleave_mode;
@@ -3214,6 +3323,7 @@ static int sbridge_register_mci(struct sbridge_dev *sbridge_dev, enum type type)
 		pvt->info.dram_rule = ibridge_dram_rule;
 		pvt->info.get_memory_type = haswell_get_memory_type;
 		pvt->info.get_node_id = haswell_get_node_id;
+		pvt->info.get_ha = ibridge_get_ha;
 		pvt->info.rir_limit = haswell_rir_limit;
 		pvt->info.sad_limit = sad_limit;
 		pvt->info.interleave_mode = interleave_mode;
@@ -3238,6 +3348,7 @@ static int sbridge_register_mci(struct sbridge_dev *sbridge_dev, enum type type)
 		pvt->info.dram_rule = ibridge_dram_rule;
 		pvt->info.get_memory_type = haswell_get_memory_type;
 		pvt->info.get_node_id = haswell_get_node_id;
+		pvt->info.get_ha = ibridge_get_ha;
 		pvt->info.rir_limit = haswell_rir_limit;
 		pvt->info.sad_limit = sad_limit;
 		pvt->info.interleave_mode = interleave_mode;
@@ -3262,6 +3373,7 @@ static int sbridge_register_mci(struct sbridge_dev *sbridge_dev, enum type type)
 		pvt->info.dram_rule = knl_dram_rule;
 		pvt->info.get_memory_type = knl_get_memory_type;
 		pvt->info.get_node_id = knl_get_node_id;
+		pvt->info.get_ha = knl_get_ha;
 		pvt->info.rir_limit = NULL;
 		pvt->info.sad_limit = knl_sad_limit;
 		pvt->info.interleave_mode = knl_interleave_mode;
@@ -3313,18 +3425,15 @@ fail0:
 	return rc;
 }
 
-#define ICPU(model, table) \
-	{ X86_VENDOR_INTEL, 6, model, 0, (unsigned long)&table }
-
 static const struct x86_cpu_id sbridge_cpuids[] = {
-	ICPU(INTEL_FAM6_SANDYBRIDGE_X,	  pci_dev_descr_sbridge_table),
-	ICPU(INTEL_FAM6_IVYBRIDGE_X,	  pci_dev_descr_ibridge_table),
-	ICPU(INTEL_FAM6_HASWELL_X,	  pci_dev_descr_haswell_table),
-	ICPU(INTEL_FAM6_BROADWELL_X,	  pci_dev_descr_broadwell_table),
-	ICPU(INTEL_FAM6_BROADWELL_XEON_D, pci_dev_descr_broadwell_table),
-	ICPU(INTEL_FAM6_XEON_PHI_KNL,	  pci_dev_descr_knl_table),
-	ICPU(INTEL_FAM6_XEON_PHI_KNM,	  pci_dev_descr_knl_table),
-	{ }
+	X86_MATCH_INTEL_FAM6_MODEL(SANDYBRIDGE_X, &pci_dev_descr_sbridge_table),
+	X86_MATCH_INTEL_FAM6_MODEL(IVYBRIDGE_X,	  &pci_dev_descr_ibridge_table),
+	X86_MATCH_INTEL_FAM6_MODEL(HASWELL_X,	  &pci_dev_descr_haswell_table),
+	X86_MATCH_INTEL_FAM6_MODEL(BROADWELL_X,	  &pci_dev_descr_broadwell_table),
+	X86_MATCH_INTEL_FAM6_MODEL(BROADWELL_D,	  &pci_dev_descr_broadwell_table),
+	X86_MATCH_INTEL_FAM6_MODEL(XEON_PHI_KNL,  &pci_dev_descr_knl_table),
+	X86_MATCH_INTEL_FAM6_MODEL(XEON_PHI_KNM,  &pci_dev_descr_knl_table),
+	{}
 };
 MODULE_DEVICE_TABLE(x86cpu, sbridge_cpuids);
 

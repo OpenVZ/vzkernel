@@ -136,7 +136,7 @@ _decode_session6(struct sk_buff *skb, struct flowi *fl, int reverse)
 
 	nexthdr = nh[nhoff];
 
-	if (skb_dst(skb))
+	if (skb_dst(skb) && skb_dst(skb)->dev)
 		oif = skb_dst(skb)->dev->ifindex;
 
 	memset(fl6, 0, sizeof(struct flowi6));
@@ -146,8 +146,8 @@ _decode_session6(struct sk_buff *skb, struct flowi *fl, int reverse)
 	fl6->daddr = reverse ? hdr->saddr : hdr->daddr;
 	fl6->saddr = reverse ? hdr->daddr : hdr->saddr;
 
-	while (nh + offset + 1 < skb->data ||
-	       pskb_may_pull(skb, nh + offset + 1 - skb->data)) {
+	while (nh + offset + sizeof(*exthdr) < skb->data ||
+	       pskb_may_pull(skb, nh + offset + sizeof(*exthdr) - skb->data)) {
 		nh = skb_network_header(skb);
 		exthdr = (struct ipv6_opt_hdr *)(nh + offset);
 
@@ -221,12 +221,13 @@ _decode_session6(struct sk_buff *skb, struct flowi *fl, int reverse)
 }
 
 static void xfrm6_update_pmtu(struct dst_entry *dst, struct sock *sk,
-			      struct sk_buff *skb, u32 mtu)
+			      struct sk_buff *skb, u32 mtu,
+			      bool confirm_neigh)
 {
 	struct xfrm_dst *xdst = (struct xfrm_dst *)dst;
 	struct dst_entry *path = xdst->route;
 
-	path->ops->update_pmtu(path, sk, skb, mtu);
+	path->ops->update_pmtu(path, sk, skb, mtu, confirm_neigh);
 }
 
 static void xfrm6_redirect(struct dst_entry *dst, struct sock *sk,
@@ -262,7 +263,6 @@ static void xfrm6_dst_ifdown(struct dst_entry *dst, struct net_device *dev,
 	if (xdst->u.rt6.rt6i_idev->dev == dev) {
 		struct inet6_dev *loopback_idev =
 			in6_dev_get(dev_net(dev)->loopback_dev);
-		BUG_ON(!loopback_idev);
 
 		do {
 			in6_dev_put(xdst->u.rt6.rt6i_idev);

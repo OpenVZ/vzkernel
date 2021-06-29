@@ -6,6 +6,7 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/kernel.h>
+#include <linux/gpio/consumer.h>
 #include <linux/acpi.h>
 #include <linux/acpi_iort.h>
 #include <linux/signal.h>
@@ -763,17 +764,15 @@ acpi_bus_get_ejd(acpi_handle handle, acpi_handle *ejd)
 }
 EXPORT_SYMBOL_GPL(acpi_bus_get_ejd);
 
-static int acpi_bus_extract_wakeup_device_power_package(acpi_handle handle,
-					struct acpi_device_wakeup *wakeup)
+static int acpi_bus_extract_wakeup_device_power_package(struct acpi_device *dev)
 {
+	acpi_handle handle = dev->handle;
+	struct acpi_device_wakeup *wakeup = &dev->wakeup;
 	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
 	union acpi_object *package = NULL;
 	union acpi_object *element = NULL;
 	acpi_status status;
 	int err = -ENODATA;
-
-	if (!wakeup)
-		return -EINVAL;
 
 	INIT_LIST_HEAD(&wakeup->resources);
 
@@ -848,9 +847,9 @@ static int acpi_bus_extract_wakeup_device_power_package(acpi_handle handle,
 static bool acpi_wakeup_gpe_init(struct acpi_device *device)
 {
 	static const struct acpi_device_id button_device_ids[] = {
-		{"PNP0C0C", 0},
-		{"PNP0C0D", 0},
-		{"PNP0C0E", 0},
+		{"PNP0C0C", 0},		/* Power button */
+		{"PNP0C0D", 0},		/* Lid */
+		{"PNP0C0E", 0},		/* Sleep button */
 		{"", 0},
 	};
 	struct acpi_device_wakeup *wakeup = &device->wakeup;
@@ -883,8 +882,7 @@ static void acpi_bus_get_wakeup_device_flags(struct acpi_device *device)
 	if (!acpi_has_method(device->handle, "_PRW"))
 		return;
 
-	err = acpi_bus_extract_wakeup_device_power_package(device->handle,
-							   &device->wakeup);
+	err = acpi_bus_extract_wakeup_device_power_package(device);
 	if (err) {
 		dev_err(&device->dev, "_PRW evaluation error: %d\n", err);
 		return;
@@ -895,14 +893,13 @@ static void acpi_bus_get_wakeup_device_flags(struct acpi_device *device)
 	/*
 	 * Call _PSW/_DSW object to disable its ability to wake the sleeping
 	 * system for the ACPI device with the _PRW object.
-	 * The _PSW object is depreciated in ACPI 3.0 and is replaced by _DSW.
+	 * The _PSW object is deprecated in ACPI 3.0 and is replaced by _DSW.
 	 * So it is necessary to call _DSW object first. Only when it is not
 	 * present will the _PSW object used.
 	 */
 	err = acpi_device_sleep_wake(device, 0, 0, 0);
 	if (err)
-		ACPI_DEBUG_PRINT((ACPI_DB_INFO,
-				"error in _DSW or _PSW evaluation\n"));
+		pr_debug("error in _DSW or _PSW evaluation\n");
 }
 
 static void acpi_bus_init_power_state(struct acpi_device *device, int state)
@@ -921,12 +918,9 @@ static void acpi_bus_init_power_state(struct acpi_device *device, int state)
 
 		if (buffer.length && package
 		    && package->type == ACPI_TYPE_PACKAGE
-		    && package->package.count) {
-			int err = acpi_extract_power_resources(package, 0,
-							       &ps->resources);
-			if (!err)
-				device->power.flags.power_resources = 1;
-		}
+		    && package->package.count)
+			acpi_extract_power_resources(package, 0, &ps->resources);
+
 		ACPI_FREE(buffer.pointer);
 	}
 
@@ -973,13 +967,26 @@ static void acpi_bus_get_power_flags(struct acpi_device *device)
 		acpi_bus_init_power_state(device, i);
 
 	INIT_LIST_HEAD(&device->power.states[ACPI_STATE_D3_COLD].resources);
-	if (!list_empty(&device->power.states[ACPI_STATE_D3_HOT].resources))
-		device->power.states[ACPI_STATE_D3_COLD].flags.valid = 1;
 
-	/* Set defaults for D0 and D3hot states (always valid) */
+	/* Set the defaults for D0 and D3hot (always supported). */
 	device->power.states[ACPI_STATE_D0].flags.valid = 1;
 	device->power.states[ACPI_STATE_D0].power = 100;
 	device->power.states[ACPI_STATE_D3_HOT].flags.valid = 1;
+
+	/*
+	 * Use power resources only if the D0 list of them is populated, because
+	 * some platforms may provide _PR3 only to indicate D3cold support and
+	 * in those cases the power resources list returned by it may be bogus.
+	 */
+	if (!list_empty(&device->power.states[ACPI_STATE_D0].resources)) {
+		device->power.flags.power_resources = 1;
+		/*
+		 * D3cold is supported if the D3hot list of power resources is
+		 * not empty.
+		 */
+		if (!list_empty(&device->power.states[ACPI_STATE_D3_HOT].resources))
+			device->power.states[ACPI_STATE_D3_COLD].flags.valid = 1;
+	}
 
 	if (acpi_bus_init_power(device))
 		device->flags.power_manageable = 0;
@@ -1447,19 +1454,26 @@ int acpi_dma_get_range(struct device *dev, u64 *dma_addr, u64 *offset,
 }
 
 /**
- * acpi_dma_configure - Set-up DMA configuration for the device.
+ * acpi_dma_configure_id - Set-up DMA configuration for the device.
  * @dev: The pointer to the device
  * @attr: device dma attributes
+ * @input_id: input device id const value pointer
  */
-int acpi_dma_configure(struct device *dev, enum dev_dma_attr attr)
+int acpi_dma_configure_id(struct device *dev, enum dev_dma_attr attr,
+			  const u32 *input_id)
 {
 	const struct iommu_ops *iommu;
 	u64 dma_addr = 0, size = 0;
 
+	if (attr == DEV_DMA_NOT_SUPPORTED) {
+		set_dma_ops(dev, &dma_dummy_ops);
+		return 0;
+	}
+
 	iort_dma_setup(dev, &dma_addr, &size);
 
-	iommu = iort_iommu_configure(dev);
-	if (IS_ERR(iommu) && PTR_ERR(iommu) == -EPROBE_DEFER)
+	iommu = iort_iommu_configure_id(dev, input_id);
+	if (PTR_ERR(iommu) == -EPROBE_DEFER)
 		return -EPROBE_DEFER;
 
 	arch_setup_dma_ops(dev, dma_addr, size,
@@ -1467,17 +1481,26 @@ int acpi_dma_configure(struct device *dev, enum dev_dma_attr attr)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(acpi_dma_configure);
+EXPORT_SYMBOL_GPL(acpi_dma_configure_id);
 
 /**
- * acpi_dma_deconfigure - Tear-down DMA configuration for the device.
+ * RHEL-only:
+ * acpi_dma_configure - Set-up DMA configuration for the device.
  * @dev: The pointer to the device
+ * @attr: device dma attributes
+ *
+ * This function is retained here in order to maintain the kABI.  In
+ * upstream commit b8e069a2a8da (ACPI/IORT: Add an input ID to
+ * acpi_dma_configure()) the declaration was replaced with a static inline
+ * defintion in acpi_bus.h.  However, doing so breaks the kABI.  Move the
+ * definition back here to the original location so the declaration can stay
+ * the same and satisfy kABI.
  */
-void acpi_dma_deconfigure(struct device *dev)
+int acpi_dma_configure(struct device *dev, enum dev_dma_attr attr)
 {
-	arch_teardown_dma_ops(dev);
+	return acpi_dma_configure_id(dev, attr, NULL);
 }
-EXPORT_SYMBOL_GPL(acpi_dma_deconfigure);
+EXPORT_SYMBOL_GPL(acpi_dma_configure);
 
 static void acpi_init_coherency(struct acpi_device *adev)
 {
@@ -1528,7 +1551,7 @@ static int acpi_check_serial_bus_slave(struct acpi_resource *ares, void *data)
 static bool acpi_is_indirect_io_slave(struct acpi_device *device)
 {
 	struct acpi_device *parent = device->parent;
-	const struct acpi_device_id indirect_io_hosts[] = {
+	static const struct acpi_device_id indirect_io_hosts[] = {
 		{"HISI0191", 0},
 		{}
 	};
@@ -1540,6 +1563,21 @@ static bool acpi_device_enumeration_by_parent(struct acpi_device *device)
 {
 	struct list_head resource_list;
 	bool is_serial_bus_slave = false;
+	/*
+	 * These devices have multiple I2cSerialBus resources and an i2c-client
+	 * must be instantiated for each, each with its own i2c_device_id.
+	 * Normally we only instantiate an i2c-client for the first resource,
+	 * using the ACPI HID as id. These special cases are handled by the
+	 * drivers/platform/x86/i2c-multi-instantiate.c driver, which knows
+	 * which i2c_device_id to use for each resource.
+	 */
+	static const struct acpi_device_id i2c_multi_instantiate_ids[] = {
+		{"BSG1160", },
+		{"BSG2150", },
+		{"INT33FE", },
+		{"INT3515", },
+		{}
+	};
 
 	if (acpi_is_indirect_io_slave(device))
 		return true;
@@ -1550,6 +1588,19 @@ static bool acpi_device_enumeration_by_parent(struct acpi_device *device)
 	     fwnode_property_present(&device->fwnode, "i2cAddress") ||
 	     fwnode_property_present(&device->fwnode, "baud")))
 		return true;
+
+	/* Instantiate a pdev for the i2c-multi-instantiate drv to bind to */
+	if (!acpi_match_device_ids(device, i2c_multi_instantiate_ids))
+		return false;
+
+	/*
+	 * Firmware on some arm64 X-Gene platforms will make the UART
+	 * device appear as both a UART and a slave of that UART. Just
+	 * bail out here for X-Gene UARTs.
+	 */
+	if (IS_ENABLED(CONFIG_ARM64) &&
+	    !strcmp(acpi_device_hid(device), "APMC0D08"))
+		return false;
 
 	INIT_LIST_HEAD(&resource_list);
 	acpi_dev_get_resources(device, &resource_list,
@@ -1612,7 +1663,8 @@ static int acpi_add_single_object(struct acpi_device **child,
 	 * Note this must be done before the get power-/wakeup_dev-flags calls.
 	 */
 	if (type == ACPI_BUS_TYPE_DEVICE)
-		acpi_bus_get_status(device);
+		if (acpi_bus_get_status(device) < 0)
+			acpi_set_device_status(device, 0);
 
 	acpi_bus_get_power_flags(device);
 	acpi_bus_get_wakeup_device_flags(device);
@@ -1690,7 +1742,7 @@ static int acpi_bus_type_and_status(acpi_handle handle, int *type,
 		 * acpi_add_single_object updates this once we've an acpi_device
 		 * so that acpi_bus_get_status' quirk handling can be used.
 		 */
-		*sta = 0;
+		*sta = ACPI_STA_DEFAULT;
 		break;
 	case ACPI_TYPE_PROCESSOR:
 		*type = ACPI_BUS_TYPE_PROCESSOR;
@@ -2144,10 +2196,13 @@ static void __init acpi_get_spcr_uart_addr(void)
 
 	status = acpi_get_table(ACPI_SIG_SPCR, 0,
 				(struct acpi_table_header **)&spcr_ptr);
-	if (ACPI_SUCCESS(status))
-		spcr_uart_addr = spcr_ptr->serial_port.address;
-	else
-		printk(KERN_WARNING PREFIX "STAO table present, but SPCR is missing\n");
+	if (ACPI_FAILURE(status)) {
+		pr_warn(PREFIX "STAO table present, but SPCR is missing\n");
+		return;
+	}
+
+	spcr_uart_addr = spcr_ptr->serial_port.address;
+	acpi_put_table((struct acpi_table_header *)spcr_ptr);
 }
 
 static bool acpi_scan_initialized;
@@ -2161,6 +2216,7 @@ int __init acpi_scan_init(void)
 	acpi_pci_root_init();
 	acpi_pci_link_init();
 	acpi_processor_init();
+	acpi_platform_init();
 	acpi_lpss_init();
 	acpi_apd_init();
 	acpi_cmos_rtc_init();
@@ -2182,15 +2238,23 @@ int __init acpi_scan_init(void)
 				(struct acpi_table_header **)&stao_ptr);
 	if (ACPI_SUCCESS(status)) {
 		if (stao_ptr->header.length > sizeof(struct acpi_table_stao))
-			printk(KERN_INFO PREFIX "STAO Name List not yet supported.");
+			pr_info(PREFIX "STAO Name List not yet supported.\n");
 
 		if (stao_ptr->ignore_uart)
 			acpi_get_spcr_uart_addr();
+
+		acpi_put_table((struct acpi_table_header *)stao_ptr);
 	}
 
 	acpi_gpe_apply_masked_gpes();
 	acpi_update_all_gpes();
 
+	/*
+	 * Although we call __add_memory() that is documented to require the
+	 * device_hotplug_lock, it is not necessary here because this is an
+	 * early code when userspace or any other code path cannot trigger
+	 * hotplug/hotunplug operations.
+	 */
 	mutex_lock(&acpi_scan_lock);
 	/*
 	 * Enumerate devices in the ACPI namespace.
@@ -2226,10 +2290,10 @@ static struct acpi_probe_entry *ape;
 static int acpi_probe_count;
 static DEFINE_MUTEX(acpi_probe_mutex);
 
-static int __init acpi_match_madt(struct acpi_subtable_header *header,
+static int __init acpi_match_madt(union acpi_subtable_headers *header,
 				  const unsigned long end)
 {
-	if (!ape->subtable_valid || ape->subtable_valid(header, ape))
+	if (!ape->subtable_valid || ape->subtable_valid(&header->common, ape))
 		if (!ape->probe_subtbl(header, end))
 			acpi_probe_count++;
 
@@ -2245,7 +2309,7 @@ int __init __acpi_probe_device_table(struct acpi_probe_entry *ap_head, int nr)
 
 	mutex_lock(&acpi_probe_mutex);
 	for (ape = ap_head; nr; ape++, nr--) {
-		if (ACPI_COMPARE_NAME(ACPI_SIG_MADT, ape->id)) {
+		if (ACPI_COMPARE_NAMESEG(ACPI_SIG_MADT, ape->id)) {
 			acpi_probe_count = 0;
 			acpi_table_parse_madt(ape->type, acpi_match_madt, 0);
 			count += acpi_probe_count;

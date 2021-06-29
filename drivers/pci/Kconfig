@@ -73,9 +73,9 @@ config PCI_PF_STUB
 	depends on PCI_IOV
 	help
 	  Say Y or M here if you want to enable support for devices that
-	  require SR-IOV support, while at the same time the PF itself is
-	  not providing any actual services on the host itself such as
-	  storage or networking.
+	  require SR-IOV support, while at the same time the PF (Physical
+	  Function) itself is not providing any actual services on the
+	  host itself such as storage or networking.
 
 	  When in doubt, say N.
 
@@ -132,6 +132,23 @@ config PCI_PASID
 
 	  If unsure, say N.
 
+config PCI_P2PDMA
+	bool "PCI peer-to-peer transfer support"
+	depends on PCI && ZONE_DEVICE
+	select GENERIC_ALLOCATOR
+	help
+	  Enableѕ drivers to do PCI peer-to-peer transactions to and from
+	  BARs that are exposed in other devices that are the part of
+	  the hierarchy where peer-to-peer DMA is guaranteed by the PCI
+	  specification to work (ie. anything below a single PCI bridge).
+
+	  Many PCIe root complexes do not support P2P transactions and
+	  it's hard to tell which support it at all, so at this time,
+	  P2P DMA transactions must be between devices behind the same root
+	  port.
+
+	  If unsure, say N.
+
 config PCI_LABEL
 	def_bool y if (DMI || ACPI)
 	depends on PCI
@@ -139,7 +156,8 @@ config PCI_LABEL
 
 config PCI_HYPERV
         tristate "Hyper-V PCI Frontend"
-        depends on PCI && X86 && HYPERV && PCI_MSI && PCI_MSI_IRQ_DOMAIN && X86_64
+        depends on X86 && HYPERV && PCI_MSI && PCI_MSI_IRQ_DOMAIN && X86_64
+	select PCI_HYPERV_INTERFACE
         help
           The PCI device frontend driver allows the kernel to import arbitrary
           PCI devices from a PCI backend to support PCI driver domains.

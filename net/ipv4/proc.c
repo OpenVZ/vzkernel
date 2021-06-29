@@ -36,6 +36,7 @@
 #include <net/icmp.h>
 #include <net/protocol.h>
 #include <net/tcp.h>
+#include <net/mptcp.h>
 #include <net/udp.h>
 #include <net/udplite.h>
 #include <linux/bottom_half.h>
@@ -119,6 +120,7 @@ static const struct snmp_mib snmp4_ipextstats_list[] = {
 	SNMP_MIB_ITEM("InECT1Pkts", IPSTATS_MIB_ECT1PKTS),
 	SNMP_MIB_ITEM("InECT0Pkts", IPSTATS_MIB_ECT0PKTS),
 	SNMP_MIB_ITEM("InCEPkts", IPSTATS_MIB_CEPKTS),
+	SNMP_MIB_ITEM("ReasmOverlaps", IPSTATS_MIB_REASM_OVERLAPS),
 	SNMP_MIB_SENTINEL
 };
 
@@ -218,6 +220,7 @@ static const struct snmp_mib snmp4_net_list[] = {
 	SNMP_MIB_ITEM("TCPRenoRecoveryFail", LINUX_MIB_TCPRENORECOVERYFAIL),
 	SNMP_MIB_ITEM("TCPSackRecoveryFail", LINUX_MIB_TCPSACKRECOVERYFAIL),
 	SNMP_MIB_ITEM("TCPRcvCollapsed", LINUX_MIB_TCPRCVCOLLAPSED),
+	SNMP_MIB_ITEM("TCPBacklogCoalesce", LINUX_MIB_TCPBACKLOGCOALESCE),
 	SNMP_MIB_ITEM("TCPDSACKOldSent", LINUX_MIB_TCPDSACKOLDSENT),
 	SNMP_MIB_ITEM("TCPDSACKOfoSent", LINUX_MIB_TCPDSACKOFOSENT),
 	SNMP_MIB_ITEM("TCPDSACKRecv", LINUX_MIB_TCPDSACKRECV),
@@ -287,6 +290,7 @@ static const struct snmp_mib snmp4_net_list[] = {
 	SNMP_MIB_ITEM("TCPDelivered", LINUX_MIB_TCPDELIVERED),
 	SNMP_MIB_ITEM("TCPDeliveredCE", LINUX_MIB_TCPDELIVEREDCE),
 	SNMP_MIB_ITEM("TCPAckCompressed", LINUX_MIB_TCPACKCOMPRESSED),
+	SNMP_MIB_ITEM("TCPWqueueTooBig", LINUX_MIB_TCPWQUEUETOOBIG),
 	SNMP_MIB_SENTINEL
 };
 
@@ -481,6 +485,7 @@ static int netstat_seq_show(struct seq_file *seq, void *v)
 					     offsetof(struct ipstats_mib, syncp)));
 
 	seq_putc(seq, '\n');
+	mptcp_seq_show(seq);
 	return 0;
 }
 

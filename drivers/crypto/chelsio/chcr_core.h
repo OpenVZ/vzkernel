@@ -37,17 +37,19 @@
 #define __CHCR_CORE_H__
 
 #include <crypto/algapi.h>
+#include <net/tls.h>
 #include "t4_hw.h"
 #include "cxgb4.h"
 #include "t4_msg.h"
 #include "cxgb4_uld.h"
 
 #define DRV_MODULE_NAME "chcr"
-#define DRV_VERSION "1.0.0.0"
+#define DRV_VERSION "1.0.0.0-ko"
+#define DRV_DESC "Chelsio T6 Crypto Co-processor Driver"
 
 #define MAX_PENDING_REQ_TO_HW 20
 #define CHCR_TEST_RESPONSE_TIMEOUT 1000
-
+#define WQ_DETACH_TM	(msecs_to_jiffies(50))
 #define PAD_ERROR_BIT		1
 #define CHK_PAD_ERR_BIT(x)	(((x) >> PAD_ERROR_BIT) & 1)
 
@@ -61,9 +63,6 @@
 #define HASH_WR_MIN_LEN (sizeof(struct chcr_wr) + \
 			DUMMY_BYTES + \
 		    sizeof(struct ulptx_sgl))
-
-#define padap(dev) pci_get_drvdata(dev->u_ctx->lldi.pdev)
-
 struct uld_ctx;
 
 struct _key_ctx {
@@ -121,6 +120,20 @@ struct _key_ctx {
 #define KEYCTX_TX_WR_AUTHIN_G(x) \
 	(((x) >> KEYCTX_TX_WR_AUTHIN_S) & KEYCTX_TX_WR_AUTHIN_M)
 
+#define WQ_RETRY	5
+struct chcr_driver_data {
+	struct list_head act_dev;
+	struct list_head inact_dev;
+	atomic_t dev_count;
+	struct mutex drv_mutex;
+	struct uld_ctx *last_dev;
+};
+
+enum chcr_state {
+	CHCR_INIT = 0,
+	CHCR_ATTACH,
+	CHCR_DETACH,
+};
 struct chcr_wr {
 	struct fw_crypto_lookaside_wr wreq;
 	struct ulp_txpkt ulptx;
@@ -131,15 +144,17 @@ struct chcr_wr {
 
 struct chcr_dev {
 	spinlock_t lock_chcr_dev;
-	struct uld_ctx *u_ctx;
-	unsigned char tx_channel_id;
-	unsigned char rx_channel_id;
+	enum chcr_state state;
+	atomic_t inflight;
+	int wqretry;
+	struct delayed_work detach_work;
+	struct completion detach_comp;
 };
 
 struct uld_ctx {
 	struct list_head entry;
 	struct cxgb4_lld_info lldi;
-	struct chcr_dev *dev;
+	struct chcr_dev dev;
 };
 
 struct sge_opaque_hdr {
@@ -159,8 +174,17 @@ struct chcr_ipsec_wr {
 	struct chcr_ipsec_req req;
 };
 
+#define ESN_IV_INSERT_OFFSET 12
+struct chcr_ipsec_aadiv {
+	__be32 spi;
+	u8 seq_no[8];
+	u8 iv[8];
+};
+
 struct ipsec_sa_entry {
 	int hmac_ctrl;
+	u16 esn;
+	u16 resv;
 	unsigned int enckey_len;
 	unsigned int kctx_len;
 	unsigned int authsize;
@@ -181,6 +205,13 @@ static inline unsigned int sgl_len(unsigned int n)
 	return (3 * n) / 2 + (n & 1) + 2;
 }
 
+static inline void *padap(struct chcr_dev *dev)
+{
+	struct uld_ctx *u_ctx = container_of(dev, struct uld_ctx, dev);
+
+	return pci_get_drvdata(u_ctx->lldi.pdev);
+}
+
 struct uld_ctx *assign_chcr_device(void);
 int chcr_send_wr(struct sk_buff *skb);
 int start_crypto(void);
@@ -192,4 +223,16 @@ int chcr_handle_resp(struct crypto_async_request *req, unsigned char *input,
 		     int err);
 int chcr_ipsec_xmit(struct sk_buff *skb, struct net_device *dev);
 void chcr_add_xfrmops(const struct cxgb4_lld_info *lld);
+#ifdef CONFIG_CHELSIO_TLS_DEVICE
+int chcr_ktls_cpl_act_open_rpl(struct adapter *adap, unsigned char *input);
+int chcr_ktls_cpl_set_tcb_rpl(struct adapter *adap, unsigned char *input);
+int chcr_ktls_xmit(struct sk_buff *skb, struct net_device *dev);
+extern int chcr_ktls_dev_add(struct net_device *netdev, struct sock *sk,
+			     enum tls_offload_ctx_dir direction,
+			     struct tls_crypto_info *crypto_info,
+			     u32 start_offload_tcp_sn);
+extern void chcr_ktls_dev_del(struct net_device *netdev,
+			      struct tls_context *tls_ctx,
+			      enum tls_offload_ctx_dir direction);
+#endif
 #endif /* __CHCR_CORE_H__ */

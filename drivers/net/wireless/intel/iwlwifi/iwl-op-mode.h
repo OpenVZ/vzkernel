@@ -1,69 +1,9 @@
-/******************************************************************************
- *
- * This file is provided under a dual BSD/GPLv2 license.  When using or
- * redistributing this file, you may do so under either license.
- *
- * GPL LICENSE SUMMARY
- *
- * Copyright(c) 2007 - 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2013 - 2014 Intel Mobile Communications GmbH
- * Copyright(c) 2015        Intel Deutschland GmbH
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110,
- * USA
- *
- * The full GNU General Public License is included in this distribution
- * in the file called COPYING.
- *
- * Contact Information:
- *  Intel Linux Wireless <linuxwifi@intel.com>
- * Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
- *
- * BSD LICENSE
- *
- * Copyright(c) 2005 - 2014 Intel Corporation. All rights reserved.
- * Copyright(c) 2013 - 2014 Intel Mobile Communications GmbH
- * Copyright(c) 2015        Intel Deutschland GmbH
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *  * Neither the name Intel Corporation nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *****************************************************************************/
+/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
+/*
+ * Copyright (C) 2005-2014, 2018-2019 Intel Corporation
+ * Copyright (C) 2013-2014 Intel Mobile Communications GmbH
+ * Copyright (C) 2015 Intel Deutschland GmbH
+ */
 #ifndef __iwl_op_mode_h__
 #define __iwl_op_mode_h__
 
@@ -143,9 +83,6 @@ struct iwl_cfg;
  * @nic_config: configure NIC, called before firmware is started.
  *	May sleep
  * @wimax_active: invoked when WiMax becomes active. May sleep
- * @enter_d0i3: configure the fw to enter d0i3. return 1 to indicate d0i3
- *	entrance is aborted (e.g. due to held reference). May sleep.
- * @exit_d0i3: configure the fw to exit d0i3. May sleep.
  */
 struct iwl_op_mode_ops {
 	struct iwl_op_mode *(*start)(struct iwl_trans *trans,
@@ -167,8 +104,6 @@ struct iwl_op_mode_ops {
 	void (*cmd_queue_full)(struct iwl_op_mode *op_mode);
 	void (*nic_config)(struct iwl_op_mode *op_mode);
 	void (*wimax_active)(struct iwl_op_mode *op_mode);
-	int (*enter_d0i3)(struct iwl_op_mode *op_mode);
-	int (*exit_d0i3)(struct iwl_op_mode *op_mode);
 };
 
 int iwl_opmode_register(const char *name, const struct iwl_op_mode_ops *ops);
@@ -183,7 +118,7 @@ void iwl_opmode_deregister(const char *name);
 struct iwl_op_mode {
 	const struct iwl_op_mode_ops *ops;
 
-	char op_mode_specific[0] __aligned(sizeof(void *));
+	char op_mode_specific[] __aligned(sizeof(void *));
 };
 
 static inline void iwl_op_mode_stop(struct iwl_op_mode *op_mode)
@@ -259,24 +194,6 @@ static inline void iwl_op_mode_wimax_active(struct iwl_op_mode *op_mode)
 {
 	might_sleep();
 	op_mode->ops->wimax_active(op_mode);
-}
-
-static inline int iwl_op_mode_enter_d0i3(struct iwl_op_mode *op_mode)
-{
-	might_sleep();
-
-	if (!op_mode->ops->enter_d0i3)
-		return 0;
-	return op_mode->ops->enter_d0i3(op_mode);
-}
-
-static inline int iwl_op_mode_exit_d0i3(struct iwl_op_mode *op_mode)
-{
-	might_sleep();
-
-	if (!op_mode->ops->exit_d0i3)
-		return 0;
-	return op_mode->ops->exit_d0i3(op_mode);
 }
 
 #endif /* __iwl_op_mode_h__ */

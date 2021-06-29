@@ -405,6 +405,9 @@ liquidio_vf_probe(struct pci_dev *pdev,
 	dev_info(&pdev->dev, "Initializing device %x:%x.\n",
 		 (u32)pdev->vendor, (u32)pdev->device);
 
+	/* mark hardware as deprecated in RHEL8 */
+	mark_hardware_deprecated(DRV_NAME);
+
 	/* Assign octeon_device for this device to the private data area. */
 	pci_set_drvdata(pdev, oct_dev);
 
@@ -1574,7 +1577,7 @@ static int liquidio_xmit(struct sk_buff *skb, struct net_device *netdev)
 		irh->vlan = skb_vlan_tag_get(skb) & VLAN_VID_MASK;
 	}
 
-	xmit_more = skb->xmit_more;
+	xmit_more = netdev_xmit_more();
 
 	if (unlikely(cmdsetup.s.timestamp))
 		status = send_nic_timestamp_pkt(oct, &ndata, finfo, xmit_more);
@@ -1618,7 +1621,7 @@ lio_xmit_failed:
 /** \brief Network device Tx timeout
  * @param netdev    pointer to network device
  */
-static void liquidio_tx_timeout(struct net_device *netdev)
+static void liquidio_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 {
 	struct lio *lio;
 

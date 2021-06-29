@@ -23,6 +23,7 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/pci.h>
+#include <linux/pci_ids.h>
 #include <asm/amd_nb.h>
 #include <asm/processor.h>
 
@@ -39,14 +40,6 @@ static DEFINE_MUTEX(nb_smu_ind_mutex);
 
 #ifndef PCI_DEVICE_ID_AMD_15H_M70H_NB_F3
 #define PCI_DEVICE_ID_AMD_15H_M70H_NB_F3	0x15b3
-#endif
-
-#ifndef PCI_DEVICE_ID_AMD_17H_DF_F3
-#define PCI_DEVICE_ID_AMD_17H_DF_F3	0x1463
-#endif
-
-#ifndef PCI_DEVICE_ID_AMD_17H_M10H_DF_F3
-#define PCI_DEVICE_ID_AMD_17H_M10H_DF_F3	0x15eb
 #endif
 
 /* CPUID function 0x80000001, ebx */
@@ -333,7 +326,7 @@ static int k10temp_probe(struct pci_dev *pdev,
 					  boot_cpu_data.x86_model == 0x70)) {
 		data->read_htcreg = read_htcreg_nb_f15;
 		data->read_tempreg = read_tempreg_nb_f15;
-	} else if (boot_cpu_data.x86 == 0x17) {
+	} else if (boot_cpu_data.x86 == 0x17 || boot_cpu_data.x86 == 0x19) {
 		data->temp_adjust_mask = 0x80000;
 		data->read_tempreg = read_tempreg_nb_f17;
 		data->show_tdie = true;
@@ -370,6 +363,8 @@ static const struct pci_device_id k10temp_id_table[] = {
 	{ PCI_VDEVICE(AMD, PCI_DEVICE_ID_AMD_16H_M30H_NB_F3) },
 	{ PCI_VDEVICE(AMD, PCI_DEVICE_ID_AMD_17H_DF_F3) },
 	{ PCI_VDEVICE(AMD, PCI_DEVICE_ID_AMD_17H_M10H_DF_F3) },
+	{ PCI_VDEVICE(AMD, PCI_DEVICE_ID_AMD_17H_M30H_DF_F3) },
+	{ PCI_VDEVICE(AMD, PCI_DEVICE_ID_AMD_19H_DF_F3) },
 	{}
 };
 MODULE_DEVICE_TABLE(pci, k10temp_id_table);

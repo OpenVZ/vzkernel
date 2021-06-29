@@ -8,6 +8,10 @@
 #include <linux/sched/jobctl.h>
 #include <linux/sched/task.h>
 #include <linux/cred.h>
+#include <linux/rh_kabi.h>
+#include <linux/posix-timers.h>
+#include RH_KABI_HIDE_INCLUDE(<linux/mm_types.h>)
+#include RH_KABI_HIDE_INCLUDE(<asm/ptrace.h>)
 
 /*
  * Types defining task->signal and task->sighand and APIs using them:
@@ -55,18 +59,19 @@ struct task_cputime_atomic {
 /**
  * struct thread_group_cputimer - thread group interval timer counts
  * @cputime_atomic:	atomic thread group interval timers.
- * @running:		true when there are timers running and
- *			@cputime_atomic receives updates.
- * @checking_timer:	true when a thread in the group is in the
- *			process of checking for thread group timers.
  *
  * This structure contains the version of task_cputime, above, that is
  * used for thread group CPU timer calculations.
  */
 struct thread_group_cputimer {
 	struct task_cputime_atomic cputime_atomic;
-	bool running;
-	bool checking_timer;
+	RH_KABI_DEPRECATE(bool, running)
+	RH_KABI_DEPRECATE(bool, checking_timer)
+};
+
+struct multiprocess_signals {
+	sigset_t signal;
+	struct hlist_node node;
 };
 
 /*
@@ -140,13 +145,14 @@ struct signal_struct {
 	struct thread_group_cputimer cputimer;
 
 	/* Earliest-expiration cache. */
-	struct task_cputime cputime_expires;
+	RH_KABI_DEPRECATE(struct task_cputime, cputime_expires)
 
-	struct list_head cpu_timers[3];
-
+	/* Empty if CONFIG_POSIX_TIMERS=n */
+	RH_KABI_DEPRECATE(struct list_head, cpu_timers[3])
 #endif
 
-	struct pid *leader_pid;
+	/* PID/PID hash table linkage. */
+	RH_KABI_DEPRECATE(struct pid *, leader_pid)
 
 #ifdef CONFIG_NO_HZ_FULL
 	atomic_t tick_dep_mask;
@@ -223,6 +229,22 @@ struct signal_struct {
 	struct mutex cred_guard_mutex;	/* guard against foreign influences on
 					 * credential calculations
 					 * (notably. ptrace) */
+
+	/*
+	 * RHEL8: signal_struct is always dynamically allocated at process
+	 * creation time and not embedded directly into other structure.
+	 * So it is safe to extend the size of the structure.
+	 */
+	/* PID/PID hash table linkage. */
+	RH_KABI_EXTEND(struct pid *pids[PIDTYPE_MAX])
+
+	/* For collecting multiprocess signals during fork */
+	RH_KABI_USE(1, struct hlist_head multiprocess)
+
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_EXTEND(struct posix_cputimers posix_cputimers)
 } __randomize_layout;
 
 /*
@@ -261,16 +283,16 @@ static inline int signal_group_exit(const struct signal_struct *sig)
 extern void flush_signals(struct task_struct *);
 extern void ignore_signals(struct task_struct *);
 extern void flush_signal_handlers(struct task_struct *, int force_default);
-extern int dequeue_signal(struct task_struct *tsk, sigset_t *mask, siginfo_t *info);
+extern int dequeue_signal(struct task_struct *tsk, sigset_t *mask, kernel_siginfo_t *info);
 
-static inline int kernel_dequeue_signal(siginfo_t *info)
+static inline int kernel_dequeue_signal(void)
 {
 	struct task_struct *tsk = current;
-	siginfo_t __info;
+	kernel_siginfo_t __info;
 	int ret;
 
 	spin_lock_irq(&tsk->sighand->siglock);
-	ret = dequeue_signal(tsk, &tsk->blocked, info ?: &__info);
+	ret = dequeue_signal(tsk, &tsk->blocked, &__info);
 	spin_unlock_irq(&tsk->sighand->siglock);
 
 	return ret;
@@ -313,12 +335,12 @@ int force_sig_pkuerr(void __user *addr, u32 pkey);
 
 int force_sig_ptrace_errno_trap(int errno, void __user *addr);
 
-extern int send_sig_info(int, struct siginfo *, struct task_struct *);
-extern int force_sigsegv(int, struct task_struct *);
-extern int force_sig_info(int, struct siginfo *, struct task_struct *);
-extern int __kill_pgrp_info(int sig, struct siginfo *info, struct pid *pgrp);
-extern int kill_pid_info(int sig, struct siginfo *info, struct pid *pid);
-extern int kill_pid_info_as_cred(int, struct siginfo *, struct pid *,
+extern int send_sig_info(int, struct kernel_siginfo *, struct task_struct *);
+extern void force_sigsegv(int sig, struct task_struct *p);
+extern int force_sig_info(int, struct kernel_siginfo *, struct task_struct *);
+extern int __kill_pgrp_info(int sig, struct kernel_siginfo *info, struct pid *pgrp);
+extern int kill_pid_info(int sig, struct kernel_siginfo *info, struct pid *pid);
+extern int kill_pid_usb_asyncio(int sig, int errno, sigval_t addr, struct pid *,
 				const struct cred *);
 extern int kill_pgrp(struct pid *pid, int sig, int priv);
 extern int kill_pid(struct pid *pid, int sig, int priv);
@@ -329,7 +351,7 @@ extern int send_sig(int, struct task_struct *, int);
 extern int zap_other_threads(struct task_struct *p);
 extern struct sigqueue *sigqueue_alloc(void);
 extern void sigqueue_free(struct sigqueue *);
-extern int send_sigqueue(struct sigqueue *,  struct task_struct *, int group);
+extern int send_sigqueue(struct sigqueue *, struct pid *, enum pid_type);
 extern int do_sigaction(int, struct k_sigaction *, struct k_sigaction *);
 
 static inline int restart_syscall(void)
@@ -364,6 +386,20 @@ static inline int signal_pending_state(long state, struct task_struct *p)
 }
 
 /*
+ * This should only be used in fault handlers to decide whether we
+ * should stop the current fault routine to handle the signals
+ * instead, especially with the case where we've got interrupted with
+ * a VM_FAULT_RETRY.
+ */
+static inline bool fault_signal_pending(vm_fault_t fault_flags,
+					struct pt_regs *regs)
+{
+	return unlikely((fault_flags & VM_FAULT_RETRY) &&
+			(fatal_signal_pending(current) ||
+			 (user_mode(regs) && signal_pending(current))));
+}
+
+/*
  * Reevaluate whether the task has signals pending delivery.
  * Wake the task if so.
  * This is required every time the blocked sigset_t changes.
@@ -371,6 +407,7 @@ static inline int signal_pending_state(long state, struct task_struct *p)
  */
 extern void recalc_sigpending_and_wake(struct task_struct *t);
 extern void recalc_sigpending(void);
+extern void calculate_sigpending(void);
 
 extern void signal_wake_up_state(struct task_struct *t, unsigned int state);
 
@@ -382,6 +419,8 @@ static inline void ptrace_signal_wake_up(struct task_struct *t, bool resume)
 {
 	signal_wake_up_state(t, resume ? __TASK_TRACED : 0);
 }
+
+void task_join_group_stop(struct task_struct *task);
 
 #ifdef TIF_RESTORE_SIGMASK
 /*
@@ -463,9 +502,8 @@ static inline int kill_cad_pid(int sig, int priv)
 }
 
 /* These can be the second arg to send_sig_info/send_group_sig_info.  */
-#define SEND_SIG_NOINFO ((struct siginfo *) 0)
-#define SEND_SIG_PRIV	((struct siginfo *) 1)
-#define SEND_SIG_FORCED	((struct siginfo *) 2)
+#define SEND_SIG_NOINFO ((struct kernel_siginfo *) 0)
+#define SEND_SIG_PRIV	((struct kernel_siginfo *) 1)
 
 /*
  * True if we are on the alternate signal stack.
@@ -556,6 +594,37 @@ extern bool current_is_single_threaded(void);
 typedef int (*proc_visitor)(struct task_struct *p, void *data);
 void walk_process_tree(struct task_struct *top, proc_visitor, void *);
 
+static inline
+struct pid *task_pid_type(struct task_struct *task, enum pid_type type)
+{
+	struct pid *pid;
+	if (type == PIDTYPE_PID)
+		pid = task_pid(task);
+	else
+		pid = task->signal->pids[type];
+	return pid;
+}
+
+static inline struct pid *task_tgid(struct task_struct *task)
+{
+	return task->signal->pids[PIDTYPE_TGID];
+}
+
+/*
+ * Without tasklist or RCU lock it is not safe to dereference
+ * the result of task_pgrp/task_session even if task == current,
+ * we can race with another thread doing sys_setsid/sys_setpgid.
+ */
+static inline struct pid *task_pgrp(struct task_struct *task)
+{
+	return task->signal->pids[PIDTYPE_PGID];
+}
+
+static inline struct pid *task_session(struct task_struct *task)
+{
+	return task->signal->pids[PIDTYPE_SID];
+}
+
 static inline int get_nr_threads(struct task_struct *tsk)
 {
 	return tsk->signal->nr_threads;
@@ -574,7 +643,7 @@ static inline bool thread_group_leader(struct task_struct *p)
  */
 static inline bool has_group_leader_pid(struct task_struct *p)
 {
-	return task_pid(p) == p->signal->leader_pid;
+	return task_pid(p) == task_tgid(p);
 }
 
 static inline
@@ -596,6 +665,8 @@ static inline int thread_group_empty(struct task_struct *p)
 
 #define delay_group_leader(p) \
 		(thread_group_leader(p) && !thread_group_empty(p))
+
+extern bool thread_group_exited(struct pid *pid);
 
 extern struct sighand_struct *__lock_task_sighand(struct task_struct *tsk,
 							unsigned long *flags);

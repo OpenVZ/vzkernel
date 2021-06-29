@@ -28,7 +28,7 @@
 #include <linux/irq.h>
 #include <linux/moduleparam.h>
 #include <linux/string.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/slab.h>
 #include <linux/irqnr.h>
 #include <linux/pci.h>
@@ -1687,7 +1687,6 @@ void __init xen_init_IRQ(void)
 
 #ifdef CONFIG_X86
 	if (xen_pv_domain()) {
-		irq_ctx_init(smp_processor_id());
 		if (xen_initial_domain())
 			pci_xen_initial_domain();
 	}

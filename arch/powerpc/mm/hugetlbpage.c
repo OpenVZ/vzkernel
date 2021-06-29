@@ -15,10 +15,10 @@
 #include <linux/export.h>
 #include <linux/of_fdt.h>
 #include <linux/memblock.h>
-#include <linux/bootmem.h>
 #include <linux/moduleparam.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
+#include <linux/kmemleak.h>
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/tlb.h>
@@ -112,6 +112,8 @@ static int __hugepte_alloc(struct mm_struct *mm, hugepd_t *hpdp,
 		for (i = i - 1 ; i >= 0; i--, hpdp--)
 			*hpdp = __hugepd(0);
 		kmem_cache_free(cachep, new);
+	} else {
+		kmemleak_ignore(new);
 	}
 	spin_unlock(ptl);
 	return 0;
@@ -296,7 +298,7 @@ static void hugepd_free(struct mmu_gather *tlb, void *hugepte)
 
 	(*batchp)->ptes[(*batchp)->index++] = hugepte;
 	if ((*batchp)->index == HUGEPD_FREELIST_SIZE) {
-		call_rcu_sched(&(*batchp)->rcu, hugepd_free_rcu_callback);
+		call_rcu(&(*batchp)->rcu, hugepd_free_rcu_callback);
 		*batchp = NULL;
 	}
 	put_cpu_var(hugepd_freelist_cur);
@@ -534,30 +536,6 @@ retry:
 	return page;
 }
 
-static unsigned long hugepte_addr_end(unsigned long addr, unsigned long end,
-				      unsigned long sz)
-{
-	unsigned long __boundary = (addr + sz) & ~(sz-1);
-	return (__boundary - 1 < end - 1) ? __boundary : end;
-}
-
-int gup_huge_pd(hugepd_t hugepd, unsigned long addr, unsigned pdshift,
-		unsigned long end, int write, struct page **pages, int *nr)
-{
-	pte_t *ptep;
-	unsigned long sz = 1UL << hugepd_shift(hugepd);
-	unsigned long next;
-
-	ptep = hugepte_offset(hugepd, addr, pdshift);
-	do {
-		next = hugepte_addr_end(addr, end, sz);
-		if (!gup_hugepte(ptep, sz, addr, end, write, pages, nr))
-			return 0;
-	} while (ptep++, addr = next, addr != end);
-
-	return 1;
-}
-
 #ifdef CONFIG_PPC_MM_SLICES
 unsigned long hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 					unsigned long len, unsigned long pgoff,
@@ -595,7 +573,7 @@ static inline bool is_power_of_4(unsigned long x)
 	return false;
 }
 
-static int __init add_huge_page_size(unsigned long long size)
+bool __init arch_hugetlb_valid_size(unsigned long size)
 {
 	int shift = __ffs(size);
 	int mmu_psize;
@@ -603,17 +581,17 @@ static int __init add_huge_page_size(unsigned long long size)
 	/* Check that it is a page size supported by the hardware and
 	 * that it fits within pagetable and slice limits. */
 	if (size <= PAGE_SIZE)
-		return -EINVAL;
+		return false;
 #if defined(CONFIG_PPC_FSL_BOOK3E)
 	if (!is_power_of_4(size))
-		return -EINVAL;
+		return false;
 #elif !defined(CONFIG_PPC_8xx)
 	if (!is_power_of_2(size) || (shift > SLICE_HIGH_SHIFT))
-		return -EINVAL;
+		return false;
 #endif
 
 	if ((mmu_psize = shift_to_mmu_psize(shift)) < 0)
-		return -EINVAL;
+		return false;
 
 #ifdef CONFIG_PPC_BOOK3S_64
 	/*
@@ -621,46 +599,33 @@ static int __init add_huge_page_size(unsigned long long size)
 	 * firmware we only add hugetlb support for page sizes that can be
 	 * supported by linux page table layout.
 	 * For now we have
-	 * Radix: 2M
+	 * Radix: 2M and 1G
 	 * Hash: 16M and 16G
 	 */
 	if (radix_enabled()) {
-		if (mmu_psize != MMU_PAGE_2M) {
-			if (cpu_has_feature(CPU_FTR_POWER9_DD1) ||
-			    (mmu_psize != MMU_PAGE_1G))
-				return -EINVAL;
-		}
+		if (mmu_psize != MMU_PAGE_2M && mmu_psize != MMU_PAGE_1G)
+			return false;
 	} else {
 		if (mmu_psize != MMU_PAGE_16M && mmu_psize != MMU_PAGE_16G)
-			return -EINVAL;
+			return false;
 	}
 #endif
 
 	BUG_ON(mmu_psize_defs[mmu_psize].shift != shift);
 
-	/* Return if huge page size has already been setup */
-	if (size_to_hstate(size))
-		return 0;
+	return true;
+}
+
+static int __init add_huge_page_size(unsigned long long size)
+{
+	int shift = __ffs(size);
+
+	if (!arch_hugetlb_valid_size((unsigned long)size))
+		return -EINVAL;
 
 	hugetlb_add_hstate(shift - PAGE_SHIFT);
-
 	return 0;
 }
-
-static int __init hugepage_setup_sz(char *str)
-{
-	unsigned long long size;
-
-	size = memparse(str, &str);
-
-	if (add_huge_page_size(size) != 0) {
-		hugetlb_bad_size();
-		pr_err("Invalid huge page size specified(%llu)\n", size);
-	}
-
-	return 1;
-}
-__setup("hugepagesz=", hugepage_setup_sz);
 
 struct kmem_cache *hugepte_cache;
 static int __init hugetlbpage_init(void)
@@ -759,7 +724,7 @@ void flush_dcache_icache_hugepage(struct page *page)
 
 	BUG_ON(!PageCompound(page));
 
-	for (i = 0; i < (1UL << compound_order(page)); i++) {
+	for (i = 0; i < compound_nr(page); i++) {
 		if (!PageHighMem(page)) {
 			__flush_dcache_icache(page_address(page+i));
 		} else {
@@ -771,150 +736,3 @@ void flush_dcache_icache_hugepage(struct page *page)
 }
 
 #endif /* CONFIG_HUGETLB_PAGE */
-
-/*
- * We have 4 cases for pgds and pmds:
- * (1) invalid (all zeroes)
- * (2) pointer to next table, as normal; bottom 6 bits == 0
- * (3) leaf pte for huge page _PAGE_PTE set
- * (4) hugepd pointer, _PAGE_PTE = 0 and bits [2..6] indicate size of table
- *
- * So long as we atomically load page table pointers we are safe against teardown,
- * we can follow the address down to the the page and take a ref on it.
- * This function need to be called with interrupts disabled. We use this variant
- * when we have MSR[EE] = 0 but the paca->irq_soft_mask = IRQS_ENABLED
- */
-pte_t *__find_linux_pte(pgd_t *pgdir, unsigned long ea,
-			bool *is_thp, unsigned *hpage_shift)
-{
-	pgd_t pgd, *pgdp;
-	pud_t pud, *pudp;
-	pmd_t pmd, *pmdp;
-	pte_t *ret_pte;
-	hugepd_t *hpdp = NULL;
-	unsigned pdshift = PGDIR_SHIFT;
-
-	if (hpage_shift)
-		*hpage_shift = 0;
-
-	if (is_thp)
-		*is_thp = false;
-
-	pgdp = pgdir + pgd_index(ea);
-	pgd  = READ_ONCE(*pgdp);
-	/*
-	 * Always operate on the local stack value. This make sure the
-	 * value don't get updated by a parallel THP split/collapse,
-	 * page fault or a page unmap. The return pte_t * is still not
-	 * stable. So should be checked there for above conditions.
-	 */
-	if (pgd_none(pgd))
-		return NULL;
-	else if (pgd_huge(pgd)) {
-		ret_pte = (pte_t *) pgdp;
-		goto out;
-	} else if (is_hugepd(__hugepd(pgd_val(pgd))))
-		hpdp = (hugepd_t *)&pgd;
-	else {
-		/*
-		 * Even if we end up with an unmap, the pgtable will not
-		 * be freed, because we do an rcu free and here we are
-		 * irq disabled
-		 */
-		pdshift = PUD_SHIFT;
-		pudp = pud_offset(&pgd, ea);
-		pud  = READ_ONCE(*pudp);
-
-		if (pud_none(pud))
-			return NULL;
-		else if (pud_huge(pud)) {
-			ret_pte = (pte_t *) pudp;
-			goto out;
-		} else if (is_hugepd(__hugepd(pud_val(pud))))
-			hpdp = (hugepd_t *)&pud;
-		else {
-			pdshift = PMD_SHIFT;
-			pmdp = pmd_offset(&pud, ea);
-			pmd  = READ_ONCE(*pmdp);
-			/*
-			 * A hugepage collapse is captured by pmd_none, because
-			 * it mark the pmd none and do a hpte invalidate.
-			 */
-			if (pmd_none(pmd))
-				return NULL;
-
-			if (pmd_trans_huge(pmd) || pmd_devmap(pmd)) {
-				if (is_thp)
-					*is_thp = true;
-				ret_pte = (pte_t *) pmdp;
-				goto out;
-			}
-
-			if (pmd_huge(pmd)) {
-				ret_pte = (pte_t *) pmdp;
-				goto out;
-			} else if (is_hugepd(__hugepd(pmd_val(pmd))))
-				hpdp = (hugepd_t *)&pmd;
-			else
-				return pte_offset_kernel(&pmd, ea);
-		}
-	}
-	if (!hpdp)
-		return NULL;
-
-	ret_pte = hugepte_offset(*hpdp, ea, pdshift);
-	pdshift = hugepd_shift(*hpdp);
-out:
-	if (hpage_shift)
-		*hpage_shift = pdshift;
-	return ret_pte;
-}
-EXPORT_SYMBOL_GPL(__find_linux_pte);
-
-int gup_hugepte(pte_t *ptep, unsigned long sz, unsigned long addr,
-		unsigned long end, int write, struct page **pages, int *nr)
-{
-	unsigned long pte_end;
-	struct page *head, *page;
-	pte_t pte;
-	int refs;
-
-	pte_end = (addr + sz) & ~(sz-1);
-	if (pte_end < end)
-		end = pte_end;
-
-	pte = READ_ONCE(*ptep);
-
-	if (!pte_access_permitted(pte, write))
-		return 0;
-
-	/* hugepages are never "special" */
-	VM_BUG_ON(!pfn_valid(pte_pfn(pte)));
-
-	refs = 0;
-	head = pte_page(pte);
-
-	page = head + ((addr & (sz-1)) >> PAGE_SHIFT);
-	do {
-		VM_BUG_ON(compound_head(page) != head);
-		pages[*nr] = page;
-		(*nr)++;
-		page++;
-		refs++;
-	} while (addr += PAGE_SIZE, addr != end);
-
-	if (!page_cache_add_speculative(head, refs)) {
-		*nr -= refs;
-		return 0;
-	}
-
-	if (unlikely(pte_val(pte) != pte_val(*ptep))) {
-		/* Could be optimized better */
-		*nr -= refs;
-		while (refs--)
-			put_page(head);
-		return 0;
-	}
-
-	return 1;
-}

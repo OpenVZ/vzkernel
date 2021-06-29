@@ -57,16 +57,14 @@ static struct ctl_table_root set_root = {
 	.permissions = set_permissions,
 };
 
-static int zero = 0;
-static int int_max = INT_MAX;
 #define UCOUNT_ENTRY(name)				\
 	{						\
 		.procname	= name,			\
 		.maxlen		= sizeof(int),		\
 		.mode		= 0644,			\
 		.proc_handler	= proc_dointvec_minmax,	\
-		.extra1		= &zero,		\
-		.extra2		= &int_max,		\
+		.extra1		= SYSCTL_ZERO,		\
+		.extra2		= SYSCTL_INT_MAX,	\
 	}
 static struct ctl_table user_table[] = {
 	UCOUNT_ENTRY("max_user_namespaces"),
@@ -76,10 +74,27 @@ static struct ctl_table user_table[] = {
 	UCOUNT_ENTRY("max_net_namespaces"),
 	UCOUNT_ENTRY("max_mnt_namespaces"),
 	UCOUNT_ENTRY("max_cgroup_namespaces"),
+	UCOUNT_ENTRY("max_time_namespaces"),
 #ifdef CONFIG_INOTIFY_USER
 	UCOUNT_ENTRY("max_inotify_instances"),
 	UCOUNT_ENTRY("max_inotify_watches"),
 #endif
+	{}, /* UCOUNT_KABI_RESERVE_1 */
+	{}, /* UCOUNT_KABI_RESERVE_1 */
+	{}, /* UCOUNT_KABI_RESERVE_2 */
+	{}, /* UCOUNT_KABI_RESERVE_3 */
+	{}, /* UCOUNT_KABI_RESERVE_4 */
+	{}, /* UCOUNT_KABI_RESERVE_5 */
+	{}, /* UCOUNT_KABI_RESERVE_6 */
+	{}, /* UCOUNT_KABI_RESERVE_7 */
+	{}, /* UCOUNT_KABI_RESERVE_8 */
+	{}, /* UCOUNT_KABI_RESERVE_9 */
+	{}, /* UCOUNT_KABI_RESERVE_10 */
+	{}, /* UCOUNT_KABI_RESERVE_11 */
+	{}, /* UCOUNT_KABI_RESERVE_12 */
+	{}, /* UCOUNT_KABI_RESERVE_13 */
+	{}, /* UCOUNT_KABI_RESERVE_14 */
+	{}, /* UCOUNT_KABI_RESERVE_15 */
 	{ }
 };
 #endif /* CONFIG_SYSCTL */

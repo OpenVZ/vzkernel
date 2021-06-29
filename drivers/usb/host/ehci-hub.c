@@ -14,7 +14,6 @@
  */
 
 /*-------------------------------------------------------------------------*/
-#include <linux/usb/otg.h>
 
 #define	PORT_WAKE_BITS	(PORT_WKOC_E|PORT_WKDISC_E|PORT_WKCONN_E)
 
@@ -512,10 +511,18 @@ static int ehci_bus_resume (struct usb_hcd *hcd)
 	return -ESHUTDOWN;
 }
 
+static unsigned long ehci_get_resuming_ports(struct usb_hcd *hcd)
+{
+	struct ehci_hcd		*ehci = hcd_to_ehci(hcd);
+
+	return ehci->resuming_ports;
+}
+
 #else
 
 #define ehci_bus_suspend	NULL
 #define ehci_bus_resume		NULL
+#define ehci_get_resuming_ports	NULL
 
 #endif	/* CONFIG_PM */
 

@@ -9,24 +9,18 @@
 #include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
-#include "xfs_sb.h"
 #include "xfs_mount.h"
-#include "xfs_defer.h"
 #include "xfs_alloc.h"
 #include "xfs_errortag.h"
 #include "xfs_error.h"
 #include "xfs_trace.h"
-#include "xfs_cksum.h"
 #include "xfs_trans.h"
-#include "xfs_bit.h"
-#include "xfs_bmap.h"
-#include "xfs_bmap_btree.h"
-#include "xfs_ag_resv.h"
-#include "xfs_trans_space.h"
 #include "xfs_rmap_btree.h"
 #include "xfs_btree.h"
 #include "xfs_refcount_btree.h"
 #include "xfs_ialloc_btree.h"
+#include "xfs_sb.h"
+#include "xfs_ag_resv.h"
 
 /*
  * Per-AG Block Reservations
@@ -248,7 +242,8 @@ __xfs_ag_resv_init(
 /* Create a per-AG block reservation. */
 int
 xfs_ag_resv_init(
-	struct xfs_perag		*pag)
+	struct xfs_perag		*pag,
+	struct xfs_trans		*tp)
 {
 	struct xfs_mount		*mp = pag->pag_mount;
 	xfs_agnumber_t			agno = pag->pag_agno;
@@ -260,11 +255,11 @@ xfs_ag_resv_init(
 	if (pag->pag_meta_resv.ar_asked == 0) {
 		ask = used = 0;
 
-		error = xfs_refcountbt_calc_reserves(mp, agno, &ask, &used);
+		error = xfs_refcountbt_calc_reserves(mp, tp, agno, &ask, &used);
 		if (error)
 			goto out;
 
-		error = xfs_finobt_calc_reserves(mp, agno, &ask, &used);
+		error = xfs_finobt_calc_reserves(mp, tp, agno, &ask, &used);
 		if (error)
 			goto out;
 
@@ -280,9 +275,9 @@ xfs_ag_resv_init(
 			 */
 			ask = used = 0;
 
-			mp->m_inotbt_nores = true;
+			mp->m_finobt_nores = true;
 
-			error = xfs_refcountbt_calc_reserves(mp, agno, &ask,
+			error = xfs_refcountbt_calc_reserves(mp, tp, agno, &ask,
 					&used);
 			if (error)
 				goto out;
@@ -298,7 +293,7 @@ xfs_ag_resv_init(
 	if (pag->pag_rmapbt_resv.ar_asked == 0) {
 		ask = used = 0;
 
-		error = xfs_rmapbt_calc_reserves(mp, agno, &ask, &used);
+		error = xfs_rmapbt_calc_reserves(mp, tp, agno, &ask, &used);
 		if (error)
 			goto out;
 
@@ -309,7 +304,7 @@ xfs_ag_resv_init(
 
 #ifdef DEBUG
 	/* need to read in the AGF for the ASSERT below to work */
-	error = xfs_alloc_pagf_init(pag->pag_mount, NULL, pag->pag_agno, 0);
+	error = xfs_alloc_pagf_init(pag->pag_mount, tp, pag->pag_agno, 0);
 	if (error)
 		return error;
 

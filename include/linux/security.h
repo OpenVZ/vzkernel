@@ -35,7 +35,7 @@
 struct linux_binprm;
 struct cred;
 struct rlimit;
-struct siginfo;
+struct kernel_siginfo;
 struct sembuf;
 struct kern_ipc_perm;
 struct audit_context;
@@ -51,14 +51,21 @@ struct fown_struct;
 struct file_operations;
 struct msg_msg;
 struct xattr;
+struct kernfs_node;
 struct xfrm_sec_ctx;
 struct mm_struct;
+struct fs_context;
+struct fs_parameter;
+enum fs_value_type;
 
+/* Default (no) options for the capable function */
+#define CAP_OPT_NONE 0x0
 /* If capable should audit the security request */
-#define SECURITY_CAP_NOAUDIT 0
-#define SECURITY_CAP_AUDIT 1
+#define CAP_OPT_NOAUDIT BIT(1)
+/* If capable is being called by a setid function */
+#define CAP_OPT_INSETID BIT(2)
 
-/* LSM Agnostic defines for sb_set_mnt_opts */
+/* LSM Agnostic defines for fs_context::lsm_flags */
 #define SECURITY_LSM_NATIVE_LABELS	1
 
 struct ctl_table;
@@ -72,7 +79,7 @@ enum lsm_event {
 
 /* These functions are in security/commoncap.c */
 extern int cap_capable(const struct cred *cred, struct user_namespace *ns,
-		       int cap, int audit);
+		       int cap, unsigned int opts);
 extern int cap_settime(const struct timespec64 *ts, const struct timezone *tz);
 extern int cap_ptrace_access_check(struct task_struct *child, unsigned int mode);
 extern int cap_ptrace_traceme(struct task_struct *parent);
@@ -159,37 +166,32 @@ extern int mmap_min_addr_handler(struct ctl_table *table, int write,
 typedef int (*initxattrs) (struct inode *inode,
 			   const struct xattr *xattr_array, void *fs_data);
 
-#ifdef CONFIG_SECURITY
 
-struct security_mnt_opts {
-	char **mnt_opts;
-	int *mnt_opts_flags;
-	int num_mnt_opts;
+/* Keep the kernel_load_data_id enum in sync with kernel_read_file_id */
+#define __data_id_enumify(ENUM, dummy) LOADING_ ## ENUM,
+#define __data_id_stringify(dummy, str) #str,
+
+enum kernel_load_data_id {
+	__kernel_read_file_id(__data_id_enumify)
 };
+
+static const char * const kernel_load_data_str[] = {
+	__kernel_read_file_id(__data_id_stringify)
+};
+
+static inline const char *kernel_load_data_id_str(enum kernel_load_data_id id)
+{
+	if ((unsigned)id >= LOADING_MAX_ID)
+		return kernel_load_data_str[LOADING_UNKNOWN];
+
+	return kernel_load_data_str[id];
+}
+
+#ifdef CONFIG_SECURITY
 
 int call_lsm_notifier(enum lsm_event event, void *data);
 int register_lsm_notifier(struct notifier_block *nb);
 int unregister_lsm_notifier(struct notifier_block *nb);
-
-static inline void security_init_mnt_opts(struct security_mnt_opts *opts)
-{
-	opts->mnt_opts = NULL;
-	opts->mnt_opts_flags = NULL;
-	opts->num_mnt_opts = 0;
-}
-
-static inline void security_free_mnt_opts(struct security_mnt_opts *opts)
-{
-	int i;
-	if (opts->mnt_opts)
-		for (i = 0; i < opts->num_mnt_opts; i++)
-			kfree(opts->mnt_opts[i]);
-	kfree(opts->mnt_opts);
-	opts->mnt_opts = NULL;
-	kfree(opts->mnt_opts_flags);
-	opts->mnt_opts_flags = NULL;
-	opts->num_mnt_opts = 0;
-}
 
 /* prototypes */
 extern int security_init(void);
@@ -212,10 +214,10 @@ int security_capset(struct cred *new, const struct cred *old,
 		    const kernel_cap_t *effective,
 		    const kernel_cap_t *inheritable,
 		    const kernel_cap_t *permitted);
-int security_capable(const struct cred *cred, struct user_namespace *ns,
-			int cap);
-int security_capable_noaudit(const struct cred *cred, struct user_namespace *ns,
-			     int cap);
+int security_capable(const struct cred *cred,
+		       struct user_namespace *ns,
+		       int cap,
+		       unsigned int opts);
 int security_quotactl(int cmds, int type, int id, struct super_block *sb);
 int security_quota_on(struct dentry *dentry);
 int security_syslog(int type);
@@ -225,11 +227,14 @@ int security_bprm_set_creds(struct linux_binprm *bprm);
 int security_bprm_check(struct linux_binprm *bprm);
 void security_bprm_committing_creds(struct linux_binprm *bprm);
 void security_bprm_committed_creds(struct linux_binprm *bprm);
+int security_fs_context_dup(struct fs_context *fc, struct fs_context *src_fc);
+int security_fs_context_parse_param(struct fs_context *fc, struct fs_parameter *param);
 int security_sb_alloc(struct super_block *sb);
 void security_sb_free(struct super_block *sb);
-int security_sb_copy_data(char *orig, char *copy);
-int security_sb_remount(struct super_block *sb, void *data);
-int security_sb_kern_mount(struct super_block *sb, int flags, void *data);
+void security_free_mnt_opts(void **mnt_opts);
+int security_sb_eat_lsm_opts(char *options, void **mnt_opts);
+int security_sb_remount(struct super_block *sb, void *mnt_opts);
+int security_sb_kern_mount(struct super_block *sb);
 int security_sb_show_options(struct seq_file *m, struct super_block *sb);
 int security_sb_statfs(struct dentry *dentry);
 int security_sb_mount(const char *dev_name, const struct path *path,
@@ -237,14 +242,16 @@ int security_sb_mount(const char *dev_name, const struct path *path,
 int security_sb_umount(struct vfsmount *mnt, int flags);
 int security_sb_pivotroot(const struct path *old_path, const struct path *new_path);
 int security_sb_set_mnt_opts(struct super_block *sb,
-				struct security_mnt_opts *opts,
+				void *mnt_opts,
 				unsigned long kern_flags,
 				unsigned long *set_kern_flags);
 int security_sb_clone_mnt_opts(const struct super_block *oldsb,
 				struct super_block *newsb,
 				unsigned long kern_flags,
 				unsigned long *set_kern_flags);
-int security_sb_parse_opts_str(char *options, struct security_mnt_opts *opts);
+int security_add_mnt_opt(const char *option, const char *val,
+				int len, void **mnt_opts);
+int security_move_mount(const struct path *from_path, const struct path *to_path);
 int security_dentry_init_security(struct dentry *dentry, int mode,
 					const struct qstr *name, void **ctx,
 					u32 *ctxlen);
@@ -294,6 +301,8 @@ int security_inode_listsecurity(struct inode *inode, char *buffer, size_t buffer
 void security_inode_getsecid(struct inode *inode, u32 *secid);
 int security_inode_copy_up(struct dentry *src, struct cred **new);
 int security_inode_copy_up_xattr(const char *name);
+int security_kernfs_init_security(struct kernfs_node *kn_dir,
+				  struct kernfs_node *kn);
 int security_file_permission(struct file *file, int mask);
 int security_file_alloc(struct file *file);
 void security_file_free(struct file *file);
@@ -309,7 +318,7 @@ void security_file_set_fowner(struct file *file);
 int security_file_send_sigiotask(struct task_struct *tsk,
 				 struct fown_struct *fown, int sig);
 int security_file_receive(struct file *file);
-int security_file_open(struct file *file, const struct cred *cred);
+int security_file_open(struct file *file);
 int security_task_alloc(struct task_struct *task, unsigned long clone_flags);
 void security_task_free(struct task_struct *task);
 int security_cred_alloc_blank(struct cred *cred, gfp_t gfp);
@@ -320,6 +329,7 @@ void security_cred_getsecid(const struct cred *c, u32 *secid);
 int security_kernel_act_as(struct cred *new, u32 secid);
 int security_kernel_create_files_as(struct cred *new, struct inode *inode);
 int security_kernel_module_request(char *kmod_name);
+int security_kernel_load_data(enum kernel_load_data_id id);
 int security_kernel_read_file(struct file *file, enum kernel_read_file_id id);
 int security_kernel_post_read_file(struct file *file, char *buf, loff_t size,
 				   enum kernel_read_file_id id);
@@ -339,7 +349,7 @@ int security_task_setrlimit(struct task_struct *p, unsigned int resource,
 int security_task_setscheduler(struct task_struct *p);
 int security_task_getscheduler(struct task_struct *p);
 int security_task_movememory(struct task_struct *p);
-int security_task_kill(struct task_struct *p, struct siginfo *info,
+int security_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 			int sig, const struct cred *cred);
 int security_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 			unsigned long arg4, unsigned long arg5);
@@ -381,8 +391,6 @@ int security_inode_notifysecctx(struct inode *inode, void *ctx, u32 ctxlen);
 int security_inode_setsecctx(struct dentry *dentry, void *ctx, u32 ctxlen);
 int security_inode_getsecctx(struct inode *inode, void **ctx, u32 *ctxlen);
 #else /* CONFIG_SECURITY */
-struct security_mnt_opts {
-};
 
 static inline int call_lsm_notifier(enum lsm_event event, void *data)
 {
@@ -399,11 +407,7 @@ static inline  int unregister_lsm_notifier(struct notifier_block *nb)
 	return 0;
 }
 
-static inline void security_init_mnt_opts(struct security_mnt_opts *opts)
-{
-}
-
-static inline void security_free_mnt_opts(struct security_mnt_opts *opts)
+static inline void security_free_mnt_opts(void **mnt_opts)
 {
 }
 
@@ -470,14 +474,11 @@ static inline int security_capset(struct cred *new,
 }
 
 static inline int security_capable(const struct cred *cred,
-				   struct user_namespace *ns, int cap)
+				   struct user_namespace *ns,
+				   int cap,
+				   unsigned int opts)
 {
-	return cap_capable(cred, ns, cap, SECURITY_CAP_AUDIT);
-}
-
-static inline int security_capable_noaudit(const struct cred *cred,
-					   struct user_namespace *ns, int cap) {
-	return cap_capable(cred, ns, cap, SECURITY_CAP_NOAUDIT);
+	return cap_capable(cred, ns, cap, opts);
 }
 
 static inline int security_quotactl(int cmds, int type, int id,
@@ -525,6 +526,17 @@ static inline void security_bprm_committed_creds(struct linux_binprm *bprm)
 {
 }
 
+static inline int security_fs_context_dup(struct fs_context *fc,
+					  struct fs_context *src_fc)
+{
+	return 0;
+}
+static inline int security_fs_context_parse_param(struct fs_context *fc,
+						  struct fs_parameter *param)
+{
+	return -ENOPARAM;
+}
+
 static inline int security_sb_alloc(struct super_block *sb)
 {
 	return 0;
@@ -533,17 +545,19 @@ static inline int security_sb_alloc(struct super_block *sb)
 static inline void security_sb_free(struct super_block *sb)
 { }
 
-static inline int security_sb_copy_data(char *orig, char *copy)
+static inline int security_sb_eat_lsm_opts(char *options,
+					   void **mnt_opts)
 {
 	return 0;
 }
 
-static inline int security_sb_remount(struct super_block *sb, void *data)
+static inline int security_sb_remount(struct super_block *sb,
+				      void *mnt_opts)
 {
 	return 0;
 }
 
-static inline int security_sb_kern_mount(struct super_block *sb, int flags, void *data)
+static inline int security_sb_kern_mount(struct super_block *sb)
 {
 	return 0;
 }
@@ -578,7 +592,7 @@ static inline int security_sb_pivotroot(const struct path *old_path,
 }
 
 static inline int security_sb_set_mnt_opts(struct super_block *sb,
-					   struct security_mnt_opts *opts,
+					   void *mnt_opts,
 					   unsigned long kern_flags,
 					   unsigned long *set_kern_flags)
 {
@@ -593,7 +607,14 @@ static inline int security_sb_clone_mnt_opts(const struct super_block *oldsb,
 	return 0;
 }
 
-static inline int security_sb_parse_opts_str(char *options, struct security_mnt_opts *opts)
+static inline int security_add_mnt_opt(const char *option, const char *val,
+					int len, void **mnt_opts)
+{
+	return 0;
+}
+
+static inline int security_move_mount(const struct path *from_path,
+				      const struct path *to_path)
 {
 	return 0;
 }
@@ -788,6 +809,12 @@ static inline int security_inode_copy_up(struct dentry *src, struct cred **new)
 	return 0;
 }
 
+static inline int security_kernfs_init_security(struct kernfs_node *kn_dir,
+						struct kernfs_node *kn)
+{
+	return 0;
+}
+
 static inline int security_inode_copy_up_xattr(const char *name)
 {
 	return -EOPNOTSUPP;
@@ -858,8 +885,7 @@ static inline int security_file_receive(struct file *file)
 	return 0;
 }
 
-static inline int security_file_open(struct file *file,
-				     const struct cred *cred)
+static inline int security_file_open(struct file *file)
 {
 	return 0;
 }
@@ -905,6 +931,11 @@ static inline int security_kernel_create_files_as(struct cred *cred,
 }
 
 static inline int security_kernel_module_request(char *kmod_name)
+{
+	return 0;
+}
+
+static inline int security_kernel_load_data(enum kernel_load_data_id id)
 {
 	return 0;
 }
@@ -994,7 +1025,7 @@ static inline int security_task_movememory(struct task_struct *p)
 }
 
 static inline int security_task_kill(struct task_struct *p,
-				     struct siginfo *info, int sig,
+				     struct kernel_siginfo *info, int sig,
 				     const struct cred *cred)
 {
 	return 0;
@@ -1200,7 +1231,7 @@ void security_sk_clone(const struct sock *sk, struct sock *newsk);
 void security_sk_classify_flow(struct sock *sk, struct flowi *fl);
 void security_req_classify_flow(const struct request_sock *req, struct flowi *fl);
 void security_sock_graft(struct sock*sk, struct socket *parent);
-int security_inet_conn_request(struct sock *sk,
+int security_inet_conn_request(const struct sock *sk,
 			struct sk_buff *skb, struct request_sock *req);
 void security_inet_csk_clone(struct sock *newsk,
 			const struct request_sock *req);
@@ -1361,7 +1392,7 @@ static inline void security_sock_graft(struct sock *sk, struct socket *parent)
 {
 }
 
-static inline int security_inet_conn_request(struct sock *sk,
+static inline int security_inet_conn_request(const struct sock *sk,
 			struct sk_buff *skb, struct request_sock *req)
 {
 	return 0;
@@ -1675,8 +1706,7 @@ static inline int security_key_getsecurity(struct key *key, char **_buffer)
 #ifdef CONFIG_SECURITY
 int security_audit_rule_init(u32 field, u32 op, char *rulestr, void **lsmrule);
 int security_audit_rule_known(struct audit_krule *krule);
-int security_audit_rule_match(u32 secid, u32 field, u32 op, void *lsmrule,
-			      struct audit_context *actx);
+int security_audit_rule_match(u32 secid, u32 field, u32 op, void *lsmrule);
 void security_audit_rule_free(void *lsmrule);
 
 #else
@@ -1693,7 +1723,7 @@ static inline int security_audit_rule_known(struct audit_krule *krule)
 }
 
 static inline int security_audit_rule_match(u32 secid, u32 field, u32 op,
-				   void *lsmrule, struct audit_context *actx)
+					    void *lsmrule)
 {
 	return 0;
 }
@@ -1794,28 +1824,42 @@ static inline void security_bpf_prog_free(struct bpf_prog_aux *aux)
 #endif /* CONFIG_SECURITY */
 #endif /* CONFIG_BPF_SYSCALL */
 
+#ifdef CONFIG_PERF_EVENTS
+struct perf_event_attr;
+struct perf_event;
+
 #ifdef CONFIG_SECURITY
-
-static inline char *alloc_secdata(void)
-{
-	return (char *)get_zeroed_page(GFP_KERNEL);
-}
-
-static inline void free_secdata(void *secdata)
-{
-	free_page((unsigned long)secdata);
-}
-
+extern int security_perf_event_open(struct perf_event_attr *attr, int type);
+extern int security_perf_event_alloc(struct perf_event *event);
+extern void security_perf_event_free(struct perf_event *event);
+extern int security_perf_event_read(struct perf_event *event);
+extern int security_perf_event_write(struct perf_event *event);
 #else
-
-static inline char *alloc_secdata(void)
+static inline int security_perf_event_open(struct perf_event_attr *attr,
+					   int type)
 {
-        return (char *)1;
+	return 0;
 }
 
-static inline void free_secdata(void *secdata)
-{ }
+static inline int security_perf_event_alloc(struct perf_event *event)
+{
+	return 0;
+}
+
+static inline void security_perf_event_free(struct perf_event *event)
+{
+}
+
+static inline int security_perf_event_read(struct perf_event *event)
+{
+	return 0;
+}
+
+static inline int security_perf_event_write(struct perf_event *event)
+{
+	return 0;
+}
 #endif /* CONFIG_SECURITY */
+#endif /* CONFIG_PERF_EVENTS */
 
 #endif /* ! __LINUX_SECURITY_H */
-

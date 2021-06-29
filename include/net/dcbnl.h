@@ -21,6 +21,8 @@
 
 #include <linux/dcbnl.h>
 
+#include <linux/rh_kabi.h>
+
 struct dcb_app_type {
 	int	ifindex;
 	struct dcb_app	  app;
@@ -34,10 +36,26 @@ int dcb_ieee_setapp(struct net_device *, struct dcb_app *);
 int dcb_ieee_delapp(struct net_device *, struct dcb_app *);
 u8 dcb_ieee_getapp_mask(struct net_device *, struct dcb_app *);
 
+struct dcb_ieee_app_prio_map {
+	u64 map[IEEE_8021QAZ_MAX_TCS];
+};
+void dcb_ieee_getapp_prio_dscp_mask_map(const struct net_device *dev,
+					struct dcb_ieee_app_prio_map *p_map);
+
+struct dcb_ieee_app_dscp_map {
+	u8 map[64];
+};
+void dcb_ieee_getapp_dscp_prio_mask_map(const struct net_device *dev,
+					struct dcb_ieee_app_dscp_map *p_map);
+u8 dcb_ieee_getapp_default_prio_mask(const struct net_device *dev);
+
 int dcbnl_ieee_notify(struct net_device *dev, int event, int cmd,
 		      u32 seq, u32 pid);
 int dcbnl_cee_notify(struct net_device *dev, int event, int cmd,
 		     u32 seq, u32 pid);
+
+struct dcbnl_rtnl_ops_extended_rh {
+};
 
 /*
  * Ops struct for the netlink callbacks.  Used by DCB-enabled drivers through
@@ -105,6 +123,22 @@ struct dcbnl_rtnl_ops {
 	/* buffer settings */
 	int (*dcbnl_getbuffer)(struct net_device *, struct dcbnl_buffer *);
 	int (*dcbnl_setbuffer)(struct net_device *, struct dcbnl_buffer *);
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(8)
+	RH_KABI_RESERVE(9)
+	RH_KABI_RESERVE(10)
+	RH_KABI_RESERVE(11)
+	RH_KABI_RESERVE(12)
+	RH_KABI_RESERVE(13)
+	RH_KABI_RESERVE(14)
+	RH_KABI_RESERVE(15)
+	RH_KABI_AUX_EMBED(dcbnl_rtnl_ops_extended)
 };
 
 #endif /* __NET_DCBNL_H__ */

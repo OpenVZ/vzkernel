@@ -127,12 +127,13 @@ typedef s64			int64_t;
  *
  * blkcnt_t is the type of the inode's block count.
  */
-#ifdef CONFIG_LBDAF
-typedef u64 sector_t;
-typedef u64 blkcnt_t;
-#else
+
+#ifdef __GENKSYMS__
 typedef unsigned long sector_t;
 typedef unsigned long blkcnt_t;
+#else
+typedef u64 sector_t;
+typedef u64 blkcnt_t;
 #endif
 
 /*
@@ -177,6 +178,8 @@ typedef struct {
 	int counter;
 } atomic_t;
 
+#define ATOMIC_INIT(i) { (i) }
+
 #ifdef CONFIG_64BIT
 typedef struct {
 	long counter;
@@ -212,8 +215,8 @@ struct ustat {
  * weird ABI and we need to ask it explicitly.
  *
  * The alignment is required to guarantee that bit 0 of @next will be
- * clear under normal conditions -- as long as we use call_rcu(),
- * call_rcu_bh(), call_rcu_sched(), or call_srcu() to queue callback.
+ * clear under normal conditions -- as long as we use call_rcu() or
+ * call_srcu() to queue the callback.
  *
  * This guarantee is important for few reasons:
  *  - future call_rcu_lazy() will make use of lower bits in the pointer;

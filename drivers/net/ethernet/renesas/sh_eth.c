@@ -1966,7 +1966,6 @@ static void sh_eth_adjust_link(struct net_device *ndev)
 	if ((mdp->cd->no_psr || mdp->no_ether_link) && phydev->link)
 		sh_eth_rcv_snd_enable(ndev);
 
-	mmiowb();
 	spin_unlock_irqrestore(&mdp->lock, flags);
 
 	if (new_state && netif_msg_link(mdp))
@@ -2431,7 +2430,7 @@ out_napi_off:
 }
 
 /* Timeout function */
-static void sh_eth_tx_timeout(struct net_device *ndev)
+static void sh_eth_tx_timeout(struct net_device *ndev, unsigned int txqueue)
 {
 	struct sh_eth_private *mdp = netdev_priv(ndev);
 	struct sh_eth_rxdesc *rxdesc;

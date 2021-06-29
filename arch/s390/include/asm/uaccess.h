@@ -48,7 +48,7 @@ static inline int __range_ok(unsigned long addr, unsigned long size)
 	__range_ok((unsigned long)(addr), (size));	\
 })
 
-#define access_ok(type, addr, size) __access_ok(addr, size)
+#define access_ok(addr, size) __access_ok(addr, size)
 
 unsigned long __must_check
 raw_copy_from_user(void *to, const void __user *from, unsigned long n);
@@ -56,8 +56,10 @@ raw_copy_from_user(void *to, const void __user *from, unsigned long n);
 unsigned long __must_check
 raw_copy_to_user(void __user *to, const void *from, unsigned long n);
 
+#ifndef CONFIG_KASAN
 #define INLINE_COPY_FROM_USER
 #define INLINE_COPY_TO_USER
+#endif
 
 #ifdef CONFIG_HAVE_MARCH_Z10_FEATURES
 
@@ -275,6 +277,6 @@ static inline unsigned long __must_check clear_user(void __user *to, unsigned lo
 }
 
 int copy_to_user_real(void __user *dest, void *src, unsigned long count);
-void s390_kernel_write(void *dst, const void *src, size_t size);
+void *s390_kernel_write(void *dst, const void *src, size_t size);
 
 #endif /* __S390_UACCESS_H */

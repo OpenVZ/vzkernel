@@ -116,6 +116,24 @@
  *
  *  7.27
  *  - add FUSE_ABORT_ERROR
+ *
+ *  7.28
+ *  - add FUSE_COPY_FILE_RANGE
+ *  - add FOPEN_CACHE_DIR
+ *  - add FUSE_MAX_PAGES, add max_pages to init_out
+ *  - add FUSE_CACHE_SYMLINKS
+ *
+ *  7.29
+ *  - add FUSE_NO_OPENDIR_SUPPORT flag
+ *
+ *  7.30
+ *  - add FUSE_EXPLICIT_INVAL_DATA
+ *  - add FUSE_IOCTL_COMPAT_X32
+ *
+ *  7.31
+ *  - add FUSE_WRITE_KILL_PRIV flag
+ *  - add FUSE_SETUPMAPPING and FUSE_REMOVEMAPPING
+ *  - add map_alignment to fuse_init_out, add FUSE_MAP_ALIGNMENT flag
  */
 
 #ifndef _LINUX_FUSE_H
@@ -151,7 +169,7 @@
 #define FUSE_KERNEL_VERSION 7
 
 /** Minor version number of this interface */
-#define FUSE_KERNEL_MINOR_VERSION 27
+#define FUSE_KERNEL_MINOR_VERSION 31
 
 /** The node ID of the root inode */
 #define FUSE_ROOT_ID 1
@@ -219,10 +237,12 @@ struct fuse_file_lock {
  * FOPEN_DIRECT_IO: bypass page cache for this open file
  * FOPEN_KEEP_CACHE: don't invalidate the data cache on open
  * FOPEN_NONSEEKABLE: the file is not seekable
+ * FOPEN_CACHE_DIR: allow caching this directory
  */
 #define FOPEN_DIRECT_IO		(1 << 0)
 #define FOPEN_KEEP_CACHE	(1 << 1)
 #define FOPEN_NONSEEKABLE	(1 << 2)
+#define FOPEN_CACHE_DIR		(1 << 3)
 
 /**
  * INIT request/reply flags
@@ -249,6 +269,13 @@ struct fuse_file_lock {
  * FUSE_HANDLE_KILLPRIV: fs handles killing suid/sgid/cap on write/chown/trunc
  * FUSE_POSIX_ACL: filesystem supports posix acls
  * FUSE_ABORT_ERROR: reading the device after abort returns ECONNABORTED
+ * FUSE_MAX_PAGES: init_out.max_pages contains the max number of req pages
+ * FUSE_CACHE_SYMLINKS: cache READLINK responses
+ * FUSE_NO_OPENDIR_SUPPORT: kernel supports zero-message opendir
+ * FUSE_EXPLICIT_INVAL_DATA: only invalidate cached pages on explicit request
+ * FUSE_MAP_ALIGNMENT: init_out.map_alignment contains log2(byte alignment) for
+ *		       foffset and moffset fields in struct
+ *		       fuse_setupmapping_out and fuse_removemapping_one.
  */
 #define FUSE_ASYNC_READ		(1 << 0)
 #define FUSE_POSIX_LOCKS	(1 << 1)
@@ -272,6 +299,11 @@ struct fuse_file_lock {
 #define FUSE_HANDLE_KILLPRIV	(1 << 19)
 #define FUSE_POSIX_ACL		(1 << 20)
 #define FUSE_ABORT_ERROR	(1 << 21)
+#define FUSE_MAX_PAGES		(1 << 22)
+#define FUSE_CACHE_SYMLINKS	(1 << 23)
+#define FUSE_NO_OPENDIR_SUPPORT (1 << 24)
+#define FUSE_EXPLICIT_INVAL_DATA (1 << 25)
+#define FUSE_MAP_ALIGNMENT	(1 << 26)
 
 /**
  * CUSE INIT request/reply flags
@@ -301,9 +333,11 @@ struct fuse_file_lock {
  *
  * FUSE_WRITE_CACHE: delayed write from page cache, file handle is guessed
  * FUSE_WRITE_LOCKOWNER: lock_owner field is valid
+ * FUSE_WRITE_KILL_PRIV: kill suid and sgid bits
  */
 #define FUSE_WRITE_CACHE	(1 << 0)
 #define FUSE_WRITE_LOCKOWNER	(1 << 1)
+#define FUSE_WRITE_KILL_PRIV	(1 << 2)
 
 /**
  * Read flags
@@ -318,6 +352,7 @@ struct fuse_file_lock {
  * FUSE_IOCTL_RETRY: retry with new iovecs
  * FUSE_IOCTL_32BIT: 32bit ioctl
  * FUSE_IOCTL_DIR: is a directory
+ * FUSE_IOCTL_COMPAT_X32: x32 compat ioctl on 64bit machine (64bit time_t)
  *
  * FUSE_IOCTL_MAX_IOV: maximum of in_iovecs + out_iovecs
  */
@@ -326,6 +361,7 @@ struct fuse_file_lock {
 #define FUSE_IOCTL_RETRY	(1 << 2)
 #define FUSE_IOCTL_32BIT	(1 << 3)
 #define FUSE_IOCTL_DIR		(1 << 4)
+#define FUSE_IOCTL_COMPAT_X32	(1 << 5)
 
 #define FUSE_IOCTL_MAX_IOV	256
 
@@ -336,54 +372,64 @@ struct fuse_file_lock {
  */
 #define FUSE_POLL_SCHEDULE_NOTIFY (1 << 0)
 
+/**
+ * Fsync flags
+ *
+ * FUSE_FSYNC_FDATASYNC: Sync data only, not metadata
+ */
+#define FUSE_FSYNC_FDATASYNC	(1 << 0)
+
 enum fuse_opcode {
-	FUSE_LOOKUP	   = 1,
-	FUSE_FORGET	   = 2,  /* no reply */
-	FUSE_GETATTR	   = 3,
-	FUSE_SETATTR	   = 4,
-	FUSE_READLINK	   = 5,
-	FUSE_SYMLINK	   = 6,
-	FUSE_MKNOD	   = 8,
-	FUSE_MKDIR	   = 9,
-	FUSE_UNLINK	   = 10,
-	FUSE_RMDIR	   = 11,
-	FUSE_RENAME	   = 12,
-	FUSE_LINK	   = 13,
-	FUSE_OPEN	   = 14,
-	FUSE_READ	   = 15,
-	FUSE_WRITE	   = 16,
-	FUSE_STATFS	   = 17,
-	FUSE_RELEASE       = 18,
-	FUSE_FSYNC         = 20,
-	FUSE_SETXATTR      = 21,
-	FUSE_GETXATTR      = 22,
-	FUSE_LISTXATTR     = 23,
-	FUSE_REMOVEXATTR   = 24,
-	FUSE_FLUSH         = 25,
-	FUSE_INIT          = 26,
-	FUSE_OPENDIR       = 27,
-	FUSE_READDIR       = 28,
-	FUSE_RELEASEDIR    = 29,
-	FUSE_FSYNCDIR      = 30,
-	FUSE_GETLK         = 31,
-	FUSE_SETLK         = 32,
-	FUSE_SETLKW        = 33,
-	FUSE_ACCESS        = 34,
-	FUSE_CREATE        = 35,
-	FUSE_INTERRUPT     = 36,
-	FUSE_BMAP          = 37,
-	FUSE_DESTROY       = 38,
-	FUSE_IOCTL         = 39,
-	FUSE_POLL          = 40,
-	FUSE_NOTIFY_REPLY  = 41,
-	FUSE_BATCH_FORGET  = 42,
-	FUSE_FALLOCATE     = 43,
-	FUSE_READDIRPLUS   = 44,
-	FUSE_RENAME2       = 45,
-	FUSE_LSEEK         = 46,
+	FUSE_LOOKUP		= 1,
+	FUSE_FORGET		= 2,  /* no reply */
+	FUSE_GETATTR		= 3,
+	FUSE_SETATTR		= 4,
+	FUSE_READLINK		= 5,
+	FUSE_SYMLINK		= 6,
+	FUSE_MKNOD		= 8,
+	FUSE_MKDIR		= 9,
+	FUSE_UNLINK		= 10,
+	FUSE_RMDIR		= 11,
+	FUSE_RENAME		= 12,
+	FUSE_LINK		= 13,
+	FUSE_OPEN		= 14,
+	FUSE_READ		= 15,
+	FUSE_WRITE		= 16,
+	FUSE_STATFS		= 17,
+	FUSE_RELEASE		= 18,
+	FUSE_FSYNC		= 20,
+	FUSE_SETXATTR		= 21,
+	FUSE_GETXATTR		= 22,
+	FUSE_LISTXATTR		= 23,
+	FUSE_REMOVEXATTR	= 24,
+	FUSE_FLUSH		= 25,
+	FUSE_INIT		= 26,
+	FUSE_OPENDIR		= 27,
+	FUSE_READDIR		= 28,
+	FUSE_RELEASEDIR		= 29,
+	FUSE_FSYNCDIR		= 30,
+	FUSE_GETLK		= 31,
+	FUSE_SETLK		= 32,
+	FUSE_SETLKW		= 33,
+	FUSE_ACCESS		= 34,
+	FUSE_CREATE		= 35,
+	FUSE_INTERRUPT		= 36,
+	FUSE_BMAP		= 37,
+	FUSE_DESTROY		= 38,
+	FUSE_IOCTL		= 39,
+	FUSE_POLL		= 40,
+	FUSE_NOTIFY_REPLY	= 41,
+	FUSE_BATCH_FORGET	= 42,
+	FUSE_FALLOCATE		= 43,
+	FUSE_READDIRPLUS	= 44,
+	FUSE_RENAME2		= 45,
+	FUSE_LSEEK		= 46,
+	FUSE_COPY_FILE_RANGE	= 47,
+	FUSE_SETUPMAPPING	= 48,
+	FUSE_REMOVEMAPPING	= 49,
 
 	/* CUSE specific operations */
-	CUSE_INIT          = 4096,
+	CUSE_INIT		= 4096,
 };
 
 enum fuse_notify_code {
@@ -610,7 +656,9 @@ struct fuse_init_out {
 	uint16_t	congestion_threshold;
 	uint32_t	max_write;
 	uint32_t	time_gran;
-	uint32_t	unused[9];
+	uint16_t	max_pages;
+	uint16_t	map_alignment;
+	uint32_t	unused[8];
 };
 
 #define CUSE_INIT_INFO_MAX 4096
@@ -791,5 +839,45 @@ struct fuse_lseek_in {
 struct fuse_lseek_out {
 	uint64_t	offset;
 };
+
+struct fuse_copy_file_range_in {
+	uint64_t	fh_in;
+	uint64_t	off_in;
+	uint64_t	nodeid_out;
+	uint64_t	fh_out;
+	uint64_t	off_out;
+	uint64_t	len;
+	uint64_t	flags;
+};
+
+#define FUSE_SETUPMAPPING_FLAG_WRITE (1ull << 0)
+#define FUSE_SETUPMAPPING_FLAG_READ (1ull << 1)
+struct fuse_setupmapping_in {
+	/* An already open handle */
+	uint64_t	fh;
+	/* Offset into the file to start the mapping */
+	uint64_t	foffset;
+	/* Length of mapping required */
+	uint64_t	len;
+	/* Flags, FUSE_SETUPMAPPING_FLAG_* */
+	uint64_t	flags;
+	/* Offset in Memory Window */
+	uint64_t	moffset;
+};
+
+struct fuse_removemapping_in {
+	/* number of fuse_removemapping_one follows */
+	uint32_t        count;
+};
+
+struct fuse_removemapping_one {
+	/* Offset into the dax window start the unmapping */
+	uint64_t        moffset;
+	/* Length of mapping required */
+	uint64_t	len;
+};
+
+#define FUSE_REMOVEMAPPING_MAX_ENTRY   \
+		(PAGE_SIZE / sizeof(struct fuse_removemapping_one))
 
 #endif /* _LINUX_FUSE_H */

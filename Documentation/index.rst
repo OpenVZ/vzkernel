@@ -81,8 +81,10 @@ needed).
 
    driver-api/index
    core-api/index
+   infiniband/index
    media/index
    networking/index
+   virtual/index
    input/index
    gpu/index
    security/index
@@ -90,6 +92,16 @@ needed).
    crypto/index
    filesystems/index
    vm/index
+   bpf/index
+   PCI/index
+
+Architecture-agnostic documentation
+-----------------------------------
+
+.. toctree::
+   :maxdepth: 2
+
+   asm-annotations
 
 Architecture-specific documentation
 -----------------------------------
@@ -101,6 +113,7 @@ implementation.
    :maxdepth: 2
 
    sh/index
+   x86/index
 
 Korean translations
 -------------------

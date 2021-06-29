@@ -23,7 +23,7 @@
 #include <linux/of_address.h>
 #include <linux/list.h>
 #include <linux/regmap.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/device.h>
 
 #include "clock.h"
@@ -342,7 +342,10 @@ void __init omap2_clk_legacy_provider_init(int index, void __iomem *mem)
 {
 	struct clk_iomap *io;
 
-	io = memblock_virt_alloc(sizeof(*io), 0);
+	io = memblock_alloc(sizeof(*io), SMP_CACHE_BYTES);
+	if (!io)
+		panic("%s: Failed to allocate %zu bytes\n", __func__,
+		      sizeof(*io));
 
 	io->mem = mem;
 

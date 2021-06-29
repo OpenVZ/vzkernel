@@ -246,7 +246,9 @@ drop:
 
 void nf_bridge_update_protocol(struct sk_buff *skb)
 {
-	switch (skb->nf_bridge->orig_proto) {
+	const struct nf_bridge_info *nf_bridge = nf_bridge_info_get(skb);
+
+	switch (nf_bridge->orig_proto) {
 	case BRNF_PROTO_8021Q:
 		skb->protocol = htons(ETH_P_8021Q);
 		break;
@@ -486,14 +488,19 @@ static unsigned int br_nf_pre_routing(void *priv,
 	br = p->br;
 
 	if (IS_IPV6(skb) || IS_VLAN_IPV6(skb) || IS_PPPOE_IPV6(skb)) {
-		if (!brnf_call_ip6tables && !br->nf_call_ip6tables)
+		if (!brnf_call_ip6tables &&
+		    !br_opt_get(br, BROPT_NF_CALL_IP6TABLES))
 			return NF_ACCEPT;
+		if (!ipv6_mod_enabled()) {
+			pr_warn_once("Module ipv6 is disabled, so call_ip6tables is not supported.");
+			return NF_DROP;
+		}
 
 		nf_bridge_pull_encap_header_rcsum(skb);
 		return br_nf_pre_routing_ipv6(priv, skb, state);
 	}
 
-	if (!brnf_call_iptables && !br->nf_call_iptables)
+	if (!brnf_call_iptables && !br_opt_get(br, BROPT_NF_CALL_IPTABLES))
 		return NF_ACCEPT;
 
 	if (!IS_IP(skb) && !IS_VLAN_IP(skb) && !IS_PPPOE_IP(skb))
@@ -514,6 +521,7 @@ static unsigned int br_nf_pre_routing(void *priv,
 	nf_bridge->ipv4_daddr = ip_hdr(skb)->daddr;
 
 	skb->protocol = htons(ETH_P_IP);
+	skb->transport_header = skb->network_header + ip_hdr(skb)->ihl * 4;
 
 	NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING, state->net, state->sk, skb,
 		skb->dev, NULL,
@@ -567,7 +575,8 @@ static unsigned int br_nf_forward_ip(void *priv,
 	struct net_device *parent;
 	u_int8_t pf;
 
-	if (!skb->nf_bridge)
+	nf_bridge = nf_bridge_info_get(skb);
+	if (!nf_bridge)
 		return NF_ACCEPT;
 
 	/* Need exclusive nf_bridge_info since we might have multiple
@@ -635,7 +644,7 @@ static unsigned int br_nf_forward_arp(void *priv,
 		return NF_ACCEPT;
 	br = p->br;
 
-	if (!brnf_call_arptables && !br->nf_call_arptables)
+	if (!brnf_call_arptables && !br_opt_get(br, BROPT_NF_CALL_ARPTABLES))
 		return NF_ACCEPT;
 
 	if (!IS_ARP(skb)) {
@@ -643,6 +652,9 @@ static unsigned int br_nf_forward_arp(void *priv,
 			return NF_ACCEPT;
 		nf_bridge_pull_encap_header(skb);
 	}
+
+	if (unlikely(!pskb_may_pull(skb, sizeof(struct arphdr))))
+		return NF_DROP;
 
 	if (arp_hdr(skb)->ar_pln != 4) {
 		if (IS_VLAN_ARP(skb))
@@ -701,7 +713,9 @@ br_nf_ip_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
 
 static unsigned int nf_bridge_mtu_reduction(const struct sk_buff *skb)
 {
-	if (skb->nf_bridge->orig_proto == BRNF_PROTO_PPPOE)
+	const struct nf_bridge_info *nf_bridge = nf_bridge_info_get(skb);
+
+	if (nf_bridge->orig_proto == BRNF_PROTO_PPPOE)
 		return PPPOE_SES_HLEN;
 	return 0;
 }
@@ -713,6 +727,11 @@ static int br_nf_dev_queue_xmit(struct net *net, struct sock *sk, struct sk_buff
 
 	mtu_reserved = nf_bridge_mtu_reduction(skb);
 	mtu = skb->dev->mtu;
+
+	if (nf_bridge->pkt_otherhost) {
+		skb->pkt_type = PACKET_OTHERHOST;
+		nf_bridge->pkt_otherhost = false;
+	}
 
 	if (nf_bridge->frag_max_size && nf_bridge->frag_max_size < mtu)
 		mtu = nf_bridge->frag_max_size;
@@ -807,8 +826,6 @@ static unsigned int br_nf_post_routing(void *priv,
 	else
 		return NF_ACCEPT;
 
-	/* We assume any code from br_dev_queue_push_xmit onwards doesn't care
-	 * about the value of skb->pkt_type. */
 	if (skb->pkt_type == PACKET_OTHERHOST) {
 		skb->pkt_type = PACKET_HOST;
 		nf_bridge->pkt_otherhost = true;
@@ -834,7 +851,11 @@ static unsigned int ip_sabotage_in(void *priv,
 				   struct sk_buff *skb,
 				   const struct nf_hook_state *state)
 {
-	if (skb->nf_bridge && !skb->nf_bridge->in_prerouting) {
+	struct nf_bridge_info *nf_bridge = nf_bridge_info_get(skb);
+
+	if (nf_bridge && !nf_bridge->in_prerouting &&
+	    !netif_is_l3_master(skb->dev) &&
+	    !netif_is_l3_slave(skb->dev)) {
 		state->okfn(state->net, state->sk, skb);
 		return NF_STOLEN;
 	}
@@ -871,7 +892,9 @@ static void br_nf_pre_routing_finish_bridge_slow(struct sk_buff *skb)
 
 static int br_nf_dev_xmit(struct sk_buff *skb)
 {
-	if (skb->nf_bridge && skb->nf_bridge->bridged_dnat) {
+	const struct nf_bridge_info *nf_bridge = nf_bridge_info_get(skb);
+
+	if (nf_bridge && nf_bridge->bridged_dnat) {
 		br_nf_pre_routing_finish_bridge_slow(skb);
 		return 1;
 	}
@@ -881,11 +904,6 @@ static int br_nf_dev_xmit(struct sk_buff *skb)
 static const struct nf_br_ops br_ops = {
 	.br_dev_xmit_hook =	br_nf_dev_xmit,
 };
-
-void br_netfilter_enable(void)
-{
-}
-EXPORT_SYMBOL_GPL(br_netfilter_enable);
 
 /* For br_nf_post_routing, we need (prio = NF_BR_PRI_LAST), because
  * br_dev_queue_push_xmit is called afterwards */

@@ -48,7 +48,7 @@ struct section {
 	char *name;
 	int idx;
 	unsigned int len;
-	bool changed, text;
+	bool changed, text, rodata;
 };
 
 struct symbol {
@@ -61,17 +61,20 @@ struct symbol {
 	unsigned char bind, type;
 	unsigned long offset;
 	unsigned int len;
-	struct symbol *pfunc, *cfunc;
+	struct symbol *pfunc, *cfunc, *alias;
+	bool uaccess_safe;
 };
 
 struct rela {
 	struct list_head list;
 	struct hlist_node hash;
 	GElf_Rela rela;
+	struct section *sec;
 	struct symbol *sym;
 	unsigned int type;
 	unsigned long offset;
 	int addend;
+	bool jump_table_start;
 };
 
 struct elf {

@@ -3258,19 +3258,11 @@ static int et131x_mii_probe(struct net_device *netdev)
 		return PTR_ERR(phydev);
 	}
 
-	phydev->supported &= (SUPPORTED_10baseT_Half |
-			      SUPPORTED_10baseT_Full |
-			      SUPPORTED_100baseT_Half |
-			      SUPPORTED_100baseT_Full |
-			      SUPPORTED_Autoneg |
-			      SUPPORTED_MII |
-			      SUPPORTED_TP);
+	phy_set_max_speed(phydev, SPEED_100);
 
 	if (adapter->pdev->device != ET131X_PCI_DEVICE_ID_FAST)
-		phydev->supported |= SUPPORTED_1000baseT_Half |
-				     SUPPORTED_1000baseT_Full;
+		phy_set_max_speed(phydev, SPEED_1000);
 
-	phydev->advertising = phydev->supported;
 	phydev->autoneg = AUTONEG_ENABLE;
 
 	phy_attached_info(phydev);
@@ -3819,7 +3811,7 @@ drop_err:
  * specified by the 'tx_timeo" element in the net_device structure (see
  * et131x_alloc_device() to see how this value is set).
  */
-static void et131x_tx_timeout(struct net_device *netdev)
+static void et131x_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 {
 	struct et131x_adapter *adapter = netdev_priv(netdev);
 	struct tx_ring *tx_ring = &adapter->tx_ring;

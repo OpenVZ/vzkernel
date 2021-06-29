@@ -182,6 +182,45 @@ ftrace_push_return_trace(unsigned long ret, unsigned long func, int *depth,
 	return 0;
 }
 
+/*
+ * Not all archs define MCOUNT_INSN_SIZE which is used to look for direct
+ * functions. But those archs currently don't support direct functions
+ * anyway, and ftrace_find_rec_direct() is just a stub for them.
+ * Define MCOUNT_INSN_SIZE to keep those archs compiling.
+ */
+#ifndef MCOUNT_INSN_SIZE
+/* Make sure this only works without direct calls */
+# ifdef CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS
+#  error MCOUNT_INSN_SIZE not defined with direct calls enabled
+# endif
+# define MCOUNT_INSN_SIZE 0
+#endif
+
+int function_graph_enter(unsigned long ret, unsigned long func,
+			 unsigned long frame_pointer, unsigned long *retp)
+{
+	struct ftrace_graph_ent trace;
+
+	/*
+	 * Skip graph tracing if the return location is served by direct trampoline,
+	 * since call sequence and return addresses is unpredicatable anymore.
+	 * Ex: BPF trampoline may call original function and may skip frame
+	 * depending on type of BPF programs attached.
+	 */
+	if (ftrace_direct_func_count &&
+	    ftrace_find_rec_direct(ret - MCOUNT_INSN_SIZE))
+		return -EBUSY;
+	trace.func = func;
+	trace.depth = current->curr_ret_stack + 1;
+
+	/* Only trace if the calling function expects to */
+	if (!ftrace_graph_entry(&trace))
+		return -EBUSY;
+
+	return ftrace_push_return_trace(ret, func, &trace.depth,
+					frame_pointer, retp);
+}
+
 /* Retrieve a function return address to the trace stack on thread info.*/
 static void
 ftrace_pop_return_trace(struct ftrace_graph_ret *trace, unsigned long *ret,
@@ -349,7 +388,7 @@ int __trace_graph_entry(struct trace_array *tr,
 {
 	struct trace_event_call *call = &event_funcgraph_entry;
 	struct ring_buffer_event *event;
-	struct ring_buffer *buffer = tr->trace_buffer.buffer;
+	struct trace_buffer *buffer = tr->array_buffer.buffer;
 	struct ftrace_graph_ent_entry *entry;
 
 	event = trace_buffer_lock_reserve(buffer, TRACE_GRAPH_ENT,
@@ -410,7 +449,7 @@ int trace_graph_entry(struct ftrace_graph_ent *trace)
 
 	local_irq_save(flags);
 	cpu = raw_smp_processor_id();
-	data = per_cpu_ptr(tr->trace_buffer.data, cpu);
+	data = per_cpu_ptr(tr->array_buffer.data, cpu);
 	disabled = atomic_inc_return(&data->disabled);
 	if (likely(disabled == 1)) {
 		pc = preempt_count();
@@ -460,7 +499,7 @@ void __trace_graph_return(struct trace_array *tr,
 {
 	struct trace_event_call *call = &event_funcgraph_exit;
 	struct ring_buffer_event *event;
-	struct ring_buffer *buffer = tr->trace_buffer.buffer;
+	struct trace_buffer *buffer = tr->array_buffer.buffer;
 	struct ftrace_graph_ret_entry *entry;
 
 	event = trace_buffer_lock_reserve(buffer, TRACE_GRAPH_RET,
@@ -484,7 +523,7 @@ void trace_graph_return(struct ftrace_graph_ret *trace)
 
 	local_irq_save(flags);
 	cpu = raw_smp_processor_id();
-	data = per_cpu_ptr(tr->trace_buffer.data, cpu);
+	data = per_cpu_ptr(tr->array_buffer.data, cpu);
 	disabled = atomic_inc_return(&data->disabled);
 	if (likely(disabled == 1)) {
 		pc = preempt_count();
@@ -657,9 +696,9 @@ get_return_for_leaf(struct trace_iterator *iter,
 			 * We need to consume the current entry to see
 			 * the next one.
 			 */
-			ring_buffer_consume(iter->trace_buffer->buffer, iter->cpu,
+			ring_buffer_consume(iter->array_buffer->buffer, iter->cpu,
 					    NULL, NULL);
-			event = ring_buffer_peek(iter->trace_buffer->buffer, iter->cpu,
+			event = ring_buffer_peek(iter->array_buffer->buffer, iter->cpu,
 						 NULL, NULL);
 		}
 

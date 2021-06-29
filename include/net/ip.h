@@ -139,6 +139,7 @@ int ip_build_and_send_pkt(struct sk_buff *skb, const struct sock *sk,
 int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt,
 	   struct net_device *orig_dev);
 int ip_local_deliver(struct sk_buff *skb);
+void ip_protocol_deliver_rcu(struct net *net, struct sk_buff *skb, int proto);
 int ip_mr_input(struct sk_buff *skb);
 int ip_output(struct net *net, struct sock *sk, struct sk_buff *skb);
 int ip_mc_output(struct net *net, struct sock *sk, struct sk_buff *skb);
@@ -148,7 +149,8 @@ void ip_send_check(struct iphdr *ip);
 int __ip_local_out(struct net *net, struct sock *sk, struct sk_buff *skb);
 int ip_local_out(struct net *net, struct sock *sk, struct sk_buff *skb);
 
-int ip_queue_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl);
+int __ip_queue_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
+		    __u8 tos);
 void ip_init(void);
 int ip_append_data(struct sock *sk, struct flowi4 *fl4,
 		   int getfrag(void *from, char *to, int offset, int len,
@@ -173,6 +175,12 @@ struct sk_buff *ip_make_skb(struct sock *sk, struct flowi4 *fl4,
 			    void *from, int length, int transhdrlen,
 			    struct ipcm_cookie *ipc, struct rtable **rtp,
 			    struct inet_cork *cork, unsigned int flags);
+
+static inline int ip_queue_xmit(struct sock *sk, struct sk_buff *skb,
+				struct flowi *fl)
+{
+	return __ip_queue_xmit(sk, skb, fl, inet_sk(sk)->tos);
+}
 
 static inline struct sk_buff *ip_finish_skb(struct sock *sk, struct flowi4 *fl4)
 {
@@ -397,8 +405,36 @@ static inline unsigned int ip_skb_dst_mtu(struct sock *sk,
 	return min(READ_ONCE(skb_dst(skb)->dev->mtu), IP_MAX_MTU);
 }
 
-int ip_metrics_convert(struct net *net, struct nlattr *fc_mx, int fc_mx_len,
-		       u32 *metrics);
+struct dst_metrics *ip_fib_metrics_init(struct net *net, struct nlattr *fc_mx,
+					int fc_mx_len,
+					struct netlink_ext_ack *extack);
+static inline void ip_fib_metrics_put(struct dst_metrics *fib_metrics)
+{
+	if (fib_metrics != &dst_default_metrics &&
+	    refcount_dec_and_test(&fib_metrics->refcnt))
+		kfree(fib_metrics);
+}
+
+/* ipv4 and ipv6 both use refcounted metrics if it is not the default */
+static inline
+void ip_dst_init_metrics(struct dst_entry *dst, struct dst_metrics *fib_metrics)
+{
+	dst_init_metrics(dst, fib_metrics->metrics, true);
+
+	if (fib_metrics != &dst_default_metrics) {
+		dst->_metrics |= DST_METRICS_REFCOUNTED;
+		refcount_inc(&fib_metrics->refcnt);
+	}
+}
+
+static inline
+void ip_dst_metrics_put(struct dst_entry *dst)
+{
+	struct dst_metrics *p = (struct dst_metrics *)DST_METRICS_PTR(dst);
+
+	if (p != &dst_default_metrics && refcount_dec_and_test(&p->refcnt))
+		kfree(p);
+}
 
 u32 ip_idents_reserve(u32 hash, int segs);
 void __ip_select_ident(struct net *net, struct iphdr *iph, int segs);
@@ -615,6 +651,8 @@ static inline int ip_options_echo(struct net *net, struct ip_options *dopt,
 }
 
 void ip_options_fragment(struct sk_buff *skb);
+int __ip_options_compile(struct net *net, struct ip_options *opt,
+			 struct sk_buff *skb, __be32 *info);
 int ip_options_compile(struct net *net, struct ip_options *opt,
 		       struct sk_buff *skb);
 int ip_options_get(struct net *net, struct ip_options_rcu **optp,
@@ -664,7 +702,14 @@ extern int sysctl_icmp_msgs_burst;
 int ip_misc_proc_init(void);
 #endif
 
-int rtm_getroute_parse_ip_proto(struct nlattr *attr, u8 *ip_proto,
+int rtm_getroute_parse_ip_proto(struct nlattr *attr, u8 *ip_proto, u8 family,
 				struct netlink_ext_ack *extack);
+
+static inline bool inetdev_valid_mtu(unsigned int mtu)
+{
+	return likely(mtu >= IPV4_MIN_MTU);
+}
+
+void ip_sock_set_tos(struct sock *sk, int val);
 
 #endif	/* _IP_H */

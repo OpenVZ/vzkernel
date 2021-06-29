@@ -1137,6 +1137,18 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	current->mm->start_stack = bprm->p;
 
 	if ((current->flags & PF_RANDOMIZE) && (randomize_va_space > 1)) {
+		/*
+		 * For architectures with ELF randomization, when executing
+		 * a loader directly (i.e. no interpreter listed in ELF
+		 * headers), move the brk area out of the mmap region
+		 * (since it grows up, and may collide early with the stack
+		 * growing down), and into the unused ELF_ET_DYN_BASE region.
+		 */
+		if (IS_ENABLED(CONFIG_ARCH_HAS_ELF_RANDOMIZE) &&
+		    loc->elf_ex.e_type == ET_DYN && !interpreter)
+			current->mm->brk = current->mm->start_brk =
+				ELF_ET_DYN_BASE;
+
 		current->mm->brk = current->mm->start_brk =
 			arch_randomize_brk(current->mm);
 #ifdef compat_brk_randomized
@@ -1580,7 +1592,7 @@ static void fill_auxv_note(struct memelfnote *note, struct mm_struct *mm)
 }
 
 static void fill_siginfo_note(struct memelfnote *note, user_siginfo_t *csigdata,
-		const siginfo_t *siginfo)
+		const kernel_siginfo_t *siginfo)
 {
 	mm_segment_t old_fs = get_fs();
 	set_fs(KERNEL_DS);
@@ -1754,7 +1766,7 @@ static int fill_thread_core_info(struct elf_thread_core_info *t,
 		    (!regset->active || regset->active(t->task, regset))) {
 			int ret;
 			size_t size = regset_size(t->task, regset);
-			void *data = kmalloc(size, GFP_KERNEL);
+			void *data = kzalloc(size, GFP_KERNEL);
 			if (unlikely(!data))
 				return 0;
 			ret = regset->get(t->task, regset,
@@ -1782,7 +1794,7 @@ static int fill_thread_core_info(struct elf_thread_core_info *t,
 
 static int fill_note_info(struct elfhdr *elf, int phdrs,
 			  struct elf_note_info *info,
-			  const siginfo_t *siginfo, struct pt_regs *regs)
+			  const kernel_siginfo_t *siginfo, struct pt_regs *regs)
 {
 	struct task_struct *dump_task = current;
 	const struct user_regset_view *view = task_user_regset_view(dump_task);
@@ -2031,7 +2043,7 @@ static int elf_note_info_init(struct elf_note_info *info)
 
 static int fill_note_info(struct elfhdr *elf, int phdrs,
 			  struct elf_note_info *info,
-			  const siginfo_t *siginfo, struct pt_regs *regs)
+			  const kernel_siginfo_t *siginfo, struct pt_regs *regs)
 {
 	struct list_head *t;
 	struct core_thread *ct;

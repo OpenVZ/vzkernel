@@ -1047,9 +1047,7 @@ static int tw_chrdev_open(struct inode *inode, struct file *file)
 static const struct file_operations tw_fops = {
 	.owner		= THIS_MODULE,
 	.unlocked_ioctl	= tw_chrdev_ioctl,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl   = tw_chrdev_ioctl,
-#endif
+	.compat_ioctl   = compat_ptr_ioctl,
 	.open		= tw_chrdev_open,
 	.release	= NULL,
 	.llseek		= noop_llseek,
@@ -1925,7 +1923,7 @@ static int tw_scsi_queue_lck(struct scsi_cmnd *SCpnt, void (*done)(struct scsi_c
 	if (test_bit(TW_IN_RESET, &tw_dev->flags))
 		return SCSI_MLQUEUE_HOST_BUSY;
 
-	/* Save done function into Scsi_Cmnd struct */
+	/* Save done function into struct scsi_cmnd */
 	SCpnt->scsi_done = done;
 		 
 	/* Queue the command and get a request id */

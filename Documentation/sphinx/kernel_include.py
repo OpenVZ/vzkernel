@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#! /usr/libexec/platform-python
 # -*- coding: utf-8; mode: python -*-
 # pylint: disable=R0903, C0330, R0914, R0912, E0401
 

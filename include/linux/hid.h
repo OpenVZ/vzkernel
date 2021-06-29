@@ -1,22 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *  Copyright (c) 1999 Andreas Gal
  *  Copyright (c) 2000-2001 Vojtech Pavlik
  *  Copyright (c) 2006-2007 Jiri Kosina
  */
 /*
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  *
  * Should you need to contact me, the author, you can do so either by
  * e-mail - mail your message to <vojtech@ucw.cz>, or by paper mail:
@@ -190,6 +178,12 @@ struct hid_item {
  * http://www.usb.org/developers/hidpage/HUTRR40RadioHIDUsagesFinal.pdf
  */
 #define HID_GD_WIRELESS_RADIO_CTLS	0x0001000c
+/*
+ * System Multi-Axis, see:
+ * http://www.usb.org/developers/hidpage/HUTRR62_-_Generic_Desktop_CA_for_System_Multi-Axis_Controllers.txt
+ */
+#define HID_GD_SYSTEM_MULTIAXIS	0x0001000e
+
 #define HID_GD_X		0x00010030
 #define HID_GD_Y		0x00010031
 #define HID_GD_Z		0x00010032
@@ -213,6 +207,7 @@ struct hid_item {
 #define HID_GD_VBRZ		0x00010045
 #define HID_GD_VNO		0x00010046
 #define HID_GD_FEATURE		0x00010047
+#define HID_GD_RESOLUTION_MULTIPLIER	0x00010048
 #define HID_GD_SYSTEM_CONTROL	0x00010080
 #define HID_GD_UP		0x00010090
 #define HID_GD_DOWN		0x00010091
@@ -226,12 +221,14 @@ struct hid_item {
 #define HID_DC_BATTERYSTRENGTH	0x00060020
 
 #define HID_CP_CONSUMER_CONTROL	0x000c0001
+#define HID_CP_AC_PAN		0x000c0238
 
 #define HID_DG_DIGITIZER	0x000d0001
 #define HID_DG_PEN		0x000d0002
 #define HID_DG_LIGHTPEN		0x000d0003
 #define HID_DG_TOUCHSCREEN	0x000d0004
 #define HID_DG_TOUCHPAD		0x000d0005
+#define HID_DG_WHITEBOARD	0x000d0006
 #define HID_DG_STYLUS		0x000d0020
 #define HID_DG_PUCK		0x000d0021
 #define HID_DG_FINGER		0x000d0022
@@ -373,6 +370,7 @@ struct hid_item {
 #define HID_GROUP_WACOM				0x0101
 #define HID_GROUP_LOGITECH_DJ_DEVICE		0x0102
 #define HID_GROUP_STEAM				0x0103
+#define HID_GROUP_LOGITECH_27MHZ_DEVICE		0x0104
 
 /*
  * HID protocol status
@@ -408,6 +406,7 @@ struct hid_global {
 
 struct hid_local {
 	unsigned usage[HID_MAX_USAGES]; /* usage array */
+	u8 usage_size[HID_MAX_USAGES]; /* usage size array */
 	unsigned collection_index[HID_MAX_USAGES]; /* collection index array */
 	unsigned usage_index;
 	unsigned usage_minimum;
@@ -421,6 +420,7 @@ struct hid_local {
  */
 
 struct hid_collection {
+	int parent_idx; /* device->collection */
 	unsigned type;
 	unsigned usage;
 	unsigned level;
@@ -430,12 +430,16 @@ struct hid_usage {
 	unsigned  hid;			/* hid usage code */
 	unsigned  collection_index;	/* index into collection array */
 	unsigned  usage_index;		/* index into usage array */
+	__s8	  resolution_multiplier;/* Effective Resolution Multiplier
+					   (HUT v1.12, 4.3.1), default: 1 */
 	/* hidinput data */
+	__s8	  wheel_factor;		/* 120/resolution_multiplier */
 	__u16     code;			/* input driver code */
 	__u8      type;			/* input driver type */
 	__s8	  hat_min;		/* hat switch fun */
 	__s8	  hat_max;		/* ditto */
 	__s8	  hat_dir;		/* ditto */
+	__s16	  wheel_accumulated;	/* hi-res wheel */
 };
 
 struct hid_input;
@@ -488,7 +492,7 @@ struct hid_report_enum {
 };
 
 #define HID_MIN_BUFFER_SIZE	64		/* make sure there is at least a packet size of space */
-#define HID_MAX_BUFFER_SIZE	4096		/* 4kb */
+#define HID_MAX_BUFFER_SIZE	8192		/* 8kb */
 #define HID_CONTROL_FIFO_SIZE	256		/* to init devices with >100 reports */
 #define HID_OUTPUT_FIFO_SIZE	64
 
@@ -520,6 +524,7 @@ struct hid_input {
 	const char *name;
 	bool registered;
 	struct list_head reports;	/* the list of reports */
+	unsigned int application;	/* application usage for this input */
 };
 
 enum hid_type {
@@ -638,12 +643,13 @@ static inline void hid_set_drvdata(struct hid_device *hdev, void *data)
 struct hid_parser {
 	struct hid_global     global;
 	struct hid_global     global_stack[HID_GLOBAL_STACK_SIZE];
-	unsigned              global_stack_ptr;
+	unsigned int          global_stack_ptr;
 	struct hid_local      local;
-	unsigned              collection_stack[HID_COLLECTION_STACK_SIZE];
-	unsigned              collection_stack_ptr;
+	unsigned int         *collection_stack;
+	unsigned int          collection_stack_ptr;
+	unsigned int          collection_stack_size;
 	struct hid_device    *device;
-	unsigned              scan_flags;
+	unsigned int          scan_flags;
 };
 
 struct hid_class_descriptor {
@@ -714,8 +720,8 @@ struct hid_usage_id {
  * input will not be passed to raw_event unless hid_device_io_start is
  * called.
  *
- * raw_event and event should return 0 on no action performed, 1 when no
- * further processing should be done and negative on error
+ * raw_event and event should return negative on error, any other value will
+ * pass the event on to .event() typically return 0 for success.
  *
  * input_mapping shall return a negative value to completely ignore this usage
  * (e.g. doubled or invalid usage), zero to continue with parsing of this
@@ -828,7 +834,11 @@ static inline bool hid_is_using_ll_driver(struct hid_device *hdev,
 
 /* Applications from HID Usage Tables 4/8/99 Version 1.1 */
 /* We ignore a few input applications that are not widely used */
-#define IS_INPUT_APPLICATION(a) (((a >= 0x00010000) && (a <= 0x00010008)) || (a == 0x00010080) || (a == 0x000c0001) || ((a >= 0x000d0002) && (a <= 0x000d0006)))
+#define IS_INPUT_APPLICATION(a) \
+		(((a >= HID_UP_GENDESK) && (a <= HID_GD_MULTIAXIS)) \
+		|| ((a >= HID_DG_PEN) && (a <= HID_DG_WHITEBOARD)) \
+		|| (a == HID_GD_SYSTEM_CONTROL) || (a == HID_CP_CONSUMER_CONTROL) \
+		|| (a == HID_GD_WIRELESS_RADIO_CTLS))
 
 /* HID core API */
 
@@ -873,7 +883,7 @@ struct hid_field *hidinput_get_led_field(struct hid_device *hid);
 unsigned int hidinput_count_leds(struct hid_device *hid);
 __s32 hidinput_calc_abs_res(const struct hid_field *field, __u16 code);
 void hid_output_report(struct hid_report *report, __u8 *data);
-void __hid_request(struct hid_device *hid, struct hid_report *rep, int reqtype);
+int __hid_request(struct hid_device *hid, struct hid_report *rep, int reqtype);
 u8 *hid_alloc_report_buf(struct hid_report *report, gfp_t flags);
 struct hid_device *hid_allocate_device(void);
 struct hid_report *hid_register_report(struct hid_device *device,
@@ -884,6 +894,8 @@ struct hid_report *hid_validate_values(struct hid_device *hid,
 				       unsigned int type, unsigned int id,
 				       unsigned int field_index,
 				       unsigned int report_counts);
+
+void hid_setup_resolution_multiplier(struct hid_device *hid);
 int hid_open_report(struct hid_device *device);
 int hid_check_keys_pressed(struct hid_device *hid);
 int hid_connect(struct hid_device *hid, unsigned int connect_mask);
@@ -894,6 +906,8 @@ const struct hid_device_id *hid_match_id(const struct hid_device *hdev,
 					 const struct hid_device_id *id);
 const struct hid_device_id *hid_match_device(struct hid_device *hdev,
 					     struct hid_driver *hdrv);
+bool hid_compare_device_paths(struct hid_device *hdev_a,
+			      struct hid_device *hdev_b, char separator);
 s32 hid_snto32(__u32 value, unsigned n);
 __u32 hid_field_extract(const struct hid_device *hid, __u8 *report,
 		     unsigned offset, unsigned n);
@@ -945,34 +959,49 @@ static inline void hid_device_io_stop(struct hid_device *hid) {
  * @max: maximal valid usage->code to consider later (out parameter)
  * @type: input event type (EV_KEY, EV_REL, ...)
  * @c: code which corresponds to this usage and type
+ *
+ * The value pointed to by @bit will be set to NULL if either @type is
+ * an unhandled event type, or if @c is out of range for @type. This
+ * can be used as an error condition.
  */
 static inline void hid_map_usage(struct hid_input *hidinput,
 		struct hid_usage *usage, unsigned long **bit, int *max,
-		__u8 type, __u16 c)
+		__u8 type, unsigned int c)
 {
 	struct input_dev *input = hidinput->input;
-
-	usage->type = type;
-	usage->code = c;
+	unsigned long *bmap = NULL;
+	unsigned int limit = 0;
 
 	switch (type) {
 	case EV_ABS:
-		*bit = input->absbit;
-		*max = ABS_MAX;
+		bmap = input->absbit;
+		limit = ABS_MAX;
 		break;
 	case EV_REL:
-		*bit = input->relbit;
-		*max = REL_MAX;
+		bmap = input->relbit;
+		limit = REL_MAX;
 		break;
 	case EV_KEY:
-		*bit = input->keybit;
-		*max = KEY_MAX;
+		bmap = input->keybit;
+		limit = KEY_MAX;
 		break;
 	case EV_LED:
-		*bit = input->ledbit;
-		*max = LED_MAX;
+		bmap = input->ledbit;
+		limit = LED_MAX;
 		break;
 	}
+
+	if (unlikely(c > limit || !bmap)) {
+		pr_warn_ratelimited("%s: Invalid code %d type %d\n",
+				    input->name, c, type);
+		*bit = NULL;
+		return;
+	}
+
+	usage->type = type;
+	usage->code = c;
+	*max = limit;
+	*bit = bmap;
 }
 
 /**
@@ -986,7 +1015,8 @@ static inline void hid_map_usage_clear(struct hid_input *hidinput,
 		__u8 type, __u16 c)
 {
 	hid_map_usage(hidinput, usage, bit, max, type, c);
-	clear_bit(c, *bit);
+	if (*bit)
+		clear_bit(usage->code, *bit);
 }
 
 /**
@@ -1140,29 +1170,32 @@ int hid_pidff_init(struct hid_device *hid);
 #define hid_pidff_init NULL
 #endif
 
-#define dbg_hid(format, arg...)						\
+#define dbg_hid(fmt, ...)						\
 do {									\
 	if (hid_debug)							\
-		printk(KERN_DEBUG "%s: " format, __FILE__, ##arg);	\
+		printk(KERN_DEBUG "%s: " fmt, __FILE__, ##__VA_ARGS__);	\
 } while (0)
 
-#define hid_printk(level, hid, fmt, arg...)		\
-	dev_printk(level, &(hid)->dev, fmt, ##arg)
-#define hid_emerg(hid, fmt, arg...)			\
-	dev_emerg(&(hid)->dev, fmt, ##arg)
-#define hid_crit(hid, fmt, arg...)			\
-	dev_crit(&(hid)->dev, fmt, ##arg)
-#define hid_alert(hid, fmt, arg...)			\
-	dev_alert(&(hid)->dev, fmt, ##arg)
-#define hid_err(hid, fmt, arg...)			\
-	dev_err(&(hid)->dev, fmt, ##arg)
-#define hid_notice(hid, fmt, arg...)			\
-	dev_notice(&(hid)->dev, fmt, ##arg)
-#define hid_warn(hid, fmt, arg...)			\
-	dev_warn(&(hid)->dev, fmt, ##arg)
-#define hid_info(hid, fmt, arg...)			\
-	dev_info(&(hid)->dev, fmt, ##arg)
-#define hid_dbg(hid, fmt, arg...)			\
-	dev_dbg(&(hid)->dev, fmt, ##arg)
+#define hid_err(hid, fmt, ...)				\
+	dev_err(&(hid)->dev, fmt, ##__VA_ARGS__)
+#define hid_notice(hid, fmt, ...)			\
+	dev_notice(&(hid)->dev, fmt, ##__VA_ARGS__)
+#define hid_warn(hid, fmt, ...)				\
+	dev_warn(&(hid)->dev, fmt, ##__VA_ARGS__)
+#define hid_info(hid, fmt, ...)				\
+	dev_info(&(hid)->dev, fmt, ##__VA_ARGS__)
+#define hid_dbg(hid, fmt, ...)				\
+	dev_dbg(&(hid)->dev, fmt, ##__VA_ARGS__)
+
+#define hid_err_once(hid, fmt, ...)			\
+	dev_err_once(&(hid)->dev, fmt, ##__VA_ARGS__)
+#define hid_notice_once(hid, fmt, ...)			\
+	dev_notice_once(&(hid)->dev, fmt, ##__VA_ARGS__)
+#define hid_warn_once(hid, fmt, ...)			\
+	dev_warn_once(&(hid)->dev, fmt, ##__VA_ARGS__)
+#define hid_info_once(hid, fmt, ...)			\
+	dev_info_once(&(hid)->dev, fmt, ##__VA_ARGS__)
+#define hid_dbg_once(hid, fmt, ...)			\
+	dev_dbg_once(&(hid)->dev, fmt, ##__VA_ARGS__)
 
 #endif

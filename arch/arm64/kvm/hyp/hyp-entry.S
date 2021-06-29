@@ -26,8 +26,31 @@
 #include <asm/kvm_mmu.h>
 #include <asm/mmu.h>
 
+.macro save_caller_saved_regs_vect
+	/* x0 and x1 were saved in the vector entry */
+	stp	x2, x3,   [sp, #-16]!
+	stp	x4, x5,   [sp, #-16]!
+	stp	x6, x7,   [sp, #-16]!
+	stp	x8, x9,   [sp, #-16]!
+	stp	x10, x11, [sp, #-16]!
+	stp	x12, x13, [sp, #-16]!
+	stp	x14, x15, [sp, #-16]!
+	stp	x16, x17, [sp, #-16]!
+.endm
+
+.macro restore_caller_saved_regs_vect
+	ldp	x16, x17, [sp], #16
+	ldp	x14, x15, [sp], #16
+	ldp	x12, x13, [sp], #16
+	ldp	x10, x11, [sp], #16
+	ldp	x8, x9,   [sp], #16
+	ldp	x6, x7,   [sp], #16
+	ldp	x4, x5,   [sp], #16
+	ldp	x2, x3,   [sp], #16
+	ldp	x0, x1,   [sp], #16
+.endm
+
 	.text
-	.pushsection	.hyp.text, "ax"
 
 .macro do_el2_call
 	/*
@@ -43,18 +66,6 @@
 	ldr	lr, [sp], #16
 .endm
 
-ENTRY(__vhe_hyp_call)
-	do_el2_call
-	/*
-	 * We used to rely on having an exception return to get
-	 * an implicit isb. In the E2H case, we don't have it anymore.
-	 * rather than changing all the leaf functions, just do it here
-	 * before returning to the rest of the kernel.
-	 */
-	isb
-	ret
-ENDPROC(__vhe_hyp_call)
-
 el1_sync:				// Guest trapped into EL2
 
 	mrs	x0, esr_el2
@@ -63,6 +74,7 @@ el1_sync:				// Guest trapped into EL2
 	ccmp	x0, #ESR_ELx_EC_HVC32, #4, ne
 	b.ne	el1_trap
 
+#ifdef __KVM_NVHE_HYPERVISOR__
 	mrs	x1, vttbr_el2		// If vttbr is valid, the guest
 	cbnz	x1, el1_hvc_guest	// called HVC
 
@@ -96,6 +108,8 @@ el1_sync:				// Guest trapped into EL2
 	do_el2_call
 
 	eret
+	sb
+#endif /* __KVM_NVHE_HYPERVISOR__ */
 
 el1_hvc_guest:
 	/*
@@ -146,6 +160,7 @@ wa_epilogue:
 	mov	x0, xzr
 	add	sp, sp, #16
 	eret
+	sb
 
 el1_trap:
 	get_vcpu_ptr	x1, x0
@@ -162,49 +177,60 @@ el1_error:
 	mov	x0, #ARM_EXCEPTION_EL1_SERROR
 	b	__guest_exit
 
-el2_error:
-	ldp	x0, x1, [sp], #16
+el2_sync:
+	/* Check for illegal exception return */
+	mrs	x0, spsr_el2
+	tbnz	x0, #20, 1f
 
-	/*
-	 * Only two possibilities:
-	 * 1) Either we come from the exit path, having just unmasked
-	 *    PSTATE.A: change the return code to an EL2 fault, and
-	 *    carry on, as we're already in a sane state to handle it.
-	 * 2) Or we come from anywhere else, and that's a bug: we panic.
-	 *
-	 * For (1), x0 contains the original return code and x1 doesn't
-	 * contain anything meaningful at that stage. We can reuse them
-	 * as temp registers.
-	 * For (2), who cares?
-	 */
-	mrs	x0, elr_el2
-	adr	x1, abort_guest_exit_start
-	cmp	x0, x1
-	adr	x1, abort_guest_exit_end
-	ccmp	x0, x1, #4, ne
-	b.ne	__hyp_panic
-	mov	x0, #(1 << ARM_EXIT_WITH_SERROR_BIT)
+	save_caller_saved_regs_vect
+	stp     x29, x30, [sp, #-16]!
+	bl	kvm_unexpected_el2_exception
+	ldp     x29, x30, [sp], #16
+	restore_caller_saved_regs_vect
+
 	eret
 
-ENTRY(__hyp_do_panic)
+1:
+	/* Let's attempt a recovery from the illegal exception return */
+	get_vcpu_ptr	x1, x0
+	mov	x0, #ARM_EXCEPTION_IL
+	b	__guest_exit
+
+
+el2_error:
+	save_caller_saved_regs_vect
+	stp     x29, x30, [sp, #-16]!
+
+	bl	kvm_unexpected_el2_exception
+
+	ldp     x29, x30, [sp], #16
+	restore_caller_saved_regs_vect
+
+	eret
+	sb
+
+#ifdef __KVM_NVHE_HYPERVISOR__
+SYM_FUNC_START(__hyp_do_panic)
 	mov	lr, #(PSR_F_BIT | PSR_I_BIT | PSR_A_BIT | PSR_D_BIT |\
 		      PSR_MODE_EL1h)
 	msr	spsr_el2, lr
 	ldr	lr, =panic
 	msr	elr_el2, lr
 	eret
-ENDPROC(__hyp_do_panic)
+	sb
+SYM_FUNC_END(__hyp_do_panic)
+#endif
 
-ENTRY(__hyp_panic)
+SYM_CODE_START(__hyp_panic)
 	get_host_ctxt x0, x1
 	b	hyp_panic
-ENDPROC(__hyp_panic)
+SYM_CODE_END(__hyp_panic)
 
 .macro invalid_vector	label, target = __hyp_panic
 	.align	2
-\label:
+SYM_CODE_START(\label)
 	b \target
-ENDPROC(\label)
+SYM_CODE_END(\label)
 .endm
 
 	/* None of these should ever happen */
@@ -221,26 +247,43 @@ ENDPROC(\label)
 
 	.align 11
 
+.macro check_preamble_length start, end
+/* kvm_patch_vector_branch() generates code that jumps over the preamble. */
+.if ((\end-\start) != KVM_VECTOR_PREAMBLE)
+	.error "KVM vector preamble length mismatch"
+.endif
+.endm
+
 .macro valid_vect target
 	.align 7
+661:
+	esb
 	stp	x0, x1, [sp, #-16]!
+662:
 	b	\target
+
+check_preamble_length 661b, 662b
 .endm
 
 .macro invalid_vect target
 	.align 7
+661:
 	b	\target
+	nop
+662:
 	ldp	x0, x1, [sp], #16
 	b	\target
+
+check_preamble_length 661b, 662b
 .endm
 
-ENTRY(__kvm_hyp_vector)
+SYM_CODE_START(__kvm_hyp_vector)
 	invalid_vect	el2t_sync_invalid	// Synchronous EL2t
 	invalid_vect	el2t_irq_invalid	// IRQ EL2t
 	invalid_vect	el2t_fiq_invalid	// FIQ EL2t
 	invalid_vect	el2t_error_invalid	// Error EL2t
 
-	invalid_vect	el2h_sync_invalid	// Synchronous EL2h
+	valid_vect	el2_sync		// Synchronous EL2h
 	invalid_vect	el2h_irq_invalid	// IRQ EL2h
 	invalid_vect	el2h_fiq_invalid	// FIQ EL2h
 	valid_vect	el2_error		// Error EL2h
@@ -254,18 +297,19 @@ ENTRY(__kvm_hyp_vector)
 	valid_vect	el1_irq			// IRQ 32-bit EL1
 	invalid_vect	el1_fiq_invalid		// FIQ 32-bit EL1
 	valid_vect	el1_error		// Error 32-bit EL1
-ENDPROC(__kvm_hyp_vector)
+SYM_CODE_END(__kvm_hyp_vector)
 
 #ifdef CONFIG_KVM_INDIRECT_VECTORS
 .macro hyp_ventry
 	.align 7
-1:	.rept 27
+1:	esb
+	.rept 26
 	nop
 	.endr
 /*
  * The default sequence is to directly branch to the KVM vectors,
  * using the computed offset. This applies for VHE as well as
- * !ARM64_HARDEN_EL2_VECTORS.
+ * !ARM64_HARDEN_EL2_VECTORS. The first vector must always run the preamble.
  *
  * For ARM64_HARDEN_EL2_VECTORS configurations, this gets replaced
  * with:
@@ -276,12 +320,13 @@ ENDPROC(__kvm_hyp_vector)
  * movk	x0, #((addr >> 32) & 0xffff), lsl #32
  * br	x0
  *
- * Where addr = kern_hyp_va(__kvm_hyp_vector) + vector-offset + 4.
+ * Where:
+ * addr = kern_hyp_va(__kvm_hyp_vector) + vector-offset + KVM_VECTOR_PREAMBLE.
  * See kvm_patch_vector_branch for details.
  */
 alternative_cb	kvm_patch_vector_branch
-	b	__kvm_hyp_vector + (1b - 0b)
-	nop
+	stp	x0, x1, [sp, #-16]!
+	b	__kvm_hyp_vector + (1b - 0b + KVM_VECTOR_PREAMBLE)
 	nop
 	nop
 	nop
@@ -297,22 +342,11 @@ alternative_cb_end
 .endm
 
 	.align	11
-ENTRY(__bp_harden_hyp_vecs_start)
+SYM_CODE_START(__bp_harden_hyp_vecs)
 	.rept BP_HARDEN_EL2_SLOTS
 	generate_vectors
 	.endr
-ENTRY(__bp_harden_hyp_vecs_end)
-
-	.popsection
-
-ENTRY(__smccc_workaround_1_smc_start)
-	sub	sp, sp, #(8 * 4)
-	stp	x2, x3, [sp, #(8 * 0)]
-	stp	x0, x1, [sp, #(8 * 2)]
-	mov	w0, #ARM_SMCCC_ARCH_WORKAROUND_1
-	smc	#0
-	ldp	x2, x3, [sp, #(8 * 0)]
-	ldp	x0, x1, [sp, #(8 * 2)]
-	add	sp, sp, #(8 * 4)
-ENTRY(__smccc_workaround_1_smc_end)
+1:	.org __bp_harden_hyp_vecs + __BP_HARDEN_HYP_VECS_SZ
+	.org 1b
+SYM_CODE_END(__bp_harden_hyp_vecs)
 #endif

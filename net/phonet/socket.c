@@ -351,9 +351,9 @@ static __poll_t pn_socket_poll(struct file *file, struct socket *sock,
 
 	if (sk->sk_state == TCP_CLOSE)
 		return EPOLLERR;
-	if (!skb_queue_empty(&sk->sk_receive_queue))
+	if (!skb_queue_empty_lockless(&sk->sk_receive_queue))
 		mask |= EPOLLIN | EPOLLRDNORM;
-	if (!skb_queue_empty(&pn->ctrlreq_queue))
+	if (!skb_queue_empty_lockless(&pn->ctrlreq_queue))
 		mask |= EPOLLPRI;
 	if (!mask && sk->sk_state == TCP_CLOSE_WAIT)
 		return EPOLLHUP;
@@ -607,7 +607,7 @@ static int pn_sock_seq_show(struct seq_file *seq, void *v)
 		struct pn_sock *pn = pn_sk(sk);
 
 		seq_printf(seq, "%2d %04X:%04X:%02X %02X %08X:%08X %5d %lu "
-			"%d %pK %d",
+			"%d %pK %u",
 			sk->sk_protocol, pn->sobject, pn->dobject,
 			pn->resource, sk->sk_state,
 			sk_wmem_alloc_get(sk), sk_rmem_alloc_get(sk),

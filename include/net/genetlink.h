@@ -6,6 +6,8 @@
 #include <net/netlink.h>
 #include <net/net_namespace.h>
 
+#include <linux/rh_kabi.h>
+
 #define GENLMSG_DEFAULT_SIZE (NLMSG_DEFAULT_SIZE - GENL_HDRLEN)
 
 /**
@@ -26,6 +28,7 @@ struct genl_info;
  * @name: name of family
  * @version: protocol version
  * @maxattr: maximum number of attributes supported
+ * @policy: netlink policy
  * @netnsok: set to true if the family can handle network
  *	namespaces and should be presented in all of them
  * @parallel_ops: operations can be called in parallel and aren't
@@ -56,6 +59,7 @@ struct genl_family {
 	unsigned int		maxattr;
 	bool			netnsok;
 	bool			parallel_ops;
+	const struct nla_policy *policy;
 	int			(*pre_doit)(const struct genl_ops *ops,
 					    struct sk_buff *skb,
 					    struct genl_info *info);
@@ -71,6 +75,15 @@ struct genl_family {
 	unsigned int		n_mcgrps;
 	unsigned int		mcgrp_offset;	/* private */
 	struct module		*module;
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+	RH_KABI_RESERVE(8)
 };
 
 struct nlattr **genl_family_attrbuf(const struct genl_family *family);
@@ -112,26 +125,33 @@ static inline void genl_info_net_set(struct genl_info *info, struct net *net)
 #define GENL_SET_ERR_MSG(info, msg) NL_SET_ERR_MSG((info)->extack, msg)
 
 static inline int genl_err_attr(struct genl_info *info, int err,
-				struct nlattr *attr)
+				const struct nlattr *attr)
 {
 	info->extack->bad_attr = attr;
 
 	return err;
 }
 
+struct genl_ops_extended_rh {
+};
+
+enum genl_validate_flags {
+	GENL_DONT_VALIDATE_STRICT		= BIT(0),
+	GENL_DONT_VALIDATE_DUMP			= BIT(1),
+	GENL_DONT_VALIDATE_DUMP_STRICT		= BIT(2),
+};
+
 /**
  * struct genl_ops - generic netlink operations
  * @cmd: command identifier
  * @internal_flags: flags used by the family
  * @flags: flags
- * @policy: attribute validation policy
  * @doit: standard command callback
  * @start: start callback for dumps
  * @dumpit: callback for dumpers
  * @done: completion callback for dumps
  */
 struct genl_ops {
-	const struct nla_policy	*policy;
 	int		       (*doit)(struct sk_buff *skb,
 				       struct genl_info *info);
 	int		       (*start)(struct netlink_callback *cb);
@@ -141,6 +161,16 @@ struct genl_ops {
 	u8			cmd;
 	u8			internal_flags;
 	u8			flags;
+	u8			validate;
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+	RH_KABI_AUX_EMBED(genl_ops_extended)
 };
 
 int genl_register_family(struct genl_family *family);
@@ -165,6 +195,25 @@ static inline struct nlmsghdr *genlmsg_nlhdr(void *user_hdr)
 }
 
 /**
+ * genlmsg_parse_deprecated - parse attributes of a genetlink message
+ * @nlh: netlink message header
+ * @family: genetlink message family
+ * @tb: destination array with maxtype+1 elements
+ * @maxtype: maximum attribute type to be expected
+ * @policy: validation policy
+ * @extack: extended ACK report struct
+ */
+static inline int genlmsg_parse_deprecated(const struct nlmsghdr *nlh,
+					   const struct genl_family *family,
+					   struct nlattr *tb[], int maxtype,
+					   const struct nla_policy *policy,
+					   struct netlink_ext_ack *extack)
+{
+	return __nlmsg_parse(nlh, family->hdrsize + GENL_HDRLEN, tb, maxtype,
+			     policy, NL_VALIDATE_LIBERAL, extack);
+}
+
+/**
  * genlmsg_parse - parse attributes of a genetlink message
  * @nlh: netlink message header
  * @family: genetlink message family
@@ -179,8 +228,8 @@ static inline int genlmsg_parse(const struct nlmsghdr *nlh,
 				const struct nla_policy *policy,
 				struct netlink_ext_ack *extack)
 {
-	return nlmsg_parse(nlh, family->hdrsize + GENL_HDRLEN, tb, maxtype,
-			   policy, extack);
+	return __nlmsg_parse(nlh, family->hdrsize + GENL_HDRLEN, tb, maxtype,
+			     policy, NL_VALIDATE_STRICT, extack);
 }
 
 /**

@@ -69,7 +69,7 @@ static const int multicast_filter_limit = 0x40;
 
 static int rio_open (struct net_device *dev);
 static void rio_timer (struct timer_list *t);
-static void rio_tx_timeout (struct net_device *dev);
+static void rio_tx_timeout (struct net_device *dev, unsigned int txqueue);
 static netdev_tx_t start_xmit (struct sk_buff *skb, struct net_device *dev);
 static irqreturn_t rio_interrupt (int irq, void *dev_instance);
 static void rio_free_tx (struct net_device *dev, int irq);
@@ -119,6 +119,8 @@ rio_probe1 (struct pci_dev *pdev, const struct pci_device_id *ent)
 	static int version_printed;
 	void *ring_space;
 	dma_addr_t ring_dma;
+
+	mark_hardware_unsupported(DRV_NAME);
 
 	if (!version_printed++)
 		printk ("%s", version);
@@ -699,7 +701,7 @@ rio_timer (struct timer_list *t)
 }
 
 static void
-rio_tx_timeout (struct net_device *dev)
+rio_tx_timeout (struct net_device *dev, unsigned int txqueue)
 {
 	struct netdev_private *np = netdev_priv(dev);
 	void __iomem *ioaddr = np->ioaddr;

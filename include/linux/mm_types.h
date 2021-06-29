@@ -14,19 +14,22 @@
 #include <linux/uprobes.h>
 #include <linux/page-flags-layout.h>
 #include <linux/workqueue.h>
+#include <linux/rh_kabi.h>
 
 #include <asm/mmu.h>
+
+#include <linux/rh_kabi.h>
 
 #ifndef AT_VECTOR_SIZE_ARCH
 #define AT_VECTOR_SIZE_ARCH 0
 #endif
 #define AT_VECTOR_SIZE (2*(AT_VECTOR_SIZE_ARCH + AT_VECTOR_SIZE_BASE + 1))
 
-typedef int vm_fault_t;
 
 struct address_space;
 struct mem_cgroup;
 struct hmm;
+struct dev_pagemap;
 
 /*
  * Each physical page in the system has a struct page associated with
@@ -80,7 +83,7 @@ struct page {
 		struct {	/* Page cache and anonymous pages */
 			/**
 			 * @lru: Pageout list, eg. active_list protected by
-			 * zone_lru_lock.  Sometimes used as a generic list
+			 * pgdat->lru_lock.  Sometimes used as a generic list
 			 * by the page owner.
 			 */
 			struct list_head lru;
@@ -95,9 +98,16 @@ struct page {
 			 */
 			unsigned long private;
 		};
+		RH_KABI_EXTEND(struct {	/* page_pool used by netstack */
+			/**
+			 * @dma_addr: might require a 64-bit value even on
+			 * 32-bit architectures.
+			 */
+			dma_addr_t dma_addr;
+		})
 		struct {	/* slab, slob and slub */
 			union {
-				struct list_head slab_list;	/* uses lru */
+				struct list_head slab_list;
 				struct {	/* Partial pages */
 					struct page *next;
 #ifdef CONFIG_64BIT
@@ -133,13 +143,18 @@ struct page {
 		struct {	/* Second tail page of compound page */
 			unsigned long _compound_pad_1;	/* compound_head */
 			unsigned long _compound_pad_2;
+			/* For both global and memcg */
 			struct list_head deferred_list;
 		};
 		struct {	/* Page table pages */
 			unsigned long _pt_pad_1;	/* compound_head */
 			pgtable_t pmd_huge_pte; /* protected by page->ptl */
 			unsigned long _pt_pad_2;	/* mapping */
-			struct mm_struct *pt_mm;	/* x86 pgds only */
+			RH_KABI_REPLACE(struct mm_struct *pt_mm,
+					union {
+						struct mm_struct *pt_mm; /* x86 pgds only */
+						atomic_t pt_frag_refcount; /* powerpc */
+			})
 #if ALLOC_SPLIT_PTLOCKS
 			spinlock_t *ptl;
 #else
@@ -149,7 +164,8 @@ struct page {
 		struct {	/* ZONE_DEVICE pages */
 			/** @pgmap: Points to the hosting device page map. */
 			struct dev_pagemap *pgmap;
-			unsigned long hmm_data;
+			RH_KABI_REPLACE(unsigned long hmm_data,
+					void *zone_device_data)
 			unsigned long _zd_pad_1;	/* uses mapping */
 		};
 
@@ -180,7 +196,11 @@ struct page {
 	atomic_t _refcount;
 
 #ifdef CONFIG_MEMCG
-	struct mem_cgroup *mem_cgroup;
+	RH_KABI_REPLACE(struct mem_cgroup *mem_cgroup,
+			union {
+				struct mem_cgroup *mem_cgroup;
+				struct obj_cgroup **obj_cgroups;
+			})
 #endif
 
 	/*
@@ -203,8 +223,16 @@ struct page {
 #endif
 } _struct_page_alignment;
 
+static inline atomic_t *compound_mapcount_ptr(struct page *page)
+{
+	return &page[1].compound_mapcount;
+}
+
 #define PAGE_FRAG_CACHE_MAX_SIZE	__ALIGN_MASK(32768, ~PAGE_MASK)
 #define PAGE_FRAG_CACHE_MAX_ORDER	get_order(PAGE_FRAG_CACHE_MAX_SIZE)
+
+#define page_private(page)		((page)->private)
+#define set_page_private(page, v)	((page)->private = (v))
 
 struct page_frag_cache {
 	void * va;
@@ -281,7 +309,12 @@ struct vm_area_struct {
 	/* Second cache line starts here. */
 
 	struct mm_struct *vm_mm;	/* The address space we belong to. */
-	pgprot_t vm_page_prot;		/* Access permissions of this VMA. */
+
+	/*
+	 * Access permissions of this VMA.
+	 * See vmf_insert_mixed_prot() for discussion.
+	 */
+	pgprot_t vm_page_prot;
 	unsigned long vm_flags;		/* Flags, see mm.h. */
 
 	/*
@@ -320,6 +353,11 @@ struct vm_area_struct {
 	struct mempolicy *vm_policy;	/* NUMA policy for the VMA */
 #endif
 	struct vm_userfaultfd_ctx vm_userfaultfd_ctx;
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 } __randomize_layout;
 
 struct core_thread {
@@ -335,176 +373,226 @@ struct core_state {
 
 struct kioctx_table;
 struct mm_struct {
-	struct vm_area_struct *mmap;		/* list of VMAs */
-	struct rb_root mm_rb;
-	u32 vmacache_seqnum;                   /* per-thread vmacache */
+	struct {
+		struct vm_area_struct *mmap;		/* list of VMAs */
+		struct rb_root mm_rb;
+		u64 vmacache_seqnum;                   /* per-thread vmacache */
 #ifdef CONFIG_MMU
-	unsigned long (*get_unmapped_area) (struct file *filp,
+		unsigned long (*get_unmapped_area) (struct file *filp,
 				unsigned long addr, unsigned long len,
 				unsigned long pgoff, unsigned long flags);
 #endif
-	unsigned long mmap_base;		/* base of mmap area */
-	unsigned long mmap_legacy_base;         /* base of mmap area in bottom-up allocations */
+		unsigned long mmap_base;	/* base of mmap area */
+		unsigned long mmap_legacy_base;	/* base of mmap area in bottom-up allocations */
 #ifdef CONFIG_HAVE_ARCH_COMPAT_MMAP_BASES
-	/* Base adresses for compatible mmap() */
-	unsigned long mmap_compat_base;
-	unsigned long mmap_compat_legacy_base;
+		/* Base adresses for compatible mmap() */
+		unsigned long mmap_compat_base;
+		unsigned long mmap_compat_legacy_base;
 #endif
-	unsigned long task_size;		/* size of task vm space */
-	unsigned long highest_vm_end;		/* highest vma end address */
-	pgd_t * pgd;
+		unsigned long task_size;	/* size of task vm space */
+		unsigned long highest_vm_end;	/* highest vma end address */
+		pgd_t * pgd;
 
-	/**
-	 * @mm_users: The number of users including userspace.
-	 *
-	 * Use mmget()/mmget_not_zero()/mmput() to modify. When this drops
-	 * to 0 (i.e. when the task exits and there are no other temporary
-	 * reference holders), we also release a reference on @mm_count
-	 * (which may then free the &struct mm_struct if @mm_count also
-	 * drops to 0).
-	 */
-	atomic_t mm_users;
+		/**
+		 * @mm_users: The number of users including userspace.
+		 *
+		 * Use mmget()/mmget_not_zero()/mmput() to modify. When this
+		 * drops to 0 (i.e. when the task exits and there are no other
+		 * temporary reference holders), we also release a reference on
+		 * @mm_count (which may then free the &struct mm_struct if
+		 * @mm_count also drops to 0).
+		 */
+		atomic_t mm_users;
 
-	/**
-	 * @mm_count: The number of references to &struct mm_struct
-	 * (@mm_users count as 1).
-	 *
-	 * Use mmgrab()/mmdrop() to modify. When this drops to 0, the
-	 * &struct mm_struct is freed.
-	 */
-	atomic_t mm_count;
+		/**
+		 * @mm_count: The number of references to &struct mm_struct
+		 * (@mm_users count as 1).
+		 *
+		 * Use mmgrab()/mmdrop() to modify. When this drops to 0, the
+		 * &struct mm_struct is freed.
+		 */
+		atomic_t mm_count;
 
 #ifdef CONFIG_MMU
-	atomic_long_t pgtables_bytes;		/* PTE page table pages */
+		atomic_long_t pgtables_bytes;	/* PTE page table pages */
 #endif
-	int map_count;				/* number of VMAs */
+		int map_count;			/* number of VMAs */
 
-	spinlock_t page_table_lock;		/* Protects page tables and some counters */
-	struct rw_semaphore mmap_sem;
+		spinlock_t page_table_lock; /* Protects page tables and some
+					     * counters
+					     */
+		struct rw_semaphore mmap_sem;
 
-	struct list_head mmlist;		/* List of maybe swapped mm's.	These are globally strung
-						 * together off init_mm.mmlist, and are protected
-						 * by mmlist_lock
-						 */
+		struct list_head mmlist; /* List of maybe swapped mm's.	These
+					  * are globally strung together off
+					  * init_mm.mmlist, and are protected
+					  * by mmlist_lock
+					  */
 
 
-	unsigned long hiwater_rss;	/* High-watermark of RSS usage */
-	unsigned long hiwater_vm;	/* High-water virtual memory usage */
+		unsigned long hiwater_rss; /* High-watermark of RSS usage */
+		unsigned long hiwater_vm;  /* High-water virtual memory usage */
 
-	unsigned long total_vm;		/* Total pages mapped */
-	unsigned long locked_vm;	/* Pages that have PG_mlocked set */
-	unsigned long pinned_vm;	/* Refcount permanently increased */
-	unsigned long data_vm;		/* VM_WRITE & ~VM_SHARED & ~VM_STACK */
-	unsigned long exec_vm;		/* VM_EXEC & ~VM_WRITE & ~VM_STACK */
-	unsigned long stack_vm;		/* VM_STACK */
-	unsigned long def_flags;
+		unsigned long total_vm;	   /* Total pages mapped */
+		unsigned long locked_vm;   /* Pages that have PG_mlocked set */
+		/*
+		 * RHEL KABI NOTE: due to changes for BZ#1620349 mm_types.h is
+		 * being exposed to the vdso32 object build, thus we need the
+		 * _BROKEN variant of RH_KABI_REPLACE in order to placate the
+		 * static assertion check embedded into the safe macro.
+		 * Although unsigned long and atomic64_t do not have a type size
+		 * match in the vdso32 object build case, it is, actually, safe
+		 * to keep the inline type replacement here as there are no
+		 * dependencies, direct or indirect, between the vdso32 code and
+		 * struct mm_struct fields. On every other compilation unit that
+		 * struct mm_struct is required, the type sizes and aligment are
+		 * a perfect match, as expected.
+		 */
+		RH_KABI_BROKEN_REPLACE(
+		unsigned long pinned_vm,
+		atomic64_t    pinned_vm
+		)			   /* Refcount permanently increased */
+		unsigned long data_vm;	   /* VM_WRITE & ~VM_SHARED & ~VM_STACK */
+		unsigned long exec_vm;	   /* VM_EXEC & ~VM_WRITE & ~VM_STACK */
+		unsigned long stack_vm;	   /* VM_STACK */
+		unsigned long def_flags;
 
-	spinlock_t arg_lock; /* protect the below fields */
-	unsigned long start_code, end_code, start_data, end_data;
-	unsigned long start_brk, brk, start_stack;
-	unsigned long arg_start, arg_end, env_start, env_end;
+		spinlock_t arg_lock; /* protect the below fields */
+		unsigned long start_code, end_code, start_data, end_data;
+		unsigned long start_brk, brk, start_stack;
+		unsigned long arg_start, arg_end, env_start, env_end;
 
-	unsigned long saved_auxv[AT_VECTOR_SIZE]; /* for /proc/PID/auxv */
+		unsigned long saved_auxv[AT_VECTOR_SIZE]; /* for /proc/PID/auxv */
 
-	/*
-	 * Special counters, in some configurations protected by the
-	 * page_table_lock, in other configurations by being atomic.
-	 */
-	struct mm_rss_stat rss_stat;
+		/*
+		 * Special counters, in some configurations protected by the
+		 * page_table_lock, in other configurations by being atomic.
+		 */
+		struct mm_rss_stat rss_stat;
 
-	struct linux_binfmt *binfmt;
+		struct linux_binfmt *binfmt;
 
-	cpumask_var_t cpu_vm_mask_var;
+		/* Architecture-specific MM context */
+		mm_context_t context;
 
-	/* Architecture-specific MM context */
-	mm_context_t context;
+		unsigned long flags; /* Must use atomic bitops to access */
 
-	unsigned long flags; /* Must use atomic bitops to access the bits */
-
-	struct core_state *core_state; /* coredumping support */
+		struct core_state *core_state; /* coredumping support */
 #ifdef CONFIG_MEMBARRIER
-	atomic_t membarrier_state;
+		atomic_t membarrier_state;
 #endif
 #ifdef CONFIG_AIO
-	spinlock_t			ioctx_lock;
-	struct kioctx_table __rcu	*ioctx_table;
+		spinlock_t			ioctx_lock;
+		struct kioctx_table __rcu	*ioctx_table;
 #endif
 #ifdef CONFIG_MEMCG
-	/*
-	 * "owner" points to a task that is regarded as the canonical
-	 * user/owner of this mm. All of the following must be true in
-	 * order for it to be changed:
-	 *
-	 * current == mm->owner
-	 * current->mm != mm
-	 * new_owner->mm == mm
-	 * new_owner->alloc_lock is held
-	 */
-	struct task_struct __rcu *owner;
+		/*
+		 * "owner" points to a task that is regarded as the canonical
+		 * user/owner of this mm. All of the following must be true in
+		 * order for it to be changed:
+		 *
+		 * current == mm->owner
+		 * current->mm != mm
+		 * new_owner->mm == mm
+		 * new_owner->alloc_lock is held
+		 */
+		struct task_struct __rcu *owner;
 #endif
-	struct user_namespace *user_ns;
+		struct user_namespace *user_ns;
 
-	/* store ref to file /proc/<pid>/exe symlink points to */
-	struct file __rcu *exe_file;
+		/* store ref to file /proc/<pid>/exe symlink points to */
+		struct file __rcu *exe_file;
 #ifdef CONFIG_MMU_NOTIFIER
-	struct mmu_notifier_mm *mmu_notifier_mm;
+		struct mmu_notifier_mm *mmu_notifier_mm;
 #endif
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
-	pgtable_t pmd_huge_pte; /* protected by page_table_lock */
-#endif
-#ifdef CONFIG_CPUMASK_OFFSTACK
-	struct cpumask cpumask_allocation;
+		pgtable_t pmd_huge_pte; /* protected by page_table_lock */
 #endif
 #ifdef CONFIG_NUMA_BALANCING
-	/*
-	 * numa_next_scan is the next time that the PTEs will be marked
-	 * pte_numa. NUMA hinting faults will gather statistics and migrate
-	 * pages to new nodes if necessary.
-	 */
-	unsigned long numa_next_scan;
+		/*
+		 * numa_next_scan is the next time that the PTEs will be marked
+		 * pte_numa. NUMA hinting faults will gather statistics and
+		 * migrate pages to new nodes if necessary.
+		 */
+		unsigned long numa_next_scan;
 
-	/* Restart point for scanning and setting pte_numa */
-	unsigned long numa_scan_offset;
+		/* Restart point for scanning and setting pte_numa */
+		unsigned long numa_scan_offset;
 
-	/* numa_scan_seq prevents two threads setting pte_numa */
-	int numa_scan_seq;
+		/* numa_scan_seq prevents two threads setting pte_numa */
+		int numa_scan_seq;
 #endif
-	/*
-	 * An operation with batched TLB flushing is going on. Anything that
-	 * can move process memory needs to flush the TLB when moving a
-	 * PROT_NONE or PROT_NUMA mapped page.
-	 */
-	atomic_t tlb_flush_pending;
+		/*
+		 * An operation with batched TLB flushing is going on. Anything
+		 * that can move process memory needs to flush the TLB when
+		 * moving a PROT_NONE or PROT_NUMA mapped page.
+		 */
+		atomic_t tlb_flush_pending;
 #ifdef CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
-	/* See flush_tlb_batched_pending() */
-	bool tlb_flush_batched;
+		/* See flush_tlb_batched_pending() */
+		bool tlb_flush_batched;
 #endif
-	struct uprobes_state uprobes_state;
+		struct uprobes_state uprobes_state;
 #ifdef CONFIG_HUGETLB_PAGE
-	atomic_long_t hugetlb_usage;
+		atomic_long_t hugetlb_usage;
 #endif
-	struct work_struct async_put_work;
+		struct work_struct async_put_work;
 
 #if IS_ENABLED(CONFIG_HMM)
-	/* HMM needs to track a few things per mm */
-	struct hmm *hmm;
+		/* HMM needs to track a few things per mm */
+		struct hmm *hmm;
 #endif
-} __randomize_layout;
+	} __randomize_layout;
+
+#if defined(CONFIG_IOMMU_SUPPORT)
+	RH_KABI_USE(1, u32 pasid)
+#else
+	RH_KABI_RESERVE(1)
+#endif
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+
+#if defined(CONFIG_PPC64) && defined (CONFIG_PPC_VAS)
+	/*
+	 * In upstream vas_windows is defined in arch specific mm_context struct
+	 * (arch/powerpc/include/asm/mmu.h).
+	 * To fix kABI breakage, adding here but will be defined only for powerpc.
+	 * Though used only on powerNV and P9 (or later) right now, will be needed
+	 * in future when we add NX-GZIP support on powerVM.
+	 * Leaving first 7 reserves for arch independent elements if needed in future
+	 * so that will be placed in same location for all archs.
+	 */
+	RH_KABI_USE(8, atomic_t vas_windows)
+#else
+	RH_KABI_RESERVE(8)
+#endif
+
+	/*
+	 * The mm_cpumask needs to be at the end of mm_struct, because it
+	 * is dynamically sized based on nr_cpu_ids.
+	 */
+	unsigned long cpu_bitmap[];
+};
 
 extern struct mm_struct init_mm;
 
+/* Pointer magic because the dynamic array size confuses some compilers. */
 static inline void mm_init_cpumask(struct mm_struct *mm)
 {
-#ifdef CONFIG_CPUMASK_OFFSTACK
-	mm->cpu_vm_mask_var = &mm->cpumask_allocation;
-#endif
-	cpumask_clear(mm->cpu_vm_mask_var);
+	unsigned long cpu_bitmap = (unsigned long)mm;
+
+	cpu_bitmap += offsetof(struct mm_struct, cpu_bitmap);
+	cpumask_clear((struct cpumask *)cpu_bitmap);
 }
 
 /* Future-safe accessor for struct mm_struct's cpu_vm_mask. */
 static inline cpumask_t *mm_cpumask(struct mm_struct *mm)
 {
-	return mm->cpu_vm_mask_var;
+	return (struct cpumask *)&mm->cpu_bitmap;
 }
 
 struct mmu_gather;
@@ -598,6 +686,78 @@ static inline bool mm_tlb_flush_nested(struct mm_struct *mm)
 }
 
 struct vm_fault;
+
+/**
+ * typedef vm_fault_t - Return type for page fault handlers.
+ *
+ * Page fault handlers return a bitmask of %VM_FAULT values.
+ */
+typedef RH_KABI_ADD_MODIFIER(__bitwise unsigned) int vm_fault_t;
+
+/**
+ * enum vm_fault_reason - Page fault handlers return a bitmask of
+ * these values to tell the core VM what happened when handling the
+ * fault. Used to decide whether a process gets delivered SIGBUS or
+ * just gets major/minor fault counters bumped up.
+ *
+ * @VM_FAULT_OOM:		Out Of Memory
+ * @VM_FAULT_SIGBUS:		Bad access
+ * @VM_FAULT_MAJOR:		Page read from storage
+ * @VM_FAULT_WRITE:		Special case for get_user_pages
+ * @VM_FAULT_HWPOISON:		Hit poisoned small page
+ * @VM_FAULT_HWPOISON_LARGE:	Hit poisoned large page. Index encoded
+ *				in upper bits
+ * @VM_FAULT_SIGSEGV:		segmentation fault
+ * @VM_FAULT_NOPAGE:		->fault installed the pte, not return page
+ * @VM_FAULT_LOCKED:		->fault locked the returned page
+ * @VM_FAULT_RETRY:		->fault blocked, must retry
+ * @VM_FAULT_FALLBACK:		huge page fault failed, fall back to small
+ * @VM_FAULT_DONE_COW:		->fault has fully handled COW
+ * @VM_FAULT_NEEDDSYNC:		->fault did not modify page tables and needs
+ *				fsync() to complete (for synchronous page faults
+ *				in DAX)
+ * @VM_FAULT_HINDEX_MASK:	mask HINDEX value
+ *
+ */
+enum vm_fault_reason {
+	VM_FAULT_OOM            = (__force vm_fault_t)0x000001,
+	VM_FAULT_SIGBUS         = (__force vm_fault_t)0x000002,
+	VM_FAULT_MAJOR          = (__force vm_fault_t)0x000004,
+	VM_FAULT_WRITE          = (__force vm_fault_t)0x000008,
+	VM_FAULT_HWPOISON       = (__force vm_fault_t)0x000010,
+	VM_FAULT_HWPOISON_LARGE = (__force vm_fault_t)0x000020,
+	VM_FAULT_SIGSEGV        = (__force vm_fault_t)0x000040,
+	VM_FAULT_NOPAGE         = (__force vm_fault_t)0x000100,
+	VM_FAULT_LOCKED         = (__force vm_fault_t)0x000200,
+	VM_FAULT_RETRY          = (__force vm_fault_t)0x000400,
+	VM_FAULT_FALLBACK       = (__force vm_fault_t)0x000800,
+	VM_FAULT_DONE_COW       = (__force vm_fault_t)0x001000,
+	VM_FAULT_NEEDDSYNC      = (__force vm_fault_t)0x002000,
+	VM_FAULT_HINDEX_MASK    = (__force vm_fault_t)0x0f0000,
+};
+
+/* Encode hstate index for a hwpoisoned large page */
+#define VM_FAULT_SET_HINDEX(x) ((__force vm_fault_t)((x) << 16))
+#define VM_FAULT_GET_HINDEX(x) (((__force unsigned int)(x) >> 16) & 0xf)
+
+#define VM_FAULT_ERROR (VM_FAULT_OOM | VM_FAULT_SIGBUS |	\
+			VM_FAULT_SIGSEGV | VM_FAULT_HWPOISON |	\
+			VM_FAULT_HWPOISON_LARGE | VM_FAULT_FALLBACK)
+
+#define VM_FAULT_RESULT_TRACE \
+	{ VM_FAULT_OOM,                 "OOM" },	\
+	{ VM_FAULT_SIGBUS,              "SIGBUS" },	\
+	{ VM_FAULT_MAJOR,               "MAJOR" },	\
+	{ VM_FAULT_WRITE,               "WRITE" },	\
+	{ VM_FAULT_HWPOISON,            "HWPOISON" },	\
+	{ VM_FAULT_HWPOISON_LARGE,      "HWPOISON_LARGE" },	\
+	{ VM_FAULT_SIGSEGV,             "SIGSEGV" },	\
+	{ VM_FAULT_NOPAGE,              "NOPAGE" },	\
+	{ VM_FAULT_LOCKED,              "LOCKED" },	\
+	{ VM_FAULT_RETRY,               "RETRY" },	\
+	{ VM_FAULT_FALLBACK,            "FALLBACK" },	\
+	{ VM_FAULT_DONE_COW,            "DONE_COW" },	\
+	{ VM_FAULT_NEEDDSYNC,           "NEEDDSYNC" }
 
 struct vm_special_mapping {
 	const char *name;	/* The name, e.g. "[vdso]". */

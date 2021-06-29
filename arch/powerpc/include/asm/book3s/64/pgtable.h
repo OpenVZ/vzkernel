@@ -44,6 +44,16 @@
 
 #define _PAGE_PTE		0x4000000000000000UL	/* distinguishes PTEs from pointers */
 #define _PAGE_PRESENT		0x8000000000000000UL	/* pte contains a translation */
+/*
+ * We need to mark a pmd pte invalid while splitting. We can do that by clearing
+ * the _PAGE_PRESENT bit. But then that will be taken as a swap pte. In order to
+ * differentiate between two use a SW field when invalidating.
+ *
+ * We do that temporary invalidate for regular pte entry in ptep_set_access_flags
+ *
+ * This is used only when _PAGE_PRESENT is cleared.
+ */
+#define _PAGE_INVALID		_RPAGE_SW0
 
 /*
  * Top and bottom bits of RPN which can be used by hash
@@ -104,7 +114,7 @@
  */
 #define _HPAGE_CHG_MASK (PTE_RPN_MASK | _PAGE_HPTEFLAGS | _PAGE_DIRTY | \
 			 _PAGE_ACCESSED | H_PAGE_THP_HUGE | _PAGE_PTE | \
-			 _PAGE_SOFT_DIRTY)
+			 _PAGE_SOFT_DIRTY | _PAGE_DEVMAP)
 /*
  * user access blocked by key
  */
@@ -122,7 +132,7 @@
  */
 #define _PAGE_CHG_MASK	(PTE_RPN_MASK | _PAGE_HPTEFLAGS | _PAGE_DIRTY | \
 			 _PAGE_ACCESSED | _PAGE_SPECIAL | _PAGE_PTE |	\
-			 _PAGE_SOFT_DIRTY)
+			 _PAGE_SOFT_DIRTY | _PAGE_DEVMAP)
 
 #define H_PTE_PKEY  (H_PTE_PKEY_BIT0 | H_PTE_PKEY_BIT1 | H_PTE_PKEY_BIT2 | \
 		     H_PTE_PKEY_BIT3 | H_PTE_PKEY_BIT4)
@@ -479,9 +489,8 @@ static inline pte_t ptep_get_and_clear_full(struct mm_struct *mm,
 {
 	if (full && radix_enabled()) {
 		/*
-		 * Let's skip the DD1 style pte update here. We know that
-		 * this is a full mm pte clear and hence can be sure there is
-		 * no parallel set_pte.
+		 * We know that this is a full mm pte clear and
+		 * hence can be sure there is no parallel set_pte.
 		 */
 		return radix__ptep_get_and_clear_full(mm, addr, ptep, full);
 	}
@@ -567,9 +576,25 @@ static inline pte_t pte_clear_savedwrite(pte_t pte)
 }
 #endif /* CONFIG_NUMA_BALANCING */
 
+static inline bool pte_hw_valid(pte_t pte)
+{
+	return (pte_raw(pte) & cpu_to_be64(_PAGE_PRESENT | _PAGE_PTE)) ==
+		cpu_to_be64(_PAGE_PRESENT | _PAGE_PTE);
+}
+
 static inline int pte_present(pte_t pte)
 {
-	return !!(pte_raw(pte) & cpu_to_be64(_PAGE_PRESENT));
+	/*
+	 * A pte is considerent present if _PAGE_PRESENT is set.
+	 * We also need to consider the pte present which is marked
+	 * invalid during ptep_set_access_flags. Hence we look for _PAGE_INVALID
+	 * if we find _PAGE_PRESENT cleared.
+	 */
+
+	if (pte_hw_valid(pte))
+		return true;
+	return (pte_raw(pte) & cpu_to_be64(_PAGE_INVALID | _PAGE_PTE)) ==
+		cpu_to_be64(_PAGE_INVALID | _PAGE_PTE);
 }
 
 #ifdef CONFIG_PPC_MEM_KEYS
@@ -708,9 +733,7 @@ static inline bool pte_user(pte_t pte)
 	BUILD_BUG_ON(_PAGE_HPTEFLAGS & (0x1f << _PAGE_BIT_SWAP_TYPE)); \
 	BUILD_BUG_ON(_PAGE_HPTEFLAGS & _PAGE_SWP_SOFT_DIRTY);	\
 	} while (0)
-/*
- * on pte we don't need handle RADIX_TREE_EXCEPTIONAL_SHIFT;
- */
+
 #define SWP_TYPE_BITS 5
 #define __swp_type(x)		(((x).val >> _PAGE_BIT_SWAP_TYPE) \
 				& ((1UL << SWP_TYPE_BITS) - 1))
@@ -864,6 +887,23 @@ static inline int pmd_present(pmd_t pmd)
 	return !pmd_none(pmd);
 }
 
+static inline int pmd_is_serializing(pmd_t pmd)
+{
+	/*
+	 * If the pmd is undergoing a split, the _PAGE_PRESENT bit is clear
+	 * and _PAGE_INVALID is set (see pmd_present, pmdp_invalidate).
+	 *
+	 * This condition may also occur when flushing a pmd while flushing
+	 * it (see ptep_modify_prot_start), so callers must ensure this
+	 * case is fine as well.
+	 */
+	if ((pmd_raw(pmd) & cpu_to_be64(_PAGE_PRESENT | _PAGE_INVALID)) ==
+						cpu_to_be64(_PAGE_INVALID))
+		return true;
+
+	return false;
+}
+
 static inline int pmd_bad(pmd_t pmd)
 {
 	if (radix_enabled())
@@ -1005,17 +1045,16 @@ extern struct page *pgd_page(pgd_t pgd);
 #define pgd_ERROR(e) \
 	pr_err("%s:%d: bad pgd %08lx.\n", __FILE__, __LINE__, pgd_val(e))
 
-static inline int map_kernel_page(unsigned long ea, unsigned long pa,
-				  unsigned long flags)
+static inline int map_kernel_page(unsigned long ea, unsigned long pa, pgprot_t prot)
 {
 	if (radix_enabled()) {
 #if defined(CONFIG_PPC_RADIX_MMU) && defined(DEBUG_VM)
 		unsigned long page_size = 1 << mmu_psize_defs[mmu_io_psize].shift;
 		WARN((page_size != PAGE_SIZE), "I/O page size != PAGE_SIZE");
 #endif
-		return radix__map_kernel_page(ea, pa, __pgprot(flags), PAGE_SIZE);
+		return radix__map_kernel_page(ea, pa, prot, PAGE_SIZE);
 	}
-	return hash__map_kernel_page(ea, pa, flags);
+	return hash__map_kernel_page(ea, pa, prot);
 }
 
 static inline int __meminit vmemmap_create_mapping(unsigned long start,
@@ -1036,7 +1075,6 @@ static inline void vmemmap_remove_mapping(unsigned long start,
 	return hash__vmemmap_remove_mapping(start, page_size);
 }
 #endif
-struct page *realmode_pfn_to_page(unsigned long pfn);
 
 static inline pte_t pmd_pte(pmd_t pmd)
 {
@@ -1084,6 +1122,19 @@ static inline int pmd_protnone(pmd_t pmd)
 #define pmd_access_permitted pmd_access_permitted
 static inline bool pmd_access_permitted(pmd_t pmd, bool write)
 {
+	/*
+	 * pmdp_invalidate sets this combination (which is not caught by
+	 * !pte_present() check in pte_access_permitted), to prevent
+	 * lock-free lookups, as part of the serialize_against_pte_lookup()
+	 * synchronisation.
+	 *
+	 * This also catches the case where the PTE's hardware PRESENT bit is
+	 * cleared while TLB is flushed, which is suboptimal but should not
+	 * be frequent.
+	 */
+	if (pmd_is_serializing(pmd))
+		return false;
+
 	return pte_access_permitted(pmd_pte(pmd), write);
 }
 
@@ -1196,6 +1247,11 @@ static inline pmd_t pmdp_collapse_flush(struct vm_area_struct *vma,
 }
 #define pmdp_collapse_flush pmdp_collapse_flush
 
+#define __HAVE_ARCH_PMDP_HUGE_GET_AND_CLEAR_FULL
+pmd_t pmdp_huge_get_and_clear_full(struct vm_area_struct *vma,
+				   unsigned long addr,
+				   pmd_t *pmdp, int full);
+
 #define __HAVE_ARCH_PGTABLE_DEPOSIT
 static inline void pgtable_trans_huge_deposit(struct mm_struct *mm,
 					      pmd_t *pmdp, pgtable_t pgtable)
@@ -1220,21 +1276,13 @@ extern pmd_t pmdp_invalidate(struct vm_area_struct *vma, unsigned long address,
 
 #define pmd_move_must_withdraw pmd_move_must_withdraw
 struct spinlock;
-static inline int pmd_move_must_withdraw(struct spinlock *new_pmd_ptl,
-					 struct spinlock *old_pmd_ptl,
-					 struct vm_area_struct *vma)
-{
-	if (radix_enabled())
-		return false;
-	/*
-	 * Archs like ppc64 use pgtable to store per pmd
-	 * specific information. So when we switch the pmd,
-	 * we should also withdraw and deposit the pgtable
-	 */
-	return true;
-}
-
-
+extern int pmd_move_must_withdraw(struct spinlock *new_pmd_ptl,
+				  struct spinlock *old_pmd_ptl,
+				  struct vm_area_struct *vma);
+/*
+ * Hash translation mode use the deposited table to store hash pte
+ * slot information.
+ */
 #define arch_needs_pgtable_deposit arch_needs_pgtable_deposit
 static inline bool arch_needs_pgtable_deposit(void)
 {
@@ -1275,6 +1323,30 @@ static inline const int pud_pfn(pud_t pud)
 	 */
 	BUILD_BUG();
 	return 0;
+}
+
+/*
+ * Like pmd_huge() and pmd_large(), but works regardless of config options
+ */
+#define pmd_is_leaf pmd_is_leaf
+#define pmd_leaf pmd_is_leaf
+static inline bool pmd_is_leaf(pmd_t pmd)
+{
+	return !!(pmd_raw(pmd) & cpu_to_be64(_PAGE_PTE));
+}
+
+#define pud_is_leaf pud_is_leaf
+#define pud_leaf pud_is_leaf
+static inline bool pud_is_leaf(pud_t pud)
+{
+	return !!(pud_raw(pud) & cpu_to_be64(_PAGE_PTE));
+}
+
+#define pgd_is_leaf pgd_is_leaf
+#define pgd_leaf pgd_is_leaf
+static inline bool pgd_is_leaf(pgd_t pgd)
+{
+	return !!(pgd_raw(pgd) & cpu_to_be64(_PAGE_PTE));
 }
 
 #endif /* __ASSEMBLY__ */

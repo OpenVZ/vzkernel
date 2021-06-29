@@ -20,6 +20,7 @@
 #include <linux/u64_stats_sync.h>
 #include <linux/workqueue.h>
 #include <linux/bpf-cgroup.h>
+#include <linux/psi_types.h>
 
 #ifdef CONFIG_CGROUPS
 
@@ -31,6 +32,7 @@ struct kernfs_node;
 struct kernfs_ops;
 struct kernfs_open_file;
 struct seq_file;
+struct poll_table_struct;
 
 #define MAX_CGROUP_TYPE_NAMELEN 32
 #define MAX_CGROUP_ROOT_NAMELEN 64
@@ -63,6 +65,12 @@ enum {
 	 * specified at mount time and thus is implemented here.
 	 */
 	CGRP_CPUSET_CLONE_CHILDREN,
+
+	/* Control group has to be frozen. */
+	CGRP_FREEZE,
+
+	/* Cgroup is frozen. */
+	CGRP_FROZEN,
 };
 
 /* cgroup_root->flags */
@@ -81,6 +89,16 @@ enum {
 	 * Enable cpuset controller in v1 cgroup to use v2 behavior.
 	 */
 	CGRP_ROOT_CPUSET_V2_MODE = (1 << 4),
+
+	/*
+	 * Enable legacy local memory.events.
+	 */
+	CGRP_ROOT_MEMORY_LOCAL_EVENTS = (1 << 5),
+
+	/*
+	 * Enable recursive subtree protection
+	 */
+	CGRP_ROOT_MEMORY_RECURSIVE_PROT = (1 << 6),
 };
 
 /* cftype->flags */
@@ -91,6 +109,7 @@ enum {
 
 	CFTYPE_NO_PREFIX	= (1 << 3),	/* (DON'T USE FOR NEW FILES) no subsys prefix */
 	CFTYPE_WORLD_WRITABLE	= (1 << 4),	/* (DON'T USE FOR NEW FILES) S_IWUGO */
+	CFTYPE_DEBUG		= (1 << 5),	/* create when cgroup_debug */
 
 	/* internal flags, do not use outside cgroup core proper */
 	__CFTYPE_ONLY_ON_DFL	= (1 << 16),	/* only on default hierarchy */
@@ -259,6 +278,12 @@ struct css_set {
 
 	/* For RCU-protected deletion */
 	struct rcu_head rcu_head;
+
+	/*
+	 * RHEL8: css_set structures are dynamically allocated and
+	 *	  used by core kernel only.
+	 */
+	RH_KABI_EXTEND(struct list_head dying_tasks)
 };
 
 struct cgroup_base_stat {
@@ -314,6 +339,25 @@ struct cgroup_rstat_cpu {
 	struct cgroup *updated_next;		/* NULL iff not on the list */
 };
 
+struct cgroup_freezer_state {
+	/* Should the cgroup and its descendants be frozen. */
+	bool freeze;
+
+	/* Should the cgroup actually be frozen? */
+	int e_freeze;
+
+	/* Fields below are protected by css_set_lock */
+
+	/* Number of frozen descendant cgroups */
+	int nr_frozen_descendants;
+
+	/*
+	 * Number of tasks, which are counted as frozen:
+	 * frozen, SIGSTOPped, and PTRACEd.
+	 */
+	int nr_frozen_tasks;
+};
+
 struct cgroup {
 	/* self css with NULL ->ss, points back to this cgroup */
 	struct cgroup_subsys_state self;
@@ -328,7 +372,7 @@ struct cgroup {
 	 *
 	 * Allocating/Removing ID must be protected by cgroup_mutex.
 	 */
-	int id;
+	RH_KABI_DEPRECATE(int, id)
 
 	/*
 	 * The depth this cgroup is at.  The root is at depth zero and each
@@ -346,6 +390,11 @@ struct cgroup {
 	 * Dying cgroups are cgroups which were deleted by a user,
 	 * but are still existing because someone else is holding a reference.
 	 * max_descendants is a maximum allowed number of descent cgroups.
+	 *
+	 * nr_descendants and nr_dying_descendants are protected
+	 * by cgroup_mutex and css_set_lock. It's fine to read them holding
+	 * any of cgroup_mutex and css_set_lock; for writing both locks
+	 * should be held.
 	 */
 	int nr_descendants;
 	int nr_dying_descendants;
@@ -418,7 +467,7 @@ struct cgroup {
 	struct list_head rstat_css_list;
 
 	/* cgroup basic resource statistics */
-	struct cgroup_base_stat pending_bstat;	/* pending from children */
+	struct cgroup_base_stat RH_KABI_RENAME(pending_bstat, last_bstat);
 	struct cgroup_base_stat bstat;
 	struct prev_cputime prev_cputime;	/* for printing out cputime */
 
@@ -438,8 +487,39 @@ struct cgroup {
 	/* used to store eBPF programs */
 	struct cgroup_bpf bpf;
 
+	/* If there is block congestion on this cgroup. */
+	atomic_t congestion_count;
+
+	/*
+	 * RHEL8:
+	 * The cgroup structures are all allocated by the core kernel
+	 * code at run time. It is also accessed only the cgroup core code
+	 * and so changes made to the cgroup structure should not affect
+	 * third-party kernel modules. However, a number of important kernel
+	 * data structures do contain pointer to a cgroup structure and so
+	 * the kABI signature has to be maintained.
+	 *
+	 * The ancestor_ids[] arrary has to be at the end of structure.
+	 */
+	RH_KABI_BROKEN_INSERT_BLOCK(
+	struct cgroup *old_dom_cgrp; /* used while enabling threaded */
+
+	/* Used to store internal freezer state */
+	struct cgroup_freezer_state freezer;
+
+	/* used to track pressure stalls */
+	struct psi_group psi;
+	) /* RH_KABI_BROKEN_INSERT_BLOCK */
+
+	/*
+	 * RHEL8:
+	 * The ancestor_ids[] should only be used by cgroup core.
+	 * External kernel modules should not used it.
+	 */
+
 	/* ids of the ancestors at each level including self */
-	int ancestor_ids[];
+	RH_KABI_BROKEN_REPLACE(int ancestor_ids[],
+			       u64 ancestor_ids[])
 };
 
 /*
@@ -459,8 +539,15 @@ struct cgroup_root {
 	/* The root cgroup.  Root is destroyed on its release. */
 	struct cgroup cgrp;
 
+	/*
+	 * RHEL8:
+	 * The cgroup structures are all allocated by the core kernel,
+	 * see comment above
+	 */
+
 	/* for cgrp->ancestor_ids[0] */
-	int cgrp_ancestor_id_storage;
+	RH_KABI_BROKEN_REPLACE(int cgrp_ancestor_id_storage,
+			       u64 cgrp_ancestor_id_storage)
 
 	/* Number of cgroups in the hierarchy, used only for /proc/cgroups */
 	atomic_t nr_cgrps;
@@ -472,7 +559,7 @@ struct cgroup_root {
 	unsigned int flags;
 
 	/* IDs for cgroups in this hierarchy */
-	struct idr cgroup_idr;
+	RH_KABI_DEPRECATE(struct idr, cgroup_idr)
 
 	/* The path to use for release notifications. */
 	char release_agent_path[PATH_MAX];
@@ -565,6 +652,15 @@ struct cftype {
 	ssize_t (*write)(struct kernfs_open_file *of,
 			 char *buf, size_t nbytes, loff_t off);
 
+	/*
+	 * RHEL8: Third party kernel modules are not supposed to create
+	 * new cgroup controller that use the cftype structure. They are
+	 * also not supposed to access this structure anyway. So it is
+	 * safe to extend it.
+	 */
+	RH_KABI_BROKEN_INSERT(__poll_t (*poll)(struct kernfs_open_file *of,
+					       struct poll_table_struct *pt))
+
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lock_class_key	lockdep_key;
 #endif
@@ -593,7 +689,7 @@ struct cgroup_subsys {
 	void (*cancel_fork)(struct task_struct *task);
 	void (*fork)(struct task_struct *task);
 	void (*exit)(struct task_struct *task);
-	void (*free)(struct task_struct *task);
+	void (*RH_KABI_RENAME(free, release))(struct task_struct *task);
 	void (*bind)(struct cgroup_subsys_state *root_css);
 
 	bool early_init:1;
@@ -745,7 +841,7 @@ struct sock_cgroup_data {
 	union {
 #ifdef __LITTLE_ENDIAN
 		struct {
-			u8	is_data;
+			RH_KABI_REPLACE_SPLIT(u8 is_data, u8 is_data : 1, u8 no_refcnt : 1, u8 unused : 6)
 			u8	padding;
 			u16	prioidx;
 			u32	classid;
@@ -755,7 +851,7 @@ struct sock_cgroup_data {
 			u32	classid;
 			u16	prioidx;
 			u8	padding;
-			u8	is_data;
+			RH_KABI_REPLACE_SPLIT(u8 is_data, u8 unused : 6, u8 no_refcnt : 1, u8 is_data : 1)
 		} __packed;
 #endif
 		u64		val;

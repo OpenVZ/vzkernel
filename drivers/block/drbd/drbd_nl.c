@@ -114,7 +114,7 @@ static int drbd_msg_put_info(struct sk_buff *skb, const char *info)
 	if (!info || !info[0])
 		return 0;
 
-	nla = nla_nest_start(skb, DRBD_NLA_CFG_REPLY);
+	nla = nla_nest_start_noflag(skb, DRBD_NLA_CFG_REPLY);
 	if (!nla)
 		return err;
 
@@ -1521,7 +1521,8 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_device *device;
 	struct disk_conf *new_disk_conf, *old_disk_conf;
 	struct fifo_buffer *old_plan = NULL, *new_plan = NULL;
-	int err, fifo_size;
+	int err;
+	unsigned int fifo_size;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -3203,7 +3204,7 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 				    struct drbd_device *device)
 {
 	struct nlattr *nla;
-	nla = nla_nest_start(skb, DRBD_NLA_CFG_CONTEXT);
+	nla = nla_nest_start_noflag(skb, DRBD_NLA_CFG_CONTEXT);
 	if (!nla)
 		goto nla_put_failure;
 	if (device &&
@@ -3771,7 +3772,7 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_device *device,
 	if (err)
 		goto nla_put_failure;
 
-	nla = nla_nest_start(skb, DRBD_NLA_STATE_INFO);
+	nla = nla_nest_start_noflag(skb, DRBD_NLA_STATE_INFO);
 	if (!nla)
 		goto nla_put_failure;
 	if (nla_put_u32(skb, T_sib_reason, sib ? sib->sib_reason : SIB_GET_STATUS_REPLY) ||

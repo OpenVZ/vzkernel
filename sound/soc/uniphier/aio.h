@@ -141,6 +141,9 @@ enum IEC61937_PC {
 #define AUD_MIN_FRAGMENT_SIZE    (4 * 1024)
 #define AUD_MAX_FRAGMENT_SIZE    (16 * 1024)
 
+/* max 5 slots, 10 channels, 2 channel in 1 slot */
+#define AUD_MAX_SLOTSEL    5
+
 /*
  * This is a selector for virtual register map of AIO.
  *
@@ -282,6 +285,7 @@ struct uniphier_aio_chip {
 
 	struct uniphier_aio *aios;
 	int num_aios;
+	int num_wup_aios;
 	struct uniphier_aio_pll *plls;
 	int num_plls;
 
@@ -300,12 +304,10 @@ static inline struct uniphier_aio *uniphier_priv(struct snd_soc_dai *dai)
 }
 
 int uniphier_aiodma_soc_register_platform(struct platform_device *pdev);
-extern const struct snd_compr_ops uniphier_aio_compr_ops;
+extern const struct snd_compress_ops uniphier_aio_compress_ops;
 
 int uniphier_aio_dai_probe(struct snd_soc_dai *dai);
 int uniphier_aio_dai_remove(struct snd_soc_dai *dai);
-int uniphier_aio_dai_suspend(struct snd_soc_dai *dai);
-int uniphier_aio_dai_resume(struct snd_soc_dai *dai);
 int uniphier_aio_probe(struct platform_device *pdev);
 int uniphier_aio_remove(struct platform_device *pdev);
 extern const struct snd_soc_dai_ops uniphier_aio_i2s_ops;
@@ -322,9 +324,6 @@ int aio_chip_set_pll(struct uniphier_aio_chip *chip, int pll_id,
 void aio_chip_init(struct uniphier_aio_chip *chip);
 int aio_init(struct uniphier_aio_sub *sub);
 void aio_port_reset(struct uniphier_aio_sub *sub);
-int aio_port_set_rate(struct uniphier_aio_sub *sub, int rate);
-int aio_port_set_fmt(struct uniphier_aio_sub *sub);
-int aio_port_set_clk(struct uniphier_aio_sub *sub);
 int aio_port_set_param(struct uniphier_aio_sub *sub, int pass_through,
 		       const struct snd_pcm_hw_params *params);
 void aio_port_set_enable(struct uniphier_aio_sub *sub, int enable);

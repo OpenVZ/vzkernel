@@ -4,7 +4,6 @@
  * All Rights Reserved.
  */
 
-#include <linux/capability.h>
 
 #include "xfs.h"
 #include "xfs_fs.h"
@@ -12,20 +11,79 @@
 #include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
-#include "xfs_bit.h"
 #include "xfs_sb.h"
 #include "xfs_mount.h"
 #include "xfs_inode.h"
 #include "xfs_trans.h"
-#include "xfs_error.h"
 #include "xfs_quota.h"
 #include "xfs_qm.h"
-#include "xfs_trace.h"
 #include "xfs_icache.h"
 
-STATIC int	xfs_qm_log_quotaoff(xfs_mount_t *, xfs_qoff_logitem_t **, uint);
-STATIC int	xfs_qm_log_quotaoff_end(xfs_mount_t *, xfs_qoff_logitem_t *,
-					uint);
+STATIC int
+xfs_qm_log_quotaoff(
+	struct xfs_mount	*mp,
+	struct xfs_qoff_logitem	**qoffstartp,
+	uint			flags)
+{
+	struct xfs_trans	*tp;
+	int			error;
+	struct xfs_qoff_logitem	*qoffi;
+
+	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_qm_quotaoff, 0, 0, 0, &tp);
+	if (error)
+		goto out;
+
+	qoffi = xfs_trans_get_qoff_item(tp, NULL, flags & XFS_ALL_QUOTA_ACCT);
+	xfs_trans_log_quotaoff_item(tp, qoffi);
+
+	spin_lock(&mp->m_sb_lock);
+	mp->m_sb.sb_qflags = (mp->m_qflags & ~(flags)) & XFS_MOUNT_QUOTA_ALL;
+	spin_unlock(&mp->m_sb_lock);
+
+	xfs_log_sb(tp);
+
+	/*
+	 * We have to make sure that the transaction is secure on disk before we
+	 * return and actually stop quota accounting. So, make it synchronous.
+	 * We don't care about quotoff's performance.
+	 */
+	xfs_trans_set_sync(tp);
+	error = xfs_trans_commit(tp);
+	if (error)
+		goto out;
+
+	*qoffstartp = qoffi;
+out:
+	return error;
+}
+
+STATIC int
+xfs_qm_log_quotaoff_end(
+	struct xfs_mount	*mp,
+	struct xfs_qoff_logitem	**startqoff,
+	uint			flags)
+{
+	struct xfs_trans	*tp;
+	int			error;
+	struct xfs_qoff_logitem	*qoffi;
+
+	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_qm_equotaoff, 0, 0, 0, &tp);
+	if (error)
+		return error;
+
+	qoffi = xfs_trans_get_qoff_item(tp, *startqoff,
+					flags & XFS_ALL_QUOTA_ACCT);
+	xfs_trans_log_quotaoff_item(tp, qoffi);
+	*startqoff = NULL;
+
+	/*
+	 * We have to make sure that the transaction is secure on disk before we
+	 * return and actually stop quota accounting. So, make it synchronous.
+	 * We don't care about quotoff's performance.
+	 */
+	xfs_trans_set_sync(tp);
+	return xfs_trans_commit(tp);
+}
 
 /*
  * Turn off quota accounting and/or enforcement for all udquots and/or
@@ -44,7 +102,7 @@ xfs_qm_scall_quotaoff(
 	uint			dqtype;
 	int			error;
 	uint			inactivate_flags;
-	xfs_qoff_logitem_t	*qoffstart;
+	struct xfs_qoff_logitem	*qoffstart = NULL;
 
 	/*
 	 * No file system can have quotas enabled on disk but not in core.
@@ -169,7 +227,7 @@ xfs_qm_scall_quotaoff(
 	 * So, we have QUOTAOFF start and end logitems; the start
 	 * logitem won't get overwritten until the end logitem appears...
 	 */
-	error = xfs_qm_log_quotaoff_end(mp, qoffstart, flags);
+	error = xfs_qm_log_quotaoff_end(mp, &qoffstart, flags);
 	if (error) {
 		/* We're screwed now. Shutdown is the only option. */
 		xfs_force_shutdown(mp, SHUTDOWN_CORRUPT_INCORE);
@@ -189,19 +247,21 @@ xfs_qm_scall_quotaoff(
 	 * Release our quotainode references if we don't need them anymore.
 	 */
 	if ((dqtype & XFS_QMOPT_UQUOTA) && q->qi_uquotaip) {
-		IRELE(q->qi_uquotaip);
+		xfs_irele(q->qi_uquotaip);
 		q->qi_uquotaip = NULL;
 	}
 	if ((dqtype & XFS_QMOPT_GQUOTA) && q->qi_gquotaip) {
-		IRELE(q->qi_gquotaip);
+		xfs_irele(q->qi_gquotaip);
 		q->qi_gquotaip = NULL;
 	}
 	if ((dqtype & XFS_QMOPT_PQUOTA) && q->qi_pquotaip) {
-		IRELE(q->qi_pquotaip);
+		xfs_irele(q->qi_pquotaip);
 		q->qi_pquotaip = NULL;
 	}
 
 out_unlock:
+	if (error && qoffstart)
+		xfs_qm_qoff_logitem_relse(qoffstart);
 	mutex_unlock(&q->qi_quotaofflock);
 	return error;
 }
@@ -250,7 +310,7 @@ xfs_qm_scall_trunc_qfile(
 out_unlock:
 	xfs_iunlock(ip, XFS_ILOCK_EXCL | XFS_IOLOCK_EXCL);
 out_put:
-	IRELE(ip);
+	xfs_irele(ip);
 	return error;
 }
 
@@ -419,7 +479,7 @@ xfs_qm_scall_setqlim(
 		goto out_unlock;
 	}
 
-	defq = xfs_get_defquota(dqp, q);
+	defq = xfs_get_defquota(q, xfs_dquot_type(dqp));
 	xfs_dqunlock(dqp);
 
 	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_qm_setqlim, 0, 0, 0, &tp);
@@ -495,32 +555,40 @@ xfs_qm_scall_setqlim(
 		ddq->d_rtbwarns = cpu_to_be16(newlim->d_rt_spc_warns);
 
 	if (id == 0) {
-		/*
-		 * Timelimits for the super user set the relative time
-		 * the other users can be over quota for this file system.
-		 * If it is zero a default is used.  Ditto for the default
-		 * soft and hard limit values (already done, above), and
-		 * for warnings.
-		 */
-		if (newlim->d_fieldmask & QC_SPC_TIMER) {
-			q->qi_btimelimit = newlim->d_spc_timer;
-			ddq->d_btimer = cpu_to_be32(newlim->d_spc_timer);
-		}
-		if (newlim->d_fieldmask & QC_INO_TIMER) {
-			q->qi_itimelimit = newlim->d_ino_timer;
-			ddq->d_itimer = cpu_to_be32(newlim->d_ino_timer);
-		}
-		if (newlim->d_fieldmask & QC_RT_SPC_TIMER) {
-			q->qi_rtbtimelimit = newlim->d_rt_spc_timer;
-			ddq->d_rtbtimer = cpu_to_be32(newlim->d_rt_spc_timer);
-		}
 		if (newlim->d_fieldmask & QC_SPC_WARNS)
-			q->qi_bwarnlimit = newlim->d_spc_warns;
+			defq->bwarnlimit = newlim->d_spc_warns;
 		if (newlim->d_fieldmask & QC_INO_WARNS)
-			q->qi_iwarnlimit = newlim->d_ino_warns;
+			defq->iwarnlimit = newlim->d_ino_warns;
 		if (newlim->d_fieldmask & QC_RT_SPC_WARNS)
-			q->qi_rtbwarnlimit = newlim->d_rt_spc_warns;
-	} else {
+			defq->rtbwarnlimit = newlim->d_rt_spc_warns;
+	}
+
+	/*
+	 * Timelimits for the super user set the relative time the other users
+	 * can be over quota for this file system. If it is zero a default is
+	 * used.  Ditto for the default soft and hard limit values (already
+	 * done, above), and for warnings.
+	 *
+	 * For other IDs, userspace can bump out the grace period if over
+	 * the soft limit.
+	 */
+	if (newlim->d_fieldmask & QC_SPC_TIMER)
+		ddq->d_btimer = cpu_to_be32(newlim->d_spc_timer);
+	if (newlim->d_fieldmask & QC_INO_TIMER)
+		ddq->d_itimer = cpu_to_be32(newlim->d_ino_timer);
+	if (newlim->d_fieldmask & QC_RT_SPC_TIMER)
+		ddq->d_rtbtimer = cpu_to_be32(newlim->d_rt_spc_timer);
+
+	if (id == 0) {
+		if (newlim->d_fieldmask & QC_SPC_TIMER)
+			defq->btimelimit = newlim->d_spc_timer;
+		if (newlim->d_fieldmask & QC_INO_TIMER)
+			defq->itimelimit = newlim->d_ino_timer;
+		if (newlim->d_fieldmask & QC_RT_SPC_TIMER)
+			defq->rtbtimelimit = newlim->d_rt_spc_timer;
+	}
+
+	if (id != 0) {
 		/*
 		 * If the user is now over quota, start the timelimit.
 		 * The user will not be 'warned'.
@@ -528,7 +596,7 @@ xfs_qm_scall_setqlim(
 		 * is on or off. We don't really want to bother with iterating
 		 * over all ondisk dquots and turning the timers on/off.
 		 */
-		xfs_qm_adjust_dqtimers(mp, ddq);
+		xfs_qm_adjust_dqtimers(mp, dqp);
 	}
 	dqp->dq_flags |= XFS_DQ_DIRTY;
 	xfs_trans_log_dquot(tp, dqp);
@@ -539,74 +607,6 @@ out_rele:
 	xfs_qm_dqrele(dqp);
 out_unlock:
 	mutex_unlock(&q->qi_quotaofflock);
-	return error;
-}
-
-STATIC int
-xfs_qm_log_quotaoff_end(
-	xfs_mount_t		*mp,
-	xfs_qoff_logitem_t	*startqoff,
-	uint			flags)
-{
-	xfs_trans_t		*tp;
-	int			error;
-	xfs_qoff_logitem_t	*qoffi;
-
-	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_qm_equotaoff, 0, 0, 0, &tp);
-	if (error)
-		return error;
-
-	qoffi = xfs_trans_get_qoff_item(tp, startqoff,
-					flags & XFS_ALL_QUOTA_ACCT);
-	xfs_trans_log_quotaoff_item(tp, qoffi);
-
-	/*
-	 * We have to make sure that the transaction is secure on disk before we
-	 * return and actually stop quota accounting. So, make it synchronous.
-	 * We don't care about quotoff's performance.
-	 */
-	xfs_trans_set_sync(tp);
-	return xfs_trans_commit(tp);
-}
-
-
-STATIC int
-xfs_qm_log_quotaoff(
-	xfs_mount_t	       *mp,
-	xfs_qoff_logitem_t     **qoffstartp,
-	uint		       flags)
-{
-	xfs_trans_t	       *tp;
-	int			error;
-	xfs_qoff_logitem_t     *qoffi;
-
-	*qoffstartp = NULL;
-
-	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_qm_quotaoff, 0, 0, 0, &tp);
-	if (error)
-		goto out;
-
-	qoffi = xfs_trans_get_qoff_item(tp, NULL, flags & XFS_ALL_QUOTA_ACCT);
-	xfs_trans_log_quotaoff_item(tp, qoffi);
-
-	spin_lock(&mp->m_sb_lock);
-	mp->m_sb.sb_qflags = (mp->m_qflags & ~(flags)) & XFS_MOUNT_QUOTA_ALL;
-	spin_unlock(&mp->m_sb_lock);
-
-	xfs_log_sb(tp);
-
-	/*
-	 * We have to make sure that the transaction is secure on disk before we
-	 * return and actually stop quota accounting. So, make it synchronous.
-	 * We don't care about quotoff's performance.
-	 */
-	xfs_trans_set_sync(tp);
-	error = xfs_trans_commit(tp);
-	if (error)
-		goto out;
-
-	*qoffstartp = qoffi;
-out:
 	return error;
 }
 

@@ -101,7 +101,7 @@ static void p80211knetdev_set_multicast_list(struct net_device *dev);
 static int p80211knetdev_do_ioctl(struct net_device *dev, struct ifreq *ifr,
 				  int cmd);
 static int p80211knetdev_set_mac_address(struct net_device *dev, void *addr);
-static void p80211knetdev_tx_timeout(struct net_device *netdev);
+static void p80211knetdev_tx_timeout(struct net_device *netdev, unsigned int txqueue);
 static int p80211_rx_typedrop(struct wlandevice *wlandev, u16 fc);
 
 int wlan_watchdog = 5000;
@@ -429,7 +429,7 @@ static netdev_tx_t p80211knetdev_hard_start_xmit(struct sk_buff *skb,
 failed:
 	/* Free up the WEP buffer if it's not the same as the skb */
 	if ((p80211_wep.data) && (p80211_wep.data != skb->data))
-		kzfree(p80211_wep.data);
+		kfree_sensitive(p80211_wep.data);
 
 	/* we always free the skb here, never in a lower level. */
 	if (!result)
@@ -1078,7 +1078,7 @@ static int p80211_rx_typedrop(struct wlandevice *wlandev, u16 fc)
 	return drop;
 }
 
-static void p80211knetdev_tx_timeout(struct net_device *netdev)
+static void p80211knetdev_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 {
 	struct wlandevice *wlandev = netdev->ml_priv;
 

@@ -10,6 +10,14 @@ menu "Library routines"
 config RAID6_PQ
 	tristate
 
+config RAID6_PQ_BENCHMARK
+	bool "Automatically choose fastest RAID6 PQ functions"
+	depends on RAID6_PQ
+	default y
+	help
+	  Benchmark all available RAID6 PQ functions on init and choose the
+	  fastest one.
+
 config BITREVERSE
 	tristate
 
@@ -246,6 +254,13 @@ config ZLIB_DEFLATE
 	tristate
 	select BITREVERSE
 
+config ZLIB_DFLTCC
+	def_bool y
+	depends on S390
+	prompt "Enable s390x DEFLATE CONVERSION CALL support for kernel zlib"
+	help
+	 Enable s390x hardware support for zlib in the kernel.
+
 config LZO_COMPRESS
 	tristate
 
@@ -392,8 +407,11 @@ config INTERVAL_TREE
 
 	  for more information.
 
-config RADIX_TREE_MULTIORDER
+config XARRAY_MULTI
 	bool
+	help
+	  Support entries which occupy multiple consecutive indices in the
+	  XArray.
 
 config ASSOCIATIVE_ARRAY
 	bool
@@ -533,6 +551,14 @@ config SIGNATURE
 	  Digital signature verification. Currently only RSA is supported.
 	  Implementation is done using GnuPG MPI library
 
+config DIMLIB
+	bool "DIM library"
+	default y
+	help
+	  Dynamic Interrupt Moderation library.
+	  Implements an algorithm for dynamically change CQ modertion values
+	  according to run time performance.
+
 #
 # libfdt files, only selected if needed.
 #
@@ -546,6 +572,11 @@ config OID_REGISTRY
 
 config UCS2_STRING
         tristate
+
+#
+# generic vdso
+#
+source "lib/vdso/Kconfig"
 
 source "lib/fonts/Kconfig"
 
@@ -573,11 +604,21 @@ config ARCH_HAS_SG_CHAIN
 config ARCH_HAS_PMEM_API
 	bool
 
+config MEMREGION
+	bool
+
+config ARCH_HAS_MEMREMAP_COMPAT_ALIGN
+	bool
+
 config ARCH_HAS_UACCESS_FLUSHCACHE
 	bool
 
 config ARCH_HAS_UACCESS_MCSAFE
 	bool
+
+# Temporary. Goes away when all archs are cleaned up
+config ARCH_STACKWALK
+       bool
 
 config STACKDEPOT
 	bool
@@ -591,6 +632,13 @@ config PARMAN
 
 config PRIME_NUMBERS
 	tristate
+
+config PLDMFW
+	bool
+	default n
+
+config OBJAGG
+	tristate "objagg" if COMPILE_TEST
 
 config STRING_SELFTEST
 	tristate "Test string functions"

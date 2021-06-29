@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/kernel/panic.c
  *
@@ -41,9 +42,19 @@ static int pause_on_oops_flag;
 static DEFINE_SPINLOCK(pause_on_oops_lock);
 bool crash_kexec_post_notifiers;
 int panic_on_warn __read_mostly;
+unsigned long panic_on_taint;
+bool panic_on_taint_nousertaint = false;
 
 int panic_timeout = CONFIG_PANIC_TIMEOUT;
 EXPORT_SYMBOL_GPL(panic_timeout);
+
+#define PANIC_PRINT_TASK_INFO		0x00000001
+#define PANIC_PRINT_MEM_INFO		0x00000002
+#define PANIC_PRINT_TIMER_INFO		0x00000004
+#define PANIC_PRINT_LOCK_INFO		0x00000008
+#define PANIC_PRINT_FTRACE_INFO		0x00000010
+#define PANIC_PRINT_ALL_PRINTK_MSG	0x00000020
+unsigned long panic_print;
 
 ATOMIC_NOTIFIER_HEAD(panic_notifier_list);
 
@@ -123,6 +134,27 @@ void nmi_panic(struct pt_regs *regs, const char *msg)
 		nmi_panic_self_stop(regs);
 }
 EXPORT_SYMBOL(nmi_panic);
+
+static void panic_print_sys_info(void)
+{
+	if (panic_print & PANIC_PRINT_ALL_PRINTK_MSG)
+		console_flush_on_panic(CONSOLE_REPLAY_ALL);
+
+	if (panic_print & PANIC_PRINT_TASK_INFO)
+		show_state();
+
+	if (panic_print & PANIC_PRINT_MEM_INFO)
+		show_mem(0, NULL);
+
+	if (panic_print & PANIC_PRINT_TIMER_INFO)
+		sysrq_timer_list_show();
+
+	if (panic_print & PANIC_PRINT_LOCK_INFO)
+		debug_show_all_locks();
+
+	if (panic_print & PANIC_PRINT_FTRACE_INFO)
+		ftrace_dump(DUMP_ALL);
+}
 
 /**
  *	panic - halt the system
@@ -244,7 +276,9 @@ void panic(const char *fmt, ...)
 	 * panic() is not being callled from OOPS.
 	 */
 	debug_locks_off();
-	console_flush_on_panic();
+	console_flush_on_panic(CONSOLE_FLUSH_PENDING);
+
+	panic_print_sys_info();
 
 	if (!panic_blink)
 		panic_blink = no_blink;
@@ -291,6 +325,9 @@ void panic(const char *fmt, ...)
 	}
 #endif
 	pr_emerg("---[ end Kernel panic - not syncing: %s ]---\n", buf);
+
+	/* Do not scroll important messages printed above */
+	suppress_printk = 1;
 	local_irq_enable();
 	for (i = 0; ; i += PANIC_TIMER_STEP) {
 		touch_softlockup_watchdog();
@@ -327,6 +364,20 @@ const struct taint_flag taint_flags[TAINT_FLAGS_COUNT] = {
 	[ TAINT_LIVEPATCH ]		= { 'K', ' ', true },
 	[ TAINT_AUX ]			= { 'X', ' ', true },
 	[ TAINT_RANDSTRUCT ]		= { 'T', ' ', true },
+	[ TAINT_18 ]			= { '?', '-', false },
+	[ TAINT_19 ]			= { '?', '-', false },
+	[ TAINT_20 ]			= { '?', '-', false },
+	[ TAINT_21 ]			= { '?', '-', false },
+	[ TAINT_22 ]			= { '?', '-', false },
+	[ TAINT_23 ]			= { '?', '-', false },
+	[ TAINT_24 ]			= { '?', '-', false },
+	[ TAINT_25 ]			= { '?', '-', false },
+	[ TAINT_26 ]			= { '?', '-', false },
+	[ TAINT_SUPPORT_REMOVED ]	= { 'r', ' ', false },
+	[ TAINT_28 ]			= { '?', '-', false },
+	[ TAINT_TECH_PREVIEW ]		= { 't', ' ', true },
+	[ TAINT_UNPRIVILEGED_BPF ]	= { 'u', ' ', false },
+	[ TAINT_31 ]			= { '?', '-', false },
 };
 
 /**
@@ -385,6 +436,11 @@ void add_taint(unsigned flag, enum lockdep_ok lockdep_ok)
 		pr_warn("Disabling lock debugging due to kernel taint\n");
 
 	set_bit(flag, &tainted_mask);
+
+	if (tainted_mask & panic_on_taint) {
+		panic_on_taint = 0;
+		panic("panic_on_taint set ...");
+	}
 }
 EXPORT_SYMBOL(add_taint);
 
@@ -650,6 +706,7 @@ void refcount_error_report(struct pt_regs *regs, const char *err)
 #endif
 
 core_param(panic, panic_timeout, int, 0644);
+core_param(panic_print, panic_print, ulong, 0644);
 core_param(pause_on_oops, pause_on_oops, int, 0644);
 core_param(panic_on_warn, panic_on_warn, int, 0644);
 core_param(crash_kexec_post_notifiers, crash_kexec_post_notifiers, bool, 0644);
@@ -663,3 +720,30 @@ static int __init oops_setup(char *s)
 	return 0;
 }
 early_param("oops", oops_setup);
+
+static int __init panic_on_taint_setup(char *s)
+{
+	char *taint_str;
+
+	if (!s)
+		return -EINVAL;
+
+	taint_str = strsep(&s, ",");
+	if (kstrtoul(taint_str, 16, &panic_on_taint))
+		return -EINVAL;
+
+	/* make sure panic_on_taint doesn't hold out-of-range TAINT flags */
+	panic_on_taint &= TAINT_FLAGS_MAX;
+
+	if (!panic_on_taint)
+		return -EINVAL;
+
+	if (s && !strcmp(s, "nousertaint"))
+		panic_on_taint_nousertaint = true;
+
+	pr_info("panic_on_taint: bitmask=0x%lx nousertaint_mode=%sabled\n",
+		panic_on_taint, panic_on_taint_nousertaint ? "en" : "dis");
+
+	return 0;
+}
+early_param("panic_on_taint", panic_on_taint_setup);

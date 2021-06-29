@@ -442,7 +442,7 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 		return -EBADF;
 	if (!(file->f_mode & FMODE_CAN_READ))
 		return -EINVAL;
-	if (unlikely(!access_ok(VERIFY_WRITE, buf, count)))
+	if (unlikely(!access_ok(buf, count)))
 		return -EFAULT;
 
 	ret = rw_verify_area(READ, file, pos, count);
@@ -538,7 +538,7 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 		return -EBADF;
 	if (!(file->f_mode & FMODE_CAN_WRITE))
 		return -EINVAL;
-	if (unlikely(!access_ok(VERIFY_READ, buf, count)))
+	if (unlikely(!access_ok(buf, count)))
 		return -EFAULT;
 
 	ret = rw_verify_area(WRITE, file, pos, count);
@@ -718,9 +718,6 @@ static ssize_t do_loop_readv_writev(struct file *filp, struct iov_iter *iter,
 	return ret;
 }
 
-/* A write operation does a read from user space and vice versa */
-#define vrfy_dir(type) ((type) == READ ? VERIFY_WRITE : VERIFY_READ)
-
 /**
  * rw_copy_check_uvector() - Copy an array of &struct iovec from userspace
  *     into the kernel and check that it is valid.
@@ -810,7 +807,7 @@ ssize_t rw_copy_check_uvector(int type, const struct iovec __user * uvector,
 			goto out;
 		}
 		if (type >= 0
-		    && unlikely(!access_ok(vrfy_dir(type), buf, len))) {
+		    && unlikely(!access_ok(buf, len))) {
 			ret = -EFAULT;
 			goto out;
 		}
@@ -856,7 +853,7 @@ ssize_t compat_rw_copy_check_uvector(int type,
 	*ret_pointer = iov;
 
 	ret = -EFAULT;
-	if (!access_ok(VERIFY_READ, uvector, nr_segs*sizeof(*uvector)))
+	if (!access_ok(uvector, nr_segs*sizeof(*uvector)))
 		goto out;
 
 	/*
@@ -881,7 +878,7 @@ ssize_t compat_rw_copy_check_uvector(int type,
 		if (len < 0)	/* size_t not fitting in compat_ssize_t .. */
 			goto out;
 		if (type >= 0 &&
-		    !access_ok(vrfy_dir(type), compat_ptr(buf), len)) {
+		    !access_ok(compat_ptr(buf), len)) {
 			ret = -EFAULT;
 			goto out;
 		}
@@ -928,6 +925,34 @@ out:
 	return ret;
 }
 
+ssize_t vfs_iocb_iter_read(struct file *file, struct kiocb *iocb,
+			   struct iov_iter *iter)
+{
+	size_t tot_len;
+	ssize_t ret = 0;
+
+	if (!file->f_op->read_iter)
+		return -EINVAL;
+	if (!(file->f_mode & FMODE_READ))
+		return -EBADF;
+	if (!(file->f_mode & FMODE_CAN_READ))
+		return -EINVAL;
+
+	tot_len = iov_iter_count(iter);
+	if (!tot_len)
+		goto out;
+	ret = rw_verify_area(READ, file, &iocb->ki_pos, tot_len);
+	if (ret < 0)
+		return ret;
+
+	ret = call_read_iter(file, iocb, iter);
+out:
+	if (ret >= 0)
+		fsnotify_access(file);
+	return ret;
+}
+EXPORT_SYMBOL(vfs_iocb_iter_read);
+
 ssize_t vfs_iter_read(struct file *file, struct iov_iter *iter, loff_t *ppos,
 		rwf_t flags)
 {
@@ -963,6 +988,34 @@ static ssize_t do_iter_write(struct file *file, struct iov_iter *iter,
 		fsnotify_modify(file);
 	return ret;
 }
+
+ssize_t vfs_iocb_iter_write(struct file *file, struct kiocb *iocb,
+			    struct iov_iter *iter)
+{
+	size_t tot_len;
+	ssize_t ret = 0;
+
+	if (!file->f_op->write_iter)
+		return -EINVAL;
+	if (!(file->f_mode & FMODE_WRITE))
+		return -EBADF;
+	if (!(file->f_mode & FMODE_CAN_WRITE))
+		return -EINVAL;
+
+	tot_len = iov_iter_count(iter);
+	if (!tot_len)
+		return 0;
+	ret = rw_verify_area(WRITE, file, &iocb->ki_pos, tot_len);
+	if (ret < 0)
+		return ret;
+
+	ret = call_write_iter(file, iocb, iter);
+	if (ret > 0)
+		fsnotify_modify(file);
+
+	return ret;
+}
+EXPORT_SYMBOL(vfs_iocb_iter_write);
 
 ssize_t vfs_iter_write(struct file *file, struct iov_iter *iter, loff_t *ppos,
 		rwf_t flags)
@@ -1541,6 +1594,58 @@ COMPAT_SYSCALL_DEFINE4(sendfile64, int, out_fd, int, in_fd,
 }
 #endif
 
+/**
+ * generic_copy_file_range - copy data between two files
+ * @file_in:	file structure to read from
+ * @pos_in:	file offset to read from
+ * @file_out:	file structure to write data to
+ * @pos_out:	file offset to write data to
+ * @len:	amount of data to copy
+ * @flags:	copy flags
+ *
+ * This is a generic filesystem helper to copy data from one file to another.
+ * It has no constraints on the source or destination file owners - the files
+ * can belong to different superblocks and different filesystem types. Short
+ * copies are allowed.
+ *
+ * This should be called from the @file_out filesystem, as per the
+ * ->copy_file_range() method.
+ *
+ * Returns the number of bytes copied or a negative error indicating the
+ * failure.
+ */
+
+ssize_t generic_copy_file_range(struct file *file_in, loff_t pos_in,
+				struct file *file_out, loff_t pos_out,
+				size_t len, unsigned int flags)
+{
+	return do_splice_direct(file_in, &pos_in, file_out, &pos_out,
+				len > MAX_RW_COUNT ? MAX_RW_COUNT : len, 0);
+}
+EXPORT_SYMBOL(generic_copy_file_range);
+
+static ssize_t do_copy_file_range(struct file *file_in, loff_t pos_in,
+				  struct file *file_out, loff_t pos_out,
+				  size_t len, unsigned int flags)
+{
+	/*
+	 * Although we now allow filesystems to handle cross sb copy, passing
+	 * a file of the wrong filesystem type to filesystem driver can result
+	 * in an attempt to dereference the wrong type of ->private_data, so
+	 * avoid doing that until we really have a good reason.  NFS defines
+	 * several different file_system_type structures, but they all end up
+	 * using the same ->copy_file_range() function pointer.
+	 */
+	if (file_out->f_op->copy_file_range &&
+	    file_out->f_op->copy_file_range == file_in->f_op->copy_file_range)
+		return file_out->f_op->copy_file_range(file_in, pos_in,
+						       file_out, pos_out,
+						       len, flags);
+
+	return generic_copy_file_range(file_in, pos_in, file_out, pos_out, len,
+				       flags);
+}
+
 /*
  * copy_file_range() differs from regular file read and write in that it
  * specifically allows return partial success.  When it does so is up to
@@ -1550,17 +1655,15 @@ ssize_t vfs_copy_file_range(struct file *file_in, loff_t pos_in,
 			    struct file *file_out, loff_t pos_out,
 			    size_t len, unsigned int flags)
 {
-	struct inode *inode_in = file_inode(file_in);
-	struct inode *inode_out = file_inode(file_out);
 	ssize_t ret;
 
 	if (flags != 0)
 		return -EINVAL;
 
-	if (S_ISDIR(inode_in->i_mode) || S_ISDIR(inode_out->i_mode))
-		return -EISDIR;
-	if (!S_ISREG(inode_in->i_mode) || !S_ISREG(inode_out->i_mode))
-		return -EINVAL;
+	ret = generic_copy_file_checks(file_in, pos_in, file_out, pos_out, &len,
+				       flags);
+	if (unlikely(ret))
+		return ret;
 
 	ret = rw_verify_area(READ, file_in, &pos_in, len);
 	if (unlikely(ret))
@@ -1569,15 +1672,6 @@ ssize_t vfs_copy_file_range(struct file *file_in, loff_t pos_in,
 	ret = rw_verify_area(WRITE, file_out, &pos_out, len);
 	if (unlikely(ret))
 		return ret;
-
-	if (!(file_in->f_mode & FMODE_READ) ||
-	    !(file_out->f_mode & FMODE_WRITE) ||
-	    (file_out->f_flags & O_APPEND))
-		return -EBADF;
-
-	/* this could be relaxed once a method supports cross-fs copies */
-	if (inode_in->i_sb != inode_out->i_sb)
-		return -EXDEV;
 
 	if (len == 0)
 		return 0;
@@ -1588,25 +1682,23 @@ ssize_t vfs_copy_file_range(struct file *file_in, loff_t pos_in,
 	 * Try cloning first, this is supported by more file systems, and
 	 * more efficient if both clone and copy are supported (e.g. NFS).
 	 */
-	if (file_in->f_op->clone_file_range) {
-		ret = file_in->f_op->clone_file_range(file_in, pos_in,
-				file_out, pos_out, len);
-		if (ret == 0) {
-			ret = len;
+	if (file_in->f_op->remap_file_range &&
+	    file_inode(file_in)->i_sb == file_inode(file_out)->i_sb) {
+		loff_t cloned;
+
+		cloned = file_in->f_op->remap_file_range(file_in, pos_in,
+				file_out, pos_out,
+				min_t(loff_t, MAX_RW_COUNT, len),
+				REMAP_FILE_CAN_SHORTEN);
+		if (cloned > 0) {
+			ret = cloned;
 			goto done;
 		}
 	}
 
-	if (file_out->f_op->copy_file_range) {
-		ret = file_out->f_op->copy_file_range(file_in, pos_in, file_out,
-						      pos_out, len, flags);
-		if (ret != -EOPNOTSUPP)
-			goto done;
-	}
-
-	ret = do_splice_direct(file_in, &pos_in, file_out, &pos_out,
-			len > MAX_RW_COUNT ? MAX_RW_COUNT : len, 0);
-
+	ret = do_copy_file_range(file_in, pos_in, file_out, pos_out, len,
+				flags);
+	WARN_ON_ONCE(ret == -EOPNOTSUPP);
 done:
 	if (ret > 0) {
 		fsnotify_access(file_in);
@@ -1686,11 +1778,12 @@ out2:
 	return ret;
 }
 
-static int clone_verify_area(struct file *file, loff_t pos, u64 len, bool write)
+static int remap_verify_area(struct file *file, loff_t pos, loff_t len,
+			     bool write)
 {
 	struct inode *inode = file_inode(file);
 
-	if (unlikely(pos < 0))
+	if (unlikely(pos < 0 || len < 0))
 		return -EINVAL;
 
 	 if (unlikely((loff_t) (pos + len) < 0))
@@ -1708,165 +1801,44 @@ static int clone_verify_area(struct file *file, loff_t pos, u64 len, bool write)
 
 	return security_file_permission(file, write ? MAY_WRITE : MAY_READ);
 }
-
 /*
- * Check that the two inodes are eligible for cloning, the ranges make
- * sense, and then flush all dirty data.  Caller must ensure that the
- * inodes have been locked against any other modifications.
+ * Ensure that we don't remap a partial EOF block in the middle of something
+ * else.  Assume that the offsets have already been checked for block
+ * alignment.
  *
- * Returns: 0 for "nothing to clone", 1 for "something to clone", or
- * the usual negative error code.
+ * For deduplication we always scale down to the previous block because we
+ * can't meaningfully compare post-EOF contents.
+ *
+ * For clone we only link a partial EOF block above the destination file's EOF.
+ *
+ * Shorten the request if possible.
  */
-int vfs_clone_file_prep_inodes(struct inode *inode_in, loff_t pos_in,
-			       struct inode *inode_out, loff_t pos_out,
-			       u64 *len, bool is_dedupe)
+static int generic_remap_check_len(struct inode *inode_in,
+				   struct inode *inode_out,
+				   loff_t pos_out,
+				   loff_t *len,
+				   unsigned int remap_flags)
 {
-	loff_t bs = inode_out->i_sb->s_blocksize;
-	loff_t blen;
-	loff_t isize;
-	bool same_inode = (inode_in == inode_out);
-	int ret;
+	u64 blkmask = i_blocksize(inode_in) - 1;
+	loff_t new_len = *len;
 
-	/* Don't touch certain kinds of inodes */
-	if (IS_IMMUTABLE(inode_out))
-		return -EPERM;
-
-	if (IS_SWAPFILE(inode_in) || IS_SWAPFILE(inode_out))
-		return -ETXTBSY;
-
-	/* Don't reflink dirs, pipes, sockets... */
-	if (S_ISDIR(inode_in->i_mode) || S_ISDIR(inode_out->i_mode))
-		return -EISDIR;
-	if (!S_ISREG(inode_in->i_mode) || !S_ISREG(inode_out->i_mode))
-		return -EINVAL;
-
-	/* Are we going all the way to the end? */
-	isize = i_size_read(inode_in);
-	if (isize == 0)
+	if ((*len & blkmask) == 0)
 		return 0;
 
-	/* Zero length dedupe exits immediately; reflink goes to EOF. */
-	if (*len == 0) {
-		if (is_dedupe || pos_in == isize)
-			return 0;
-		if (pos_in > isize)
-			return -EINVAL;
-		*len = isize - pos_in;
+	if ((remap_flags & REMAP_FILE_DEDUP) ||
+	    pos_out + *len < i_size_read(inode_out))
+		new_len &= ~blkmask;
+
+	if (new_len == *len)
+		return 0;
+
+	if (remap_flags & REMAP_FILE_CAN_SHORTEN) {
+		*len = new_len;
+		return 0;
 	}
 
-	/* Ensure offsets don't wrap and the input is inside i_size */
-	if (pos_in + *len < pos_in || pos_out + *len < pos_out ||
-	    pos_in + *len > isize)
-		return -EINVAL;
-
-	/* Don't allow dedupe past EOF in the dest file */
-	if (is_dedupe) {
-		loff_t	disize;
-
-		disize = i_size_read(inode_out);
-		if (pos_out >= disize || pos_out + *len > disize)
-			return -EINVAL;
-	}
-
-	/* If we're linking to EOF, continue to the block boundary. */
-	if (pos_in + *len == isize)
-		blen = ALIGN(isize, bs) - pos_in;
-	else
-		blen = *len;
-
-	/* Only reflink if we're aligned to block boundaries */
-	if (!IS_ALIGNED(pos_in, bs) || !IS_ALIGNED(pos_in + blen, bs) ||
-	    !IS_ALIGNED(pos_out, bs) || !IS_ALIGNED(pos_out + blen, bs))
-		return -EINVAL;
-
-	/* Don't allow overlapped reflink within the same file */
-	if (same_inode) {
-		if (pos_out + blen > pos_in && pos_out < pos_in + blen)
-			return -EINVAL;
-	}
-
-	/* Wait for the completion of any pending IOs on both files */
-	inode_dio_wait(inode_in);
-	if (!same_inode)
-		inode_dio_wait(inode_out);
-
-	ret = filemap_write_and_wait_range(inode_in->i_mapping,
-			pos_in, pos_in + *len - 1);
-	if (ret)
-		return ret;
-
-	ret = filemap_write_and_wait_range(inode_out->i_mapping,
-			pos_out, pos_out + *len - 1);
-	if (ret)
-		return ret;
-
-	/*
-	 * Check that the extents are the same.
-	 */
-	if (is_dedupe) {
-		bool		is_same = false;
-
-		ret = vfs_dedupe_file_range_compare(inode_in, pos_in,
-				inode_out, pos_out, *len, &is_same);
-		if (ret)
-			return ret;
-		if (!is_same)
-			return -EBADE;
-	}
-
-	return 1;
+	return (remap_flags & REMAP_FILE_DEDUP) ? -EBADE : -EINVAL;
 }
-EXPORT_SYMBOL(vfs_clone_file_prep_inodes);
-
-int vfs_clone_file_range(struct file *file_in, loff_t pos_in,
-		struct file *file_out, loff_t pos_out, u64 len)
-{
-	struct inode *inode_in = file_inode(file_in);
-	struct inode *inode_out = file_inode(file_out);
-	int ret;
-
-	if (S_ISDIR(inode_in->i_mode) || S_ISDIR(inode_out->i_mode))
-		return -EISDIR;
-	if (!S_ISREG(inode_in->i_mode) || !S_ISREG(inode_out->i_mode))
-		return -EINVAL;
-
-	/*
-	 * FICLONE/FICLONERANGE ioctls enforce that src and dest files are on
-	 * the same mount. Practically, they only need to be on the same file
-	 * system.
-	 */
-	if (inode_in->i_sb != inode_out->i_sb)
-		return -EXDEV;
-
-	if (!(file_in->f_mode & FMODE_READ) ||
-	    !(file_out->f_mode & FMODE_WRITE) ||
-	    (file_out->f_flags & O_APPEND))
-		return -EBADF;
-
-	if (!file_in->f_op->clone_file_range)
-		return -EOPNOTSUPP;
-
-	ret = clone_verify_area(file_in, pos_in, len, false);
-	if (ret)
-		return ret;
-
-	ret = clone_verify_area(file_out, pos_out, len, true);
-	if (ret)
-		return ret;
-
-	if (pos_in + len > i_size_read(inode_in))
-		return -EINVAL;
-
-	ret = file_in->f_op->clone_file_range(file_in, pos_in,
-			file_out, pos_out, len);
-	if (!ret) {
-		fsnotify_access(file_in);
-		fsnotify_modify(file_out);
-	}
-
-	return ret;
-}
-EXPORT_SYMBOL(vfs_clone_file_range);
 
 /*
  * Read a page's worth of file data into the page cache.  Return the page
@@ -1874,13 +1846,9 @@ EXPORT_SYMBOL(vfs_clone_file_range);
  */
 static struct page *vfs_dedupe_get_page(struct inode *inode, loff_t offset)
 {
-	struct address_space *mapping;
 	struct page *page;
-	pgoff_t n;
 
-	n = offset >> PAGE_SHIFT;
-	mapping = inode->i_mapping;
-	page = read_mapping_page(mapping, n, NULL);
+	page = read_mapping_page(inode->i_mapping, offset >> PAGE_SHIFT, NULL);
 	if (IS_ERR(page))
 		return page;
 	if (!PageUptodate(page)) {
@@ -1895,9 +1863,9 @@ static struct page *vfs_dedupe_get_page(struct inode *inode, loff_t offset)
  * Compare extents of two files to see if they are the same.
  * Caller must have locked both inodes to prevent write races.
  */
-int vfs_dedupe_file_range_compare(struct inode *src, loff_t srcoff,
-				  struct inode *dest, loff_t destoff,
-				  loff_t len, bool *is_same)
+static int vfs_dedupe_file_range_compare(struct inode *src, loff_t srcoff,
+					 struct inode *dest, loff_t destoff,
+					 loff_t len, bool *is_same)
 {
 	loff_t src_poff;
 	loff_t dest_poff;
@@ -1962,7 +1930,201 @@ int vfs_dedupe_file_range_compare(struct inode *src, loff_t srcoff,
 out_error:
 	return error;
 }
-EXPORT_SYMBOL(vfs_dedupe_file_range_compare);
+
+/*
+ * Check that the two inodes are eligible for cloning, the ranges make
+ * sense, and then flush all dirty data.  Caller must ensure that the
+ * inodes have been locked against any other modifications.
+ *
+ * If there's an error, then the usual negative error code is returned.
+ * Otherwise returns 0 with *len set to the request length.
+ */
+int generic_remap_file_range_prep(struct file *file_in, loff_t pos_in,
+				  struct file *file_out, loff_t pos_out,
+				  loff_t *len, unsigned int remap_flags)
+{
+	struct inode *inode_in = file_inode(file_in);
+	struct inode *inode_out = file_inode(file_out);
+	bool same_inode = (inode_in == inode_out);
+	int ret;
+
+	/* Don't touch certain kinds of inodes */
+	if (IS_IMMUTABLE(inode_out))
+		return -EPERM;
+
+	if (IS_SWAPFILE(inode_in) || IS_SWAPFILE(inode_out))
+		return -ETXTBSY;
+
+	/* Don't reflink dirs, pipes, sockets... */
+	if (S_ISDIR(inode_in->i_mode) || S_ISDIR(inode_out->i_mode))
+		return -EISDIR;
+	if (!S_ISREG(inode_in->i_mode) || !S_ISREG(inode_out->i_mode))
+		return -EINVAL;
+
+	/* Zero length dedupe exits immediately; reflink goes to EOF. */
+	if (*len == 0) {
+		loff_t isize = i_size_read(inode_in);
+
+		if ((remap_flags & REMAP_FILE_DEDUP) || pos_in == isize)
+			return 0;
+		if (pos_in > isize)
+			return -EINVAL;
+		*len = isize - pos_in;
+		if (*len == 0)
+			return 0;
+	}
+
+	/* Check that we don't violate system file offset limits. */
+	ret = generic_remap_checks(file_in, pos_in, file_out, pos_out, len,
+			remap_flags);
+	if (ret)
+		return ret;
+
+	/* Wait for the completion of any pending IOs on both files */
+	inode_dio_wait(inode_in);
+	if (!same_inode)
+		inode_dio_wait(inode_out);
+
+	ret = filemap_write_and_wait_range(inode_in->i_mapping,
+			pos_in, pos_in + *len - 1);
+	if (ret)
+		return ret;
+
+	ret = filemap_write_and_wait_range(inode_out->i_mapping,
+			pos_out, pos_out + *len - 1);
+	if (ret)
+		return ret;
+
+	/*
+	 * Check that the extents are the same.
+	 */
+	if (remap_flags & REMAP_FILE_DEDUP) {
+		bool		is_same = false;
+
+		ret = vfs_dedupe_file_range_compare(inode_in, pos_in,
+				inode_out, pos_out, *len, &is_same);
+		if (ret)
+			return ret;
+		if (!is_same)
+			return -EBADE;
+	}
+
+	ret = generic_remap_check_len(inode_in, inode_out, pos_out, len,
+			remap_flags);
+	if (ret)
+		return ret;
+
+	/* If can't alter the file contents, we're done. */
+	if (!(remap_flags & REMAP_FILE_DEDUP))
+		ret = file_modified(file_out);
+
+	return ret;
+}
+EXPORT_SYMBOL(generic_remap_file_range_prep);
+
+loff_t do_clone_file_range(struct file *file_in, loff_t pos_in,
+			   struct file *file_out, loff_t pos_out,
+			   loff_t len, unsigned int remap_flags)
+{
+	loff_t ret;
+
+	WARN_ON_ONCE(remap_flags & REMAP_FILE_DEDUP);
+
+	/*
+	 * FICLONE/FICLONERANGE ioctls enforce that src and dest files are on
+	 * the same mount. Practically, they only need to be on the same file
+	 * system.
+	 */
+	if (file_inode(file_in)->i_sb != file_inode(file_out)->i_sb)
+		return -EXDEV;
+
+	ret = generic_file_rw_checks(file_in, file_out);
+	if (ret < 0)
+		return ret;
+
+	if (!file_in->f_op->remap_file_range)
+		return -EOPNOTSUPP;
+
+	ret = remap_verify_area(file_in, pos_in, len, false);
+	if (ret)
+		return ret;
+
+	ret = remap_verify_area(file_out, pos_out, len, true);
+	if (ret)
+		return ret;
+
+	ret = file_in->f_op->remap_file_range(file_in, pos_in,
+			file_out, pos_out, len, remap_flags);
+	if (ret < 0)
+		return ret;
+
+	fsnotify_access(file_in);
+	fsnotify_modify(file_out);
+	return ret;
+}
+EXPORT_SYMBOL(do_clone_file_range);
+
+loff_t vfs_clone_file_range(struct file *file_in, loff_t pos_in,
+			    struct file *file_out, loff_t pos_out,
+			    loff_t len, unsigned int remap_flags)
+{
+	loff_t ret;
+
+	file_start_write(file_out);
+	ret = do_clone_file_range(file_in, pos_in, file_out, pos_out, len,
+				  remap_flags);
+	file_end_write(file_out);
+
+	return ret;
+}
+EXPORT_SYMBOL(vfs_clone_file_range);
+
+loff_t vfs_dedupe_file_range_one(struct file *src_file, loff_t src_pos,
+				 struct file *dst_file, loff_t dst_pos,
+				 loff_t len, unsigned int remap_flags)
+{
+	loff_t ret;
+
+	WARN_ON_ONCE(remap_flags & ~(REMAP_FILE_DEDUP |
+				     REMAP_FILE_CAN_SHORTEN));
+
+	ret = mnt_want_write_file(dst_file);
+	if (ret)
+		return ret;
+
+	ret = remap_verify_area(dst_file, dst_pos, len, true);
+	if (ret < 0)
+		goto out_drop_write;
+
+	ret = -EINVAL;
+	if (!(capable(CAP_SYS_ADMIN) || (dst_file->f_mode & FMODE_WRITE)))
+		goto out_drop_write;
+
+	ret = -EXDEV;
+	if (src_file->f_path.mnt != dst_file->f_path.mnt)
+		goto out_drop_write;
+
+	ret = -EISDIR;
+	if (S_ISDIR(file_inode(dst_file)->i_mode))
+		goto out_drop_write;
+
+	ret = -EINVAL;
+	if (!dst_file->f_op->remap_file_range)
+		goto out_drop_write;
+
+	if (len == 0) {
+		ret = 0;
+		goto out_drop_write;
+	}
+
+	ret = dst_file->f_op->remap_file_range(src_file, src_pos, dst_file,
+			dst_pos, len, remap_flags | REMAP_FILE_DEDUP);
+out_drop_write:
+	mnt_drop_write_file(dst_file);
+
+	return ret;
+}
+EXPORT_SYMBOL(vfs_dedupe_file_range_one);
 
 int vfs_dedupe_file_range(struct file *file, struct file_dedupe_range *same)
 {
@@ -1972,11 +2134,8 @@ int vfs_dedupe_file_range(struct file *file, struct file_dedupe_range *same)
 	u64 len;
 	int i;
 	int ret;
-	bool is_admin = capable(CAP_SYS_ADMIN);
 	u16 count = same->dest_count;
-	struct file *dst_file;
-	loff_t dst_off;
-	ssize_t deduped;
+	loff_t deduped;
 
 	if (!(file->f_mode & FMODE_READ))
 		return -EINVAL;
@@ -1987,21 +2146,25 @@ int vfs_dedupe_file_range(struct file *file, struct file_dedupe_range *same)
 	off = same->src_offset;
 	len = same->src_length;
 
-	ret = -EISDIR;
 	if (S_ISDIR(src->i_mode))
-		goto out;
+		return -EISDIR;
 
-	ret = -EINVAL;
 	if (!S_ISREG(src->i_mode))
-		goto out;
+		return -EINVAL;
 
-	ret = clone_verify_area(file, off, len, false);
+	if (!file->f_op->remap_file_range)
+		return -EOPNOTSUPP;
+
+	ret = remap_verify_area(file, off, len, false);
 	if (ret < 0)
-		goto out;
+		return ret;
 	ret = 0;
 
 	if (off + len > i_size_read(src))
 		return -EINVAL;
+
+	/* Arbitrary 1G limit on a single dedupe request, can be raised. */
+	len = min_t(u64, len, 1 << 30);
 
 	/* pre-format output fields to sane values */
 	for (i = 0; i < count; i++) {
@@ -2010,62 +2173,35 @@ int vfs_dedupe_file_range(struct file *file, struct file_dedupe_range *same)
 	}
 
 	for (i = 0, info = same->info; i < count; i++, info++) {
-		struct inode *dst;
 		struct fd dst_fd = fdget(info->dest_fd);
+		struct file *dst_file = dst_fd.file;
 
-		dst_file = dst_fd.file;
 		if (!dst_file) {
 			info->status = -EBADF;
 			goto next_loop;
 		}
-		dst = file_inode(dst_file);
-
-		ret = mnt_want_write_file(dst_file);
-		if (ret) {
-			info->status = ret;
-			goto next_fdput;
-		}
-
-		dst_off = info->dest_offset;
-		ret = clone_verify_area(dst_file, dst_off, len, true);
-		if (ret < 0) {
-			info->status = ret;
-			goto next_file;
-		}
-		ret = 0;
 
 		if (info->reserved) {
 			info->status = -EINVAL;
-		} else if (!(is_admin || (dst_file->f_mode & FMODE_WRITE))) {
-			info->status = -EINVAL;
-		} else if (file->f_path.mnt != dst_file->f_path.mnt) {
-			info->status = -EXDEV;
-		} else if (S_ISDIR(dst->i_mode)) {
-			info->status = -EISDIR;
-		} else if (dst_file->f_op->dedupe_file_range == NULL) {
-			info->status = -EINVAL;
-		} else {
-			deduped = dst_file->f_op->dedupe_file_range(file, off,
-							len, dst_file,
-							info->dest_offset);
-			if (deduped == -EBADE)
-				info->status = FILE_DEDUPE_RANGE_DIFFERS;
-			else if (deduped < 0)
-				info->status = deduped;
-			else
-				info->bytes_deduped += deduped;
+			goto next_fdput;
 		}
 
-next_file:
-		mnt_drop_write_file(dst_file);
+		deduped = vfs_dedupe_file_range_one(file, off, dst_file,
+						    info->dest_offset, len,
+						    REMAP_FILE_CAN_SHORTEN);
+		if (deduped == -EBADE)
+			info->status = FILE_DEDUPE_RANGE_DIFFERS;
+		else if (deduped < 0)
+			info->status = deduped;
+		else
+			info->bytes_deduped = len;
+
 next_fdput:
 		fdput(dst_fd);
 next_loop:
 		if (fatal_signal_pending(current))
-			goto out;
+			break;
 	}
-
-out:
 	return ret;
 }
 EXPORT_SYMBOL(vfs_dedupe_file_range);

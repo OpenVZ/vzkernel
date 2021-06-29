@@ -44,6 +44,17 @@ efi_status_t __efi_rt_asm_wrapper(void *, const char *, ...);
 
 #define ARCH_EFI_IRQ_FLAGS_MASK (PSR_D_BIT | PSR_A_BIT | PSR_I_BIT | PSR_F_BIT)
 
+/*
+ * Even when Linux uses IRQ priorities for IRQ disabling, EFI does not.
+ * And EFI shouldn't really play around with priority masking as it is not aware
+ * which priorities the OS has assigned to its interrupts.
+ */
+#define arch_efi_save_flags(state_flags)		\
+	((void)((state_flags) = read_sysreg(daif)))
+
+#define arch_efi_restore_flags(state_flags)	write_sysreg(state_flags, daif)
+
+
 /* arch specific definitions used by the stub code */
 
 /*
@@ -83,9 +94,11 @@ static inline unsigned long efi_get_max_initrd_addr(unsigned long dram_base,
 }
 
 #define efi_call_early(f, ...)		sys_table_arg->boottime->f(__VA_ARGS__)
-#define __efi_call_early(f, ...)	f(__VA_ARGS__)
 #define efi_call_runtime(f, ...)	sys_table_arg->runtime->f(__VA_ARGS__)
-#define efi_is_64bit()			(true)
+#define efi_is_native()			(true)
+
+#define efi_table_attr(table, attr, instance)				\
+	((table##_t *)instance)->attr
 
 #define efi_call_proto(protocol, f, instance, ...)			\
 	((protocol##_t *)instance)->f(instance, ##__VA_ARGS__)
@@ -117,7 +130,7 @@ static inline void efifb_setup_from_dmi(struct screen_info *si, const char *opt)
 
 static inline void efi_set_pgd(struct mm_struct *mm)
 {
-	__switch_mm(mm);
+	__switch_mm(mm, smp_processor_id());
 
 	if (system_uses_ttbr0_pan()) {
 		if (mm != current->active_mm) {

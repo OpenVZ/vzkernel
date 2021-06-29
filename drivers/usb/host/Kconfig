@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # USB Host Controller Drivers
 #
@@ -69,13 +70,13 @@ config USB_XHCI_MTK
 	  If unsure, say N.
 
 config USB_XHCI_MVEBU
-	tristate "xHCI support for Marvell Armada 375/38x"
+	tristate "xHCI support for Marvell Armada 375/38x/37xx"
 	select USB_XHCI_PLATFORM
 	depends on HAS_IOMEM
 	depends on ARCH_MVEBU || COMPILE_TEST
 	---help---
 	  Say 'Y' to enable the support for the xHCI host controller
-	  found in Marvell Armada 375/38x ARM SOCs.
+	  found in Marvell Armada 375/38x/37xx ARM SOCs.
 
 config USB_XHCI_RCAR
 	tristate "xHCI support for Renesas R-Car SoCs"
@@ -160,7 +161,6 @@ config USB_EHCI_PCI
 config USB_EHCI_HCD_PMC_MSP
 	tristate "EHCI support for on-chip PMC MSP71xx USB controller"
 	depends on MSP_HAS_USB
-	default n
 	select USB_EHCI_BIG_ENDIAN_DESC
 	select USB_EHCI_BIG_ENDIAN_MMIO
 	---help---
@@ -179,8 +179,7 @@ config XPS_USB_HCD_XILINX
 		devices only.
 
 config USB_EHCI_FSL
-	tristate "Support for Freescale PPC on-chip EHCI USB controller"
-	depends on FSL_SOC
+	tristate "Support for Freescale on-chip EHCI USB controller"
 	select USB_EHCI_ROOT_HUB_TT
 	---help---
 	  Variation of ARC USB block used in some Freescale chips.
@@ -191,6 +190,14 @@ config USB_EHCI_MXC
 	select USB_EHCI_ROOT_HUB_TT
 	---help---
 	  Variation of ARC USB block used in some Freescale chips.
+
+config USB_EHCI_HCD_NPCM7XX
+	tristate "Support for Nuvoton NPCM7XX on-chip EHCI USB controller"
+	depends on (USB_EHCI_HCD && ARCH_NPCM7XX) || COMPILE_TEST
+	default y if (USB_EHCI_HCD && ARCH_NPCM7XX)
+	help
+	  Enables support for the on-chip EHCI controller on
+	  Nuvoton NPCM7XX chips.
 
 config USB_EHCI_HCD_OMAP
 	tristate "EHCI support for OMAP3 and later chips"
@@ -213,12 +220,12 @@ config USB_EHCI_HCD_ORION
 	  Marvell PXA/MMP USB controller" for those.
 
 config USB_EHCI_HCD_SPEAR
-        tristate "Support for ST SPEAr on-chip EHCI USB controller"
-        depends on USB_EHCI_HCD && PLAT_SPEAR
-        default y
-        ---help---
-          Enables support for the on-chip EHCI controller on
-          ST SPEAr chips.
+	tristate "Support for ST SPEAr on-chip EHCI USB controller"
+	depends on USB_EHCI_HCD && PLAT_SPEAR
+	default y
+	---help---
+	  Enables support for the on-chip EHCI controller on
+	  ST SPEAr chips.
 
 config USB_EHCI_HCD_STI
 	tristate "Support for ST STiHxxx on-chip EHCI USB controller"
@@ -230,12 +237,12 @@ config USB_EHCI_HCD_STI
 	  STMicroelectronics consumer electronics SoC's.
 
 config USB_EHCI_HCD_AT91
-        tristate  "Support for Atmel on-chip EHCI USB controller"
-        depends on USB_EHCI_HCD && ARCH_AT91
-        default y
-        ---help---
-          Enables support for the on-chip EHCI controller on
-          Atmel chips.
+	tristate  "Support for Atmel on-chip EHCI USB controller"
+	depends on USB_EHCI_HCD && ARCH_AT91
+	default y
+	---help---
+	  Enables support for the on-chip EHCI controller on
+	  Atmel chips.
 
 config USB_EHCI_TEGRA
        tristate "NVIDIA Tegra HCD support"
@@ -243,8 +250,8 @@ config USB_EHCI_TEGRA
        select USB_EHCI_ROOT_HUB_TT
        select USB_TEGRA_PHY
        help
-         This driver enables support for the internal USB Host Controllers
-         found in NVIDIA Tegra SoCs. The controllers are EHCI compliant.
+	 This driver enables support for the internal USB Host Controllers
+	 found in NVIDIA Tegra SoCs. The controllers are EHCI compliant.
 
 config USB_EHCI_HCD_PPC_OF
 	bool "EHCI support for PPC USB controller on OF platform bus"
@@ -268,7 +275,7 @@ config USB_EHCI_EXYNOS
 	Enable support for the Samsung Exynos SOC's on-chip EHCI controller.
 
 config USB_EHCI_MV
-	bool "EHCI support for Marvell PXA/MMP USB controller"
+	tristate "EHCI support for Marvell PXA/MMP USB controller"
 	depends on (ARCH_PXA || ARCH_MMP)
 	select USB_EHCI_ROOT_HUB_TT
 	---help---
@@ -279,12 +286,6 @@ config USB_EHCI_MV
 	  controller used by the EBU-type SoCs including Orion, Kirkwood,
 	  Dova, Armada 370 and Armada XP. See "Support for Marvell EBU
 	  on-chip EHCI USB controller" for those.
-
-config USB_W90X900_EHCI
-	tristate "W90X900(W90P910) EHCI support"
-	depends on ARCH_W90X900
-	---help---
-		Enables support for the W90X900 USB controller
 
 config USB_CNS3XXX_EHCI
 	bool "Cavium CNS3XXX EHCI Module (DEPRECATED)"
@@ -300,7 +301,6 @@ config USB_CNS3XXX_EHCI
 
 config USB_EHCI_HCD_PLATFORM
 	tristate "Generic EHCI driver for a platform device"
-	default n
 	---help---
 	  Adds an EHCI host driver for a generic platform device, which
 	  provides a memory space and an irq.
@@ -310,7 +310,6 @@ config USB_EHCI_HCD_PLATFORM
 config USB_OCTEON_EHCI
 	bool "Octeon on-chip EHCI support (DEPRECATED)"
 	depends on CAVIUM_OCTEON_SOC
-	default n
 	select USB_EHCI_BIG_ENDIAN_MMIO if CPU_BIG_ENDIAN
 	select USB_EHCI_HCD_PLATFORM
 	help
@@ -410,12 +409,12 @@ config USB_OHCI_HCD_OMAP1
 	  Enables support for the OHCI controller on OMAP1/2 chips.
 
 config USB_OHCI_HCD_SPEAR
-        tristate "Support for ST SPEAr on-chip OHCI USB controller"
-        depends on USB_OHCI_HCD && PLAT_SPEAR
-        default y
-        ---help---
-          Enables support for the on-chip OHCI controller on
-          ST SPEAr chips.
+	tristate "Support for ST SPEAr on-chip OHCI USB controller"
+	depends on USB_OHCI_HCD && PLAT_SPEAR
+	default y
+	---help---
+	  Enables support for the on-chip OHCI controller on
+	  ST SPEAr chips.
 
 config USB_OHCI_HCD_STI
 	tristate "Support for ST STiHxxx on-chip OHCI USB controller"
@@ -427,21 +426,22 @@ config USB_OHCI_HCD_STI
 	  STMicroelectronics consumer electronics SoC's.
 
 config USB_OHCI_HCD_S3C2410
-        tristate "OHCI support for Samsung S3C24xx/S3C64xx SoC series"
-        depends on USB_OHCI_HCD && (ARCH_S3C24XX || ARCH_S3C64XX)
-        default y
-        ---help---
-          Enables support for the on-chip OHCI controller on
-          S3C24xx/S3C64xx chips.
+	tristate "OHCI support for Samsung S3C24xx/S3C64xx SoC series"
+	depends on USB_OHCI_HCD && (ARCH_S3C24XX || ARCH_S3C64XX)
+	default y
+	---help---
+	  Enables support for the on-chip OHCI controller on
+	  S3C24xx/S3C64xx chips.
 
 config USB_OHCI_HCD_LPC32XX
 	tristate "Support for LPC on-chip OHCI USB controller"
-	depends on USB_OHCI_HCD && ARCH_LPC32XX
+	depends on USB_OHCI_HCD
+	depends on ARCH_LPC32XX || COMPILE_TEST
 	depends on USB_ISP1301
 	default y
 	---help---
-          Enables support for the on-chip OHCI controller on
-          NXP chips.
+	  Enables support for the on-chip OHCI controller on
+	  NXP chips.
 
 config USB_OHCI_HCD_PXA27X
 	tristate "Support for PXA27X/PXA3XX on-chip OHCI USB controller"
@@ -456,8 +456,8 @@ config USB_OHCI_HCD_AT91
 	depends on USB_OHCI_HCD && ARCH_AT91 && OF
 	default y
 	---help---
-          Enables support for the on-chip OHCI controller on
-          Atmel chips.
+	  Enables support for the on-chip OHCI controller on
+	  Atmel chips.
 
 config USB_OHCI_HCD_OMAP3
 	tristate "OHCI support for OMAP3 and later chips"
@@ -518,7 +518,6 @@ config USB_OHCI_HCD_SSB
 	depends on (SSB = y || SSB = USB_OHCI_HCD)
 	select USB_HCD_SSB
 	select USB_OHCI_HCD_PLATFORM
-	default n
 	---help---
 	  This option is deprecated now and the driver was removed, use
 	  USB_HCD_SSB and USB_OHCI_HCD_PLATFORM instead.
@@ -561,7 +560,6 @@ config USB_CNS3XXX_OHCI
 
 config USB_OHCI_HCD_PLATFORM
 	tristate "Generic OHCI driver for a platform device"
-	default n
 	---help---
 	  Adds an OHCI host driver for a generic platform device, which
 	  provides a memory space and an irq.
@@ -744,11 +742,11 @@ config USB_IMX21_HCD
        tristate "i.MX21 HCD support"
        depends on ARM && ARCH_MXC
        help
-         This driver enables support for the on-chip USB host in the
-         i.MX21 processor.
+	 This driver enables support for the on-chip USB host in the
+	 i.MX21 processor.
 
-         To compile this driver as a module, choose M here: the
-         module will be called "imx21-hcd".
+	 To compile this driver as a module, choose M here: the
+	 module will be called "imx21-hcd".
 
 config USB_HCD_BCMA
 	tristate "BCMA usb host driver"

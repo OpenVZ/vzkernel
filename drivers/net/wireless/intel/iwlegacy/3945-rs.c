@@ -389,7 +389,7 @@ out:
 }
 
 static void *
-il3945_rs_alloc(struct ieee80211_hw *hw, struct dentry *debugfsdir)
+il3945_rs_alloc(struct ieee80211_hw *hw)
 {
 	return hw->priv;
 }
@@ -645,9 +645,6 @@ il3945_rs_get_rate(void *il_r, struct ieee80211_sta *sta, void *il_sta,
 		D_RATE("Rate scaling information not initialized yet.\n");
 		il_sta = NULL;
 	}
-
-	if (rate_control_send_low(sta, il_sta, txrc))
-		return;
 
 	rate_mask = sta->supp_rates[sband->band];
 

@@ -114,14 +114,15 @@ asm (
 			"optprobe_template_call:\n"
 			ASM_NOP5
 			/* Move flags to rsp */
-			"	movq 144(%rsp), %rdx\n"
-			"	movq %rdx, 152(%rsp)\n"
+			"	movq 18*8(%rsp), %rdx\n"
+			"	movq %rdx, 19*8(%rsp)\n"
 			RESTORE_REGS_STRING
 			/* Skip flags entry */
 			"	addq $8, %rsp\n"
 			"	popfq\n"
 #else /* CONFIG_X86_32 */
-			"	pushf\n"
+			"	pushl %esp\n"
+			"	pushfl\n"
 			SAVE_REGS_STRING
 			"	movl %esp, %edx\n"
 			".global optprobe_template_val\n"
@@ -130,9 +131,13 @@ asm (
 			".global optprobe_template_call\n"
 			"optprobe_template_call:\n"
 			ASM_NOP5
+			/* Move flags into esp */
+			"	movl 14*4(%esp), %edx\n"
+			"	movl %edx, 15*4(%esp)\n"
 			RESTORE_REGS_STRING
-			"	addl $4, %esp\n"	/* skip cs */
-			"	popf\n"
+			/* Skip flags entry */
+			"	addl $4, %esp\n"
+			"	popfl\n"
 #endif
 			".global optprobe_template_end\n"
 			"optprobe_template_end:\n"
@@ -165,10 +170,9 @@ optimized_callback(struct optimized_kprobe *op, struct pt_regs *regs)
 	} else {
 		struct kprobe_ctlblk *kcb = get_kprobe_ctlblk();
 		/* Save skipped registers */
-#ifdef CONFIG_X86_64
 		regs->cs = __KERNEL_CS;
-#else
-		regs->cs = __KERNEL_CS | get_kernel_rpl();
+#ifdef CONFIG_X86_32
+		regs->cs |= get_kernel_rpl();
 		regs->gs = 0;
 #endif
 		regs->ip = (unsigned long)op->kp.addr + INT3_SIZE;
@@ -431,7 +435,7 @@ err:
 void arch_optimize_kprobes(struct list_head *oplist)
 {
 	struct optimized_kprobe *op, *tmp;
-	u8 insn_buf[RELATIVEJUMP_SIZE];
+	u8 insn_buff[RELATIVEJUMP_SIZE];
 
 	list_for_each_entry_safe(op, tmp, oplist, list) {
 		s32 rel = (s32)((long)op->optinsn.insn -
@@ -443,11 +447,10 @@ void arch_optimize_kprobes(struct list_head *oplist)
 		memcpy(op->optinsn.copied_insn, op->kp.addr + INT3_SIZE,
 		       RELATIVE_ADDR_SIZE);
 
-		insn_buf[0] = RELATIVEJUMP_OPCODE;
-		*(s32 *)(&insn_buf[1]) = rel;
+		insn_buff[0] = RELATIVEJUMP_OPCODE;
+		*(s32 *)(&insn_buff[1]) = rel;
 
-		text_poke_bp(op->kp.addr, insn_buf, RELATIVEJUMP_SIZE,
-			     op->optinsn.insn);
+		text_poke_bp(op->kp.addr, insn_buff, RELATIVEJUMP_SIZE, NULL);
 
 		list_del_init(&op->list);
 	}
@@ -456,13 +459,19 @@ void arch_optimize_kprobes(struct list_head *oplist)
 /* Replace a relative jump with a breakpoint (int3).  */
 void arch_unoptimize_kprobe(struct optimized_kprobe *op)
 {
-	u8 insn_buf[RELATIVEJUMP_SIZE];
+	u8 insn_buff[RELATIVEJUMP_SIZE];
+	u8 emulate_buff[RELATIVEJUMP_SIZE];
 
 	/* Set int3 to first byte for kprobes */
-	insn_buf[0] = BREAKPOINT_INSTRUCTION;
-	memcpy(insn_buf + 1, op->optinsn.copied_insn, RELATIVE_ADDR_SIZE);
-	text_poke_bp(op->kp.addr, insn_buf, RELATIVEJUMP_SIZE,
-		     op->optinsn.insn);
+	insn_buff[0] = BREAKPOINT_INSTRUCTION;
+	memcpy(insn_buff + 1, op->optinsn.copied_insn, RELATIVE_ADDR_SIZE);
+
+	emulate_buff[0] = RELATIVEJUMP_OPCODE;
+	*(s32 *)(&emulate_buff[1]) = (s32)((long)op->optinsn.insn -
+			((long)op->kp.addr + RELATIVEJUMP_SIZE));
+
+	text_poke_bp(op->kp.addr, insn_buff, RELATIVEJUMP_SIZE,
+		     emulate_buff);
 }
 
 /*

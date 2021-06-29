@@ -15,12 +15,13 @@
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
+#include <linux/clocksource.h>
 #include <linux/kernel.h>
 #include <linux/percpu.h>
 #include <linux/notifier.h>
 #include <linux/sched.h>
 #include <linux/gfp.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/nmi.h>
 
 #include <asm/fixmap.h>
@@ -156,7 +157,7 @@ void pvclock_read_wallclock(struct pvclock_wall_clock *wall_clock,
 
 void pvclock_set_pvti_cpu0_va(struct pvclock_vsyscall_time_info *pvti)
 {
-	WARN_ON(vclock_was_used(VCLOCK_PVCLOCK));
+	WARN_ON(vclock_was_used(VDSO_CLOCKMODE_PVCLOCK));
 	pvti_cpu0_va = pvti;
 }
 

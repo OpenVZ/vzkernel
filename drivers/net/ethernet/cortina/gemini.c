@@ -369,9 +369,8 @@ static int gmac_setup_phy(struct net_device *netdev)
 			   (unsigned long)phy->phy_id,
 			   phy_modes(phy->interface));
 
-	phy->supported &= PHY_GBIT_FEATURES;
-	phy->supported |= SUPPORTED_Asym_Pause | SUPPORTED_Pause;
-	phy->advertising = phy->supported;
+	phy_set_max_speed(phy, SPEED_1000);
+	phy_support_asym_pause(phy);
 
 	/* set PHY interface type */
 	switch (phy->interface) {
@@ -1263,7 +1262,7 @@ out_drop:
 	return NETDEV_TX_OK;
 }
 
-static void gmac_tx_timeout(struct net_device *netdev)
+static void gmac_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 {
 	netdev_err(netdev, "Tx timeout\n");
 	gmac_dump_dma_state(netdev);

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 menu "printk and dmesg options"
 
 config PRINTK_TIME
@@ -15,6 +16,23 @@ config PRINTK_TIME
 	  The behavior is also controlled by the kernel command line
 	  parameter printk.time=1. See Documentation/admin-guide/kernel-parameters.rst
 
+config PRINTK_CALLER
+	bool "Show caller information on printks"
+	depends on PRINTK
+	help
+	  Selecting this option causes printk() to add a caller "thread id" (if
+	  in task context) or a caller "processor id" (if not in task context)
+	  to every message.
+
+	  This option is intended for environments where multiple threads
+	  concurrently call printk() for many times, for it is difficult to
+	  interpret without knowing where these lines (or sometimes individual
+	  line which was divided into multiple lines due to race) came from.
+
+	  Since toggling after boot makes the code racy, currently there is
+	  no option to enable/disable at the kernel command line parameter or
+	  sysfs interface.
+
 config CONSOLE_LOGLEVEL_DEFAULT
 	int "Default console loglevel (1-15)"
 	range 1 15
@@ -29,6 +47,17 @@ config CONSOLE_LOGLEVEL_DEFAULT
 	  Note: This does not affect the log level of un-prefixed printk()
 	  usage in the kernel. That is controlled by the MESSAGE_LOGLEVEL_DEFAULT
 	  option.
+
+config CONSOLE_LOGLEVEL_QUIET
+	int "quiet console loglevel (1-15)"
+	range 1 15
+	default "4"
+	help
+	  loglevel to use when "quiet" is passed on the kernel commandline.
+
+	  When "quiet" is passed on the kernel commandline this loglevel
+	  will be used as the loglevel. IOW passing "quiet" will be the
+	  equivalent of passing "loglevel=<CONSOLE_LOGLEVEL_QUIET>"
 
 config MESSAGE_LOGLEVEL_DEFAULT
 	int "Default message log level (1-7)"
@@ -133,6 +162,15 @@ config DYNAMIC_DEBUG
 	  See Documentation/admin-guide/dynamic-debug-howto.rst for additional
 	  information.
 
+config SYMBOLIC_ERRNAME
+	bool "Support symbolic error names in printf"
+	default y if PRINTK
+	help
+	  If you say Y here, the kernel's printf implementation will
+	  be able to print symbolic error names such as ENOSPC instead
+	  of the number 28. It makes the kernel image slightly larger
+	  (about 3KB), but can make the kernel logs easier to read.
+
 endmenu # "printk and dmesg options"
 
 menu "Compile-time checks and compiler options"
@@ -187,6 +225,16 @@ config DEBUG_INFO_DWARF4
 	  But it significantly improves the success of resolving
 	  variables in gdb on optimized code.
 
+config DEBUG_INFO_BTF
+	bool "Generate BTF typeinfo"
+	depends on DEBUG_INFO
+	depends on !DEBUG_INFO_SPLIT && !DEBUG_INFO_REDUCED
+	depends on !GCC_PLUGIN_RANDSTRUCT || COMPILE_TEST
+	help
+	  Generate deduplicated BTF type information from DWARF debug info.
+	  Turning this on expects presence of pahole tool, which will convert
+	  DWARF type info into equivalent deduplicated BTF type info.
+
 config GDB_SCRIPTS
 	bool "Provide GDB scripts for kernel debugging"
 	depends on DEBUG_INFO
@@ -217,7 +265,6 @@ config ENABLE_MUST_CHECK
 config FRAME_WARN
 	int "Warn for stack frames larger than (needs gcc 4.4)"
 	range 0 8192
-	default 3072 if KASAN_EXTRA
 	default 2048 if GCC_PLUGIN_LATENT_ENTROPY
 	default 1280 if (!64BIT && PARISC)
 	default 1024 if (!64BIT && !PARISC)
@@ -1046,9 +1093,10 @@ config PROVE_LOCKING
 	select DEBUG_SPINLOCK
 	select DEBUG_MUTEXES
 	select DEBUG_RT_MUTEXES if RT_MUTEXES
-	select DEBUG_RWSEMS if RWSEM_SPIN_ON_OWNER
+	select DEBUG_RWSEMS
 	select DEBUG_WW_MUTEX_SLOWPATH
 	select DEBUG_LOCK_ALLOC
+	select PREEMPT_COUNT if !ARCH_NO_PREEMPT
 	select TRACE_IRQFLAGS
 	default n
 	help
@@ -1084,6 +1132,23 @@ config PROVE_LOCKING
 	 arbitrary combination of these separate locking variants.
 
 	 For more details, see Documentation/locking/lockdep-design.txt.
+
+config PROVE_RAW_LOCK_NESTING
+	bool "Enable raw_spinlock - spinlock nesting checks"
+	depends on PROVE_LOCKING
+	default n
+	help
+	 Enable the raw_spinlock vs. spinlock nesting checks which ensure
+	 that the lock nesting rules for PREEMPT_RT enabled kernels are
+	 not violated.
+
+	 NOTE: There are known nesting problems. So if you enable this
+	 option expect lockdep splats until these problems have been fully
+	 addressed which is work in progress. This config switch allows to
+	 identify and analyze these problems. It will be removed and the
+	 check permanentely enabled once the main issues have been fixed.
+
+	 If unsure, select N.
 
 config LOCK_STAT
 	bool "Lock usage statistics"
@@ -1150,10 +1215,10 @@ config DEBUG_WW_MUTEX_SLOWPATH
 
 config DEBUG_RWSEMS
 	bool "RW Semaphore debugging: basic checks"
-	depends on DEBUG_KERNEL && RWSEM_SPIN_ON_OWNER
+	depends on DEBUG_KERNEL
 	help
-	  This debugging feature allows mismatched rw semaphore locks and unlocks
-	  to be detected and reported.
+	  This debugging feature allows mismatched rw semaphore locks
+	  and unlocks to be detected and reported.
 
 config DEBUG_LOCK_ALLOC
 	bool "Lock debugging: detect incorrect freeing of live locks"
@@ -1193,6 +1258,7 @@ config DEBUG_ATOMIC_SLEEP
 	bool "Sleep inside atomic section checking"
 	select PREEMPT_COUNT
 	depends on DEBUG_KERNEL
+	depends on !ARCH_NO_PREEMPT
 	help
 	  If you say Y here, various routines which may sleep will become very
 	  noisy if they are called inside atomic sections: when a spinlock is
@@ -1240,10 +1306,16 @@ config WW_MUTEX_SELFTEST
 endmenu # lock debugging
 
 config TRACE_IRQFLAGS
+	depends on TRACE_IRQFLAGS_SUPPORT
 	bool
 	help
 	  Enables hooks to interrupt enabling and disabling for
 	  either tracing or lock debugging.
+
+config TRACE_IRQFLAGS_NMI
+	def_bool y
+	depends on TRACE_IRQFLAGS
+	depends on TRACE_IRQFLAGS_NMI_SUPPORT
 
 config STACKTRACE
 	bool "Stack backtrace support"
@@ -1287,7 +1359,7 @@ config DEBUG_KOBJECT
 	depends on DEBUG_KERNEL
 	help
 	  If you say Y here, some extra kobject debugging messages will be sent
-	  to the syslog. 
+	  to the syslog.
 
 config DEBUG_KOBJECT_RELEASE
 	bool "kobject release debugging"
@@ -1671,6 +1743,8 @@ config DMA_API_DEBUG_SG
 
 	  If unsure, say N.
 
+source "lib/kunit/Kconfig"
+
 menuconfig RUNTIME_TESTING_MENU
 	bool "Runtime Testing"
 	def_bool y
@@ -1697,6 +1771,16 @@ config TEST_LIST_SORT
 	depends on DEBUG_KERNEL || m
 	help
 	  Enable this to turn on 'list_sort()' function test. This test is
+	  executed only once during system boot (so affects only boot time),
+	  or at module load time.
+
+	  If unsure, say N.
+
+config TEST_MIN_HEAP
+	tristate "Min heap test"
+	depends on DEBUG_KERNEL || m
+	help
+	  Enable this to turn on min heap function tests. This test is
 	  executed only once during system boot (so affects only boot time),
 	  or at module load time.
 
@@ -1805,6 +1889,9 @@ config TEST_BITMAP
 config TEST_UUID
 	tristate "Test functions located in the uuid module at runtime"
 
+config TEST_XARRAY
+	tristate "Test the XArray code at runtime"
+
 config TEST_OVERFLOW
 	tristate "Test check_*_overflow() functions at runtime"
 
@@ -1826,6 +1913,9 @@ config TEST_HASH
 
 	  This is intended to help people writing architecture-specific
 	  optimized versions.  If unsure, say N.
+
+config TEST_IDA
+	tristate "Perform selftest on IDA functions"
 
 config TEST_PARMAN
 	tristate "Perform selftest on priority array manager"
@@ -1911,6 +2001,49 @@ config TEST_SYSCTL
 
 	  If unsure, say N.
 
+config SYSCTL_KUNIT_TEST
+	tristate "KUnit test for sysctl" if !KUNIT_ALL_TESTS
+	depends on KUNIT
+	default KUNIT_ALL_TESTS
+	help
+	  This builds the proc sysctl unit test, which runs on boot.
+	  Tests the API contract and implementation correctness of sysctl.
+	  For more information on KUnit and unit tests in general please refer
+	  to the KUnit documentation in Documentation/dev-tools/kunit/.
+
+	  If unsure, say N.
+
+config LIST_KUNIT_TEST
+	tristate "KUnit Test for Kernel Linked-list structures" if !KUNIT_ALL_TESTS
+	depends on KUNIT
+	default KUNIT_ALL_TESTS
+	help
+	  This builds the linked list KUnit test suite.
+	  It tests that the API and basic functionality of the list_head type
+	  and associated macros.
+
+	  KUnit tests run during boot and output the results to the debug log
+	  in TAP format (http://testanything.org/). Only useful for kernel devs
+	  running the KUnit test harness, and not intended for inclusion into a
+	  production build.
+
+	  For more information on KUnit and unit tests in general please refer
+	  to the KUnit documentation in Documentation/dev-tools/kunit/.
+
+	  If unsure, say N.
+
+config LINEAR_RANGES_TEST
+	tristate "KUnit test for linear_ranges"
+	depends on KUNIT
+	select LINEAR_RANGES
+	help
+	  This builds the linear_ranges unit test, which runs on boot.
+	  Tests the linear_ranges logic correctness.
+	  For more information on KUnit and unit tests in general please refer
+	  to the KUnit documentation in Documentation/dev-tools/kunit/.
+
+	  If unsure, say N.
+
 config TEST_UDELAY
 	tristate "udelay test driver"
 	default n
@@ -1933,7 +2066,6 @@ config TEST_KMOD
 	tristate "kmod stress tester"
 	default n
 	depends on m
-	depends on BLOCK && (64BIT || LBDAF)	  # for XFS, BTRFS
 	depends on NETDEVICES && NET_CORE && INET # for TUN
 	select TEST_LKM
 	select XFS_FS
@@ -1966,11 +2098,38 @@ config TEST_DEBUG_VIRTUAL
 
 	  If unsure, say N.
 
+config TEST_OBJAGG
+	tristate "Perform selftest on object aggreration manager"
+	default n
+	depends on OBJAGG
+	help
+	  Enable this option to test object aggregation manager on boot
+	  (or module load).
+config TEST_LIVEPATCH
+	tristate "Test livepatching"
+	default n
+	depends on LIVEPATCH
+	depends on m
+	help
+	  Test kernel livepatching features for correctness.  The tests will
+	  load test modules that will be livepatched in various scenarios.
+
+	  To run all the livepatching tests:
+
+	  make -C tools/testing/selftests TARGETS=livepatch run_tests
+
+	  Alternatively, individual tests may be invoked:
+
+	  tools/testing/selftests/livepatch/test-callbacks.sh
+	  tools/testing/selftests/livepatch/test-livepatch.sh
+	  tools/testing/selftests/livepatch/test-shadow-vars.sh
+
+	  If unsure, say N.
+
 endif # RUNTIME_TESTING_MENU
 
 config MEMTEST
 	bool "Memtest"
-	depends on HAVE_MEMBLOCK
 	---help---
 	  This option adds a kernel parameter 'memtest', which allows memtest
 	  to be set.
@@ -1995,6 +2154,8 @@ source "samples/Kconfig"
 source "lib/Kconfig.kgdb"
 
 source "lib/Kconfig.ubsan"
+
+source "lib/Kconfig.kcsan"
 
 config ARCH_HAS_DEVMEM_IS_ALLOWED
 	bool
@@ -2034,3 +2195,11 @@ config IO_STRICT_DEVMEM
 	  if the driver using a given range cannot be disabled.
 
 	  If in doubt, say Y.
+
+config HYPERV_TESTING
+	bool "Microsoft Hyper-V driver testing"
+	default n
+	depends on HYPERV && DEBUG_FS
+	help
+	  Select this option to enable Hyper-V vmbus testing.
+

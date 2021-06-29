@@ -235,14 +235,15 @@ certainly invest a bit more effort into libata core layer).
 
 CLOCK
   devm_clk_get()
+  devm_clk_get_optional()
   devm_clk_put()
   devm_clk_hw_register()
   devm_of_clk_add_hw_provider()
 
 DMA
+  dmaenginem_async_device_register()
   dmam_alloc_coherent()
   dmam_alloc_attrs()
-  dmam_declare_coherent_memory()
   dmam_free_coherent()
   dmam_pool_create()
   dmam_pool_destroy()
@@ -253,11 +254,14 @@ GPIO
   devm_gpiod_get_index_optional()
   devm_gpiod_get_optional()
   devm_gpiod_put()
+  devm_gpiod_unhinge()
   devm_gpiochip_add_data()
-  devm_gpiochip_remove()
   devm_gpio_request()
   devm_gpio_request_one()
   devm_gpio_free()
+
+I2C
+  devm_i2c_new_dummy_device()
 
 IIO
   devm_iio_device_alloc()

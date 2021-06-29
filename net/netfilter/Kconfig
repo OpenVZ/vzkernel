@@ -49,6 +49,8 @@ config NETFILTER_NETLINK_LOG
 config NF_CONNTRACK
 	tristate "Netfilter connection tracking support"
 	default m if NETFILTER_ADVANCED=n
+	select NF_DEFRAG_IPV4
+	select NF_DEFRAG_IPV6 if IPV6 != n
 	help
 	  Connection tracking keeps a record of what packets have passed
 	  through your machine, in order to figure out how they are related
@@ -164,7 +166,7 @@ config NF_CT_PROTO_DCCP
 	  If unsure, say Y.
 
 config NF_CT_PROTO_GRE
-	tristate
+	bool
 
 config NF_CT_PROTO_SCTP
 	bool 'SCTP protocol connection tracking support'
@@ -385,27 +387,18 @@ config NETFILTER_NETLINK_GLUE_CT
 	  the enqueued via NFNETLINK.
 
 config NF_NAT
-	tristate
+	tristate "Network Address Translation support"
+	depends on NF_CONNTRACK
+	default m if NETFILTER_ADVANCED=n
+	help
+	  The NAT option allows masquerading, port forwarding and other
+	  forms of full Network Address Port Translation. This can be
+	  controlled by iptables, ip6tables or nft.
 
 config NF_NAT_NEEDED
 	bool
 	depends on NF_NAT
 	default y
-
-config NF_NAT_PROTO_DCCP
-	bool
-	depends on NF_NAT && NF_CT_PROTO_DCCP
-	default NF_NAT && NF_CT_PROTO_DCCP
-
-config NF_NAT_PROTO_UDPLITE
-	bool
-	depends on NF_NAT && NF_CT_PROTO_UDPLITE
-	default NF_NAT && NF_CT_PROTO_UDPLITE
-
-config NF_NAT_PROTO_SCTP
-	bool
-	default NF_NAT && NF_CT_PROTO_SCTP
-	depends on NF_NAT && NF_CT_PROTO_SCTP
 
 config NF_NAT_AMANDA
 	tristate
@@ -435,6 +428,9 @@ config NF_NAT_TFTP
 config NF_NAT_REDIRECT
 	bool
 
+config NF_NAT_MASQUERADE
+	bool
+
 config NETFILTER_SYNPROXY
 	tristate
 
@@ -445,6 +441,7 @@ config NF_OSF
 
 config NF_TABLES
 	select NETFILTER_NETLINK
+	select LIBCRC32C
 	tristate "Netfilter nf_tables support"
 	help
 	  nftables is the new packet classification framework that intends to
@@ -530,6 +527,7 @@ config NFT_LIMIT
 config NFT_MASQ
 	depends on NF_CONNTRACK
 	depends on NF_NAT
+	select NF_NAT_MASQUERADE
 	tristate "Netfilter nf_tables masquerade support"
 	help
 	  This option adds the "masquerade" expression that you can use
@@ -539,6 +537,7 @@ config NFT_REDIR
 	depends on NF_CONNTRACK
 	depends on NF_NAT
 	tristate "Netfilter nf_tables redirect support"
+	select NF_NAT_REDIRECT
 	help
 	  This options adds the "redirect" expression that you can use
 	  to perform NAT in the redirect flavour.
@@ -546,6 +545,7 @@ config NFT_REDIR
 config NFT_NAT
 	depends on NF_CONNTRACK
 	select NF_NAT
+	depends on NF_TABLES_IPV4 || NF_TABLES_IPV6
 	tristate "Netfilter nf_tables nat module"
 	help
 	  This option adds the "nat" expression that you can use to perform
@@ -611,6 +611,13 @@ config NFT_FIB_INET
 	  The lookup will be delegated to the IPv4 or IPv6 FIB depending
 	  on the protocol of the packet.
 
+config NFT_XFRM
+	tristate "Netfilter nf_tables xfrm/IPSec security association matching"
+	depends on XFRM
+	help
+	  This option adds an expression that you can use to extract properties
+	  of a packets security association.
+
 config NFT_SOCKET
 	tristate "Netfilter nf_tables socket match support"
 	depends on IPV6 || IPV6=n
@@ -619,6 +626,16 @@ config NFT_SOCKET
 	help
 	  This option allows matching for the presence or absence of a
 	  corresponding socket and its attributes.
+
+config NFT_TPROXY
+	tristate "Netfilter nf_tables tproxy support"
+	depends on IPV6 || IPV6=n
+	select NF_DEFRAG_IPV4
+	select NF_DEFRAG_IPV6 if NF_TABLES_IPV6
+	select NF_TPROXY_IPV4
+	select NF_TPROXY_IPV6 if NF_TABLES_IPV6
+	help
+	  This makes transparent proxy support available in nftables.
 
 if NF_TABLES_NETDEV
 
@@ -657,7 +674,7 @@ config NF_FLOW_TABLE_INET
 	tristate "Netfilter flow table mixed IPv4/IPv6 module"
 	depends on NF_FLOW_TABLE
 	help
-          This option adds the flow table mixed IPv4/IPv6 support.
+	  This option adds the flow table mixed IPv4/IPv6 support.
 
 	  To compile it as a module, choose M here.
 
@@ -740,13 +757,13 @@ config NETFILTER_XT_TARGET_CHECKSUM
 	depends on NETFILTER_ADVANCED
 	---help---
 	  This option adds a `CHECKSUM' target, which can be used in the iptables mangle
-	  table.
+	  table to work around buggy DHCP clients in virtualized environments.
 
-	  You can use this target to compute and fill in the checksum in
-	  a packet that lacks a checksum.  This is particularly useful,
-	  if you need to work around old applications such as dhcp clients,
-	  that do not work well with checksum offloads, but don't want to disable
-	  checksum offload in your device.
+	  Some old DHCP clients drop packets because they are not aware
+	  that the checksum would normally be offloaded to hardware and
+	  thus should be considered valid.
+	  This target can be used to fill in the checksum using iptables
+	  when such packets are sent via a virtual network device.
 
 	  To compile it as a module, choose M here.  If unsure, say N.
 

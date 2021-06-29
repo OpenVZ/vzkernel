@@ -335,6 +335,19 @@
 #define __no_sanitize_address __attribute__((no_sanitize_address))
 #endif
 
+#if __has_attribute(__no_sanitize_address__)
+#define __no_sanitize_address __attribute__((no_sanitize_address))
+#else
+#define __no_sanitize_address
+#endif
+
+#if defined(__SANITIZE_THREAD__) && __has_attribute(__no_sanitize_thread__)
+#define __no_sanitize_thread                                                   \
+	__attribute__((__noinline__)) __attribute__((no_sanitize_thread))
+#else
+#define __no_sanitize_thread
+#endif
+
 #if GCC_VERSION >= 50100
 /*
  * Mark structures as requiring designated initializers.
@@ -386,4 +399,22 @@
 #define __diag_GCC_8(s)		__diag(s)
 #else
 #define __diag_GCC_8(s)
+#endif
+
+#define __no_fgcse __attribute__((optimize("-fno-gcse")))
+
+/*
+ * Add the pseudo keyword 'fallthrough' so case statement blocks
+ * must end with any of these keywords:
+ *   break;
+ *   fallthrough;
+ *   goto <label>;
+ *   return [expression];
+ *
+ *  gcc: https://gcc.gnu.org/onlinedocs/gcc/Statement-Attributes.html#Statement-Attributes
+ */
+#if __has_attribute(__fallthrough__)
+# define fallthrough			__attribute__((__fallthrough__))
+#else
+# define fallthrough			do {} while (0)  /* fallthrough */
 #endif

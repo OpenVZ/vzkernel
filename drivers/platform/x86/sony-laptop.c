@@ -771,33 +771,6 @@ static union acpi_object *__call_snc_method(acpi_handle handle, char *method,
 	return result;
 }
 
-static int sony_nc_int_call(acpi_handle handle, char *name, int *value,
-		int *result)
-{
-	union acpi_object *object = NULL;
-	if (value) {
-		u64 v = *value;
-		object = __call_snc_method(handle, name, &v);
-	} else
-		object = __call_snc_method(handle, name, NULL);
-
-	if (!object)
-		return -EINVAL;
-
-	if (object->type != ACPI_TYPE_INTEGER) {
-		pr_warn("Invalid acpi_object: expected 0x%x got 0x%x\n",
-				ACPI_TYPE_INTEGER, object->type);
-		kfree(object);
-		return -EINVAL;
-	}
-
-	if (result)
-		*result = object->integer.value;
-
-	kfree(object);
-	return 0;
-}
-
 #define MIN(a, b)	(a > b ? b : a)
 static int sony_nc_buffer_call(acpi_handle handle, char *name, u64 *value,
 		void *buffer, size_t buflen)
@@ -809,21 +782,41 @@ static int sony_nc_buffer_call(acpi_handle handle, char *name, u64 *value,
 	if (!object)
 		return -EINVAL;
 
-	if (object->type == ACPI_TYPE_BUFFER) {
+	if (!buffer) {
+		/* do nothing */
+	} else if (object->type == ACPI_TYPE_BUFFER) {
 		len = MIN(buflen, object->buffer.length);
+		memset(buffer, 0, buflen);
 		memcpy(buffer, object->buffer.pointer, len);
 
 	} else if (object->type == ACPI_TYPE_INTEGER) {
 		len = MIN(buflen, sizeof(object->integer.value));
+		memset(buffer, 0, buflen);
 		memcpy(buffer, &object->integer.value, len);
 
 	} else {
-		pr_warn("Invalid acpi_object: expected 0x%x got 0x%x\n",
-				ACPI_TYPE_BUFFER, object->type);
+		pr_warn("Unexpected acpi_object: 0x%x\n", object->type);
 		ret = -EINVAL;
 	}
 
 	kfree(object);
+	return ret;
+}
+
+static int sony_nc_int_call(acpi_handle handle, char *name, int *value, int
+		*result)
+{
+	int ret;
+
+	if (value) {
+		u64 v = *value;
+
+		ret = sony_nc_buffer_call(handle, name, &v, result,
+				sizeof(*result));
+	} else {
+		ret =  sony_nc_buffer_call(handle, name, NULL, result,
+				sizeof(*result));
+	}
 	return ret;
 }
 
@@ -2309,7 +2302,12 @@ static void sony_nc_thermal_cleanup(struct platform_device *pd)
 #ifdef CONFIG_PM_SLEEP
 static void sony_nc_thermal_resume(void)
 {
-	unsigned int status = sony_nc_thermal_mode_get();
+	int status;
+
+	if (!th_handle)
+		return;
+
+	status = sony_nc_thermal_mode_get();
 
 	if (status != th_handle->mode)
 		sony_nc_thermal_mode_set(th_handle->mode);
@@ -4392,7 +4390,7 @@ sony_pic_read_possible_resource(struct acpi_resource *resource, void *context)
 				list_add(&interrupt->list, &dev->interrupts);
 				interrupt->irq.triggering = p->triggering;
 				interrupt->irq.polarity = p->polarity;
-				interrupt->irq.sharable = p->sharable;
+				interrupt->irq.shareable = p->shareable;
 				interrupt->irq.interrupt_count = 1;
 				interrupt->irq.interrupts[0] = p->interrupts[i];
 			}
@@ -4546,7 +4544,7 @@ static int sony_pic_enable(struct acpi_device *device,
 		memcpy(&resource->res3.data.irq, &irq->irq,
 				sizeof(struct acpi_resource_irq));
 		/* we requested a shared irq */
-		resource->res3.data.irq.sharable = ACPI_SHARED;
+		resource->res3.data.irq.shareable = ACPI_SHARED;
 
 		resource->res4.type = ACPI_RESOURCE_TYPE_END_TAG;
 		resource->res4.length = sizeof(struct acpi_resource);
@@ -4565,7 +4563,7 @@ static int sony_pic_enable(struct acpi_device *device,
 		memcpy(&resource->res2.data.irq, &irq->irq,
 				sizeof(struct acpi_resource_irq));
 		/* we requested a shared irq */
-		resource->res2.data.irq.sharable = ACPI_SHARED;
+		resource->res2.data.irq.shareable = ACPI_SHARED;
 
 		resource->res3.type = ACPI_RESOURCE_TYPE_END_TAG;
 		resource->res3.length = sizeof(struct acpi_resource);
@@ -4779,7 +4777,7 @@ static int sony_pic_add(struct acpi_device *device)
 					irq->irq.interrupts[0],
 					irq->irq.triggering,
 					irq->irq.polarity,
-					irq->irq.sharable);
+					irq->irq.shareable);
 			spic_dev.cur_irq = irq;
 			break;
 		}

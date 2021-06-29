@@ -41,7 +41,8 @@
 
 #define CCM_B0_SIZE             16
 #define CCM_AAD_FIELD_SIZE      2
-#define T6_MAX_AAD_SIZE 511
+// 511 - 16(For IV)
+#define T6_MAX_AAD_SIZE 495
 
 
 /* Define following if h/w is not dropping the AAD and IV data before
@@ -185,11 +186,10 @@ struct chcr_aead_reqctx {
 	dma_addr_t b0_dma;
 	unsigned int b0_len;
 	unsigned int op;
-	short int aad_nents;
-	short int src_nents;
-	short int dst_nents;
 	u16 imm;
 	u16 verify;
+	u16 txqidx;
+	u16 rxqidx;
 	u8 iv[CHCR_MAX_CRYPTO_IV_LEN + MAX_SCRATCH_PAD_SIZE];
 	u8 *scratch_pad;
 };
@@ -253,8 +253,11 @@ struct __crypto_ctx {
 
 struct chcr_context {
 	struct chcr_dev *dev;
-	unsigned char tx_qidx;
-	unsigned char rx_qidx;
+	unsigned char rxq_perchan;
+	unsigned char txq_perchan;
+	unsigned int  ntxq;
+	unsigned int  nrxq;
+	struct completion cbc_aes_aio_done;
 	struct __crypto_ctx crypto_ctx[0];
 };
 
@@ -280,6 +283,8 @@ struct chcr_ahash_req_ctx {
 	u8 *skbfr;
 	/* SKB which is being sent to the hardware for processing */
 	u64 data_len;  /* Data len till time */
+	u16 txqidx;
+	u16 rxqidx;
 	u8 reqlen;
 	u8 partial_hash[CHCR_HASH_MAX_DIGEST_SIZE];
 	u8 bfr1[CHCR_HASH_MAX_BLOCK_SIZE_128];
@@ -291,12 +296,15 @@ struct chcr_blkcipher_req_ctx {
 	struct scatterlist *dstsg;
 	unsigned int processed;
 	unsigned int last_req_len;
+	unsigned int partial_req;
 	struct scatterlist *srcsg;
 	unsigned int src_ofst;
 	unsigned int dst_ofst;
 	unsigned int op;
 	u16 imm;
 	u8 iv[CHCR_MAX_CRYPTO_IV_LEN];
+	u16 txqidx;
+	u16 rxqidx;
 };
 
 struct chcr_alg_template {
@@ -320,10 +328,8 @@ void chcr_aead_dma_unmap(struct device *dev, struct aead_request *req,
 			 unsigned short op_type);
 void chcr_add_aead_dst_ent(struct aead_request *req,
 			   struct cpl_rx_phys_dsgl *phys_cpl,
-			   unsigned int assoclen,
 			   unsigned short qid);
-void chcr_add_aead_src_ent(struct aead_request *req, struct ulptx_sgl *ulptx,
-			   unsigned int assoclen);
+void chcr_add_aead_src_ent(struct aead_request *req, struct ulptx_sgl *ulptx);
 void chcr_add_cipher_src_ent(struct ablkcipher_request *req,
 			     void *ulptx,
 			     struct  cipher_wr_param *wrparam);

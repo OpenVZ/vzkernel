@@ -26,6 +26,7 @@
 #include <linux/wait.h>
 #include <linux/atomic.h>
 #include <linux/workqueue.h>
+#include <linux/rh_kabi.h>
 
 #define UEVENT_HELPER_PATH_LEN		256
 #define UEVENT_NUM_ENVP			32	/* number of env pointers */
@@ -77,6 +78,10 @@ struct kobject {
 	unsigned int state_add_uevent_sent:1;
 	unsigned int state_remove_uevent_sent:1;
 	unsigned int uevent_suppress:1;
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 };
 
 extern __printf(2, 3)
@@ -116,12 +121,33 @@ extern void kobject_put(struct kobject *kobj);
 extern const void *kobject_namespace(struct kobject *kobj);
 extern char *kobject_get_path(struct kobject *kobj, gfp_t flag);
 
+/**
+ * kobject_has_children - Returns whether a kobject has children.
+ * @kobj: the object to test
+ *
+ * This will return whether a kobject has other kobjects as children.
+ *
+ * It does NOT account for the presence of attribute files, only sub
+ * directories. It also assumes there is no concurrent addition or
+ * removal of such children, and thus relies on external locking.
+ */
+static inline bool kobject_has_children(struct kobject *kobj)
+{
+	WARN_ON_ONCE(kref_read(&kobj->kref) == 0);
+
+	return kobj->sd && kobj->sd->dir.subdirs;
+}
+
 struct kobj_type {
 	void (*release)(struct kobject *kobj);
 	const struct sysfs_ops *sysfs_ops;
-	struct attribute **default_attrs;
+	struct attribute **default_attrs;	/* use default_groups instead */
 	const struct kobj_ns_type_operations *(*child_ns_type)(struct kobject *kobj);
 	const void *(*namespace)(struct kobject *kobj);
+	RH_KABI_USE(1, const struct attribute_group **default_groups)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 };
 
 struct kobj_uevent_env {
@@ -173,6 +199,10 @@ struct kset {
 	spinlock_t list_lock;
 	struct kobject kobj;
 	const struct kset_uevent_ops *uevent_ops;
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 } __randomize_layout;
 
 extern void kset_init(struct kset *kset);

@@ -17,6 +17,13 @@ etc.
    kernel-parameters
    devices
 
+This section describes CPU vulnerabilities and their mitigations.
+
+.. toctree::
+   :maxdepth: 1
+
+   hw-vuln/index
+
 Here is a set of documents aimed at users who are trying to track down
 problems and bugs in particular.
 
@@ -49,6 +56,7 @@ configure specific aspects of kernel behavior to your liking.
 
    initrd
    cgroup-v2
+   device-mapper/index
    serial-console
    braille-console
    parport

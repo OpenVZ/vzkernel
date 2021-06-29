@@ -431,6 +431,7 @@ struct mvneta_port {
 	struct device_node *dn;
 	unsigned int tx_csum_limit;
 	struct phylink *phylink;
+	struct phylink_config phylink_config;
 
 	struct mvneta_bm *bm_priv;
 	struct mvneta_bm_pool *pool_long;
@@ -2394,7 +2395,7 @@ out:
 		if (txq->count >= txq->tx_stop_threshold)
 			netif_tx_stop_queue(nq);
 
-		if (!skb->xmit_more || netif_xmit_stopped(nq) ||
+		if (!netdev_xmit_more() || netif_xmit_stopped(nq) ||
 		    txq->pending + frags > MVNETA_TXQ_DEC_SENT_MASK)
 			mvneta_txq_pend_desc_add(pp, txq, frags);
 		else
@@ -3251,9 +3252,11 @@ static int mvneta_set_mac_addr(struct net_device *dev, void *addr)
 	return 0;
 }
 
-static void mvneta_validate(struct net_device *ndev, unsigned long *supported,
+static void mvneta_validate(struct phylink_config *config,
+			    unsigned long *supported,
 			    struct phylink_link_state *state)
 {
+	struct net_device *ndev = to_net_dev(config->dev);
 	__ETHTOOL_DECLARE_LINK_MODE_MASK(mask) = { 0, };
 
 	/* We only support QSGMII, SGMII, 802.3z and RGMII modes */
@@ -3290,9 +3293,10 @@ static void mvneta_validate(struct net_device *ndev, unsigned long *supported,
 		   __ETHTOOL_LINK_MODE_MASK_NBITS);
 }
 
-static int mvneta_mac_link_state(struct net_device *ndev,
-				 struct phylink_link_state *state)
+static void mvneta_mac_pcs_get_state(struct phylink_config *config,
+				     struct phylink_link_state *state)
 {
+	struct net_device *ndev = to_net_dev(config->dev);
 	struct mvneta_port *pp = netdev_priv(ndev);
 	u32 gmac_stat;
 
@@ -3314,12 +3318,11 @@ static int mvneta_mac_link_state(struct net_device *ndev,
 		state->pause |= MLO_PAUSE_RX;
 	if (gmac_stat & MVNETA_GMAC_TX_FLOW_CTRL_ENABLE)
 		state->pause |= MLO_PAUSE_TX;
-
-	return 1;
 }
 
-static void mvneta_mac_an_restart(struct net_device *ndev)
+static void mvneta_mac_an_restart(struct phylink_config *config)
 {
+	struct net_device *ndev = to_net_dev(config->dev);
 	struct mvneta_port *pp = netdev_priv(ndev);
 	u32 gmac_an = mvreg_read(pp, MVNETA_GMAC_AUTONEG_CONFIG);
 
@@ -3329,9 +3332,10 @@ static void mvneta_mac_an_restart(struct net_device *ndev)
 		    gmac_an & ~MVNETA_GMAC_INBAND_RESTART_AN);
 }
 
-static void mvneta_mac_config(struct net_device *ndev, unsigned int mode,
-	const struct phylink_link_state *state)
+static void mvneta_mac_config(struct phylink_config *config, unsigned int mode,
+			      const struct phylink_link_state *state)
 {
+	struct net_device *ndev = to_net_dev(config->dev);
 	struct mvneta_port *pp = netdev_priv(ndev);
 	u32 new_ctrl0, gmac_ctrl0 = mvreg_read(pp, MVNETA_GMAC_CTRL_0);
 	u32 new_ctrl2, gmac_ctrl2 = mvreg_read(pp, MVNETA_GMAC_CTRL_2);
@@ -3440,9 +3444,10 @@ static void mvneta_set_eee(struct mvneta_port *pp, bool enable)
 	mvreg_write(pp, MVNETA_LPI_CTRL_1, lpi_ctl1);
 }
 
-static void mvneta_mac_link_down(struct net_device *ndev, unsigned int mode,
-				 phy_interface_t interface)
+static void mvneta_mac_link_down(struct phylink_config *config,
+				 unsigned int mode, phy_interface_t interface)
 {
+	struct net_device *ndev = to_net_dev(config->dev);
 	struct mvneta_port *pp = netdev_priv(ndev);
 	u32 val;
 
@@ -3459,10 +3464,13 @@ static void mvneta_mac_link_down(struct net_device *ndev, unsigned int mode,
 	mvneta_set_eee(pp, false);
 }
 
-static void mvneta_mac_link_up(struct net_device *ndev, unsigned int mode,
-			       phy_interface_t interface,
-			       struct phy_device *phy)
+static void mvneta_mac_link_up(struct phylink_config *config,
+			       struct phy_device *phy,
+			       unsigned int mode, phy_interface_t interface,
+			       int speed, int duplex,
+			       bool tx_pause, bool rx_pause)
 {
+	struct net_device *ndev = to_net_dev(config->dev);
 	struct mvneta_port *pp = netdev_priv(ndev);
 	u32 val;
 
@@ -3483,7 +3491,7 @@ static void mvneta_mac_link_up(struct net_device *ndev, unsigned int mode,
 
 static const struct phylink_mac_ops mvneta_phylink_ops = {
 	.validate = mvneta_validate,
-	.mac_link_state = mvneta_mac_link_state,
+	.mac_pcs_get_state = mvneta_mac_pcs_get_state,
 	.mac_an_restart = mvneta_mac_an_restart,
 	.mac_config = mvneta_mac_config,
 	.mac_link_down = mvneta_mac_link_down,
@@ -4342,8 +4350,8 @@ static int mvneta_probe(struct platform_device *pdev)
 		goto err_free_irq;
 	}
 
-	phylink = phylink_create(dev, pdev->dev.fwnode, phy_mode,
-				 &mvneta_phylink_ops);
+	phylink = phylink_create(&pp->phylink_config, pdev->dev.fwnode,
+				 phy_mode, &mvneta_phylink_ops);
 	if (IS_ERR(phylink)) {
 		err = PTR_ERR(phylink);
 		goto err_free_irq;
@@ -4355,8 +4363,6 @@ static int mvneta_probe(struct platform_device *pdev)
 
 	dev->ethtool_ops = &mvneta_eth_tool_ops;
 
-	pp = netdev_priv(dev);
-	spin_lock_init(&pp->lock);
 	pp->phylink = phylink;
 	pp->phy_interface = phy_mode;
 	pp->dn = dn;

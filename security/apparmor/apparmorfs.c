@@ -15,7 +15,7 @@
 #include <linux/ctype.h>
 #include <linux/security.h>
 #include <linux/vmalloc.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/mount.h>
@@ -1955,9 +1955,6 @@ fail2:
 
 	return error;
 }
-
-
-#define list_entry_is_head(pos, head, member) (&pos->member == (head))
 
 /**
  * __next_ns - find the next namespace to list

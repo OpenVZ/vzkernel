@@ -152,7 +152,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 
 	do_wake = list_empty(block_id == ID_SYNCER ? &device->sync_ee : &device->active_ee);
 
-	/* FIXME do we want to detach for failed REQ_DISCARD?
+	/* FIXME do we want to detach for failed REQ_OP_DISCARD?
 	 * ((peer_req->flags & (EE_WAS_ERROR|EE_IS_TRIM)) == EE_WAS_ERROR) */
 	if (peer_req->flags & EE_WAS_ERROR)
 		__drbd_chk_io_error(device, DRBD_WRITE_ERROR);
@@ -495,11 +495,11 @@ static void fifo_add_val(struct fifo_buffer *fb, int value)
 		fb->values[i] += value;
 }
 
-struct fifo_buffer *fifo_alloc(int fifo_size)
+struct fifo_buffer *fifo_alloc(unsigned int fifo_size)
 {
 	struct fifo_buffer *fb;
 
-	fb = kzalloc(sizeof(struct fifo_buffer) + sizeof(int) * fifo_size, GFP_NOIO);
+	fb = kzalloc(struct_size(fb, values, fifo_size), GFP_NOIO);
 	if (!fb)
 		return NULL;
 
@@ -1690,9 +1690,7 @@ void drbd_rs_controller_reset(struct drbd_device *device)
 	atomic_set(&device->rs_sect_in, 0);
 	atomic_set(&device->rs_sect_ev, 0);
 	device->rs_in_flight = 0;
-	device->rs_last_events =
-		(int)part_stat_read(&disk->part0, sectors[0]) +
-		(int)part_stat_read(&disk->part0, sectors[1]);
+	device->rs_last_events = (int)part_stat_read_accum(&disk->part0, sectors);
 
 	/* Updating the RCU protected object in place is necessary since
 	   this function gets called from atomic context.

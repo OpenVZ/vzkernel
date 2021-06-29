@@ -9824,7 +9824,6 @@ qla4xxx_pci_resume(struct pci_dev *pdev)
 		     __func__);
 	}
 
-	pci_cleanup_aer_uncorrect_error_status(pdev);
 	clear_bit(AF_EEH_BUSY, &ha->flags);
 }
 
@@ -9851,24 +9850,6 @@ static struct pci_device_id qla4xxx_pci_tbl[] = {
 	{
 		.vendor		= PCI_VENDOR_ID_QLOGIC,
 		.device		= PCI_DEVICE_ID_QLOGIC_ISP4032,
-		.subvendor	= PCI_ANY_ID,
-		.subdevice	= PCI_ANY_ID,
-	},
-	{
-		.vendor         = PCI_VENDOR_ID_QLOGIC,
-		.device         = PCI_DEVICE_ID_QLOGIC_ISP8022,
-		.subvendor      = PCI_ANY_ID,
-		.subdevice      = PCI_ANY_ID,
-	},
-	{
-		.vendor		= PCI_VENDOR_ID_QLOGIC,
-		.device		= PCI_DEVICE_ID_QLOGIC_ISP8324,
-		.subvendor	= PCI_ANY_ID,
-		.subdevice	= PCI_ANY_ID,
-	},
-	{
-		.vendor		= PCI_VENDOR_ID_QLOGIC,
-		.device		= PCI_DEVICE_ID_QLOGIC_ISP8042,
 		.subvendor	= PCI_ANY_ID,
 		.subdevice	= PCI_ANY_ID,
 	},

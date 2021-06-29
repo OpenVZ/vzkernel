@@ -194,6 +194,9 @@ static ssize_t write_mem(struct file *file, const char __user *buf,
 	unsigned long copied;
 	void *ptr;
 
+	if (kernel_is_locked_down("/dev/mem write"))
+		return -EPERM;
+
 	if (p != *ppos)
 		return -EFBIG;
 
@@ -562,6 +565,9 @@ static ssize_t write_kmem(struct file *file, const char __user *buf,
 	char *kbuf; /* k-addr because vwrite() takes vmlist_lock rwlock */
 	int err = 0;
 
+	if (kernel_is_locked_down("/dev/kmem write"))
+		return -EPERM;
+
 	if (p < (unsigned long) high_memory) {
 		unsigned long to_write = min_t(unsigned long, count,
 					       (unsigned long)high_memory - p);
@@ -609,7 +615,10 @@ static ssize_t read_port(struct file *file, char __user *buf,
 	unsigned long i = *ppos;
 	char __user *tmp = buf;
 
-	if (!access_ok(VERIFY_WRITE, buf, count))
+	if (kernel_is_locked_down("/dev/port read"))
+		return -EPERM;
+
+	if (!access_ok(buf, count))
 		return -EFAULT;
 	while (count-- > 0 && i < 65536) {
 		if (__put_user(inb(i), tmp) < 0)
@@ -627,7 +636,10 @@ static ssize_t write_port(struct file *file, const char __user *buf,
 	unsigned long i = *ppos;
 	const char __user *tmp = buf;
 
-	if (!access_ok(VERIFY_READ, buf, count))
+	if (kernel_is_locked_down("/dev/port write"))
+		return -EPERM;
+
+	if (!access_ok(buf, count))
 		return -EFAULT;
 	while (count-- > 0 && i < 65536) {
 		char c;

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright (c) 2001-2002 by David Brownell
  */
@@ -235,9 +235,9 @@ struct ehci_hcd {			/* one per controller */
 	/* irq statistics */
 #ifdef EHCI_STATS
 	struct ehci_stats	stats;
-#	define COUNT(x) ((x)++)
+#	define INCR(x) ((x)++)
 #else
-#	define COUNT(x)
+#	define INCR(x) do {} while (0)
 #endif
 
 	/* debug files */

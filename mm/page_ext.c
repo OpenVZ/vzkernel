@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/mm.h>
 #include <linux/mmzone.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/page_ext.h>
 #include <linux/memory.h>
 #include <linux/vmalloc.h>
@@ -59,9 +59,6 @@
  */
 
 static struct page_ext_operations *page_ext_ops[] = {
-#ifdef CONFIG_DEBUG_PAGEALLOC
-	&debug_guardpage_ops,
-#endif
 #ifdef CONFIG_PAGE_OWNER
 	&page_owner_ops,
 #endif
@@ -161,9 +158,9 @@ static int __init alloc_node_page_ext(int nid)
 
 	table_size = get_entry_size() * nr_pages;
 
-	base = memblock_virt_alloc_try_nid_nopanic(
+	base = memblock_alloc_try_nid_nopanic(
 			table_size, PAGE_SIZE, __pa(MAX_DMA_ADDRESS),
-			BOOTMEM_ALLOC_ACCESSIBLE, nid);
+			MEMBLOCK_ALLOC_ACCESSIBLE, nid);
 	if (!base)
 		return -ENOMEM;
 	NODE_DATA(nid)->node_page_ext = base;
@@ -300,7 +297,7 @@ static int __meminit online_page_ext(unsigned long start_pfn,
 	start = SECTION_ALIGN_DOWN(start_pfn);
 	end = SECTION_ALIGN_UP(start_pfn + nr_pages);
 
-	if (nid == -1) {
+	if (nid == NUMA_NO_NODE) {
 		/*
 		 * In this case, "nid" already exists and contains valid memory.
 		 * "start_pfn" passed to us is a pfn which is an arg for
@@ -311,7 +308,7 @@ static int __meminit online_page_ext(unsigned long start_pfn,
 	}
 
 	for (pfn = start; !fail && pfn < end; pfn += PAGES_PER_SECTION) {
-		if (!pfn_present(pfn))
+		if (!pfn_in_present_section(pfn))
 			continue;
 		fail = init_section_page_ext(pfn, nid);
 	}

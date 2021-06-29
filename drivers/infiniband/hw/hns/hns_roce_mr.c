@@ -882,12 +882,11 @@ int hns_roce_ib_umem_write_mtt(struct hns_roce_dev *hr_dev,
 			       struct hns_roce_mtt *mtt, struct ib_umem *umem)
 {
 	struct device *dev = hr_dev->dev;
-	struct scatterlist *sg;
+	struct sg_dma_page_iter sg_iter;
 	unsigned int order;
-	int i, k, entry;
 	int npage = 0;
 	int ret = 0;
-	int len;
+	int i;
 	u64 page_addr;
 	u64 *pages;
 	u32 bt_page_size;
@@ -903,29 +902,25 @@ int hns_roce_ib_umem_write_mtt(struct hns_roce_dev *hr_dev,
 
 	i = n = 0;
 
-	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, entry) {
-		len = sg_dma_len(sg) >> PAGE_SHIFT;
-		for (k = 0; k < len; ++k) {
-			page_addr =
-				sg_dma_address(sg) + (k << umem->page_shift);
-			if (!(npage % (1 << (mtt->page_shift - PAGE_SHIFT)))) {
-				if (page_addr & ((1 << mtt->page_shift) - 1)) {
-					dev_err(dev, "page_addr 0x%llx is not page_shift %d alignment!\n",
-						page_addr, mtt->page_shift);
-					ret = -EINVAL;
-					goto out;
-				}
-				pages[i++] = page_addr;
+	for_each_sg_dma_page(umem->sg_head.sgl, &sg_iter, umem->nmap, 0) {
+		page_addr = sg_page_iter_dma_address(&sg_iter);
+		if (!(npage % (1 << (mtt->page_shift - PAGE_SHIFT)))) {
+			if (page_addr & ((1 << mtt->page_shift) - 1)) {
+				dev_err(dev,
+					"page_addr 0x%llx is not page_shift %d alignment!\n",
+					page_addr, mtt->page_shift);
+				ret = -EINVAL;
+				goto out;
 			}
-			npage++;
-			if (i == bt_page_size / sizeof(u64)) {
-				ret = hns_roce_write_mtt(hr_dev, mtt, n, i,
-							 pages);
-				if (ret)
-					goto out;
-				n += i;
-				i = 0;
-			}
+			pages[i++] = page_addr;
+		}
+		npage++;
+		if (i == bt_page_size / sizeof(u64)) {
+			ret = hns_roce_write_mtt(hr_dev, mtt, n, i, pages);
+			if (ret)
+				goto out;
+			n += i;
+			i = 0;
 		}
 	}
 
@@ -941,10 +936,8 @@ static int hns_roce_ib_umem_write_mr(struct hns_roce_dev *hr_dev,
 				     struct hns_roce_mr *mr,
 				     struct ib_umem *umem)
 {
-	struct scatterlist *sg;
-	int i = 0, j = 0, k;
-	int entry;
-	int len;
+	struct sg_dma_page_iter sg_iter;
+	int i = 0, j = 0;
 	u64 page_addr;
 	u32 pbl_bt_sz;
 
@@ -952,27 +945,22 @@ static int hns_roce_ib_umem_write_mr(struct hns_roce_dev *hr_dev,
 		return 0;
 
 	pbl_bt_sz = 1 << (hr_dev->caps.pbl_ba_pg_sz + PAGE_SHIFT);
-	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, entry) {
-		len = sg_dma_len(sg) >> PAGE_SHIFT;
-		for (k = 0; k < len; ++k) {
-			page_addr = sg_dma_address(sg) +
-				    (k << umem->page_shift);
+	for_each_sg_dma_page(umem->sg_head.sgl, &sg_iter, umem->nmap, 0) {
+		page_addr = sg_page_iter_dma_address(&sg_iter);
+		if (!hr_dev->caps.pbl_hop_num) {
+			mr->pbl_buf[i++] = page_addr >> 12;
+		} else if (hr_dev->caps.pbl_hop_num == 1) {
+			mr->pbl_buf[i++] = page_addr;
+		} else {
+			if (hr_dev->caps.pbl_hop_num == 2)
+				mr->pbl_bt_l1[i][j] = page_addr;
+			else if (hr_dev->caps.pbl_hop_num == 3)
+				mr->pbl_bt_l2[i][j] = page_addr;
 
-			if (!hr_dev->caps.pbl_hop_num) {
-				mr->pbl_buf[i++] = page_addr >> 12;
-			} else if (hr_dev->caps.pbl_hop_num == 1) {
-				mr->pbl_buf[i++] = page_addr;
-			} else {
-				if (hr_dev->caps.pbl_hop_num == 2)
-					mr->pbl_bt_l1[i][j] = page_addr;
-				else if (hr_dev->caps.pbl_hop_num == 3)
-					mr->pbl_bt_l2[i][j] = page_addr;
-
-				j++;
-				if (j >= (pbl_bt_sz / 8)) {
-					i++;
-					j = 0;
-				}
+			j++;
+			if (j >= (pbl_bt_sz / 8)) {
+				i++;
+				j = 0;
 			}
 		}
 	}
@@ -999,8 +987,7 @@ struct ib_mr *hns_roce_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	if (!mr)
 		return ERR_PTR(-ENOMEM);
 
-	mr->umem = ib_umem_get(pd->uobject->context, start, length,
-			       access_flags, 0);
+	mr->umem = ib_umem_get(udata, start, length, access_flags);
 	if (IS_ERR(mr->umem)) {
 		ret = PTR_ERR(mr->umem);
 		goto err_free;
@@ -1017,14 +1004,14 @@ struct ib_mr *hns_roce_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 			goto err_umem;
 		}
 	} else {
-		int pbl_size = 1;
+		u64 pbl_size = 1;
 
 		bt_size = (1 << (hr_dev->caps.pbl_ba_pg_sz + PAGE_SHIFT)) / 8;
 		for (i = 0; i < hr_dev->caps.pbl_hop_num; i++)
 			pbl_size *= bt_size;
 		if (n > pbl_size) {
 			dev_err(dev,
-			    " MR len %lld err. MR page num is limited to %d!\n",
+			    " MR len %lld err. MR page num is limited to %lld!\n",
 			    length, pbl_size);
 			ret = -EINVAL;
 			goto err_umem;
@@ -1059,6 +1046,83 @@ err_free:
 	return ERR_PTR(ret);
 }
 
+static int rereg_mr_trans(struct ib_mr *ibmr, int flags,
+			  u64 start, u64 length,
+			  u64 virt_addr, int mr_access_flags,
+			  struct hns_roce_cmd_mailbox *mailbox,
+			  u32 pdn, struct ib_udata *udata)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(ibmr->device);
+	struct hns_roce_mr *mr = to_hr_mr(ibmr);
+	struct device *dev = hr_dev->dev;
+	int npages;
+	int ret;
+
+	if (mr->size != ~0ULL) {
+		npages = ib_umem_page_count(mr->umem);
+
+		if (hr_dev->caps.pbl_hop_num)
+			hns_roce_mhop_free(hr_dev, mr);
+		else
+			dma_free_coherent(dev, npages * 8,
+					  mr->pbl_buf, mr->pbl_dma_addr);
+	}
+	ib_umem_release(mr->umem);
+
+	mr->umem = ib_umem_get(udata, start, length, mr_access_flags);
+	if (IS_ERR(mr->umem)) {
+		ret = PTR_ERR(mr->umem);
+		mr->umem = NULL;
+		return -ENOMEM;
+	}
+	npages = ib_umem_page_count(mr->umem);
+
+	if (hr_dev->caps.pbl_hop_num) {
+		ret = hns_roce_mhop_alloc(hr_dev, npages, mr);
+		if (ret)
+			goto release_umem;
+	} else {
+		mr->pbl_buf = dma_alloc_coherent(dev, npages * 8,
+						 &(mr->pbl_dma_addr),
+						 GFP_KERNEL);
+		if (!mr->pbl_buf) {
+			ret = -ENOMEM;
+			goto release_umem;
+		}
+	}
+
+	ret = hr_dev->hw->rereg_write_mtpt(hr_dev, mr, flags, pdn,
+					   mr_access_flags, virt_addr,
+					   length, mailbox->buf);
+	if (ret)
+		goto release_umem;
+
+
+	ret = hns_roce_ib_umem_write_mr(hr_dev, mr, mr->umem);
+	if (ret) {
+		if (mr->size != ~0ULL) {
+			npages = ib_umem_page_count(mr->umem);
+
+			if (hr_dev->caps.pbl_hop_num)
+				hns_roce_mhop_free(hr_dev, mr);
+			else
+				dma_free_coherent(dev, npages * 8,
+						  mr->pbl_buf,
+						  mr->pbl_dma_addr);
+		}
+
+		goto release_umem;
+	}
+
+	return 0;
+
+release_umem:
+	ib_umem_release(mr->umem);
+	return ret;
+
+}
+
+
 int hns_roce_rereg_user_mr(struct ib_mr *ibmr, int flags, u64 start, u64 length,
 			   u64 virt_addr, int mr_access_flags, struct ib_pd *pd,
 			   struct ib_udata *udata)
@@ -1069,7 +1133,6 @@ int hns_roce_rereg_user_mr(struct ib_mr *ibmr, int flags, u64 start, u64 length,
 	struct device *dev = hr_dev->dev;
 	unsigned long mtpt_idx;
 	u32 pdn = 0;
-	int npages;
 	int ret;
 
 	if (!mr->enabled)
@@ -1096,73 +1159,25 @@ int hns_roce_rereg_user_mr(struct ib_mr *ibmr, int flags, u64 start, u64 length,
 		pdn = to_hr_pd(pd)->pdn;
 
 	if (flags & IB_MR_REREG_TRANS) {
-		if (mr->size != ~0ULL) {
-			npages = ib_umem_page_count(mr->umem);
-
-			if (hr_dev->caps.pbl_hop_num)
-				hns_roce_mhop_free(hr_dev, mr);
-			else
-				dma_free_coherent(dev, npages * 8, mr->pbl_buf,
-						  mr->pbl_dma_addr);
-		}
-		ib_umem_release(mr->umem);
-
-		mr->umem = ib_umem_get(ibmr->uobject->context, start, length,
-				       mr_access_flags, 0);
-		if (IS_ERR(mr->umem)) {
-			ret = PTR_ERR(mr->umem);
-			mr->umem = NULL;
+		ret = rereg_mr_trans(ibmr, flags,
+				     start, length,
+				     virt_addr, mr_access_flags,
+				     mailbox, pdn, udata);
+		if (ret)
 			goto free_cmd_mbox;
-		}
-		npages = ib_umem_page_count(mr->umem);
-
-		if (hr_dev->caps.pbl_hop_num) {
-			ret = hns_roce_mhop_alloc(hr_dev, npages, mr);
-			if (ret)
-				goto release_umem;
-		} else {
-			mr->pbl_buf = dma_alloc_coherent(dev, npages * 8,
-							 &(mr->pbl_dma_addr),
-							 GFP_KERNEL);
-			if (!mr->pbl_buf) {
-				ret = -ENOMEM;
-				goto release_umem;
-			}
-		}
-	}
-
-	ret = hr_dev->hw->rereg_write_mtpt(hr_dev, mr, flags, pdn,
-					   mr_access_flags, virt_addr,
-					   length, mailbox->buf);
-	if (ret) {
-		if (flags & IB_MR_REREG_TRANS)
-			goto release_umem;
-		else
+	} else {
+		ret = hr_dev->hw->rereg_write_mtpt(hr_dev, mr, flags, pdn,
+						   mr_access_flags, virt_addr,
+						   length, mailbox->buf);
+		if (ret)
 			goto free_cmd_mbox;
-	}
-
-	if (flags & IB_MR_REREG_TRANS) {
-		ret = hns_roce_ib_umem_write_mr(hr_dev, mr, mr->umem);
-		if (ret) {
-			if (mr->size != ~0ULL) {
-				npages = ib_umem_page_count(mr->umem);
-
-				if (hr_dev->caps.pbl_hop_num)
-					hns_roce_mhop_free(hr_dev, mr);
-				else
-					dma_free_coherent(dev, npages * 8,
-							  mr->pbl_buf,
-							  mr->pbl_dma_addr);
-			}
-
-			goto release_umem;
-		}
 	}
 
 	ret = hns_roce_sw2hw_mpt(hr_dev, mailbox, mtpt_idx);
 	if (ret) {
 		dev_err(dev, "SW2HW_MPT failed (%d)\n", ret);
-		goto release_umem;
+		ib_umem_release(mr->umem);
+		goto free_cmd_mbox;
 	}
 
 	mr->enabled = 1;
@@ -1173,29 +1188,24 @@ int hns_roce_rereg_user_mr(struct ib_mr *ibmr, int flags, u64 start, u64 length,
 
 	return 0;
 
-release_umem:
-	ib_umem_release(mr->umem);
-
 free_cmd_mbox:
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
 
 	return ret;
 }
 
-int hns_roce_dereg_mr(struct ib_mr *ibmr)
+int hns_roce_dereg_mr(struct ib_mr *ibmr, struct ib_udata *udata)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibmr->device);
 	struct hns_roce_mr *mr = to_hr_mr(ibmr);
 	int ret = 0;
 
 	if (hr_dev->hw->dereg_mr) {
-		ret = hr_dev->hw->dereg_mr(hr_dev, mr);
+		ret = hr_dev->hw->dereg_mr(hr_dev, mr, udata);
 	} else {
 		hns_roce_mr_free(hr_dev, mr);
 
-		if (mr->umem)
-			ib_umem_release(mr->umem);
-
+		ib_umem_release(mr->umem);
 		kfree(mr);
 	}
 

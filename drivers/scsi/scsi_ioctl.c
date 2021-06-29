@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Changes:
  * Arnaldo Carvalho de Melo <acme@conectiva.com.br> 08/23/2000
@@ -100,8 +101,8 @@ static int ioctl_internal_command(struct scsi_device *sdev, char *cmd,
 	SCSI_LOG_IOCTL(2, sdev_printk(KERN_INFO, sdev,
 				      "Ioctl returned  0x%x\n", result));
 
-	if ((driver_byte(result) & DRIVER_SENSE) &&
-	    (scsi_sense_valid(&sshdr))) {
+	if (driver_byte(result) == DRIVER_SENSE &&
+	    scsi_sense_valid(&sshdr)) {
 		switch (sshdr.sense_key) {
 		case ILLEGAL_REQUEST:
 			if (cmd[0] == ALLOW_MEDIUM_REMOVAL)
@@ -220,18 +221,18 @@ int scsi_ioctl(struct scsi_device *sdev, int cmd, void __user *arg)
 	}
 
 	switch (cmd) {
-	case SCSI_IOCTL_GET_IDLUN:
-		if (!access_ok(VERIFY_WRITE, arg, sizeof(struct scsi_idlun)))
+	case SCSI_IOCTL_GET_IDLUN: {
+		struct scsi_idlun v = {
+			.dev_id = (sdev->id & 0xff)
+				 + ((sdev->lun & 0xff) << 8)
+				 + ((sdev->channel & 0xff) << 16)
+				 + ((sdev->host->host_no & 0xff) << 24),
+			.host_unique_id = sdev->host->unique_id
+		};
+		if (copy_to_user(arg, &v, sizeof(struct scsi_idlun)))
 			return -EFAULT;
-
-		__put_user((sdev->id & 0xff)
-			 + ((sdev->lun & 0xff) << 8)
-			 + ((sdev->channel & 0xff) << 16)
-			 + ((sdev->host->host_no & 0xff) << 24),
-			 &((struct scsi_idlun __user *)arg)->dev_id);
-		__put_user(sdev->host->unique_id,
-			 &((struct scsi_idlun __user *)arg)->host_unique_id);
 		return 0;
+	}
 	case SCSI_IOCTL_GET_BUS_NUMBER:
 		return put_user(sdev->host->host_no, (int __user *)arg);
 	case SCSI_IOCTL_PROBE_HOST:

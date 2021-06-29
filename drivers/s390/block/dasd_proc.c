@@ -5,7 +5,7 @@
  *		    Carsten Otte <Cotte@de.ibm.com>
  *		    Martin Schwidefsky <schwidefsky@de.ibm.com>
  * Bugreports.to..: <Linux390@de.ibm.com>
- * Coypright IBM Corp. 1999, 2002
+ * Copyright IBM Corp. 1999, 2002
  *
  * /proc interface for the dasd driver.
  *
@@ -339,8 +339,7 @@ dasd_proc_init(void)
 	dasd_proc_root_entry = proc_mkdir("dasd", NULL);
 	if (!dasd_proc_root_entry)
 		goto out_nodasd;
-	dasd_devices_entry = proc_create_seq("devices",
-					 S_IFREG | S_IRUGO | S_IWUSR,
+	dasd_devices_entry = proc_create_seq("devices", 0444,
 					 dasd_proc_root_entry,
 					 &dasd_devices_seq_ops);
 	if (!dasd_devices_entry)

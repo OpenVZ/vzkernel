@@ -33,17 +33,6 @@ static void nd_btt_release(struct device *dev)
 	kfree(nd_btt);
 }
 
-static struct device_type nd_btt_device_type = {
-	.name = "nd_btt",
-	.release = nd_btt_release,
-};
-
-bool is_nd_btt(struct device *dev)
-{
-	return dev->type == &nd_btt_device_type;
-}
-EXPORT_SYMBOL(is_nd_btt);
-
 struct nd_btt *to_nd_btt(struct device *dev)
 {
 	struct nd_btt *nd_btt = container_of(dev, struct nd_btt, dev);
@@ -159,11 +148,19 @@ static ssize_t size_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(size);
 
+static ssize_t log_zero_flags_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "Y\n");
+}
+static DEVICE_ATTR_RO(log_zero_flags);
+
 static struct attribute *nd_btt_attributes[] = {
 	&dev_attr_sector_size.attr,
 	&dev_attr_namespace.attr,
 	&dev_attr_uuid.attr,
 	&dev_attr_size.attr,
+	&dev_attr_log_zero_flags.attr,
 	NULL,
 };
 
@@ -178,6 +175,18 @@ static const struct attribute_group *nd_btt_attribute_groups[] = {
 	NULL,
 };
 
+static const struct device_type nd_btt_device_type = {
+	.name = "nd_btt",
+	.release = nd_btt_release,
+	.groups = nd_btt_attribute_groups,
+};
+
+bool is_nd_btt(struct device *dev)
+{
+	return dev->type == &nd_btt_device_type;
+}
+EXPORT_SYMBOL(is_nd_btt);
+
 static struct device *__nd_btt_create(struct nd_region *nd_region,
 		unsigned long lbasize, u8 *uuid,
 		struct nd_namespace_common *ndns)
@@ -190,20 +199,20 @@ static struct device *__nd_btt_create(struct nd_region *nd_region,
 		return NULL;
 
 	nd_btt->id = ida_simple_get(&nd_region->btt_ida, 0, 0, GFP_KERNEL);
-	if (nd_btt->id < 0) {
-		kfree(nd_btt);
-		return NULL;
-	}
+	if (nd_btt->id < 0)
+		goto out_nd_btt;
 
 	nd_btt->lbasize = lbasize;
-	if (uuid)
+	if (uuid) {
 		uuid = kmemdup(uuid, 16, GFP_KERNEL);
+		if (!uuid)
+			goto out_put_id;
+	}
 	nd_btt->uuid = uuid;
 	dev = &nd_btt->dev;
 	dev_set_name(dev, "btt%d.%d", nd_region->id, nd_btt->id);
 	dev->parent = &nd_region->dev;
 	dev->type = &nd_btt_device_type;
-	dev->groups = nd_btt_attribute_groups;
 	device_initialize(&nd_btt->dev);
 	if (ndns && !__nd_attach_ndns(&nd_btt->dev, ndns, &nd_btt->ndns)) {
 		dev_dbg(&ndns->dev, "failed, already claimed by %s\n",
@@ -212,6 +221,13 @@ static struct device *__nd_btt_create(struct nd_region *nd_region,
 		return NULL;
 	}
 	return dev;
+
+out_put_id:
+	ida_simple_remove(&nd_region->btt_ida, nd_btt->id);
+
+out_nd_btt:
+	kfree(nd_btt);
+	return NULL;
 }
 
 struct device *nd_btt_create(struct nd_region *nd_region)

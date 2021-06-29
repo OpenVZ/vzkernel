@@ -6,9 +6,6 @@
 #include <linux/thread_info.h>
 #include <linux/kasan-checks.h>
 
-#define VERIFY_READ 0
-#define VERIFY_WRITE 1
-
 #define uaccess_kernel() segment_eq(get_fs(), KERNEL_DS)
 
 #include <asm/uaccess.h>
@@ -111,7 +108,7 @@ _copy_from_user(void *to, const void __user *from, unsigned long n)
 {
 	unsigned long res = n;
 	might_fault();
-	if (likely(access_ok(VERIFY_READ, from, n))) {
+	if (likely(access_ok(from, n))) {
 		kasan_check_write(to, n);
 		res = raw_copy_from_user(to, from, n);
 	}
@@ -129,7 +126,7 @@ static inline unsigned long
 _copy_to_user(void __user *to, const void *from, unsigned long n)
 {
 	might_fault();
-	if (access_ok(VERIFY_WRITE, to, n)) {
+	if (access_ok(to, n)) {
 		kasan_check_read(from, n);
 		n = raw_copy_to_user(to, from, n);
 	}
@@ -160,7 +157,7 @@ static __always_inline unsigned long __must_check
 copy_in_user(void __user *to, const void __user *from, unsigned long n)
 {
 	might_fault();
-	if (access_ok(VERIFY_WRITE, to, n) && access_ok(VERIFY_READ, from, n))
+	if (access_ok(to, n) && access_ok(from, n))
 		n = raw_copy_in_user(to, from, n);
 	return n;
 }
@@ -230,6 +227,76 @@ static inline unsigned long __copy_from_user_inatomic_nocache(void *to,
 
 #endif		/* ARCH_HAS_NOCACHE_UACCESS */
 
+extern __must_check int check_zeroed_user(const void __user *from, size_t size);
+
+/**
+ * copy_struct_from_user: copy a struct from userspace
+ * @dst:   Destination address, in kernel space. This buffer must be @ksize
+ *         bytes long.
+ * @ksize: Size of @dst struct.
+ * @src:   Source address, in userspace.
+ * @usize: (Alleged) size of @src struct.
+ *
+ * Copies a struct from userspace to kernel space, in a way that guarantees
+ * backwards-compatibility for struct syscall arguments (as long as future
+ * struct extensions are made such that all new fields are *appended* to the
+ * old struct, and zeroed-out new fields have the same meaning as the old
+ * struct).
+ *
+ * @ksize is just sizeof(*dst), and @usize should've been passed by userspace.
+ * The recommended usage is something like the following:
+ *
+ *   SYSCALL_DEFINE2(foobar, const struct foo __user *, uarg, size_t, usize)
+ *   {
+ *      int err;
+ *      struct foo karg = {};
+ *
+ *      if (usize > PAGE_SIZE)
+ *        return -E2BIG;
+ *      if (usize < FOO_SIZE_VER0)
+ *        return -EINVAL;
+ *
+ *      err = copy_struct_from_user(&karg, sizeof(karg), uarg, usize);
+ *      if (err)
+ *        return err;
+ *
+ *      // ...
+ *   }
+ *
+ * There are three cases to consider:
+ *  * If @usize == @ksize, then it's copied verbatim.
+ *  * If @usize < @ksize, then the userspace has passed an old struct to a
+ *    newer kernel. The rest of the trailing bytes in @dst (@ksize - @usize)
+ *    are to be zero-filled.
+ *  * If @usize > @ksize, then the userspace has passed a new struct to an
+ *    older kernel. The trailing bytes unknown to the kernel (@usize - @ksize)
+ *    are checked to ensure they are zeroed, otherwise -E2BIG is returned.
+ *
+ * Returns (in all cases, some data may have been copied):
+ *  * -E2BIG:  (@usize > @ksize) and there are non-zero trailing bytes in @src.
+ *  * -EFAULT: access to userspace failed.
+ */
+static __always_inline __must_check int
+copy_struct_from_user(void *dst, size_t ksize, const void __user *src,
+		      size_t usize)
+{
+	size_t size = min(ksize, usize);
+	size_t rest = max(ksize, usize) - size;
+
+	/* Deal with trailing bytes. */
+	if (usize < ksize) {
+		memset(dst + size, 0, rest);
+	} else if (usize > ksize) {
+		int ret = check_zeroed_user(src + size, rest);
+		if (ret <= 0)
+			return ret ?: -E2BIG;
+	}
+	/* Copy the interoperable parts of the struct. */
+	if (copy_from_user(dst, src, size))
+		return -EFAULT;
+	return 0;
+}
+
 /*
  * probe_kernel_read(): safely attempt to read from a location
  * @dst: pointer to the buffer that shall take the data
@@ -240,7 +307,19 @@ static inline unsigned long __copy_from_user_inatomic_nocache(void *to,
  * happens, handle that and return -EFAULT.
  */
 extern long probe_kernel_read(void *dst, const void *src, size_t size);
+extern long probe_kernel_read_strict(void *dst, const void *src, size_t size);
 extern long __probe_kernel_read(void *dst, const void *src, size_t size);
+
+/*
+ * probe_user_read(): safely attempt to read from a location in user space
+ * @dst: pointer to the buffer that shall take the data
+ * @src: address to read from
+ * @size: size of the data chunk
+ *
+ * Safely read from address @src to the buffer at @dst.  If a kernel fault
+ * happens, handle that and return -EFAULT.
+ */
+extern long probe_user_read(void *dst, const void __user *src, size_t size);
 
 /*
  * probe_kernel_write(): safely attempt to write to a location
@@ -254,7 +333,25 @@ extern long __probe_kernel_read(void *dst, const void *src, size_t size);
 extern long notrace probe_kernel_write(void *dst, const void *src, size_t size);
 extern long notrace __probe_kernel_write(void *dst, const void *src, size_t size);
 
+/*
+ * probe_user_write(): safely attempt to write to a location in user space
+ * @dst: address to write to
+ * @src: pointer to the data that shall be written
+ * @size: size of the data chunk
+ *
+ * Safely write to address @dst from the buffer at @src.  If a kernel fault
+ * happens, handle that and return -EFAULT.
+ */
+extern long notrace probe_user_write(void __user *dst, const void *src, size_t size);
+extern long notrace __probe_user_write(void __user *dst, const void *src, size_t size);
+
 extern long strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count);
+extern long strncpy_from_unsafe_strict(char *dst, const void *unsafe_addr,
+				       long count);
+extern long __strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count);
+extern long strncpy_from_unsafe_user(char *dst, const void __user *unsafe_addr,
+				     long count);
+extern long strnlen_unsafe_user(const void __user *unsafe_addr, long count);
 
 /**
  * probe_kernel_address(): safely attempt to read from a location
@@ -267,10 +364,20 @@ extern long strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count);
 	probe_kernel_read(&retval, addr, sizeof(retval))
 
 #ifndef user_access_begin
-#define user_access_begin() do { } while (0)
+#define user_access_begin(ptr,len) access_ok(ptr, len)
 #define user_access_end() do { } while (0)
 #define unsafe_get_user(x, ptr, err) do { if (unlikely(__get_user(x, ptr))) goto err; } while (0)
 #define unsafe_put_user(x, ptr, err) do { if (unlikely(__put_user(x, ptr))) goto err; } while (0)
+static inline unsigned long user_access_save(void) { return 0UL; }
+static inline void user_access_restore(unsigned long flags) { }
+#endif
+#ifndef user_write_access_begin
+#define user_write_access_begin user_access_begin
+#define user_write_access_end user_access_end
+#endif
+#ifndef user_read_access_begin
+#define user_read_access_begin user_access_begin
+#define user_read_access_end user_access_end
 #endif
 
 #ifdef CONFIG_HARDENED_USERCOPY

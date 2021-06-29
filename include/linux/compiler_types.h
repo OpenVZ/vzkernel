@@ -106,6 +106,10 @@ struct ftrace_likely_data {
 	unsigned long			constant;
 };
 
+/* Section for code which can't be instrumented at all */
+#define noinstr								\
+	noinline notrace __attribute((__section__(".noinstr.text")))
+
 #endif /* __KERNEL__ */
 
 #endif /* __ASSEMBLY__ */
@@ -260,6 +264,10 @@ struct ftrace_likely_data {
 #define __assume_aligned(a, ...)
 #endif
 
+
+#ifndef __no_fgcse
+# define __no_fgcse
+#endif
 
 /* Are two types/vars the same type (ignoring qualifiers)? */
 #ifndef __same_type

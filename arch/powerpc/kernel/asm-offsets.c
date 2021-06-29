@@ -72,6 +72,10 @@
 #include <asm/fixmap.h>
 #endif
 
+#ifdef CONFIG_XMON
+#include "../xmon/xmon_bpts.h"
+#endif
+
 #define STACK_PT_REGS_OFFSET(sym, val)	\
 	DEFINE(sym, STACK_FRAME_OVERHEAD + offsetof(struct pt_regs, val))
 
@@ -79,11 +83,16 @@ int main(void)
 {
 	OFFSET(THREAD, task_struct, thread);
 	OFFSET(MM, task_struct, mm);
+#ifdef CONFIG_STACKPROTECTOR
+	OFFSET(TASK_CANARY, task_struct, stack_canary);
+#ifdef CONFIG_PPC64
+	OFFSET(PACA_CANARY, paca_struct, canary);
+#endif
+#endif
 	OFFSET(MMCONTEXTID, mm_struct, context.id);
 #ifdef CONFIG_PPC64
 	DEFINE(SIGSEGV, SIGSEGV);
 	DEFINE(NMI_MASK, NMI_MASK);
-	OFFSET(TASKTHREADPPR, task_struct, thread.ppr);
 #else
 	OFFSET(THREAD_INFO, task_struct, stack);
 	DEFINE(THREAD_INFO_GAP, _ALIGN_UP(sizeof(struct thread_info), 16));
@@ -256,7 +265,6 @@ int main(void)
 	OFFSET(ACCOUNT_USER_TIME, paca_struct, accounting.utime);
 	OFFSET(ACCOUNT_SYSTEM_TIME, paca_struct, accounting.stime);
 	OFFSET(PACA_TRAP_SAVE, paca_struct, trap_save);
-	OFFSET(PACA_NAPSTATELOST, paca_struct, nap_state_lost);
 	OFFSET(PACA_SPRG_VDSO, paca_struct, sprg_vdso);
 #else /* CONFIG_PPC64 */
 #ifdef CONFIG_VIRT_CPU_ACCOUNTING_NATIVE
@@ -274,11 +282,6 @@ int main(void)
 	/* Interrupt register frame */
 	DEFINE(INT_FRAME_SIZE, STACK_INT_FRAME_SIZE);
 	DEFINE(SWITCH_FRAME_SIZE, STACK_FRAME_OVERHEAD + sizeof(struct pt_regs));
-#ifdef CONFIG_PPC64
-	/* Create extra stack space for SRR0 and SRR1 when calling prom/rtas. */
-	DEFINE(PROM_FRAME_SIZE, STACK_FRAME_OVERHEAD + sizeof(struct pt_regs) + 16);
-	DEFINE(RTAS_FRAME_SIZE, STACK_FRAME_OVERHEAD + sizeof(struct pt_regs) + 16);
-#endif /* CONFIG_PPC64 */
 	STACK_PT_REGS_OFFSET(GPR0, gpr[0]);
 	STACK_PT_REGS_OFFSET(GPR1, gpr[1]);
 	STACK_PT_REGS_OFFSET(GPR2, gpr[2]);
@@ -322,10 +325,7 @@ int main(void)
 	STACK_PT_REGS_OFFSET(_ESR, dsisr);
 #else /* CONFIG_PPC64 */
 	STACK_PT_REGS_OFFSET(SOFTE, softe);
-
-	/* These _only_ to be used with {PROM,RTAS}_FRAME_SIZE!!! */
-	DEFINE(_SRR0, STACK_FRAME_OVERHEAD+sizeof(struct pt_regs));
-	DEFINE(_SRR1, STACK_FRAME_OVERHEAD+sizeof(struct pt_regs)+8);
+	STACK_PT_REGS_OFFSET(_PPR, ppr);
 #endif /* CONFIG_PPC64 */
 
 #if defined(CONFIG_PPC32)
@@ -438,7 +438,7 @@ int main(void)
 #ifdef CONFIG_PPC_BOOK3S
 	OFFSET(VCPU_TAR, kvm_vcpu, arch.tar);
 #endif
-	OFFSET(VCPU_CR, kvm_vcpu, arch.cr);
+	OFFSET(VCPU_CR, kvm_vcpu, arch.regs.ccr);
 	OFFSET(VCPU_PC, kvm_vcpu, arch.regs.nip);
 #ifdef CONFIG_KVM_BOOK3S_HV_POSSIBLE
 	OFFSET(VCPU_MSR, kvm_vcpu, arch.shregs.msr);
@@ -498,11 +498,13 @@ int main(void)
 	OFFSET(KVM_VRMA_SLB_V, kvm, arch.vrma_slb_v);
 	OFFSET(KVM_RADIX, kvm, arch.radix);
 	OFFSET(KVM_FWNMI, kvm, arch.fwnmi_enabled);
+	OFFSET(KVM_SECURE_GUEST, kvm, arch.secure_guest);
 	OFFSET(VCPU_DSISR, kvm_vcpu, arch.shregs.dsisr);
 	OFFSET(VCPU_DAR, kvm_vcpu, arch.shregs.dar);
 	OFFSET(VCPU_VPA, kvm_vcpu, arch.vpa.pinned_addr);
 	OFFSET(VCPU_VPA_DIRTY, kvm_vcpu, arch.vpa.dirty);
 	OFFSET(VCPU_HEIR, kvm_vcpu, arch.emul_inst);
+	OFFSET(VCPU_NESTED, kvm_vcpu, arch.nested);
 	OFFSET(VCPU_CPU, kvm_vcpu, cpu);
 	OFFSET(VCPU_THREAD_CPU, kvm_vcpu, arch.thread_cpu);
 #endif
@@ -529,6 +531,8 @@ int main(void)
 	OFFSET(VCPU_IRQ_PENDING, kvm_vcpu, arch.irq_pending);
 	OFFSET(VCPU_DBELL_REQ, kvm_vcpu, arch.doorbell_request);
 	OFFSET(VCPU_MMCR, kvm_vcpu, arch.mmcr);
+	OFFSET(VCPU_MMCRA, kvm_vcpu, arch.mmcra);
+	OFFSET(VCPU_MMCRS, kvm_vcpu, arch.mmcrs);
 	OFFSET(VCPU_PMC, kvm_vcpu, arch.pmc);
 	OFFSET(VCPU_SPMC, kvm_vcpu, arch.spmc);
 	OFFSET(VCPU_SIAR, kvm_vcpu, arch.siar);
@@ -666,6 +670,9 @@ int main(void)
 	HSTATE_FIELD(HSTATE_SDAR, host_mmcr[4]);
 	HSTATE_FIELD(HSTATE_MMCR2, host_mmcr[5]);
 	HSTATE_FIELD(HSTATE_SIER, host_mmcr[6]);
+	HSTATE_FIELD(HSTATE_MMCR3, host_mmcr[7]);
+	HSTATE_FIELD(HSTATE_SIER2, host_mmcr[8]);
+	HSTATE_FIELD(HSTATE_SIER3, host_mmcr[9]);
 	HSTATE_FIELD(HSTATE_PMC1, host_pmc[0]);
 	HSTATE_FIELD(HSTATE_PMC2, host_pmc[1]);
 	HSTATE_FIELD(HSTATE_PMC3, host_pmc[2]);
@@ -695,7 +702,7 @@ int main(void)
 #endif /* CONFIG_PPC_BOOK3S_64 */
 
 #else /* CONFIG_PPC_BOOK3S */
-	OFFSET(VCPU_CR, kvm_vcpu, arch.cr);
+	OFFSET(VCPU_CR, kvm_vcpu, arch.regs.ccr);
 	OFFSET(VCPU_XER, kvm_vcpu, arch.regs.xer);
 	OFFSET(VCPU_LR, kvm_vcpu, arch.regs.link);
 	OFFSET(VCPU_CTR, kvm_vcpu, arch.regs.ctr);
@@ -761,29 +768,15 @@ int main(void)
 	OFFSET(VCPU_TIMING_LAST_ENTER_TBL, kvm_vcpu, arch.timing_last_enter.tv32.tbl);
 #endif
 
-#ifdef CONFIG_PPC_POWERNV
-	OFFSET(PACA_CORE_IDLE_STATE_PTR, paca_struct, core_idle_state_ptr);
-	OFFSET(PACA_THREAD_IDLE_STATE, paca_struct, thread_idle_state);
-	OFFSET(PACA_THREAD_MASK, paca_struct, thread_mask);
-	OFFSET(PACA_SUBCORE_SIBLING_MASK, paca_struct, subcore_sibling_mask);
-	OFFSET(PACA_SIBLING_PACA_PTRS, paca_struct, thread_sibling_pacas);
-	OFFSET(PACA_REQ_PSSCR, paca_struct, requested_psscr);
-	OFFSET(PACA_DONT_STOP, paca_struct, dont_stop);
-#define STOP_SPR(x, f)	OFFSET(x, paca_struct, stop_sprs.f)
-	STOP_SPR(STOP_PID, pid);
-	STOP_SPR(STOP_LDBAR, ldbar);
-	STOP_SPR(STOP_FSCR, fscr);
-	STOP_SPR(STOP_HFSCR, hfscr);
-	STOP_SPR(STOP_MMCR1, mmcr1);
-	STOP_SPR(STOP_MMCR2, mmcr2);
-	STOP_SPR(STOP_MMCRA, mmcra);
-#endif
-
 	DEFINE(PPC_DBELL_SERVER, PPC_DBELL_SERVER);
 	DEFINE(PPC_DBELL_MSGTYPE, PPC_DBELL_MSGTYPE);
 
 #ifdef CONFIG_PPC_8xx
 	DEFINE(VIRT_IMMR_BASE, (u64)__fix_to_virt(FIX_IMMR_BASE));
+#endif
+
+#ifdef CONFIG_XMON
+	DEFINE(BPT_SIZE, BPT_SIZE);
 #endif
 
 	return 0;

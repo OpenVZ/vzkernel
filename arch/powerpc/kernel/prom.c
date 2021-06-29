@@ -60,6 +60,7 @@
 #include <asm/firmware.h>
 #include <asm/dt_cpu_ftrs.h>
 #include <asm/drmem.h>
+#include <asm/ultravisor.h>
 
 #include <mm/mmu_decl.h>
 
@@ -100,8 +101,8 @@ static inline int overlaps_initrd(unsigned long start, unsigned long size)
 	if (!initrd_start)
 		return 0;
 
-	return	(start + size) > _ALIGN_DOWN(initrd_start, PAGE_SIZE) &&
-			start <= _ALIGN_UP(initrd_end, PAGE_SIZE);
+	return	(start + size) > ALIGN_DOWN(initrd_start, PAGE_SIZE) &&
+			start <= ALIGN(initrd_end, PAGE_SIZE);
 #else
 	return 0;
 #endif
@@ -127,7 +128,7 @@ static void __init move_device_tree(void)
 	if ((memory_limit && (start + size) > PHYSICAL_START + memory_limit) ||
 			overlaps_crashkernel(start, size) ||
 			overlaps_initrd(start, size)) {
-		p = __va(memblock_alloc(size, PAGE_SIZE));
+		p = __va(memblock_phys_alloc(size, PAGE_SIZE));
 		memcpy(p, initial_boot_params, size);
 		initial_boot_params = p;
 		DBG("Moved device tree to 0x%p\n", p);
@@ -164,7 +165,7 @@ static struct ibm_pa_feature {
 	{ .pabyte = 0,  .pabit = 6, .cpu_features  = CPU_FTR_NOEXECUTE },
 	{ .pabyte = 1,  .pabit = 2, .mmu_features  = MMU_FTR_CI_LARGE_PAGE },
 #ifdef CONFIG_PPC_RADIX_MMU
-	{ .pabyte = 40, .pabit = 0, .mmu_features  = MMU_FTR_TYPE_RADIX },
+	{ .pabyte = 40, .pabit = 0, .mmu_features  = MMU_FTR_TYPE_RADIX | MMU_FTR_GTSE },
 #endif
 	{ .pabyte = 1,  .pabit = 1, .invert = 1, .cpu_features = CPU_FTR_NODSISRALIGN },
 	{ .pabyte = 5,  .pabit = 0, .cpu_features  = CPU_FTR_REAL_LE,
@@ -176,6 +177,8 @@ static struct ibm_pa_feature {
 	 */
 	{ .pabyte = 22, .pabit = 0, .cpu_features = CPU_FTR_TM_COMP,
 	  .cpu_user_ftrs2 = PPC_FEATURE2_HTM_COMP | PPC_FEATURE2_HTM_NOSC_COMP },
+
+	{ .pabyte = 64, .pabit = 0, .cpu_features = CPU_FTR_DAWR1 },
 };
 
 static void __init scan_features(unsigned long node, const unsigned char *ftrs,
@@ -440,14 +443,38 @@ static int __init early_init_dt_scan_chosen_ppc(unsigned long node,
 	return 1;
 }
 
+/*
+ * Compare the range against max mem limit and update
+ * size if it cross the limit.
+ */
+
+#ifdef CONFIG_SPARSEMEM
+static bool validate_mem_limit(u64 base, u64 *size)
+{
+	u64 max_mem = 1UL << (MAX_PHYSMEM_BITS);
+
+	if (base >= max_mem)
+		return false;
+	if ((base + *size) > max_mem)
+		*size = max_mem - base;
+	return true;
+}
+#else
+static bool validate_mem_limit(u64 base, u64 *size)
+{
+	return true;
+}
+#endif
+
 #ifdef CONFIG_PPC_PSERIES
 /*
  * Interpret the ibm dynamic reconfiguration memory LMBs.
  * This contains a list of memory blocks along with NUMA affinity
  * information.
  */
-static void __init early_init_drmem_lmb(struct drmem_lmb *lmb,
-					const __be32 **usm)
+static int  __init early_init_drmem_lmb(struct drmem_lmb *lmb,
+					const __be32 **usm,
+					void *data)
 {
 	u64 base, size;
 	int is_kexec_kdump = 0, rngs;
@@ -462,7 +489,7 @@ static void __init early_init_drmem_lmb(struct drmem_lmb *lmb,
 	 */
 	if ((lmb->flags & DRCONF_MEM_RESERVED) ||
 	    !(lmb->flags & DRCONF_MEM_ASSIGNED))
-		return;
+		return 0;
 
 	if (*usm)
 		is_kexec_kdump = 1;
@@ -477,7 +504,7 @@ static void __init early_init_drmem_lmb(struct drmem_lmb *lmb,
 		 */
 		rngs = dt_mem_next_cell(dt_root_size_cells, usm);
 		if (!rngs) /* there are no (base, size) duple */
-			return;
+			return 0;
 	}
 
 	do {
@@ -493,9 +520,17 @@ static void __init early_init_drmem_lmb(struct drmem_lmb *lmb,
 				size = 0x80000000ul - base;
 		}
 
+		if (!validate_mem_limit(base, &size))
+			continue;
+
 		DBG("Adding: %llx -> %llx\n", base, size);
 		memblock_add(base, size);
+
+		if (lmb->flags & DRCONF_MEM_HOTREMOVABLE)
+			memblock_mark_hotplug(base, size);
 	} while (--rngs);
+
+	return 0;
 }
 #endif /* CONFIG_PPC_PSERIES */
 
@@ -506,7 +541,7 @@ static int __init early_init_dt_scan_memory_ppc(unsigned long node,
 #ifdef CONFIG_PPC_PSERIES
 	if (depth == 1 &&
 	    strcmp(uname, "ibm,dynamic-reconfiguration-memory") == 0) {
-		walk_drmem_lmbs_early(node, early_init_drmem_lmb);
+		walk_drmem_lmbs_early(node, NULL, early_init_drmem_lmb);
 		return 0;
 	}
 #endif
@@ -548,8 +583,10 @@ void __init early_init_dt_add_memory_arch(u64 base, u64 size)
 	}
 
 	/* Add the chunk to the MEMBLOCK list */
-	if (add_mem_to_memblock)
-		memblock_add(base, size);
+	if (add_mem_to_memblock) {
+		if (validate_mem_limit(base, &size))
+			memblock_add(base, size);
+	}
 }
 
 static void __init early_reserve_mem_dt(void)
@@ -598,9 +635,9 @@ static void __init early_reserve_mem(void)
 #ifdef CONFIG_BLK_DEV_INITRD
 	/* Then reserve the initrd, if any */
 	if (initrd_start && (initrd_end > initrd_start)) {
-		memblock_reserve(_ALIGN_DOWN(__pa(initrd_start), PAGE_SIZE),
-			_ALIGN_UP(initrd_end, PAGE_SIZE) -
-			_ALIGN_DOWN(initrd_start, PAGE_SIZE));
+		memblock_reserve(ALIGN_DOWN(__pa(initrd_start), PAGE_SIZE),
+			ALIGN(initrd_end, PAGE_SIZE) -
+			ALIGN_DOWN(initrd_start, PAGE_SIZE));
 	}
 #endif /* CONFIG_BLK_DEV_INITRD */
 
@@ -660,6 +697,23 @@ static void __init tm_init(void)
 static void tm_init(void) { }
 #endif /* CONFIG_PPC_TRANSACTIONAL_MEM */
 
+#ifdef CONFIG_PPC64
+static void __init save_fscr_to_task(void)
+{
+	/*
+	 * Ensure the init_task (pid 0, aka swapper) uses the value of FSCR we
+	 * have configured via the device tree features or via __init_FSCR().
+	 * That value will then be propagated to pid 1 (init) and all future
+	 * processes.
+	 */
+	if (early_cpu_has_feature(CPU_FTR_ARCH_207S))
+		init_task.thread.fscr = mfspr(SPRN_FSCR);
+}
+#else
+static inline void save_fscr_to_task(void) {};
+#endif
+
+
 void __init early_init_devtree(void *params)
 {
 	phys_addr_t limit;
@@ -678,9 +732,12 @@ void __init early_init_devtree(void *params)
 #ifdef CONFIG_PPC_POWERNV
 	/* Some machines might need OPAL info for debugging, grab it now. */
 	of_scan_flat_dt(early_init_dt_scan_opal, NULL);
+
+	/* Scan tree for ultravisor feature */
+	of_scan_flat_dt(early_init_dt_scan_ultravisor, NULL);
 #endif
 
-#ifdef CONFIG_FA_DUMP
+#if defined(CONFIG_FA_DUMP) || defined(CONFIG_PRESERVE_FA_DUMP)
 	/* scan tree to see if dump is active during last boot */
 	of_scan_flat_dt(early_init_dt_scan_fw_dump, NULL);
 #endif
@@ -707,7 +764,7 @@ void __init early_init_devtree(void *params)
 	if (PHYSICAL_START > MEMORY_START)
 		memblock_reserve(MEMORY_START, 0x8000);
 	reserve_kdump_trampoline();
-#ifdef CONFIG_FA_DUMP
+#if defined(CONFIG_FA_DUMP) || defined(CONFIG_PRESERVE_FA_DUMP)
 	/*
 	 * If we fail to reserve memory for firmware-assisted dump then
 	 * fallback to kexec based kdump.
@@ -744,6 +801,8 @@ void __init early_init_devtree(void *params)
 		printk("Failed to identify boot CPU !\n");
 		BUG();
 	}
+
+	save_fscr_to_task();
 
 #if defined(CONFIG_SMP) && defined(CONFIG_PPC64)
 	/* We'll later wait for secondaries to check in; there are

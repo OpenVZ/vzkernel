@@ -21,6 +21,8 @@
  *
  */
 
+#include <linux/pci.h>
+
 #include "smumgr.h"
 #include "smu10_inc.h"
 #include "soc15_common.h"
@@ -29,7 +31,6 @@
 #include "rv_ppsmc.h"
 #include "smu10_driver_if.h"
 #include "smu10.h"
-#include "ppatomctrl.h"
 #include "pp_debug.h"
 
 
@@ -68,7 +69,7 @@ static int smu10_send_msg_to_smc_without_waiting(struct pp_hwmgr *hwmgr,
 	return 0;
 }
 
-static int smu10_read_arg_from_smc(struct pp_hwmgr *hwmgr)
+static uint32_t smu10_read_arg_from_smc(struct pp_hwmgr *hwmgr)
 {
 	struct amdgpu_device *adev = hwmgr->adev;
 
@@ -117,6 +118,7 @@ static int smu10_copy_table_from_smc(struct pp_hwmgr *hwmgr,
 {
 	struct smu10_smumgr *priv =
 			(struct smu10_smumgr *)(hwmgr->smu_backend);
+	struct amdgpu_device *adev = hwmgr->adev;
 
 	PP_ASSERT_WITH_CODE(table_id < MAX_SMU_TABLE,
 			"Invalid SMU Table ID!", return -EINVAL;);
@@ -124,15 +126,21 @@ static int smu10_copy_table_from_smc(struct pp_hwmgr *hwmgr,
 			"Invalid SMU Table version!", return -EINVAL;);
 	PP_ASSERT_WITH_CODE(priv->smu_tables.entry[table_id].size != 0,
 			"Invalid SMU Table Length!", return -EINVAL;);
-	smu10_send_msg_to_smc_with_parameter(hwmgr,
+	smum_send_msg_to_smc_with_parameter(hwmgr,
 			PPSMC_MSG_SetDriverDramAddrHigh,
-			upper_32_bits(priv->smu_tables.entry[table_id].mc_addr));
-	smu10_send_msg_to_smc_with_parameter(hwmgr,
+			upper_32_bits(priv->smu_tables.entry[table_id].mc_addr),
+			NULL);
+	smum_send_msg_to_smc_with_parameter(hwmgr,
 			PPSMC_MSG_SetDriverDramAddrLow,
-			lower_32_bits(priv->smu_tables.entry[table_id].mc_addr));
-	smu10_send_msg_to_smc_with_parameter(hwmgr,
+			lower_32_bits(priv->smu_tables.entry[table_id].mc_addr),
+			NULL);
+	smum_send_msg_to_smc_with_parameter(hwmgr,
 			PPSMC_MSG_TransferTableSmu2Dram,
-			priv->smu_tables.entry[table_id].table_id);
+			priv->smu_tables.entry[table_id].table_id,
+			NULL);
+
+	/* flush hdp cache */
+	amdgpu_asic_flush_hdp(adev, NULL);
 
 	memcpy(table, (uint8_t *)priv->smu_tables.entry[table_id].table,
 			priv->smu_tables.entry[table_id].size);
@@ -145,6 +153,7 @@ static int smu10_copy_table_to_smc(struct pp_hwmgr *hwmgr,
 {
 	struct smu10_smumgr *priv =
 			(struct smu10_smumgr *)(hwmgr->smu_backend);
+	struct amdgpu_device *adev = hwmgr->adev;
 
 	PP_ASSERT_WITH_CODE(table_id < MAX_SMU_TABLE,
 			"Invalid SMU Table ID!", return -EINVAL;);
@@ -156,15 +165,20 @@ static int smu10_copy_table_to_smc(struct pp_hwmgr *hwmgr,
 	memcpy(priv->smu_tables.entry[table_id].table, table,
 			priv->smu_tables.entry[table_id].size);
 
-	smu10_send_msg_to_smc_with_parameter(hwmgr,
+	amdgpu_asic_flush_hdp(adev, NULL);
+
+	smum_send_msg_to_smc_with_parameter(hwmgr,
 			PPSMC_MSG_SetDriverDramAddrHigh,
-			upper_32_bits(priv->smu_tables.entry[table_id].mc_addr));
-	smu10_send_msg_to_smc_with_parameter(hwmgr,
+			upper_32_bits(priv->smu_tables.entry[table_id].mc_addr),
+			NULL);
+	smum_send_msg_to_smc_with_parameter(hwmgr,
 			PPSMC_MSG_SetDriverDramAddrLow,
-			lower_32_bits(priv->smu_tables.entry[table_id].mc_addr));
-	smu10_send_msg_to_smc_with_parameter(hwmgr,
+			lower_32_bits(priv->smu_tables.entry[table_id].mc_addr),
+			NULL);
+	smum_send_msg_to_smc_with_parameter(hwmgr,
 			PPSMC_MSG_TransferTableDram2Smu,
-			priv->smu_tables.entry[table_id].table_id);
+			priv->smu_tables.entry[table_id].table_id,
+			NULL);
 
 	return 0;
 }
@@ -173,42 +187,17 @@ static int smu10_verify_smc_interface(struct pp_hwmgr *hwmgr)
 {
 	uint32_t smc_driver_if_version;
 
-	smu10_send_msg_to_smc(hwmgr,
-			PPSMC_MSG_GetDriverIfVersion);
-	smc_driver_if_version = smu10_read_arg_from_smc(hwmgr);
+	smum_send_msg_to_smc(hwmgr,
+			PPSMC_MSG_GetDriverIfVersion,
+			&smc_driver_if_version);
 
-	if (smc_driver_if_version != SMU10_DRIVER_IF_VERSION) {
+	if ((smc_driver_if_version != SMU10_DRIVER_IF_VERSION) &&
+	    (smc_driver_if_version != SMU10_DRIVER_IF_VERSION + 1)) {
 		pr_err("Attempt to read SMC IF Version Number Failed!\n");
 		return -EINVAL;
 	}
 
 	return 0;
-}
-
-/* sdma is disabled by default in vbios, need to re-enable in driver */
-static void smu10_smc_enable_sdma(struct pp_hwmgr *hwmgr)
-{
-	smu10_send_msg_to_smc(hwmgr,
-			PPSMC_MSG_PowerUpSdma);
-}
-
-static void smu10_smc_disable_sdma(struct pp_hwmgr *hwmgr)
-{
-	smu10_send_msg_to_smc(hwmgr,
-			PPSMC_MSG_PowerDownSdma);
-}
-
-/* vcn is disabled by default in vbios, need to re-enable in driver */
-static void smu10_smc_enable_vcn(struct pp_hwmgr *hwmgr)
-{
-	smu10_send_msg_to_smc_with_parameter(hwmgr,
-			PPSMC_MSG_PowerUpVcn, 0);
-}
-
-static void smu10_smc_disable_vcn(struct pp_hwmgr *hwmgr)
-{
-	smu10_send_msg_to_smc_with_parameter(hwmgr,
-			PPSMC_MSG_PowerDownVcn, 0);
 }
 
 static int smu10_smu_fini(struct pp_hwmgr *hwmgr)
@@ -217,8 +206,6 @@ static int smu10_smu_fini(struct pp_hwmgr *hwmgr)
 			(struct smu10_smumgr *)(hwmgr->smu_backend);
 
 	if (priv) {
-		smu10_smc_disable_sdma(hwmgr);
-		smu10_smc_disable_vcn(hwmgr);
 		amdgpu_bo_free_kernel(&priv->smu_tables.entry[SMU10_WMTABLE].handle,
 					&priv->smu_tables.entry[SMU10_WMTABLE].mc_addr,
 					&priv->smu_tables.entry[SMU10_WMTABLE].table);
@@ -236,14 +223,17 @@ static int smu10_start_smu(struct pp_hwmgr *hwmgr)
 {
 	struct amdgpu_device *adev = hwmgr->adev;
 
-	smum_send_msg_to_smc(hwmgr, PPSMC_MSG_GetSmuVersion);
-	hwmgr->smu_version = smu10_read_arg_from_smc(hwmgr);
+	smum_send_msg_to_smc(hwmgr, PPSMC_MSG_GetSmuVersion, &hwmgr->smu_version);
 	adev->pm.fw_version = hwmgr->smu_version >> 8;
+
+	if (!(adev->apu_flags & AMD_APU_IS_RAVEN2) &&
+	    (adev->apu_flags & AMD_APU_IS_RAVEN) &&
+	    adev->pm.fw_version < 0x1e45)
+		adev->pm.pp_feature &= ~PP_GFXOFF_MASK;
 
 	if (smu10_verify_smc_interface(hwmgr))
 		return -EINVAL;
-	smu10_smc_enable_sdma(hwmgr);
-	smu10_smc_enable_vcn(hwmgr);
+
 	return 0;
 }
 
@@ -316,6 +306,7 @@ static int smu10_smc_table_manager(struct pp_hwmgr *hwmgr, uint8_t *table, uint1
 
 
 const struct pp_smumgr_func smu10_smu_funcs = {
+	.name = "smu10_smu",
 	.smu_init = &smu10_smu_init,
 	.smu_fini = &smu10_smu_fini,
 	.start_smu = &smu10_start_smu,

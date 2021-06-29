@@ -282,6 +282,7 @@
 #include <linux/blkdev.h>
 #include <linux/times.h>
 #include <linux/uaccess.h>
+#include <scsi/scsi_common.h>
 #include <scsi/scsi_request.h>
 
 /* used to tell the module to turn on full debugging messages */
@@ -345,10 +346,10 @@ static LIST_HEAD(cdrom_list);
 int cdrom_dummy_generic_packet(struct cdrom_device_info *cdi,
 			       struct packet_command *cgc)
 {
-	if (cgc->sense) {
-		cgc->sense->sense_key = 0x05;
-		cgc->sense->asc = 0x20;
-		cgc->sense->ascq = 0x00;
+	if (cgc->sshdr) {
+		cgc->sshdr->sense_key = 0x05;
+		cgc->sshdr->asc = 0x20;
+		cgc->sshdr->ascq = 0x00;
 	}
 
 	cgc->stat = -EIO;
@@ -409,10 +410,10 @@ static int cdrom_get_disc_info(struct cdrom_device_info *cdi,
  * hack to have the capability flags defined const, while we can still
  * change it here without gcc complaining at every line.
  */
-#define ENSURE(call, bits)			\
-do {						\
-	if (cdo->call == NULL)			\
-		*change_capability &= ~(bits);	\
+#define ENSURE(cdo, call, bits)					\
+do {								\
+	if (cdo->call == NULL)					\
+		WARN_ON_ONCE((cdo)->capability & (bits));	\
 } while (0)
 
 /*
@@ -584,11 +585,10 @@ static int cdrom_mrw_set_lba_space(struct cdrom_device_info *cdi, int space)
 	return 0;
 }
 
-int register_cdrom(struct cdrom_device_info *cdi)
+int register_cdrom(struct gendisk *disk, struct cdrom_device_info *cdi)
 {
 	static char banner_printed;
 	const struct cdrom_device_ops *cdo = cdi->ops;
-	int *change_capability = (int *)&cdo->capability; /* hack */
 
 	cd_dbg(CD_OPEN, "entering register_cdrom\n");
 
@@ -600,16 +600,19 @@ int register_cdrom(struct cdrom_device_info *cdi)
 		cdrom_sysctl_register();
 	}
 
-	ENSURE(drive_status, CDC_DRIVE_STATUS);
+	cdi->disk = disk;
+	disk->cdi = cdi;
+
+	ENSURE(cdo, drive_status, CDC_DRIVE_STATUS);
 	if (cdo->check_events == NULL && cdo->media_changed == NULL)
-		*change_capability = ~(CDC_MEDIA_CHANGED | CDC_SELECT_DISC);
-	ENSURE(tray_move, CDC_CLOSE_TRAY | CDC_OPEN_TRAY);
-	ENSURE(lock_door, CDC_LOCK);
-	ENSURE(select_speed, CDC_SELECT_SPEED);
-	ENSURE(get_last_session, CDC_MULTI_SESSION);
-	ENSURE(get_mcn, CDC_MCN);
-	ENSURE(reset, CDC_RESET);
-	ENSURE(generic_packet, CDC_GENERIC_PACKET);
+		WARN_ON_ONCE(cdo->capability & (CDC_MEDIA_CHANGED | CDC_SELECT_DISC));
+	ENSURE(cdo, tray_move, CDC_CLOSE_TRAY | CDC_OPEN_TRAY);
+	ENSURE(cdo, lock_door, CDC_LOCK);
+	ENSURE(cdo, select_speed, CDC_SELECT_SPEED);
+	ENSURE(cdo, get_last_session, CDC_MULTI_SESSION);
+	ENSURE(cdo, get_mcn, CDC_MCN);
+	ENSURE(cdo, reset, CDC_RESET);
+	ENSURE(cdo, generic_packet, CDC_GENERIC_PACKET);
 	cdi->mc_flags = 0;
 	cdi->options = CDO_USE_FFLAGS;
 
@@ -995,6 +998,12 @@ static void cdrom_count_tracks(struct cdrom_device_info *cdi, tracktype *tracks)
 	tracks->xa = 0;
 	tracks->error = 0;
 	cd_dbg(CD_COUNT_TRACKS, "entering cdrom_count_tracks\n");
+
+	if (!CDROM_CAN(CDC_PLAY_AUDIO)) {
+		tracks->error = CDS_NO_INFO;
+		return;
+	}
+
 	/* Grab the TOC header so we can see how many tracks there are */
 	ret = cdi->ops->audio_ioctl(cdi, CDROMREADTOCHDR, &header);
 	if (ret) {
@@ -1161,7 +1170,8 @@ int cdrom_open(struct cdrom_device_info *cdi, struct block_device *bdev,
 		ret = open_for_data(cdi);
 		if (ret)
 			goto err;
-		cdrom_mmc3_profile(cdi);
+		if (CDROM_CAN(CDC_GENERIC_PACKET))
+			cdrom_mmc3_profile(cdi);
 		if (mode & FMODE_WRITE) {
 			ret = -EROFS;
 			if (cdrom_open_write(cdi))
@@ -2222,9 +2232,12 @@ static int cdrom_read_cdda_bpc(struct cdrom_device_info *cdi, __u8 __user *ubuf,
 
 		blk_execute_rq(q, cdi->disk, rq, 0);
 		if (scsi_req(rq)->result) {
-			struct request_sense *s = req->sense;
+			struct scsi_sense_hdr sshdr;
+
 			ret = -EIO;
-			cdi->last_sense = s->sense_key;
+			scsi_normalize_sense(req->sense, req->sense_len,
+					     &sshdr);
+			cdi->last_sense = sshdr.sense_key;
 		}
 
 		if (blk_rq_unmap_user(bio))
@@ -2281,37 +2294,46 @@ retry:
 	return cdrom_read_cdda_old(cdi, ubuf, lba, nframes);	
 }
 
-static int cdrom_ioctl_multisession(struct cdrom_device_info *cdi,
-		void __user *argp)
+int cdrom_multisession(struct cdrom_device_info *cdi,
+		struct cdrom_multisession *info)
 {
-	struct cdrom_multisession ms_info;
 	u8 requested_format;
 	int ret;
-
-	cd_dbg(CD_DO_IOCTL, "entering CDROMMULTISESSION\n");
 
 	if (!(cdi->ops->capability & CDC_MULTI_SESSION))
 		return -ENOSYS;
 
-	if (copy_from_user(&ms_info, argp, sizeof(ms_info)))
-		return -EFAULT;
-
-	requested_format = ms_info.addr_format;
+	requested_format = info->addr_format;
 	if (requested_format != CDROM_MSF && requested_format != CDROM_LBA)
 		return -EINVAL;
-	ms_info.addr_format = CDROM_LBA;
+	info->addr_format = CDROM_LBA;
 
-	ret = cdi->ops->get_last_session(cdi, &ms_info);
+	ret = cdi->ops->get_last_session(cdi, info);
+	if (!ret)
+		sanitize_format(&info->addr, &info->addr_format,
+				requested_format);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(cdrom_multisession);
+
+static int cdrom_ioctl_multisession(struct cdrom_device_info *cdi,
+		void __user *argp)
+{
+	struct cdrom_multisession info;
+	int ret;
+
+	cd_dbg(CD_DO_IOCTL, "entering CDROMMULTISESSION\n");
+
+	if (copy_from_user(&info, argp, sizeof(info)))
+		return -EFAULT;
+	ret = cdrom_multisession(cdi, &info);
 	if (ret)
 		return ret;
-
-	sanitize_format(&ms_info.addr, &ms_info.addr_format, requested_format);
-
-	if (copy_to_user(argp, &ms_info, sizeof(ms_info)))
+	if (copy_to_user(argp, &info, sizeof(info)))
 		return -EFAULT;
 
 	cd_dbg(CD_DO_IOCTL, "CDROMMULTISESSION successful\n");
-	return 0;
+	return ret;
 }
 
 static int cdrom_ioctl_eject(struct cdrom_device_info *cdi)
@@ -2441,7 +2463,7 @@ static int cdrom_ioctl_select_disc(struct cdrom_device_info *cdi,
 		return -ENOSYS;
 
 	if (arg != CDSL_CURRENT && arg != CDSL_NONE) {
-		if ((int)arg >= cdi->capacity)
+		if (arg >= cdi->capacity)
 			return -EINVAL;
 	}
 
@@ -2542,7 +2564,7 @@ static int cdrom_ioctl_drive_status(struct cdrom_device_info *cdi,
 	if (!CDROM_CAN(CDC_SELECT_DISC) ||
 	    (arg == CDSL_CURRENT || arg == CDSL_NONE))
 		return cdi->ops->drive_status(cdi, CDSL_CURRENT);
-	if (((int)arg >= cdi->capacity))
+	if (arg >= cdi->capacity)
 		return -EINVAL;
 	return cdrom_slot_status(cdi, arg);
 }
@@ -2652,32 +2674,37 @@ static int cdrom_ioctl_read_tochdr(struct cdrom_device_info *cdi,
 	return 0;
 }
 
+int cdrom_read_tocentry(struct cdrom_device_info *cdi,
+		struct cdrom_tocentry *entry)
+{
+	u8 requested_format = entry->cdte_format;
+	int ret;
+
+	if (requested_format != CDROM_MSF && requested_format != CDROM_LBA)
+		return -EINVAL;
+
+	/* make interface to low-level uniform */
+	entry->cdte_format = CDROM_MSF;
+	ret = cdi->ops->audio_ioctl(cdi, CDROMREADTOCENTRY, entry);
+	if (!ret)
+		sanitize_format(&entry->cdte_addr, &entry->cdte_format,
+				requested_format);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(cdrom_read_tocentry);
+
 static int cdrom_ioctl_read_tocentry(struct cdrom_device_info *cdi,
 		void __user *argp)
 {
 	struct cdrom_tocentry entry;
-	u8 requested_format;
 	int ret;
-
-	/* cd_dbg(CD_DO_IOCTL, "entering CDROMREADTOCENTRY\n"); */
 
 	if (copy_from_user(&entry, argp, sizeof(entry)))
 		return -EFAULT;
-
-	requested_format = entry.cdte_format;
-	if (requested_format != CDROM_MSF && requested_format != CDROM_LBA)
-		return -EINVAL;
-	/* make interface to low-level uniform */
-	entry.cdte_format = CDROM_MSF;
-	ret = cdi->ops->audio_ioctl(cdi, CDROMREADTOCENTRY, &entry);
-	if (ret)
-		return ret;
-	sanitize_format(&entry.cdte_addr, &entry.cdte_format, requested_format);
-
-	if (copy_to_user(argp, &entry, sizeof(entry)))
+	ret = cdrom_read_tocentry(cdi, &entry);
+	if (!ret && copy_to_user(argp, &entry, sizeof(entry)))
 		return -EFAULT;
-	/* cd_dbg(CD_DO_IOCTL, "CDROMREADTOCENTRY successful\n"); */
-	return 0;
+	return ret;
 }
 
 static int cdrom_ioctl_play_msf(struct cdrom_device_info *cdi,
@@ -2878,6 +2905,9 @@ int cdrom_get_last_written(struct cdrom_device_info *cdi, long *last_written)
 	   it doesn't give enough information or fails. then we return
 	   the toc contents. */
 use_toc:
+	if (!CDROM_CAN(CDC_PLAY_AUDIO))
+		return -ENOSYS;
+
 	toc.cdte_format = CDROM_MSF;
 	toc.cdte_track = CDROM_LEADOUT;
 	if ((ret = cdi->ops->audio_ioctl(cdi, CDROMREADTOCENTRY, &toc)))
@@ -2943,7 +2973,7 @@ static noinline int mmc_ioctl_cdrom_read_data(struct cdrom_device_info *cdi,
 					      struct packet_command *cgc,
 					      int cmd)
 {
-	struct request_sense sense;
+	struct scsi_sense_hdr sshdr;
 	struct cdrom_msf msf;
 	int blocksize = 0, format = 0, lba;
 	int ret;
@@ -2971,13 +3001,13 @@ static noinline int mmc_ioctl_cdrom_read_data(struct cdrom_device_info *cdi,
 	if (cgc->buffer == NULL)
 		return -ENOMEM;
 
-	memset(&sense, 0, sizeof(sense));
-	cgc->sense = &sense;
+	memset(&sshdr, 0, sizeof(sshdr));
+	cgc->sshdr = &sshdr;
 	cgc->data_direction = CGC_DATA_READ;
 	ret = cdrom_read_block(cdi, cgc, lba, 1, format, blocksize);
-	if (ret && sense.sense_key == 0x05 &&
-	    sense.asc == 0x20 &&
-	    sense.ascq == 0x00) {
+	if (ret && sshdr.sense_key == 0x05 &&
+	    sshdr.asc == 0x20 &&
+	    sshdr.ascq == 0x00) {
 		/*
 		 * SCSI-II devices are not required to support
 		 * READ_CD, so let's try switching block size
@@ -2986,7 +3016,7 @@ static noinline int mmc_ioctl_cdrom_read_data(struct cdrom_device_info *cdi,
 		ret = cdrom_switch_blocksize(cdi, blocksize);
 		if (ret)
 			goto out;
-		cgc->sense = NULL;
+		cgc->sshdr = NULL;
 		ret = cdrom_read_cd(cdi, cgc, lba, blocksize, 1);
 		ret |= cdrom_switch_blocksize(cdi, blocksize);
 	}
