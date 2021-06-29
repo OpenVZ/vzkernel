@@ -244,15 +244,16 @@ err:
 
 void defer_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list)
 {
+	struct list_head *list = &ploop->pios[PLOOP_LIST_DEFERRED];
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	if (pio)
-		list_add_tail(&pio->list, &ploop->deferred_pios);
+		list_add_tail(&pio->list, list);
 	if (pio_list)
-		list_splice_tail_init(pio_list, &ploop->deferred_pios);
-
+		list_splice_tail_init(pio_list, list);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+
 	queue_work(ploop->wq, &ploop->worker);
 }
 
@@ -289,10 +290,11 @@ void __track_pio(struct ploop *ploop, struct pio *pio)
 
 static void queue_discard_index_wb(struct ploop *ploop, struct pio *pio)
 {
+	struct list_head *list = &ploop->pios[PLOOP_LIST_DISCARD];
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	list_add_tail(&pio->list, &ploop->discard_pios);
+	list_add_tail(&pio->list, list);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
 	queue_work(ploop->wq, &ploop->worker);
@@ -1133,7 +1135,7 @@ static void ploop_cow_endio(struct pio *aux_pio, void *data, blk_status_t bi_sta
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	list_add_tail(&aux_pio->list, &ploop->delta_cow_action_list);
+	list_add_tail(&aux_pio->list, &ploop->pios[PLOOP_LIST_COW]);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
 	queue_work(ploop->wq, &ploop->worker);
@@ -1241,7 +1243,7 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 		/* Another BAT page wb is in process */
 		spin_lock_irq(&ploop->deferred_lock);
 		list_add_tail(&cow->aux_pio->list,
-			      &ploop->delta_cow_action_list);
+			      &ploop->pios[PLOOP_LIST_COW]);
 		spin_unlock_irq(&ploop->deferred_lock);
 		queue_work(ploop->wq, &ploop->worker);
 		goto out;
@@ -1267,13 +1269,14 @@ err_resource:
 
 static void process_delta_wb(struct ploop *ploop, struct ploop_index_wb *piwb)
 {
+	struct list_head *list = &ploop->pios[PLOOP_LIST_COW];
 	struct pio *aux_pio;
 	struct ploop_cow *cow;
 	LIST_HEAD(cow_list);
 
-	if (list_empty(&ploop->delta_cow_action_list))
+	if (list_empty(list))
 		return;
-	list_splice_tail_init(&ploop->delta_cow_action_list, &cow_list);
+	list_splice_tail_init(list, &cow_list);
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	while ((aux_pio = pio_list_pop(&cow_list)) != NULL) {
@@ -1547,8 +1550,8 @@ void do_ploop_work(struct work_struct *ws)
 	spin_lock_irq(&ploop->deferred_lock);
 	process_delta_wb(ploop, &piwb);
 
-	list_splice_init(&ploop->deferred_pios, &deferred_pios);
-	list_splice_init(&ploop->discard_pios, &discard_pios);
+	list_splice_init(&ploop->pios[PLOOP_LIST_DEFERRED], &deferred_pios);
+	list_splice_init(&ploop->pios[PLOOP_LIST_DISCARD], &discard_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	process_deferred_pios(ploop, &deferred_pios, &piwb);
@@ -1632,7 +1635,7 @@ static void submit_pio(struct ploop *ploop, struct pio *pio)
 	int ret;
 
 	if (pio->bi_iter.bi_size) {
-		queue_list = &ploop->deferred_pios;
+		queue_list = &ploop->pios[PLOOP_LIST_DEFERRED];
 		worker = &ploop->worker;
 
 		if (ploop_pio_valid(ploop, pio) < 0)

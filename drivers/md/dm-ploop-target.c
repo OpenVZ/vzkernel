@@ -132,11 +132,11 @@ void free_md_pages_tree(struct rb_root *root)
 static bool ploop_has_pending_activity(struct ploop *ploop)
 {
 	bool has = false;
+	int i;
 
 	spin_lock_irq(&ploop->deferred_lock);
-	has |= !list_empty(&ploop->deferred_pios);
-	has |= !list_empty(&ploop->discard_pios);
-	has |= !list_empty(&ploop->delta_cow_action_list);
+	for (i = 0; i < PLOOP_LIST_COUNT; i++)
+		has |= !list_empty(&ploop->pios[i]);
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	return has;
@@ -326,13 +326,14 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	spin_lock_init(&ploop->deferred_lock);
 
 	INIT_LIST_HEAD(&ploop->suspended_pios);
-	INIT_LIST_HEAD(&ploop->deferred_pios);
+
+	for (i = 0; i < PLOOP_LIST_COUNT; i++)
+		INIT_LIST_HEAD(&ploop->pios[i]);
+
 	INIT_LIST_HEAD(&ploop->flush_pios);
-	INIT_LIST_HEAD(&ploop->discard_pios);
 	INIT_LIST_HEAD(&ploop->resubmit_pios);
 	INIT_LIST_HEAD(&ploop->enospc_pios);
 	INIT_LIST_HEAD(&ploop->cluster_lk_list);
-	INIT_LIST_HEAD(&ploop->delta_cow_action_list);
 	ploop->bat_entries = RB_ROOT;
 	timer_setup(&ploop->enospc_timer, ploop_enospc_timer, 0);
 
