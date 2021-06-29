@@ -1210,7 +1210,7 @@ static void initiate_cluster_cow(struct ploop *ploop, unsigned int level,
 
 static void submit_cluster_write(struct ploop_cow *cow)
 {
-	struct pio *pio = cow->aux_pio;
+	struct pio *aux_pio = cow->aux_pio;
 	struct ploop *ploop = cow->ploop;
 	unsigned int dst_clu;
 
@@ -1218,14 +1218,14 @@ static void submit_cluster_write(struct ploop_cow *cow)
 		goto error;
 	cow->dst_clu = dst_clu;
 
-	init_pio(ploop, REQ_OP_WRITE, pio);
-	pio_prepare_offsets(ploop, pio, dst_clu);
+	init_pio(ploop, REQ_OP_WRITE, aux_pio);
+	pio_prepare_offsets(ploop, aux_pio, dst_clu);
 
 	BUG_ON(irqs_disabled());
-	pio->endio_cb = ploop_cow_endio;
-	pio->endio_cb_data = cow;
+	aux_pio->endio_cb = ploop_cow_endio;
+	aux_pio->endio_cb_data = cow;
 
-	map_and_submit_rw(ploop, dst_clu, pio, top_level(ploop));
+	map_and_submit_rw(ploop, dst_clu, aux_pio, top_level(ploop));
 	return;
 error:
 	complete_cow(cow, BLK_STS_IOERR);
