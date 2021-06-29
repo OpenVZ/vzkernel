@@ -253,7 +253,7 @@ struct pio {
 /* Delta COW private */
 struct ploop_cow {
 	struct ploop *ploop;
-	struct pio *cluster_pio;
+	struct pio *aux_pio;
 	unsigned int dst_cluster;
 
 	struct pio *cow_pio;
