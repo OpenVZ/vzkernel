@@ -417,19 +417,13 @@ static void del_cluster_lk(struct ploop *ploop, struct pio *pio)
 {
 	LIST_HEAD(pio_list);
 	unsigned long flags;
-	bool queue = false;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	unlink_pio(ploop, pio, &pio_list);
-	if (!list_empty(&pio_list)) {
-		list_splice_tail(&pio_list, &ploop->deferred_pios);
-		queue = true;
-	}
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
-	if (queue)
-		queue_work(ploop->wq, &ploop->worker);
-
+	if (!list_empty(&pio_list))
+		defer_pios(ploop, NULL, &pio_list);
 }
 
 static void link_submitting_pio(struct ploop *ploop, struct pio *pio,
@@ -453,13 +447,8 @@ static void unlink_completed_pio(struct ploop *ploop, struct pio *pio)
 	unlink_pio(ploop, pio, &pio_list);
 	spin_unlock_irqrestore(&ploop->inflight_lock, flags);
 
-	if (!list_empty(&pio_list)) {
-		spin_lock_irqsave(&ploop->deferred_lock, flags);
-		list_splice_tail(&pio_list, &ploop->deferred_pios);
-		spin_unlock_irqrestore(&ploop->deferred_lock, flags);
-
-		queue_work(ploop->wq, &ploop->worker);
-	}
+	if (!list_empty(&pio_list))
+		defer_pios(ploop, NULL, &pio_list);
 }
 
 static bool pio_endio_if_all_zeros(struct pio *pio)
