@@ -1,0 +1,23 @@
+# CONFIG_ARM_GT_INITIAL_PRESCALER_VAL:
+# 
+# When the ARM global timer initializes, its current rate is declared
+# to the kernel and maintained forever. Should it's parent clock
+# change, the driver tries to fix the timer's internal prescaler.
+# On some machs (i.e. Zynq) the initial prescaler value thus poses
+# bounds about how much the parent clock is allowed to decrease or
+# increase wrt the initial clock value.
+# This affects CPU_FREQ max delta from the initial frequency.
+# 
+# Symbol: ARM_GT_INITIAL_PRESCALER_VAL [=2]
+# Type  : integer
+# Defined at drivers/clocksource/Kconfig:361
+#   Prompt: ARM global timer initial prescaler value
+#   Depends on: GENERIC_CLOCKEVENTS [=y] && ARM_GLOBAL_TIMER [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Clock Source drivers
+#         -> Support for the ARM global timer (ARM_GLOBAL_TIMER [=y])
+# 
+# 
+# 
+CONFIG_ARM_GT_INITIAL_PRESCALER_VAL=2
