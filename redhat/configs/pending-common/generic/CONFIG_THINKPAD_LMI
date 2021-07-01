@@ -1,0 +1,21 @@
+# CONFIG_THINKPAD_LMI:
+# 
+# This driver allows changing BIOS settings on Lenovo machines whose
+# BIOS support the WMI interface.
+# 
+# To compile this driver as a module, choose M here: the module will
+# be called think-lmi.
+# 
+# Symbol: THINKPAD_LMI [=n]
+# Type  : tristate
+# Defined at drivers/platform/x86/Kconfig:643
+#   Prompt: Lenovo WMI-based systems management driver
+#   Depends on: X86 [=y] && X86_PLATFORM_DEVICES [=y] && ACPI_WMI [=m]
+#   Location:
+#     -> Device Drivers
+#       -> X86 Platform Specific Device Drivers (X86_PLATFORM_DEVICES [=y])
+# Selects: FW_ATTR_CLASS [=m]
+# 
+# 
+# 
+# CONFIG_THINKPAD_LMI is not set

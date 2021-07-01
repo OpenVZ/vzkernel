@@ -1,0 +1,18 @@
+# CONFIG_MOTORCOMM_PHY:
+# 
+# Enables support for Motorcomm network PHYs.
+# Currently supports the YT8511 gigabit PHY.
+# 
+# Symbol: MOTORCOMM_PHY [=n]
+# Type  : tristate
+# Defined at drivers/net/phy/Kconfig:237
+#   Prompt: Motorcomm PHYs
+#   Depends on: NETDEVICES [=y] && PHYLIB [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> PHY Device support and infrastructure (PHYLIB [=y])
+# 
+# 
+# 
+# CONFIG_MOTORCOMM_PHY is not set

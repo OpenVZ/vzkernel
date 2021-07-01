@@ -1,0 +1,22 @@
+# CONFIG_WWAN_HWSIM:
+# 
+# This driver is a developer testing tool that can be used to test WWAN
+# framework.
+# 
+# To compile this driver as a module, choose M here: the module will be
+# called wwan_hwsim.  If unsure, say N.
+# 
+# Symbol: WWAN_HWSIM [=n]
+# Type  : tristate
+# Defined at drivers/net/wwan/Kconfig:19
+#   Prompt: Simulated WWAN device
+#   Depends on: NETDEVICES [=y] && WWAN [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Wireless WAN
+#           -> WWAN Driver Core (WWAN [=y])
+# 
+# 
+# 
+# CONFIG_WWAN_HWSIM is not set

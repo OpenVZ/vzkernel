@@ -1,0 +1,20 @@
+# CONFIG_DWMAC_LOONGSON:
+# 
+# This selects the LOONGSON PCI bus support for the stmmac driver,
+# Support for ethernet controller on Loongson-2K1000 SoC and LS7A1000 bridge.
+# 
+# Symbol: DWMAC_LOONGSON [=n]
+# Type  : tristate
+# Defined at drivers/net/ethernet/stmicro/stmmac/Kconfig:253
+#   Prompt: Loongson PCI DWMAC support
+#   Depends on: NETDEVICES [=y] && ETHERNET [=y] && NET_VENDOR_STMICRO [=y] && STMMAC_ETH [=m] && PCI [=y] && COMMON_CLK [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Network device support (NETDEVICES [=y])
+#         -> Ethernet driver support (ETHERNET [=y])
+#           -> STMicroelectronics devices (NET_VENDOR_STMICRO [=y])
+#             -> STMicroelectronics Multi-Gigabit Ethernet driver (STMMAC_ETH [=m])
+# 
+# 
+# 
+# CONFIG_DWMAC_LOONGSON is not set
