@@ -1,0 +1,21 @@
+# CONFIG_X86_PLATFORM_DRIVERS_INTEL:
+# 
+# Say Y here to get to see options for device drivers for
+# various Intel x86 platforms, including vendor-specific
+# drivers. This option alone does not add any kernel code.
+# 
+# If you say N, all options in this submenu will be skipped
+# and disabled.
+# 
+# Symbol: X86_PLATFORM_DRIVERS_INTEL [=y]
+# Type  : bool
+# Defined at drivers/platform/x86/intel/Kconfig:6
+#   Prompt: Intel x86 Platform Specific Device Drivers
+#   Depends on: X86 [=y] && X86_PLATFORM_DEVICES [=y]
+#   Location:
+#     -> Device Drivers
+#       -> X86 Platform Specific Device Drivers (X86_PLATFORM_DEVICES [=y])
+# 
+# 
+# 
+CONFIG_X86_PLATFORM_DRIVERS_INTEL=y

@@ -1,0 +1,21 @@
+# CONFIG_NETFILTER_NETLINK_HOOK:
+# 
+# If this option is enabled, the kernel will include support
+# to list the base netfilter hooks via NFNETLINK.
+# This is helpful for debugging.
+# 
+# Symbol: NETFILTER_NETLINK_HOOK [=n]
+# Type  : tristate
+# Defined at net/netfilter/Kconfig:22
+#   Prompt: Netfilter base hook dump support
+#   Depends on: NET [=y] && INET [=y] && NETFILTER [=y] && NETFILTER_ADVANCED [=y] && NF_TABLES [=m]
+#   Location:
+#     -> Networking support (NET [=y])
+#       -> Networking options
+#         -> Network packet filtering framework (Netfilter) (NETFILTER [=y])
+#           -> Core Netfilter Configuration
+# Selects: NETFILTER_NETLINK [=m]
+# 
+# 
+# 
+# CONFIG_NETFILTER_NETLINK_HOOK is not set
