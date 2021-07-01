@@ -223,6 +223,8 @@ Summary: The Linux kernel
 %define with_perf 0
 %define with_tools 0
 %define with_bpftool 0
+# selftests turns on bpftool
+%define with_selftests 0
 %endif
 
 %if %{with_verbose}
