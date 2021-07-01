@@ -222,6 +222,7 @@ Summary: The Linux kernel
 # Fedora builds these separately
 %define with_perf 0
 %define with_tools 0
+%define with_bpftool 0
 %endif
 
 %if %{with_verbose}
