@@ -274,11 +274,11 @@ static void ploop_make_md_wb(struct ploop *ploop, struct md_page *md)
 }
 
 static int ploop_grow_relocate_cluster(struct ploop *ploop,
-				       struct ploop_index_wb *piwb,
 				       struct ploop_cmd *cmd)
 {
 	unsigned int new_dst, clu, dst_clu;
 	struct pio *pio = cmd->resize.pio;
+	struct ploop_index_wb *piwb;
 	struct md_page *md;
 	bool is_locked;
 	int ret = 0;
@@ -304,10 +304,10 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	if (ret < 0)
 		goto out;
 
-	ret = ploop_prepare_reloc_index_wb(ploop, &md, piwb, clu,
-					   &new_dst);
+	ret = ploop_prepare_reloc_index_wb(ploop, &md, clu, &new_dst);
 	if (ret < 0)
 		goto out;
+	piwb = md->piwb;
 
 	/* Write clu to new destination */
 	ret = ploop_write_cluster_sync(ploop, pio, new_dst);
@@ -343,20 +343,21 @@ out:
 }
 
 static int ploop_grow_update_header(struct ploop *ploop,
-				    struct ploop_index_wb *piwb,
 				    struct ploop_cmd *cmd)
 {
 	unsigned int size, first_block_off;
 	struct ploop_pvd_header *hdr;
+	struct ploop_index_wb *piwb;
 	u32 nr_be, offset, clus;
 	struct md_page *md;
 	u64 sectors;
 	int ret;
 
 	/* hdr is in the same page as bat_entries[0] index */
-	ret = ploop_prepare_reloc_index_wb(ploop, &md, piwb, 0, NULL);
+	ret = ploop_prepare_reloc_index_wb(ploop, &md, 0, NULL);
 	if (ret)
 		return ret;
+	piwb = md->piwb;
 
 	size = (PLOOP_MAP_OFFSET + cmd->resize.nr_bat_entries);
 	size *= sizeof(map_index_t);
@@ -405,23 +406,20 @@ static void ploop_add_md_pages(struct ploop *ploop, struct rb_root *from)
  */
 static int process_resize_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 {
-	struct ploop_index_wb piwb;
 	unsigned int dst_clu;
 	int ret = 0;
-
-	ploop_index_wb_init(&piwb, ploop);
 
 	/* Update memory arrays and hb_nr, but do not update nr_bat_entries. */
 	ploop_advance_holes_bitmap(ploop, cmd);
 
 	while (cmd->resize.dst_clu <= cmd->resize.end_dst_clu) {
-		ret = ploop_grow_relocate_cluster(ploop, &piwb, cmd);
+		ret = ploop_grow_relocate_cluster(ploop, cmd);
 		if (ret)
 			goto out;
 	}
 
 	/* Update header metadata */
-	ret = ploop_grow_update_header(ploop, &piwb, cmd);
+	ret = ploop_grow_update_header(ploop, cmd);
 out:
 	write_lock_irq(&ploop->bat_rwlock);
 	if (ret) {
