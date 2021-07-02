@@ -22,7 +22,7 @@
 static void ploop_advance_holes_bitmap(struct ploop *ploop,
 				       struct ploop_cmd *cmd)
 {
-	unsigned int i, end, size, dst_clu, *bat_entries;
+	u32 i, end, size, dst_clu, *bat_entries;
 	struct rb_node *node;
 	struct md_page *md;
 
@@ -143,11 +143,9 @@ static void ploop_resume_submitting_pios(struct ploop *ploop)
 }
 
 /* Find existing BAT clu pointing to dst_clu */
-static unsigned int ploop_find_bat_entry(struct ploop *ploop,
-					 unsigned int dst_clu,
-					 bool *is_locked)
+static u32 ploop_find_bat_entry(struct ploop *ploop, u32 dst_clu, bool *is_locked)
 {
-	unsigned int i, end, *bat_entries, clu = UINT_MAX;
+	u32 i, end, *bat_entries, clu = U32_MAX;
 	struct rb_node *node;
 	struct md_page *md;
 
@@ -179,8 +177,7 @@ static unsigned int ploop_find_bat_entry(struct ploop *ploop,
 	return clu;
 }
 
-void pio_prepare_offsets(struct ploop *ploop, struct pio *pio,
-			 unsigned int clu)
+void pio_prepare_offsets(struct ploop *ploop, struct pio *pio, u32 clu)
 {
 	int i, nr_pages = nr_pages_in_cluster(ploop);
 
@@ -204,7 +201,7 @@ static void wake_completion(struct pio *pio, void *data, blk_status_t status)
 }
 
 static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
-				   unsigned int dst_clu)
+				   u32 dst_clu)
 {
 	DECLARE_COMPLETION(completion);
 
@@ -224,7 +221,7 @@ static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
 }
 
 static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
-				    unsigned int dst_clu)
+				    u32 dst_clu)
 {
 	struct file *file = top_delta(ploop)->file;
 	DECLARE_COMPLETION(completion);
@@ -251,8 +248,7 @@ static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 }
 
 static int ploop_write_zero_cluster_sync(struct ploop *ploop,
-					 struct pio *pio,
-					 unsigned int clu)
+					 struct pio *pio, u32 clu)
 {
 	void *data;
 	int i;
@@ -276,9 +272,9 @@ static void ploop_make_md_wb(struct ploop *ploop, struct md_page *md)
 static int ploop_grow_relocate_cluster(struct ploop *ploop,
 				       struct ploop_cmd *cmd)
 {
-	unsigned int new_dst, clu, dst_clu;
 	struct pio *pio = cmd->resize.pio;
 	struct ploop_index_wb *piwb;
+	u32 new_dst, clu, dst_clu;
 	struct completion comp;
 	struct md_page *md;
 	bool is_locked;
@@ -414,7 +410,7 @@ static void ploop_add_md_pages(struct ploop *ploop, struct rb_root *from)
  */
 static int process_resize_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 {
-	unsigned int dst_clu;
+	u32 dst_clu;
 	int ret = 0;
 
 	/* Update memory arrays and hb_nr, but do not update nr_bat_entries. */
@@ -502,8 +498,8 @@ void free_pio_with_pages(struct ploop *ploop, struct pio *pio)
 /* TODO: we may delegate this to userspace */
 static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 {
-	unsigned int nr_bat_entries, nr_old_bat_clusters, nr_bat_clusters;
 	struct ploop_cmd cmd = { .resize.md_pages_root = RB_ROOT };
+	u32 nr_bat_entries, nr_old_bat_clusters, nr_bat_clusters;
 	unsigned int hb_nr, size, old_size;
 	struct ploop_pvd_header *hdr;
 	sector_t old_sectors;
@@ -687,7 +683,7 @@ out:
 static void notify_delta_merged(struct ploop *ploop, u8 level, void *hdr,
 				bool forward, u32 size_in_clus)
 {
-	unsigned int i, end, *bat_entries, *delta_bat_entries;
+	u32 i, end, *bat_entries, *delta_bat_entries;
 	struct rb_node *node;
 	struct md_page *md;
 	struct file *file;
@@ -748,7 +744,7 @@ unmap:
 static int process_update_delta_index(struct ploop *ploop, u8 level,
 				      const char *map)
 {
-	unsigned int clu, dst_clu, n;
+	u32 clu, dst_clu, n;
 	int ret;
 
 	write_lock_irq(&ploop->bat_rwlock);
@@ -890,11 +886,12 @@ out:
 
 static int process_flip_upper_deltas(struct ploop *ploop)
 {
-	unsigned int i, size, end, bat_clusters, hb_nr, *bat_entries;
+	u32 i, end, bat_clusters, hb_nr, *bat_entries;
 	void *holes_bitmap = ploop->holes_bitmap;
 	u8 level = top_level(ploop) - 1;
 	struct rb_node *node;
 	struct md_page *md;
+	u64 size;
 
 	size = (PLOOP_MAP_OFFSET + ploop->nr_bat_entries) * sizeof(map_index_t);
         bat_clusters = DIV_ROUND_UP(size, CLU_SIZE(ploop));
@@ -934,7 +931,7 @@ static int process_flip_upper_deltas(struct ploop *ploop)
 static int process_tracking_start(struct ploop *ploop, void *tracking_bitmap,
 				  u32 tb_nr)
 {
-	unsigned int i, nr_pages, end, *bat_entries, dst_clu, nr;
+	u32 i, nr_pages, end, *bat_entries, dst_clu, nr;
 	struct rb_node *node;
 	struct md_page *md;
 	int ret = 0;
@@ -1001,9 +998,9 @@ unlock:
 	return ret;
 }
 
-static unsigned int max_dst_clu_in_top_delta(struct ploop *ploop)
+static u32 max_dst_clu_in_top_delta(struct ploop *ploop)
 {
-	unsigned int i, nr_pages, nr = 0, end, *bat_entries, dst_clu = 0;
+	u32 i, nr_pages, nr = 0, end, *bat_entries, dst_clu = 0;
 	struct rb_node *node;
 	struct md_page *md;
 

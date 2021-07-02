@@ -11,7 +11,7 @@
 #include <linux/mm.h>
 #include "dm-ploop.h"
 
-struct md_page * md_page_find(struct ploop *ploop, unsigned int id)
+struct md_page * md_page_find(struct ploop *ploop, u32 id)
 {
 	struct rb_node *node;
 	struct md_page *md;
@@ -33,8 +33,8 @@ struct md_page * md_page_find(struct ploop *ploop, unsigned int id)
 
 static void __md_page_insert(struct rb_root *root, struct md_page *new_md)
 {
-	unsigned int new_id = new_md->id;
 	struct rb_node *parent, **node;
+	u32 new_id = new_md->id;
 	struct md_page *md;
 
 	node = &root->rb_node;
@@ -60,7 +60,7 @@ void md_page_insert(struct ploop *ploop, struct md_page *new_md)
 	__md_page_insert(&ploop->bat_entries, new_md);
 }
 
-static struct md_page * alloc_md_page(unsigned int id)
+static struct md_page * alloc_md_page(u32 id)
 {
 	struct md_page *md;
 	struct page *page;
@@ -101,10 +101,10 @@ void ploop_free_md_page(struct md_page *md)
 	kfree(md);
 }
 
-int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
-		      unsigned int new_nr_bat_entries)
+int prealloc_md_pages(struct rb_root *root, u32 nr_bat_entries,
+		      u32 new_nr_bat_entries)
 {
-	unsigned int i, nr_pages, new_nr_pages;
+	u32 i, nr_pages, new_nr_pages;
 	struct md_page *md;
 	void *addr;
 
@@ -127,10 +127,9 @@ int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
 	return 0;
 }
 
-bool try_update_bat_entry(struct ploop *ploop, unsigned int clu,
-			  u8 level, unsigned int dst_clu)
+bool try_update_bat_entry(struct ploop *ploop, u32 clu, u8 level, u32 dst_clu)
 {
-	unsigned int *bat_entries, id = bat_clu_to_page_nr(clu);
+	u32 *bat_entries, id = bat_clu_to_page_nr(clu);
 	struct md_page *md = md_page_find(ploop, id);
 
 	lockdep_assert_held(&ploop->bat_rwlock);
@@ -239,10 +238,9 @@ out:
 #endif
 
 /* Alloc holes_bitmap and set bits of free clusters */
-static int ploop_setup_holes_bitmap(struct ploop *ploop,
-				    unsigned int bat_clusters)
+static int ploop_setup_holes_bitmap(struct ploop *ploop, u32 bat_clusters)
 {
-	unsigned int i, size;
+	u32 i, size;
 
 	/*
 	 * + number of data clusters.
@@ -269,8 +267,8 @@ static int ploop_setup_holes_bitmap(struct ploop *ploop,
 
 int ploop_setup_metadata(struct ploop *ploop, struct page *page)
 {
-	unsigned int bat_clusters, offset_clusters;
 	struct ploop_pvd_header *m_hdr = NULL;
+	u32 bat_clusters, offset_clusters;
 	unsigned long size;
 	int ret;
 
@@ -318,7 +316,7 @@ static int ploop_delta_check_header(struct ploop *ploop,
 				    struct ploop_pvd_header *d_hdr,
 				    u32 *delta_nr_be_ret)
 {
-	unsigned int bytes, delta_nr_be, offset_clusters, bat_clusters;
+	u32 bytes, delta_nr_be, offset_clusters, bat_clusters;
 	int ret = -EPROTO;
 
 	if (memcmp(d_hdr->m_Sig, ploop->m_Sig, sizeof(d_hdr->m_Sig)) ||
@@ -420,7 +418,7 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 {
 	map_index_t *bat_entries, *delta_bat_entries;
 	bool is_top_level, is_raw, stop = false;
-	unsigned int i, end, dst_clu, clu;
+	u32 i, end, dst_clu, clu;
 	struct rb_node *node;
 	struct md_page *md;
 
