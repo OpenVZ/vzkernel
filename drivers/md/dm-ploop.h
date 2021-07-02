@@ -463,10 +463,10 @@ static inline bool md_page_cluster_is_in_top_delta(struct ploop *ploop,
 	return ret;
 }
 
-static inline void init_bat_entries_iter(struct ploop *ploop, u32 page_id,
-					 u32 *start, u32 *end)
+static inline void init_be_iter(u32 nr_be, u32 page_id,
+				u32 *start, u32 *end)
 {
-	u32 last_page = bat_clu_to_page_nr(ploop->nr_bat_entries - 1);
+	u32 last_page = bat_clu_to_page_nr(nr_be - 1);
 	unsigned int count = PAGE_SIZE / sizeof(map_index_t);
 
 	*start = 0;
@@ -475,7 +475,13 @@ static inline void init_bat_entries_iter(struct ploop *ploop, u32 page_id,
 
 	*end = count - 1;
 	if (page_id == last_page)
-		*end = ((ploop->nr_bat_entries + PLOOP_MAP_OFFSET) % count) - 1;
+		*end = ((nr_be + PLOOP_MAP_OFFSET) % count) - 1;
+}
+
+static inline void ploop_init_be_iter(struct ploop *ploop, u32 page_id,
+				      u32 *start, u32 *end)
+{
+	init_be_iter(ploop->nr_bat_entries, page_id, start, end);
 }
 
 extern void __track_pio(struct ploop *ploop, struct pio *pio);

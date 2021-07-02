@@ -40,7 +40,7 @@ static void ploop_advance_holes_bitmap(struct ploop *ploop,
 		set_bit(i, ploop->holes_bitmap);
 	swap(cmd->resize.hb_nr, ploop->hb_nr);
 	ploop_for_each_md_page(ploop, md, node) {
-		init_bat_entries_iter(ploop, md->id, &i, &end);
+		ploop_init_be_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
 			if (!md_page_cluster_is_in_top_delta(ploop, md, i))
@@ -151,7 +151,7 @@ static u32 ploop_find_bat_entry(struct ploop *ploop, u32 dst_clu, bool *is_locke
 
 	read_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
-		init_bat_entries_iter(ploop, md->id, &i, &end);
+		ploop_init_be_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
 			if (bat_entries[i] != dst_clu)
@@ -695,7 +695,7 @@ static void notify_delta_merged(struct ploop *ploop, u8 level, void *hdr,
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
-		init_bat_entries_iter(ploop, md->id, &i, &end);
+		ploop_init_be_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
 			clu = page_clu_idx_to_bat_clu(md->id, i);
@@ -918,7 +918,7 @@ static int process_flip_upper_deltas(struct ploop *ploop)
 
 	/* Flip bat entries */
 	ploop_for_each_md_page(ploop, md, node) {
-		init_bat_entries_iter(ploop, md->id, &i, &end);
+		ploop_init_be_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
 			if (bat_entries[i] == BAT_ENTRY_NONE)
@@ -957,7 +957,7 @@ static int process_tracking_start(struct ploop *ploop, void *tracking_bitmap,
 	nr = 0;
 
 	ploop_for_each_md_page(ploop, md, node) {
-		init_bat_entries_iter(ploop, md->id, &i, &end);
+		ploop_init_be_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
 			dst_clu = bat_entries[i];
@@ -1019,7 +1019,7 @@ static u32 max_dst_clu_in_top_delta(struct ploop *ploop)
 
 	read_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
-		init_bat_entries_iter(ploop, md->id, &i, &end);
+		ploop_init_be_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
 			if (dst_clu < bat_entries[i] &&

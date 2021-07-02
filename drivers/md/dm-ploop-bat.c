@@ -442,7 +442,7 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 			memcpy(bat_entries, hdr, sizeof(struct ploop_pvd_header));
 		}
 
-		init_bat_entries_iter(ploop, md->id, &i, &end);
+		ploop_init_be_iter(ploop, md->id, &i, &end);
 
 		for (; i <= end; i++) {
 			clu = page_clu_idx_to_bat_clu(md->id, i);
