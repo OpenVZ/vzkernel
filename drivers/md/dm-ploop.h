@@ -400,6 +400,17 @@ static inline u32 page_clu_idx_to_bat_clu(u32 page_id, u32 cluster_rel)
 	return off + cluster_rel;
 }
 
+static inline struct md_page *md_first_entry(struct rb_root *md_root)
+{
+	struct rb_node *node = rb_first(md_root);
+	return rb_entry(node, struct md_page, node);
+}
+static inline struct md_page *md_next_entry(struct md_page *md)
+{
+	return rb_entry(rb_next(&md->node), struct md_page, node);
+}
+
+
 extern struct md_page * md_page_find(struct ploop *ploop, u32 id);
 
 /*
