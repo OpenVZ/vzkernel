@@ -78,13 +78,15 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 }
 
 /* Get clu related to pio sectors */
-static int ploop_pio_valid(struct ploop *ploop, struct pio *pio)
+static int ploop_prq_valid(struct ploop *ploop, struct ploop_rq *prq)
 {
-	sector_t sector = pio->bi_iter.bi_sector;
+	struct request *rq = prq->rq;
+
+	sector_t sector = blk_rq_pos(rq);
 	loff_t end_byte;
 	u32 end_clu;
 
-	end_byte = to_bytes(sector) + pio->bi_iter.bi_size - 1;
+	end_byte = to_bytes(sector) + blk_rq_bytes(rq) - 1;
 	end_clu = POS_TO_CLU(ploop, end_byte);
 
 	if (unlikely(end_clu >= ploop->nr_bat_entries)) {
@@ -93,7 +95,7 @@ static int ploop_pio_valid(struct ploop *ploop, struct pio *pio)
 		 * via dm_set_target_max_io_len().
 		 */
 		WARN_ONCE(1, "sec=%llu, size=%u, end_clu=%u, nr=%u\n",
-			  sector, pio->bi_iter.bi_size,
+			  sector, blk_rq_bytes(rq),
 			  end_clu, ploop->nr_bat_entries);
 		return -EINVAL;
 	}
@@ -1726,9 +1728,6 @@ static void submit_pio(struct ploop *ploop, struct pio *pio)
 		queue_list = &ploop->pios[PLOOP_LIST_DEFERRED];
 		worker = &ploop->worker;
 
-		if (ploop_pio_valid(ploop, pio) < 0)
-			goto kill;
-
 		ret = split_pio_to_list(ploop, pio, &list);
 		if (ret) {
 			pio->bi_status = BLK_STS_RESOURCE;
@@ -1782,6 +1781,9 @@ int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 
 	prq = map_info_to_embedded_prq(info);
 	init_prq(prq, rq);
+
+	if (ploop_prq_valid(ploop, prq) < 0)
+		return DM_MAPIO_KILL;
 
 	pio = map_info_to_embedded_pio(info); /* Embedded pio */
 	init_pio(ploop, req_op(rq), pio);
