@@ -81,8 +81,8 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 static int ploop_pio_valid(struct ploop *ploop, struct pio *pio)
 {
 	sector_t sector = pio->bi_iter.bi_sector;
-	unsigned int end_clu;
 	loff_t end_byte;
+	u32 end_clu;
 
 	end_byte = to_bytes(sector) + pio->bi_iter.bi_size - 1;
 	end_clu = POS_TO_CLU(ploop, end_byte);
@@ -298,7 +298,7 @@ void track_dst_cluster(struct ploop *ploop, u32 dst_clu)
  */
 void __track_pio(struct ploop *ploop, struct pio *pio)
 {
-	unsigned int dst_clu = SEC_TO_CLU(ploop, pio->bi_iter.bi_sector);
+	u32 dst_clu = SEC_TO_CLU(ploop, pio->bi_iter.bi_sector);
 
 	if (!op_is_write(pio->bi_op) || !bvec_iter_sectors((pio)->bi_iter))
 		return;
@@ -347,13 +347,13 @@ struct pio *find_pio(struct hlist_head head[], u32 clu)
 	return NULL;
 }
 
-static struct pio *find_inflight_bio(struct ploop *ploop, unsigned int clu)
+static struct pio *find_inflight_bio(struct ploop *ploop, u32 clu)
 {
 	lockdep_assert_held(&ploop->inflight_lock);
 	return find_pio(ploop->inflight_pios, clu);
 }
 
-struct pio *find_lk_of_cluster(struct ploop *ploop, unsigned int clu)
+struct pio *find_lk_of_cluster(struct ploop *ploop, u32 clu)
 {
 	lockdep_assert_held(&ploop->deferred_lock);
 	return find_pio(ploop->exclusive_pios, clu);
@@ -440,8 +440,7 @@ static void del_cluster_lk(struct ploop *ploop, struct pio *pio)
 		dispatch_pios(ploop, NULL, &pio_list);
 }
 
-static void link_submitting_pio(struct ploop *ploop, struct pio *pio,
-				unsigned int clu)
+static void link_submitting_pio(struct ploop *ploop, struct pio *pio, u32 clu)
 {
 	unsigned long flags;
 
@@ -521,7 +520,7 @@ static int punch_hole(struct file *file, loff_t pos, loff_t len)
 }
 
 static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
-		     unsigned int clu, unsigned int dst_clu)
+			       u32 clu, u32 dst_clu)
 {
 	struct pio *inflight_h;
 	unsigned long flags;
@@ -598,9 +597,9 @@ static void queue_or_fail(struct ploop *ploop, int err, void *data)
 
 static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 {
-	unsigned int dst_clu = cow->dst_clu;
 	struct pio *aux_pio = cow->aux_pio;
 	struct ploop *ploop = cow->ploop;
+	u32 dst_clu = cow->dst_clu;
 	unsigned long flags;
 	struct pio *cow_pio;
 
@@ -622,10 +621,9 @@ static void complete_cow(struct ploop_cow *cow, blk_status_t bi_status)
 	kmem_cache_free(cow_cache, cow);
 }
 
-static void ploop_release_cluster(struct ploop *ploop,
-				  unsigned int clu)
+static void ploop_release_cluster(struct ploop *ploop, u32 clu)
 {
-	unsigned int id, *bat_entries, dst_clu;
+	u32 id, *bat_entries, dst_clu;
 	struct md_page *md;
 
 	lockdep_assert_held(&ploop->bat_rwlock);
@@ -646,7 +644,7 @@ static void ploop_release_cluster(struct ploop *ploop,
 }
 
 static void piwb_discard_completed(struct ploop *ploop, bool success,
-		  unsigned int clu, unsigned int new_dst_clu)
+				   u32 clu, u32 new_dst_clu)
 {
 	if (new_dst_clu)
 		return;
@@ -668,8 +666,8 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 					     struct ploop_index_wb *piwb,
 					     bool success)
 {
-	unsigned int i, last, *bat_entries;
 	struct md_page *md = piwb->md;
+	u32 i, last, *bat_entries;
 	map_index_t *dst_clu, off;
 	unsigned long flags;
 	LIST_HEAD(list);
@@ -802,7 +800,7 @@ static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 static int ploop_prepare_bat_update(struct ploop *ploop, struct md_page *md,
 				    enum piwb_type type)
 {
-	unsigned int i, off, last, *bat_entries;
+	u32 i, off, last, *bat_entries;
 	struct ploop_index_wb *piwb;
 	bool is_last_page = true;
 	u32 page_id = md->id;
@@ -883,7 +881,7 @@ void ploop_break_bat_update(struct ploop *ploop, struct md_page *md)
 
 static void ploop_bat_page_zero_cluster(struct ploop *ploop,
 					struct ploop_index_wb *piwb,
-					unsigned int clu)
+					u32 clu)
 {
 	map_index_t *to;
 
@@ -896,9 +894,9 @@ static void ploop_bat_page_zero_cluster(struct ploop *ploop,
 }
 
 static int find_dst_clu_bit(struct ploop *ploop,
-		      unsigned int *ret_dst_clu)
+		      u32 *ret_dst_clu)
 {
-	unsigned int dst_clu;
+	u32 dst_clu;
 
 	/* Find empty clu */
 	dst_clu = find_first_bit(ploop->holes_bitmap, ploop->hb_nr);
@@ -935,7 +933,7 @@ static int truncate_prealloc_safe(struct ploop_delta *delta, loff_t len, const c
 	return 0;
 }
 
-static int allocate_cluster(struct ploop *ploop, unsigned int *dst_clu)
+static int allocate_cluster(struct ploop *ploop, u32 *dst_clu)
 {
 	struct ploop_delta *top = top_delta(ploop);
 	u32 clu_size = CLU_SIZE(ploop);
@@ -991,7 +989,7 @@ static int allocate_cluster(struct ploop *ploop, unsigned int *dst_clu)
  * in ploop->holes_bitmap and bat_page.
  */
 static int ploop_alloc_cluster(struct ploop *ploop, struct ploop_index_wb *piwb,
-			       unsigned int clu, unsigned int *dst_clu)
+			       u32 clu, u32 *dst_clu)
 {
 	struct page *page = piwb->bat_page;
 	bool already_alloced = false;
@@ -1176,7 +1174,7 @@ void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 lev
 }
 
 static void initiate_delta_read(struct ploop *ploop, unsigned int level,
-				unsigned int dst_clu, struct pio *pio)
+				u32 dst_clu, struct pio *pio)
 {
 	if (dst_clu == BAT_ENTRY_NONE) {
 		/* No one delta contains dst_clu. */
@@ -1197,8 +1195,7 @@ static void ploop_cow_endio(struct pio *aux_pio, void *data, blk_status_t bi_sta
 	dispatch_pios(ploop, aux_pio, NULL);
 }
 
-static bool postpone_if_cluster_locked(struct ploop *ploop, struct pio *pio,
-				       unsigned int clu)
+static bool postpone_if_cluster_locked(struct ploop *ploop, struct pio *pio, u32 clu)
 {
 	struct pio *e_h; /* Exclusively locked */
 
@@ -1212,8 +1209,7 @@ static bool postpone_if_cluster_locked(struct ploop *ploop, struct pio *pio,
 }
 
 static int submit_cluster_cow(struct ploop *ploop, unsigned int level,
-			      unsigned int clu, unsigned int dst_clu,
-			      struct pio *cow_pio)
+			      u32 clu, u32 dst_clu, struct pio *cow_pio)
 {
 	struct ploop_cow *cow = NULL;
 	struct pio *aux_pio = NULL;
@@ -1246,7 +1242,7 @@ err:
 }
 
 static void initiate_cluster_cow(struct ploop *ploop, unsigned int level,
-		unsigned int clu, unsigned int dst_clu, struct pio *pio)
+				 u32 clu, u32 dst_clu, struct pio *pio)
 {
 	if (!submit_cluster_cow(ploop, level, clu, dst_clu, pio))
 		return;
@@ -1259,7 +1255,7 @@ static void submit_cluster_write(struct ploop_cow *cow)
 {
 	struct pio *aux_pio = cow->aux_pio;
 	struct ploop *ploop = cow->ploop;
-	unsigned int dst_clu;
+	u32 dst_clu;
 
 	if (allocate_cluster(ploop, &dst_clu) < 0)
 		goto error;
@@ -1281,10 +1277,9 @@ error:
 static void submit_cow_index_wb(struct ploop_cow *cow)
 {
 	struct pio *cow_pio = cow->cow_pio;
-	unsigned int clu = cow_pio->clu;
 	struct ploop *ploop = cow->ploop;
+	u32 page_id, clu = cow_pio->clu;
 	struct ploop_index_wb *piwb;
-	unsigned int page_id;
 	struct md_page *md;
 	map_index_t *to;
 
@@ -1369,14 +1364,13 @@ static void process_delta_cow(struct ploop *ploop, struct list_head *cow_list)
  */
 static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 					      struct md_page *md,
-					      unsigned int clu,
-					      unsigned int *dst_clu,
+					      u32 clu, u32 *dst_clu,
 					      struct pio *pio)
 {
 	bool bat_update_prepared = false;
 	struct ploop_index_wb *piwb;
 	bool attached = false;
-	unsigned int page_id;
+	u32 page_id;
 
 	WARN_ON_ONCE(pio->queue_list_id != PLOOP_LIST_DEFERRED);
 	if (delay_if_md_busy(ploop, md, PIWB_TYPE_ALLOC, pio))
@@ -1417,8 +1411,8 @@ error:
 static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio)
 {
 	sector_t sector = pio->bi_iter.bi_sector;
-	unsigned int clu, dst_clu;
 	struct md_page *md;
+	u32 clu, dst_clu;
 	u8 level;
 	bool ret;
 
@@ -1540,8 +1534,8 @@ static void process_deferred_pios(struct ploop *ploop, struct list_head *pios)
 
 static void process_one_discard_pio(struct ploop *ploop, struct pio *pio)
 {
-	unsigned int page_id, clu = pio->clu;
 	bool bat_update_prepared = false;
+	u32 page_id, clu = pio->clu;
 	struct ploop_index_wb *piwb;
 	struct md_page *md;
 	map_index_t *to;
@@ -1841,11 +1835,10 @@ static void handle_cleanup(struct ploop *ploop, struct pio *pio)
  */
 int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 				 struct md_page **ret_md,
-				 unsigned int clu,
-				 unsigned int *dst_clu)
+				 u32 clu, u32 *dst_clu)
 {
-	unsigned int page_id = bat_clu_to_page_nr(clu);
 	enum piwb_type type = PIWB_TYPE_ALLOC;
+	u32 page_id = bat_clu_to_page_nr(clu);
 	struct md_page *md = md_page_find(ploop, page_id);
 	struct ploop_index_wb *piwb;
 

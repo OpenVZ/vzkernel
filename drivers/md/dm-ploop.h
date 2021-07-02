@@ -69,9 +69,9 @@ struct ploop_cmd {
 	};
 };
 
-#define PAGE_NR_NONE		UINT_MAX
+#define PAGE_NR_NONE		U32_MAX
 /* We can't use 0 for unmapped clusters, since RAW image references 0 clu */
-#define BAT_ENTRY_NONE		UINT_MAX
+#define BAT_ENTRY_NONE		U32_MAX
 
 #define PLOOP_INFLIGHT_TIMEOUT	(60 * HZ)
 #define PLOOP_ENOSPC_TIMEOUT	(20 * HZ)
@@ -104,13 +104,13 @@ struct ploop_index_wb {
 	atomic_t count;
 	bool completed;
 	int bi_status;
-	unsigned int page_id;
+	u32 page_id;
 };
 
 /* Metadata page */
 struct md_page {
 	struct rb_node node;
-	unsigned int id; /* Number of this page starting from hdr */
+	u32 id; /* Number of this page starting from hdr */
 #define MD_DIRTY	(1U << 1) /* Page contains changes and wants writeback */
 #define MD_WRITEBACK	(1U << 2) /* Writeback was submitted */
 	unsigned int status;
@@ -137,7 +137,7 @@ struct ploop {
 	struct rb_root bat_entries;
 	struct ploop_delta *deltas;
 	u8 nr_deltas;
-	unsigned int nr_bat_entries;
+	u32 nr_bat_entries;
 	unsigned int cluster_log; /* In sectors */
 
 	u8 m_Sig[16]; /* Signature */
@@ -149,7 +149,7 @@ struct ploop {
 	 * are also included, and their bits must be zeroed.
 	 */
 	void *holes_bitmap; /* Clearing a bit occurs from kwork only */
-	unsigned int hb_nr; /* holes_bitmap size in bits */
+	u32 hb_nr; /* holes_bitmap size in bits */
 	rwlock_t bat_rwlock;
 
 	struct list_head wb_batch_list;
@@ -244,7 +244,7 @@ struct pio {
 	ploop_endio_t endio_cb;
 	void *endio_cb_data;
 
-	unsigned int clu;
+	u32 clu;
 	u8 level;
 
 	bool is_data_alloc:1;
@@ -273,7 +273,7 @@ struct pio {
 struct ploop_cow {
 	struct ploop *ploop;
 	struct pio *aux_pio;
-	unsigned int dst_clu;
+	u32 dst_clu;
 
 	struct pio *cow_pio;
 };
@@ -293,8 +293,7 @@ static inline bool ploop_is_ro(struct ploop *ploop)
 	return (dm_table_get_mode(ploop->ti->table) & FMODE_WRITE) == 0;
 }
 
-static inline void remap_to_cluster(struct ploop *ploop, struct pio *pio,
-				    unsigned int clu)
+static inline void remap_to_cluster(struct ploop *ploop, struct pio *pio, u32 clu)
 {
 	pio->bi_iter.bi_sector &= ((1 << ploop->cluster_log) - 1);
 	pio->bi_iter.bi_sector |= (clu << ploop->cluster_log);
@@ -344,7 +343,7 @@ static inline void ploop_hole_set_bit(unsigned long nr, struct ploop *ploop)
 		set_bit(nr, ploop->holes_bitmap);
 }
 
-static inline void ploop_hole_clear_bit(unsigned int nr, struct ploop *ploop)
+static inline void ploop_hole_clear_bit(u32 nr, struct ploop *ploop)
 {
 	if (!WARN_ON_ONCE(nr >= ploop->hb_nr))
 		clear_bit(nr, ploop->holes_bitmap);
@@ -357,7 +356,7 @@ static inline unsigned int nr_pages_in_cluster(struct ploop *ploop)
 
 /* Get number of clusters, occupied by hdr and BAT */
 static inline unsigned int ploop_nr_bat_clusters(struct ploop *ploop,
-						 unsigned int nr_bat_entries)
+						 u32 nr_bat_entries)
 {
 	unsigned long size, bat_clusters;
 
@@ -367,40 +366,37 @@ static inline unsigned int ploop_nr_bat_clusters(struct ploop *ploop,
 	return bat_clusters;
 }
 
-static inline unsigned int bat_clu_to_page_nr(unsigned int clu)
+static inline u32 bat_clu_to_page_nr(u32 clu)
 {
-	unsigned int byte;
+	u64 byte;
 
 	byte = (clu + PLOOP_MAP_OFFSET) * sizeof(map_index_t);
 	return byte >> PAGE_SHIFT;
 }
 
-static inline unsigned int bat_clu_idx_in_page(unsigned int clu)
+static inline u32 bat_clu_idx_in_page(u32 clu)
 {
 	return (clu + PLOOP_MAP_OFFSET) % (PAGE_SIZE / sizeof(map_index_t));
 }
 
-static inline unsigned int page_clu_idx_to_bat_clu(unsigned int page_id,
-						   unsigned int cluster_rel)
+static inline u32 page_clu_idx_to_bat_clu(u32 page_id, u32 cluster_rel)
 {
 	unsigned int off;
-	off = page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
+	off = (u64)page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 	return off + cluster_rel;
 }
 
-extern struct md_page * md_page_find(struct ploop *ploop, unsigned int id);
+extern struct md_page * md_page_find(struct ploop *ploop, u32 id);
 
 /*
  * This should be called in very rare cases. Avoid this function
  * in cycles by clu, use ploop_for_each_md_page()-based
  * iterations instead.
  */
-static inline unsigned int ploop_bat_entries(struct ploop *ploop,
-					     unsigned int clu,
-					     u8 *bat_level,
-					     struct md_page **md_ret)
+static inline u32 ploop_bat_entries(struct ploop *ploop, u32 clu,
+			  u8 *bat_level, struct md_page **md_ret)
 {
-	unsigned int *bat_entries, dst_clu, id;
+	u32 *bat_entries, dst_clu, id;
 	struct md_page *md;
 
 	id = bat_clu_to_page_nr(clu);
@@ -421,10 +417,9 @@ static inline unsigned int ploop_bat_entries(struct ploop *ploop,
 	return dst_clu;
 }
 
-static inline bool cluster_is_in_top_delta(struct ploop *ploop,
-					   unsigned int clu)
+static inline bool cluster_is_in_top_delta(struct ploop *ploop, u32 clu)
 {
-	unsigned int dst_clu;
+	u32 dst_clu;
 	u8 level;
 
 	if (WARN_ON(clu >= ploop->nr_bat_entries))
@@ -437,9 +432,9 @@ static inline bool cluster_is_in_top_delta(struct ploop *ploop,
 }
 
 static inline bool md_page_cluster_is_in_top_delta(struct ploop *ploop,
-			      struct md_page *md, unsigned int clu)
+					   struct md_page *md, u32 clu)
 {
-	unsigned int count, *bat_entries;
+	u32 count, *bat_entries;
 	bool ret = true;
 
 	count = PAGE_SIZE / sizeof(map_index_t);
@@ -457,10 +452,10 @@ static inline bool md_page_cluster_is_in_top_delta(struct ploop *ploop,
 	return ret;
 }
 
-static inline void init_bat_entries_iter(struct ploop *ploop, unsigned int page_id,
-					 unsigned int *start, unsigned int *end)
+static inline void init_bat_entries_iter(struct ploop *ploop, u32 page_id,
+					 u32 *start, u32 *end)
 {
-	unsigned int last_page = bat_clu_to_page_nr(ploop->nr_bat_entries - 1);
+	u32 last_page = bat_clu_to_page_nr(ploop->nr_bat_entries - 1);
 	unsigned int count = PAGE_SIZE / sizeof(map_index_t);
 
 	*start = 0;
@@ -483,8 +478,8 @@ static inline void track_pio(struct ploop *ploop, struct pio *pio)
 
 extern struct pio *find_pio(struct hlist_head head[], u32 clu);
 
-extern int prealloc_md_pages(struct rb_root *root, unsigned int nr_bat_entries,
-			     unsigned int new_nr_bat_entries);
+extern int prealloc_md_pages(struct rb_root *root, u32 nr_bat_entries,
+			     u32 new_nr_bat_entries);
 
 static inline struct pio *bio_to_endio_hook(struct bio *bio)
 {
@@ -521,8 +516,8 @@ static inline bool fake_merge_pio(struct pio *pio)
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);
 extern void ploop_free_md_page(struct md_page *md);
 extern void free_md_pages_tree(struct rb_root *root);
-extern bool try_update_bat_entry(struct ploop *ploop, unsigned int clu,
-				 u8 level, unsigned int dst_clu);
+extern bool try_update_bat_entry(struct ploop *ploop, u32 clu,
+				 u8 level, u32 dst_clu);
 extern int convert_bat_entries(u32 *bat_entries, u32 count);
 
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
@@ -539,8 +534,7 @@ extern int ploop_rw_page_sync(unsigned rw, struct file *file,
 			      u64 index, struct page *page);
 extern void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level);
 
-extern int ploop_prepare_reloc_index_wb(struct ploop *, struct md_page **,
-					unsigned int, unsigned int *);
+extern int ploop_prepare_reloc_index_wb(struct ploop *, struct md_page **, u32, u32 *);
 extern void ploop_break_bat_update(struct ploop *ploop, struct md_page *);
 extern void ploop_index_wb_submit(struct ploop *, struct ploop_index_wb *);
 extern int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
@@ -548,7 +542,7 @@ extern int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 
 extern struct pio * alloc_pio_with_pages(struct ploop *ploop);
 extern void free_pio_with_pages(struct ploop *ploop, struct pio *pio);
-extern void pio_prepare_offsets(struct ploop *, struct pio *, unsigned int);
+extern void pio_prepare_offsets(struct ploop *, struct pio *, u32);
 
 extern int ploop_setup_metadata(struct ploop *ploop, struct page *page);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
