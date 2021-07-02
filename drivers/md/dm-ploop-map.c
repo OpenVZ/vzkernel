@@ -196,10 +196,11 @@ static struct pio * split_and_chain_pio(struct ploop *ploop,
 }
 
 static int split_pio_to_list(struct ploop *ploop, struct pio *pio,
-			     struct list_head *list)
+			     struct list_head *ret_list)
 {
 	u32 clu_size = CLU_SIZE(ploop);
 	struct pio *split;
+	LIST_HEAD(list);
 
 	while (1) {
 		loff_t start = to_bytes(pio->bi_iter.bi_sector);
@@ -217,12 +218,14 @@ static int split_pio_to_list(struct ploop *ploop, struct pio *pio,
 		if (!split)
 			goto err;
 
-		list_add_tail(&split->list, list);
+		list_add_tail(&split->list, &list);
 	}
 
+	list_splice_tail(&list, ret_list);
+	list_add_tail(&pio->list, ret_list);
 	return 0;
 err:
-	while ((pio = pio_list_pop(list)) != NULL) {
+	while ((pio = pio_list_pop(&list)) != NULL) {
 		pio->bi_status = BLK_STS_RESOURCE;
 		pio_endio(pio);
 	}
@@ -1737,9 +1740,8 @@ static void submit_pio(struct ploop *ploop, struct pio *pio)
 
 		if (WARN_ON_ONCE(pio->bi_op != REQ_OP_FLUSH))
 			goto kill;
+		list_add_tail(&pio->list, &list);
 	}
-
-	list_add(&pio->list, &list);
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	if (unlikely(ploop->stop_submitting_pios)) {
