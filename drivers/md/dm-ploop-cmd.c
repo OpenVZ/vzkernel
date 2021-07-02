@@ -312,7 +312,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	/* Write clu to new destination */
 	ret = ploop_write_cluster_sync(ploop, pio, new_dst);
 	if (ret) {
-		ploop_reset_bat_update(piwb);
+		ploop_break_bat_update(ploop, md);
 		goto out;
 	}
 
@@ -320,7 +320,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	/* Write new index on disk */
 	ploop_submit_index_wb_sync(ploop, piwb);
 	ret = blk_status_to_errno(piwb->bi_status);
-	ploop_reset_bat_update(piwb);
+	ploop_break_bat_update(ploop, md);
 	if (ret)
 		goto out;
 
@@ -382,7 +382,7 @@ static int ploop_grow_update_header(struct ploop *ploop,
 		kunmap_atomic(hdr);
 	}
 
-	ploop_reset_bat_update(piwb);
+	ploop_break_bat_update(ploop, md);
 	return ret;
 }
 
