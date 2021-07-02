@@ -123,7 +123,9 @@ struct md_page {
 };
 
 enum {
-	PLOOP_LIST_DEFERRED = 0,
+	PLOOP_LIST_PREPARE = 0, /* List for initial preparation and splitting
+				 * embedded pios related to prq */
+	PLOOP_LIST_DEFERRED,
 	PLOOP_LIST_FLUSH,
 	PLOOP_LIST_DISCARD,
 	PLOOP_LIST_COW,
@@ -530,7 +532,6 @@ extern bool try_update_bat_entry(struct ploop *ploop, u32 clu,
 extern int convert_bat_entries(u32 *bat_entries, u32 count);
 
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
-extern void submit_pios(struct ploop *ploop, struct list_head *list);
 extern void dispatch_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list);
 extern void do_ploop_work(struct work_struct *ws);
 extern void do_ploop_fsync_work(struct work_struct *ws);
