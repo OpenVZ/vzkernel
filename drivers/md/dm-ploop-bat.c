@@ -481,8 +481,7 @@ unmap:
 	write_unlock_irq(&ploop->bat_rwlock);
 }
 
-static int ploop_check_delta_length(struct ploop *ploop, struct file *file,
-				    loff_t *file_size)
+int ploop_check_delta_length(struct ploop *ploop, struct file *file, loff_t *file_size)
 {
 	loff_t loff = i_size_read(file->f_mapping->host);
 
