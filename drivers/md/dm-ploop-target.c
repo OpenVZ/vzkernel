@@ -330,7 +330,6 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	for (i = 0; i < PLOOP_LIST_COUNT; i++)
 		INIT_LIST_HEAD(&ploop->pios[i]);
 
-	INIT_LIST_HEAD(&ploop->flush_pios);
 	INIT_LIST_HEAD(&ploop->resubmit_pios);
 	INIT_LIST_HEAD(&ploop->enospc_pios);
 	INIT_LIST_HEAD(&ploop->cluster_lk_list);

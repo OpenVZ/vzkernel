@@ -1496,7 +1496,7 @@ static void md_write_endio(struct pio *pio, void *piwb_ptr, blk_status_t bi_stat
 		pio->endio_cb_data = piwb;
 
 		spin_lock_irqsave(&ploop->deferred_lock, flags);
-		list_add_tail(&pio->list, &ploop->flush_pios);
+		list_add_tail(&pio->list, &ploop->pios[PLOOP_LIST_FLUSH]);
 		spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 		queue_work(ploop->wq, &ploop->fsync_worker);
 	}
@@ -1661,7 +1661,7 @@ void do_ploop_fsync_work(struct work_struct *ws)
 	int ret;
 
 	spin_lock_irq(&ploop->deferred_lock);
-	list_splice_init(&ploop->flush_pios, &flush_pios);
+	list_splice_init(&ploop->pios[PLOOP_LIST_FLUSH], &flush_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	file = top_delta(ploop)->file;
@@ -1725,7 +1725,7 @@ static void submit_pio(struct ploop *ploop, struct pio *pio)
 			goto endio;
 		}
 	} else {
-		queue_list = &ploop->flush_pios;
+		queue_list = &ploop->pios[PLOOP_LIST_FLUSH];
 		worker = &ploop->fsync_worker;
 
 		if (WARN_ON_ONCE(pio->bi_op != REQ_OP_FLUSH))
