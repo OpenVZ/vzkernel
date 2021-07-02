@@ -42,7 +42,7 @@ static unsigned int pio_nr_segs(struct pio *pio)
 void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop)
 {
 	piwb->ploop = ploop;
-	init_completion(&piwb->comp);
+	piwb->comp = NULL;
 	spin_lock_init(&piwb->lock);
 	piwb->md = NULL;
 	piwb->bat_page = NULL;
@@ -716,6 +716,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 
 	WARN_ON_ONCE(!(md->status & MD_WRITEBACK));
 	md->status &= ~MD_WRITEBACK;
+	md->piwb = NULL;
 	list_splice_tail_init(&md->wait_list, &list);
 	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
 	kunmap_atomic(dst_clu);
@@ -723,6 +724,13 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 
 	if (!list_empty(&list))
 		dispatch_pios(ploop, NULL, &list);
+}
+
+static void free_piwb(struct ploop_index_wb *piwb)
+{
+	kfree(piwb->pio);
+	put_page(piwb->bat_page);
+	kfree(piwb);
 }
 
 static void put_piwb(struct ploop_index_wb *piwb)
@@ -736,7 +744,9 @@ static void put_piwb(struct ploop_index_wb *piwb)
 		if (piwb->bi_status)
 			ploop_advance_local_after_bat_wb(ploop, piwb, false);
 
-		complete(&piwb->comp);
+		if (piwb->comp)
+			complete(piwb->comp);
+		free_piwb(piwb);
 	}
 }
 
@@ -797,6 +807,7 @@ static int ploop_prepare_bat_update(struct ploop *ploop, struct md_page *md,
 	bool is_last_page = true;
 	u32 page_id = md->id;
 	struct page *page;
+	struct pio *pio;
 	map_index_t *to;
 
 	piwb = kmalloc(sizeof(*piwb), GFP_NOIO);
@@ -805,8 +816,10 @@ static int ploop_prepare_bat_update(struct ploop *ploop, struct md_page *md,
 	ploop_index_wb_init(piwb, ploop);
 
 	piwb->bat_page = page = alloc_page(GFP_NOIO);
-	if (!page)
+	piwb->pio = pio = kmalloc(sizeof(*pio), GFP_NOIO);
+	if (!page || !pio)
 		goto err;
+	init_pio(ploop, REQ_OP_WRITE, pio);
 
 	bat_entries = kmap_atomic(md->page);
 
@@ -851,7 +864,7 @@ static int ploop_prepare_bat_update(struct ploop *ploop, struct md_page *md,
 	piwb->type = type;
 	return 0;
 err:
-	kfree(piwb);
+	free_piwb(piwb);
 	return -ENOMEM;
 }
 
@@ -862,12 +875,10 @@ void ploop_break_bat_update(struct ploop *ploop, struct md_page *md)
 
 	write_lock_irqsave(&ploop->bat_rwlock, flags);
 	piwb = md->piwb;
-	md->piwb->md = NULL;
 	md->piwb = NULL;
 	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
 
-	put_page(piwb->bat_page);
-	kfree(piwb);
+	free_piwb(piwb);
 }
 
 static void ploop_bat_page_zero_cluster(struct ploop *ploop,
@@ -1466,25 +1477,39 @@ out:
 	return 0;
 }
 
+static void md_write_endio(struct pio *pio, void *piwb_ptr, blk_status_t bi_status)
+{
+	struct ploop_index_wb *piwb = piwb_ptr;
+	struct ploop *ploop = piwb->ploop;
+	u32 dst_clu;
+
+	dst_clu = POS_TO_CLU(ploop, (u64)piwb->page_id << PAGE_SHIFT);
+	track_dst_cluster(ploop, dst_clu);
+
+	ploop_bat_write_complete(piwb, bi_status);
+}
+
 void ploop_submit_index_wb_sync(struct ploop *ploop,
 				struct ploop_index_wb *piwb)
 {
-	blk_status_t status = BLK_STS_OK;
-	u32 dst_clu;
-	int ret;
+	loff_t pos = (loff_t)piwb->page_id << PAGE_SHIFT;
+	struct pio *pio = piwb->pio;
+	struct bio_vec bvec = {
+		.bv_page = piwb->bat_page,
+		.bv_len = PAGE_SIZE,
+		.bv_offset = 0,
+	};
 
-	/* track_bio() will be called in ploop_bat_write_complete() */
+	pio->bi_iter.bi_sector = to_sector(pos);
+	pio->bi_iter.bi_size = PAGE_SIZE;
+	pio->bi_iter.bi_idx = 0;
+	pio->bi_iter.bi_bvec_done = 0;
+	pio->bi_io_vec = &bvec;
+	pio->level = top_level(ploop);
+	pio->endio_cb = md_write_endio;
+	pio->endio_cb_data = piwb;
 
-	ret = ploop_rw_page_sync(WRITE, top_delta(ploop)->file,
-				 piwb->page_id, piwb->bat_page);
-	if (ret)
-		status = errno_to_blk_status(ret);
-
-	dst_clu = ((u64)piwb->page_id << PAGE_SHIFT) / CLU_SIZE(ploop);
-	track_dst_cluster(ploop, dst_clu);
-
-	ploop_bat_write_complete(piwb, status);
-	wait_for_completion(&piwb->comp);
+	submit_rw_mapped(ploop, pio);
 }
 
 static void process_deferred_pios(struct ploop *ploop, struct list_head *pios)
@@ -1584,7 +1609,6 @@ static void submit_metadata_writeback(struct ploop *ploop)
 		write_unlock_irq(&ploop->bat_rwlock);
 
 		ploop_submit_index_wb_sync(ploop, md->piwb);
-		ploop_break_bat_update(ploop, md);
 	}
 }
 

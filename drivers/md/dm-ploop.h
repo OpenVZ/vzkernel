@@ -93,10 +93,11 @@ enum piwb_type {
 
 struct ploop_index_wb {
 	struct ploop *ploop;
-	struct completion comp;
+	struct completion *comp;
 	enum piwb_type type;
 	spinlock_t lock;
 	struct md_page *md;
+	struct pio *pio;
 	struct page *bat_page;
 	struct list_head ready_data_pios;
 	struct list_head cow_list;
