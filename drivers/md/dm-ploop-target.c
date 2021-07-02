@@ -334,6 +334,7 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	INIT_LIST_HEAD(&ploop->resubmit_pios);
 	INIT_LIST_HEAD(&ploop->enospc_pios);
 	INIT_LIST_HEAD(&ploop->cluster_lk_list);
+	INIT_LIST_HEAD(&ploop->wb_batch_list);
 	ploop->bat_entries = RB_ROOT;
 	timer_setup(&ploop->enospc_timer, ploop_enospc_timer, 0);
 
