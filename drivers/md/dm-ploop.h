@@ -539,7 +539,7 @@ extern int ploop_rw_page_sync(unsigned rw, struct file *file,
 extern void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level);
 
 extern int ploop_prepare_reloc_index_wb(struct ploop *, struct md_page **,
-		   struct ploop_index_wb *, unsigned int, unsigned int *);
+					unsigned int, unsigned int *);
 extern void ploop_break_bat_update(struct ploop *ploop, struct md_page *);
 extern void ploop_submit_index_wb_sync(struct ploop *, struct ploop_index_wb *);
 extern int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
