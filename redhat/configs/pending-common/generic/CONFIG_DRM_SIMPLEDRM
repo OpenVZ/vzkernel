@@ -1,0 +1,25 @@
+# CONFIG_DRM_SIMPLEDRM:
+# 
+# DRM driver for simple platform-provided framebuffers.
+# 
+# This driver assumes that the display hardware has been initialized
+# by the firmware or bootloader before the kernel boots. Scanout
+# buffer, size, and display format must be provided via device tree,
+# UEFI, VESA, etc.
+# 
+# On x86 and compatible, you should also select CONFIG_X86_SYSFB to
+# use UEFI and VESA framebuffers.
+# 
+# Symbol: DRM_SIMPLEDRM [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/tiny/Kconfig:41
+#   Prompt: Simple framebuffer driver
+#   Depends on: HAS_IOMEM [=y] && DRM [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+# Selects: DRM_GEM_SHMEM_HELPER [=y] && DRM_KMS_HELPER [=m]
+# 
+# 
+# 
+# CONFIG_DRM_SIMPLEDRM is not set
