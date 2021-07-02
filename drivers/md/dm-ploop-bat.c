@@ -339,15 +339,20 @@ out:
 	return ret;
 }
 
-int convert_bat_entries(u32 *bat_entries, u32 count)
+int convert_bat_entries(struct ploop *ploop, u32 *bat_entries, u32 nr_be)
 {
-	int i;
+	u32 i, bytes, bat_clusters;
 
-	for (i = 0; i < count; i++) {
+	bytes = (PLOOP_MAP_OFFSET + nr_be) * sizeof(map_index_t);
+	bat_clusters = DIV_ROUND_UP(bytes, CLU_SIZE(ploop));
+
+	for (i = 0; i < nr_be; i++) {
 		if (bat_entries[i] == BAT_ENTRY_NONE)
 			return -EPROTO;
 		if (!bat_entries[i])
 			bat_entries[i] = BAT_ENTRY_NONE;
+		if (bat_entries[i] < bat_clusters)
+			return -EXDEV;
 	}
 
 	return 0;
@@ -387,7 +392,7 @@ int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 		goto out_vfree;
 
 	delta_bat_entries = *d_hdr + PLOOP_MAP_OFFSET * sizeof(map_index_t);
-	ret = convert_bat_entries(delta_bat_entries, delta_nr_be);
+	ret = convert_bat_entries(ploop, delta_bat_entries, delta_nr_be);
 
 	*delta_nr_be_ret = delta_nr_be;
 out_vfree:
