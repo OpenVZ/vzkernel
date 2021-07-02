@@ -255,16 +255,22 @@ void dispatch_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_l
 	queue_work(ploop->wq, &ploop->worker);
 }
 
-/* FIXME: check wb, make bool ... */
-static void delay_on_md_busy(struct ploop *ploop, struct md_page *md, struct pio *pio)
+static bool delay_if_md_busy(struct ploop *ploop, struct ploop_index_wb *piwb,
+		     struct md_page *md, enum piwb_type type, struct pio *pio)
 {
 	unsigned long flags;
+	bool busy = false;
 
 	WARN_ON_ONCE(!list_empty(&pio->list));
 
 	write_lock_irqsave(&ploop->bat_rwlock, flags);
-	list_add_tail(&pio->list, &md->wait_list);
+	if (piwb->md && (piwb->md != md || piwb->type != type)) {
+		list_add_tail(&pio->list, &piwb->md->wait_list);
+		busy = true;
+	}
 	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
+
+	return busy;
 }
 
 void track_dst_cluster(struct ploop *ploop, u32 dst_clu)
@@ -1242,20 +1248,17 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 	struct md_page *md;
 	map_index_t *to;
 
+	WARN_ON_ONCE(cow->aux_pio->queue_list_id != PLOOP_LIST_COW);
 	page_id = bat_clu_to_page_nr(clu);
+	md = md_page_find(ploop, page_id);
 
-	if (piwb->page_id == PAGE_NR_NONE) {
+	if (delay_if_md_busy(ploop, piwb, md, PIWB_TYPE_ALLOC, cow->aux_pio))
+		goto out;
+
+	if (!md->piwb) {
 		/* No index wb in process. Prepare a new one */
 		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_ALLOC) < 0)
 			goto err_resource;
-	}
-
-	if (piwb->page_id != page_id || piwb->type != PIWB_TYPE_ALLOC) {
-		/* Another BAT page wb is in process */
-		WARN_ON_ONCE(cow->aux_pio->queue_list_id != PLOOP_LIST_COW);
-		md = md_page_find(ploop, piwb->page_id);
-		delay_on_md_busy(ploop, md, cow->aux_pio);
-		goto out;
 	}
 
 	clu -= page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
@@ -1333,22 +1336,17 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 	bool attached = false;
 	unsigned int page_id;
 
-	page_id = bat_clu_to_page_nr(clu);
+	WARN_ON_ONCE(pio->queue_list_id != PLOOP_LIST_DEFERRED);
+	if (delay_if_md_busy(ploop, piwb, md, PIWB_TYPE_ALLOC, pio))
+		goto out;
 
-	if (piwb->page_id == PAGE_NR_NONE) {
-		/* No index wb in process. Prepare a new one */
+	if (!md->piwb) {
+		page_id = bat_clu_to_page_nr(clu);
 		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_ALLOC) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto error;
 		}
 		bat_update_prepared = true;
-	}
-
-	if (piwb->page_id != page_id || piwb->type != PIWB_TYPE_ALLOC) {
-		/* Another BAT page wb is in process */
-		WARN_ON_ONCE(pio->queue_list_id != PLOOP_LIST_DEFERRED);
-		delay_on_md_busy(ploop, piwb->md, pio);
-		goto out;
 	}
 
 	if (ploop_alloc_cluster(ploop, piwb, clu, dst_clu)) {
@@ -1471,24 +1469,20 @@ static void process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 	struct md_page *md;
 	map_index_t *to;
 
-	WARN_ON(ploop->nr_deltas != 1);
+	WARN_ON(ploop->nr_deltas != 1 ||
+		pio->queue_list_id != PLOOP_LIST_DISCARD);
 
 	page_id = bat_clu_to_page_nr(clu);
+	md = md_page_find(ploop, page_id);
+	if (delay_if_md_busy(ploop, piwb, md, PIWB_TYPE_DISCARD, pio))
+		goto out;
 
-	if (piwb->page_id == PAGE_NR_NONE) {
-		/* No index wb in process. Prepare a new one */
+	if (!md->piwb) {
 		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_DISCARD) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto err;
 		}
 		bat_update_prepared = true;
-	}
-
-	if (piwb->page_id != page_id || piwb->type != PIWB_TYPE_DISCARD) {
-		WARN_ON_ONCE(pio->queue_list_id != PLOOP_LIST_DISCARD);
-		md = md_page_find(ploop, piwb->page_id);
-		delay_on_md_busy(ploop, md, pio);
-		goto out;
 	}
 
 	/* Cluster index related to the page[page_id] start */
