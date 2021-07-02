@@ -1559,6 +1559,59 @@ out:
 	return bvec;
 }
 
+static void prepare_one_embedded_pio(struct ploop *ploop, struct pio *pio,
+				     struct list_head *deferred_pios)
+{
+	struct ploop_rq *prq = embedded_pio_to_prq(pio);
+	struct request *rq = prq->rq;
+	struct bio_vec *bvec = NULL;
+	LIST_HEAD(list);
+	int ret;
+
+	if (rq->bio != rq->biotail) {
+		if (req_op(rq) == REQ_OP_DISCARD)
+			goto skip_bvec;
+		/*
+		 * Transform a set of bvec arrays related to bios
+		 * into a single bvec array (which we can iterate).
+		 */
+		bvec = create_bvec_from_rq(rq);
+		if (!bvec)
+			goto err_nomem;
+		prq->bvec = bvec;
+skip_bvec:
+		pio->bi_iter.bi_sector = blk_rq_pos(rq);
+		pio->bi_iter.bi_size = blk_rq_bytes(rq);
+		pio->bi_iter.bi_idx = 0;
+		pio->bi_iter.bi_bvec_done = 0;
+	} else {
+		/* Single bio already provides bvec array */
+		bvec = rq->bio->bi_io_vec;
+
+		pio->bi_iter = rq->bio->bi_iter;
+	}
+	pio->bi_io_vec = bvec;
+
+	pio->queue_list_id = PLOOP_LIST_DEFERRED;
+	ret = split_pio_to_list(ploop, pio, deferred_pios);
+	if (ret)
+		goto err_nomem;
+
+	return;
+err_nomem:
+	pio->bi_status = BLK_STS_IOERR;
+	pio_endio(pio);
+}
+
+static void prepare_embedded_pios(struct ploop *ploop, struct list_head *pios,
+				  struct list_head *deferred_pios)
+{
+	struct pio *pio;
+
+	while ((pio = pio_list_pop(pios)) != NULL)
+		prepare_one_embedded_pio(ploop, pio, deferred_pios);
+}
+
 static void process_deferred_pios(struct ploop *ploop, struct list_head *pios)
 {
 	struct pio *pio;
@@ -1662,6 +1715,7 @@ static void submit_metadata_writeback(struct ploop *ploop)
 void do_ploop_work(struct work_struct *ws)
 {
 	struct ploop *ploop = container_of(ws, struct ploop, worker);
+	LIST_HEAD(embedded_pios);
 	LIST_HEAD(deferred_pios);
 	LIST_HEAD(discard_pios);
 	LIST_HEAD(cow_pios);
@@ -1671,11 +1725,14 @@ void do_ploop_work(struct work_struct *ws)
 	current->flags |= PF_IO_THREAD;
 
 	spin_lock_irq(&ploop->deferred_lock);
-	list_splice_init(&ploop->resubmit_pios, &resubmit_pios);
+	list_splice_init(&ploop->pios[PLOOP_LIST_PREPARE], &embedded_pios);
 	list_splice_init(&ploop->pios[PLOOP_LIST_DEFERRED], &deferred_pios);
 	list_splice_init(&ploop->pios[PLOOP_LIST_DISCARD], &discard_pios);
 	list_splice_init(&ploop->pios[PLOOP_LIST_COW], &cow_pios);
+	list_splice_init(&ploop->resubmit_pios, &resubmit_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
+
+	prepare_embedded_pios(ploop, &embedded_pios, &deferred_pios);
 
 	process_resubmit_pios(ploop, &resubmit_pios);
 	process_deferred_pios(ploop, &deferred_pios);
@@ -1715,107 +1772,53 @@ static void init_prq(struct ploop_rq *prq, struct request *rq)
 	prq->bvec = NULL;
 }
 
-static void submit_pio(struct ploop *ploop, struct pio *pio)
-{
-	struct list_head *queue_list;
-	struct work_struct *worker;
-	unsigned long flags;
-	bool queue = true;
-	LIST_HEAD(list);
-	int ret;
-
-	if (pio->bi_iter.bi_size) {
-		queue_list = &ploop->pios[PLOOP_LIST_DEFERRED];
-		worker = &ploop->worker;
-
-		ret = split_pio_to_list(ploop, pio, &list);
-		if (ret) {
-			pio->bi_status = BLK_STS_RESOURCE;
-			goto endio;
-		}
-	} else {
-		queue_list = &ploop->pios[PLOOP_LIST_FLUSH];
-		worker = &ploop->fsync_worker;
-
-		if (WARN_ON_ONCE(pio->bi_op != REQ_OP_FLUSH))
-			goto kill;
-		list_add_tail(&pio->list, &list);
-	}
-
-	spin_lock_irqsave(&ploop->deferred_lock, flags);
-	if (unlikely(ploop->stop_submitting_pios)) {
-		list_splice_tail(&list, &ploop->suspended_pios);
-		queue = false;
-		goto unlock;
-	}
-
-	inc_nr_inflight(ploop, pio);
-	list_splice_tail(&list, queue_list);
-unlock:
-	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
-
-	if (queue)
-		queue_work(ploop->wq, worker);
-	return;
-kill:
-	pio->bi_status = BLK_STS_IOERR;
-endio:
-	pio_endio(pio);
-}
-
-void submit_pios(struct ploop *ploop, struct list_head *list)
-{
-        struct pio *pio;
-
-        while ((pio = pio_list_pop(list)) != NULL)
-                submit_pio(ploop, pio);
-}
-
 int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 		    union map_info *info, struct request **clone)
 {
 	struct ploop *ploop = ti->private;
-	struct bio_vec *bvec = NULL;
+	struct work_struct *worker;
 	struct ploop_rq *prq;
+	unsigned long flags;
+	bool queue = true;
 	struct pio *pio;
 
 	prq = map_info_to_embedded_prq(info);
 	init_prq(prq, rq);
 
-	if (ploop_prq_valid(ploop, prq) < 0)
-		return DM_MAPIO_KILL;
-
-	pio = map_info_to_embedded_pio(info); /* Embedded pio */
+	pio = map_info_to_embedded_pio(info);
 	init_pio(ploop, req_op(rq), pio);
+	pio->endio_cb = prq_endio;
+	pio->endio_cb_data = prq;
 
-	if (rq->bio != rq->biotail) {
-		if (req_op(rq) == REQ_OP_DISCARD)
-			goto skip_bvec;
-		/*
-		 * Transform a set of bvec arrays related to bios
-		 * into a single bvec array (which we can iterate).
-		 */
-		bvec = create_bvec_from_rq(rq);
-		if (!bvec)
+	if (blk_rq_bytes(rq)) {
+		if (ploop_prq_valid(ploop, prq) < 0)
 			return DM_MAPIO_KILL;
-		prq->bvec = bvec;
-skip_bvec:
-		pio->bi_iter.bi_sector = blk_rq_pos(rq);
-		pio->bi_iter.bi_size = blk_rq_bytes(rq);
-		pio->bi_iter.bi_idx = 0;
-		pio->bi_iter.bi_bvec_done = 0;
-        } else if (rq->bio) {
-                /* Single bio already provides bvec array */
-		bvec = rq->bio->bi_io_vec;
 
-		pio->bi_iter = rq->bio->bi_iter;
-        } /* else FLUSH */
+		pio->queue_list_id = PLOOP_LIST_PREPARE;
+		worker = &ploop->worker;
+	} else {
+		pio->queue_list_id = PLOOP_LIST_FLUSH;
+		worker = &ploop->fsync_worker;
 
-        pio->bi_io_vec = bvec;
-        pio->endio_cb = prq_endio;
-        pio->endio_cb_data = prq;
+		if (WARN_ON_ONCE(pio->bi_op != REQ_OP_FLUSH))
+			return DM_MAPIO_KILL;
+	}
 
-	submit_pio(ploop, pio);
+	spin_lock_irqsave(&ploop->deferred_lock, flags);
+	if (unlikely(ploop->stop_submitting_pios)) {
+		list_add_tail(&pio->list, &ploop->suspended_pios);
+		queue = false;
+		goto unlock;
+	}
+
+	inc_nr_inflight(ploop, pio);
+	list_add_tail(&pio->list, &ploop->pios[pio->queue_list_id]);
+unlock:
+	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+
+	if (queue)
+		queue_work(ploop->wq, worker);
+
 	return DM_MAPIO_SUBMITTED;
 }
 
