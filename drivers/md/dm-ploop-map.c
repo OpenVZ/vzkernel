@@ -763,7 +763,7 @@ static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 }
 
 static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_id,
-				    struct ploop_index_wb *piwb)
+			     struct ploop_index_wb *piwb, enum piwb_type type)
 {
 	unsigned int i, off, last, *bat_entries;
 	bool is_last_page = true;
@@ -816,6 +816,8 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_id,
 
 	kunmap_atomic(to);
 	kunmap_atomic(bat_entries);
+
+	piwb->type = type;
 	return 0;
 }
 
@@ -1244,7 +1246,7 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 
 	if (piwb->page_id == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
-		if (ploop_prepare_bat_update(ploop, page_id, piwb) < 0)
+		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_ALLOC) < 0)
 			goto err_resource;
 	}
 
@@ -1335,7 +1337,7 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 
 	if (piwb->page_id == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
-		if (ploop_prepare_bat_update(ploop, page_id, piwb) < 0) {
+		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_ALLOC) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto error;
 		}
@@ -1475,11 +1477,10 @@ static void process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 
 	if (piwb->page_id == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
-		if (ploop_prepare_bat_update(ploop, page_id, piwb) < 0) {
+		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_DISCARD) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto err;
 		}
-		piwb->type = PIWB_TYPE_DISCARD;
 		bat_update_prepared = true;
 	}
 
@@ -1764,9 +1765,13 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 				 unsigned int *dst_clu)
 {
 	unsigned int page_id = bat_clu_to_page_nr(clu);
+	enum piwb_type type = PIWB_TYPE_ALLOC;
+
+	if (dst_clu)
+		type = PIWB_TYPE_RELOC;
 
 	if (piwb->page_id != PAGE_NR_NONE ||
-	    ploop_prepare_bat_update(ploop, page_id, piwb))
+	    ploop_prepare_bat_update(ploop, page_id, piwb, type))
 		goto out_eio;
 	if (dst_clu) {
 		/*
@@ -1775,7 +1780,6 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 		 * to make ploop_alloc_cluster() allocate new dst_clu from
 		 * holes_bitmap.
 		 */
-		piwb->type = PIWB_TYPE_RELOC;
 		ploop_bat_page_zero_cluster(ploop, piwb, clu);
 		if (ploop_alloc_cluster(ploop, piwb, clu, dst_clu))
 			goto out_reset;
