@@ -313,12 +313,18 @@ out:
 }
 
 static int ploop_delta_check_header(struct ploop *ploop,
-				    struct ploop_pvd_header *d_hdr,
+				    struct rb_root *md_root,
 				    u32 *delta_nr_be_ret)
 {
 	u32 bytes, delta_nr_be, offset_clusters, bat_clusters;
+	struct rb_node *node = rb_first(md_root);
+	struct md_page *md0 = rb_entry(node, struct md_page, node);
+	struct ploop_pvd_header *d_hdr;
 	int ret = -EPROTO;
 
+	WARN_ON_ONCE(md0->id != 0);
+
+	d_hdr = kmap(md0->page);
 	if (memcmp(d_hdr->m_Sig, ploop->m_Sig, sizeof(d_hdr->m_Sig)) ||
 	    d_hdr->m_Sectors != ploop->m_Sectors ||
 	    d_hdr->m_Type != ploop->m_Type)
@@ -336,72 +342,96 @@ static int ploop_delta_check_header(struct ploop *ploop,
 	*delta_nr_be_ret = delta_nr_be;
 	ret = 0;
 out:
+	kunmap(md0->page);
 	return ret;
 }
 
-int convert_bat_entries(struct ploop *ploop, u32 *bat_entries, u32 nr_be)
+static int convert_bat_entries(struct ploop *ploop, struct rb_root *md_root, u32 nr_be)
 {
-	u32 i, bytes, bat_clusters;
+	u32 i, end, bytes, bat_clusters, *bat_entries;
+	struct rb_node *node;
+	struct md_page *md;
+	int ret = 0;
 
 	bytes = (PLOOP_MAP_OFFSET + nr_be) * sizeof(map_index_t);
 	bat_clusters = DIV_ROUND_UP(bytes, CLU_SIZE(ploop));
 
-	for (i = 0; i < nr_be; i++) {
-		if (bat_entries[i] == BAT_ENTRY_NONE)
-			return -EPROTO;
-		if (!bat_entries[i])
-			bat_entries[i] = BAT_ENTRY_NONE;
-		if (bat_entries[i] < bat_clusters)
-			return -EXDEV;
+	rb_root_for_each_md_page(md_root, md, node) {
+		bat_entries = kmap(md->page);
+		init_be_iter(nr_be, md->id, &i, &end);
+
+		for (; i <= end; i++) {
+			if (bat_entries[i] == BAT_ENTRY_NONE)
+				ret = -EPROTO;
+			if (!bat_entries[i])
+				bat_entries[i] = BAT_ENTRY_NONE;
+			if (bat_entries[i] < bat_clusters)
+				ret = -EXDEV;
+		}
+		kunmap(md->page);
+
+		if (ret)
+			break;
 	}
 
-	return 0;
+	return ret;
 }
 
 int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
-			      void **d_hdr, u32 *delta_nr_be_ret)
+			      struct rb_root *md_root, u32 *delta_nr_be_ret)
 {
-	u32 size, delta_nr_be, *delta_bat_entries;
+	u32 i, size, delta_nr_be, nr_segs;
+	struct bio_vec *bvec = NULL;
 	struct iov_iter iter;
-	struct kvec kvec;
+	struct rb_node *node;
+	struct md_page *md;
 	ssize_t len;
 	loff_t pos;
 	int ret;
 
+	ret = -ENOMEM;
+	if (prealloc_md_pages(md_root, 0, ploop->nr_bat_entries))
+		goto out;
+
 	size = (PLOOP_MAP_OFFSET + ploop->nr_bat_entries) * sizeof(map_index_t);
 	size = ALIGN(size, PAGE_SIZE); /* file may be open as direct */
-	*d_hdr = vzalloc(size);
-	if (!*d_hdr) {
-		ret = -ENOMEM;
+	nr_segs = size / PAGE_SIZE;
+
+	bvec = kvmalloc(sizeof(*bvec) * nr_segs, GFP_KERNEL);
+	if (!bvec)
 		goto out;
+
+	ret = -EMLINK;
+	i = 0;
+	rb_root_for_each_md_page(md_root, md, node) {
+		if (WARN_ON_ONCE(md->id != i))
+			goto out;
+		bvec[i].bv_page = md->page;
+		bvec[i].bv_len = PAGE_SIZE;
+		bvec[i].bv_offset = 0;
+		i++;
 	}
 
-	kvec.iov_base = *d_hdr;
-	kvec.iov_len = size;
-
-	iov_iter_kvec(&iter, READ, &kvec, 1, kvec.iov_len);
+	iov_iter_bvec(&iter, READ, bvec, nr_segs, size);
 	pos = 0;
 
 	len = vfs_iter_read(file, &iter, &pos, 0);
 	if (len != size) {
 		ret = len < 0 ? (int)len : -ENODATA;
-		goto out_vfree;
+		goto out;
 	}
 
-	ret = ploop_delta_check_header(ploop, *d_hdr, &delta_nr_be);
+	ret = ploop_delta_check_header(ploop, md_root, &delta_nr_be);
 	if (ret)
-		goto out_vfree;
+		goto out;
 
-	delta_bat_entries = *d_hdr + PLOOP_MAP_OFFSET * sizeof(map_index_t);
-	ret = convert_bat_entries(ploop, delta_bat_entries, delta_nr_be);
+	ret = convert_bat_entries(ploop, md_root, delta_nr_be);
 
 	*delta_nr_be_ret = delta_nr_be;
-out_vfree:
-	if (ret) {
-		vfree(*d_hdr);
-		*d_hdr = NULL;
-	}
 out:
+	if (ret)
+		free_md_pages_tree(md_root);
+	kvfree(bvec);
 	return ret;
 }
 
@@ -420,37 +450,38 @@ static void ploop_set_not_hole(struct ploop *ploop, u32 dst_clu)
  * n)add oldest delta
  */
 static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
-				 u32 level, void *hdr, u64 size_in_clus)
+				 u32 level, struct rb_root *md_root, u64 size_in_clus)
 {
-	map_index_t *bat_entries, *delta_bat_entries;
+	map_index_t *bat_entries, *delta_bat_entries = NULL;
 	bool is_top_level, is_raw, stop = false;
+	struct md_page *md, *d_md = NULL;
 	u32 i, end, dst_clu, clu;
 	struct rb_node *node;
-	struct md_page *md;
 
-	/* Points to hdr since md_page[0] also contains hdr. */
-	delta_bat_entries = (map_index_t *)hdr;
 	is_raw = deltas[level].is_raw;
 	is_top_level = (level == top_level(ploop));
+
+	if (!is_raw)
+		d_md = md_first_entry(md_root);
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
 		bat_entries = kmap_atomic(md->page);
+		if (!is_raw)
+			delta_bat_entries = kmap_atomic(d_md->page);
 
 		if (is_top_level && md->id == 0 && !is_raw) {
 			/* bat_entries before PLOOP_MAP_OFFSET is hdr */
-			memcpy(bat_entries, hdr, sizeof(struct ploop_pvd_header));
+			memcpy(bat_entries, delta_bat_entries,
+			       sizeof(struct ploop_pvd_header));
 		}
 
-		ploop_init_be_iter(ploop, md->id, &i, &end);
+		init_be_iter(size_in_clus, md->id, &i, &end);
 
 		for (; i <= end; i++) {
 			clu = page_clu_idx_to_bat_clu(md->id, i);
-			if (clu >= size_in_clus) {
-				WARN_ON_ONCE(is_top_level);
+			if (clu == size_in_clus - 1)
 				stop = true;
-				goto unmap;
-			}
 
 			if (bat_entries[i] != BAT_ENTRY_NONE) {
 				/* md0 is already populated */
@@ -473,11 +504,14 @@ set_not_hole:
 			if (is_top_level)
 				ploop_set_not_hole(ploop, bat_entries[i]);
 		}
-unmap:
+
 		kunmap_atomic(bat_entries);
+		if (!is_raw)
+			kunmap_atomic(delta_bat_entries);
 		if (stop)
 			break;
-		delta_bat_entries += PAGE_SIZE / sizeof(map_index_t);
+		if (!is_raw)
+			d_md = md_next_entry(d_md);
 	}
 	write_unlock_irq(&ploop->bat_rwlock);
 }
@@ -499,7 +533,7 @@ int ploop_check_delta_length(struct ploop *ploop, struct file *file, loff_t *fil
 int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw)
 {
 	struct ploop_delta *deltas = ploop->deltas;
-	struct ploop_pvd_header *hdr = NULL;
+	struct rb_root md_root = RB_ROOT;
 	loff_t file_size;
 	u32 size_in_clus;
 	int ret;
@@ -509,7 +543,7 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 		goto out;
 
 	if (!is_raw) {
-		ret = ploop_read_delta_metadata(ploop, file, (void *)&hdr,
+		ret = ploop_read_delta_metadata(ploop, file, &md_root,
 						&size_in_clus);
 		if (ret)
 			goto out;
@@ -522,7 +556,7 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 	    size_in_clus > deltas[level + 1].size_in_clus)
 		goto out;
 
-	apply_delta_mappings(ploop, deltas, level, (void *)hdr, size_in_clus);
+	apply_delta_mappings(ploop, deltas, level, &md_root, size_in_clus);
 
 	deltas[level].file = file;
 	deltas[level].file_size = file_size;
@@ -531,6 +565,6 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 	deltas[level].is_raw = is_raw;
 	ret = 0;
 out:
-	vfree(hdr);
+	free_md_pages_tree(&md_root);
 	return ret;
 }
