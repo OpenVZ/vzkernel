@@ -1536,6 +1536,29 @@ void ploop_index_wb_submit(struct ploop *ploop, struct ploop_index_wb *piwb)
 	submit_rw_mapped(ploop, pio);
 }
 
+static struct bio_vec *create_bvec_from_rq(struct request *rq)
+{
+	struct bio_vec bv, *bvec, *tmp;
+	struct req_iterator rq_iter;
+	unsigned int nr_bvec = 0;
+
+	rq_for_each_bvec(bv, rq, rq_iter)
+		nr_bvec++;
+
+	bvec = kmalloc_array(nr_bvec, sizeof(struct bio_vec),
+			     GFP_NOIO);
+	if (!bvec)
+		goto out;
+
+	tmp = bvec;
+	rq_for_each_bvec(bv, rq, rq_iter) {
+		*tmp = bv;
+		tmp++;
+	}
+out:
+	return bvec;
+}
+
 static void process_deferred_pios(struct ploop *ploop, struct list_head *pios)
 {
 	struct pio *pio;
@@ -1690,29 +1713,6 @@ static void init_prq(struct ploop_rq *prq, struct request *rq)
 {
 	prq->rq = rq;
 	prq->bvec = NULL;
-}
-
-static struct bio_vec *create_bvec_from_rq(struct request *rq)
-{
-	struct bio_vec bv, *bvec, *tmp;
-	struct req_iterator rq_iter;
-	unsigned int nr_bvec = 0;
-
-	rq_for_each_bvec(bv, rq, rq_iter)
-		nr_bvec++;
-
-	bvec = kmalloc_array(nr_bvec, sizeof(struct bio_vec),
-			     GFP_NOIO);
-	if (!bvec)
-		goto out;
-
-	tmp = bvec;
-	rq_for_each_bvec(bv, rq, rq_iter) {
-		*tmp = bv;
-		tmp++;
-	}
-out:
-	return bvec;
 }
 
 static void submit_pio(struct ploop *ploop, struct pio *pio)
