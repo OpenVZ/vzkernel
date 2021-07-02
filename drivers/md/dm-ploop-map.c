@@ -1680,7 +1680,7 @@ static void init_prq(struct ploop_rq *prq, struct request *rq)
 	prq->bvec = NULL;
 }
 
-static noinline struct bio_vec *create_bvec_from_rq(struct request *rq)
+static struct bio_vec *create_bvec_from_rq(struct request *rq)
 {
 	struct bio_vec bv, *bvec, *tmp;
 	struct req_iterator rq_iter;
