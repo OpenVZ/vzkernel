@@ -529,7 +529,7 @@ extern void ploop_free_md_page(struct md_page *md);
 extern void free_md_pages_tree(struct rb_root *root);
 extern bool try_update_bat_entry(struct ploop *ploop, u32 clu,
 				 u8 level, u32 dst_clu);
-extern int convert_bat_entries(u32 *bat_entries, u32 count);
+extern int convert_bat_entries(struct ploop *ploop, u32 *bat_entries, u32 count);
 
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
 extern void dispatch_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list);
