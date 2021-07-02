@@ -684,7 +684,7 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 				struct rb_root *md_root,
 				bool forward, u32 size_in_clus)
 {
-	u32 i, end, *bat_entries, *delta_bat_entries;
+	u32 i, end, *bat_entries, *d_bat_entries;
 	struct md_page *md, *d_md;
 	struct rb_node *node;
 	struct file *file;
@@ -697,14 +697,14 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 	ploop_for_each_md_page(ploop, md, node) {
 		init_be_iter(size_in_clus, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
-		delta_bat_entries = kmap_atomic(d_md->page);
+		d_bat_entries = kmap_atomic(d_md->page);
 		for (; i <= end; i++) {
 			clu = page_clu_idx_to_bat_clu(md->id, i);
 			if (clu == size_in_clus - 1)
 				stop = true;
 
 			if (md_page_cluster_is_in_top_delta(ploop, md, i) ||
-			    delta_bat_entries[i] == BAT_ENTRY_NONE ||
+			    d_bat_entries[i] == BAT_ENTRY_NONE ||
 			    md->bat_levels[i] < level)
 				continue;
 
@@ -719,17 +719,17 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 			 * 1)next delta (which became renumbered) or
 			 * 2)prev delta (if !@forward).
 			 */
-			bat_entries[i] = delta_bat_entries[i];
+			bat_entries[i] = d_bat_entries[i];
 			WARN_ON(bat_entries[i] == BAT_ENTRY_NONE);
 			if (!forward)
 				md->bat_levels[i]--;
 		}
 
 		kunmap_atomic(bat_entries);
-		kunmap_atomic(delta_bat_entries);
+		kunmap_atomic(d_bat_entries);
 		if (stop)
 			break;
-		d_md = md_next_entry(delta_md);
+		d_md = md_next_entry(d_md);
 	}
 
 	file = ploop->deltas[level].file;

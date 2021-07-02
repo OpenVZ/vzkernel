@@ -452,7 +452,7 @@ static void ploop_set_not_hole(struct ploop *ploop, u32 dst_clu)
 static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
 				 u32 level, struct rb_root *md_root, u64 size_in_clus)
 {
-	map_index_t *bat_entries, *delta_bat_entries = NULL;
+	map_index_t *bat_entries, *d_bat_entries = NULL;
 	bool is_top_level, is_raw, stop = false;
 	struct md_page *md, *d_md = NULL;
 	u32 i, end, dst_clu, clu;
@@ -468,11 +468,11 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 	ploop_for_each_md_page(ploop, md, node) {
 		bat_entries = kmap_atomic(md->page);
 		if (!is_raw)
-			delta_bat_entries = kmap_atomic(d_md->page);
+			d_bat_entries = kmap_atomic(d_md->page);
 
 		if (is_top_level && md->id == 0 && !is_raw) {
 			/* bat_entries before PLOOP_MAP_OFFSET is hdr */
-			memcpy(bat_entries, delta_bat_entries,
+			memcpy(bat_entries, d_bat_entries,
 			       sizeof(struct ploop_pvd_header));
 		}
 
@@ -490,7 +490,7 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 			}
 
 			if (!is_raw)
-				dst_clu = delta_bat_entries[i];
+				dst_clu = d_bat_entries[i];
 			else
 				dst_clu = clu;
 
@@ -505,7 +505,7 @@ set_not_hole:
 
 		kunmap_atomic(bat_entries);
 		if (!is_raw)
-			kunmap_atomic(delta_bat_entries);
+			kunmap_atomic(d_bat_entries);
 		if (stop)
 			break;
 		if (!is_raw)
