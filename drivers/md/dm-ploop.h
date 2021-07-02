@@ -549,7 +549,6 @@ extern void ploop_free_md_page(struct md_page *md);
 extern void free_md_pages_tree(struct rb_root *root);
 extern bool try_update_bat_entry(struct ploop *ploop, u32 clu,
 				 u8 level, u32 dst_clu);
-extern int convert_bat_entries(struct ploop *ploop, u32 *bat_entries, u32 count);
 
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
 extern int ploop_check_delta_length(struct ploop *ploop, struct file *file, loff_t *file_size);
@@ -577,7 +576,7 @@ extern void pio_prepare_offsets(struct ploop *, struct pio *, u32);
 
 extern int ploop_setup_metadata(struct ploop *ploop, struct page *page);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
-				     void **d_hdr, u32 *delta_nr_be);
+				     struct rb_root *md_root, u32 *delta_nr_be);
 extern void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop);
 extern void ploop_call_rw_iter(struct file *file, loff_t pos, unsigned rw,
 			       struct iov_iter *iter, struct pio *pio);
