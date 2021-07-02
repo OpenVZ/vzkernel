@@ -1062,7 +1062,7 @@ static void ploop_queue_resubmit(struct pio *pio)
 	list_add_tail(&pio->list, &ploop->resubmit_pios);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
-	queue_work(ploop->wq, &ploop->fsync_worker);
+	queue_work(ploop->wq, &ploop->worker);
 }
 
 void ploop_enospc_timer(struct timer_list *timer)
@@ -1074,7 +1074,7 @@ void ploop_enospc_timer(struct timer_list *timer)
 	list_splice_init(&ploop->enospc_pios, &ploop->resubmit_pios);
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
-	queue_work(ploop->wq, &ploop->fsync_worker);
+	queue_work(ploop->wq, &ploop->worker);
 }
 
 void ploop_event_work(struct work_struct *ws)
@@ -1617,16 +1617,19 @@ void do_ploop_work(struct work_struct *ws)
 	LIST_HEAD(deferred_pios);
 	LIST_HEAD(discard_pios);
 	LIST_HEAD(cow_pios);
+	LIST_HEAD(resubmit_pios);
 	unsigned int pf_io_thread = (current->flags & PF_IO_THREAD);
 
 	current->flags |= PF_IO_THREAD;
 
 	spin_lock_irq(&ploop->deferred_lock);
+	list_splice_init(&ploop->resubmit_pios, &resubmit_pios);
 	list_splice_init(&ploop->pios[PLOOP_LIST_DEFERRED], &deferred_pios);
 	list_splice_init(&ploop->pios[PLOOP_LIST_DISCARD], &discard_pios);
 	list_splice_init(&ploop->pios[PLOOP_LIST_COW], &cow_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
 
+	process_resubmit_pios(ploop, &resubmit_pios);
 	process_deferred_pios(ploop, &deferred_pios);
 	process_discard_pios(ploop, &discard_pios);
 	process_delta_wb(ploop, &cow_pios);
@@ -1639,7 +1642,6 @@ void do_ploop_work(struct work_struct *ws)
 void do_ploop_fsync_work(struct work_struct *ws)
 {
 	struct ploop *ploop = container_of(ws, struct ploop, fsync_worker);
-	LIST_HEAD(resubmit_pios);
 	LIST_HEAD(flush_pios);
 	struct file *file;
 	struct pio *pio;
@@ -1647,14 +1649,7 @@ void do_ploop_fsync_work(struct work_struct *ws)
 
 	spin_lock_irq(&ploop->deferred_lock);
 	list_splice_init(&ploop->flush_pios, &flush_pios);
-	list_splice_init(&ploop->resubmit_pios, &resubmit_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
-
-	/*
-	 * FIXME: move this to main kwork, after BAT write
-	 * will be made async.
-	 */
-	process_resubmit_pios(ploop, &resubmit_pios);
 
 	file = top_delta(ploop)->file;
 	ret = vfs_fsync(file, 0);
