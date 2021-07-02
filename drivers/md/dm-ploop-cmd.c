@@ -279,6 +279,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 {
 	unsigned int new_dst, clu, dst_clu;
 	struct pio *pio = cmd->resize.pio;
+	struct md_page *md;
 	bool is_locked;
 	int ret = 0;
 
@@ -303,7 +304,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	if (ret < 0)
 		goto out;
 
-	ret = ploop_prepare_reloc_index_wb(ploop, piwb, clu,
+	ret = ploop_prepare_reloc_index_wb(ploop, &md, piwb, clu,
 					   &new_dst);
 	if (ret < 0)
 		goto out;
@@ -315,7 +316,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 		goto out;
 	}
 
-	ploop_make_md_wb(ploop, piwb->md);
+	ploop_make_md_wb(ploop, md);
 	/* Write new index on disk */
 	ploop_submit_index_wb_sync(ploop, piwb);
 	ret = blk_status_to_errno(piwb->bi_status);
@@ -348,11 +349,12 @@ static int ploop_grow_update_header(struct ploop *ploop,
 	unsigned int size, first_block_off;
 	struct ploop_pvd_header *hdr;
 	u32 nr_be, offset, clus;
+	struct md_page *md;
 	u64 sectors;
 	int ret;
 
 	/* hdr is in the same page as bat_entries[0] index */
-	ret = ploop_prepare_reloc_index_wb(ploop, piwb, 0, NULL);
+	ret = ploop_prepare_reloc_index_wb(ploop, &md, piwb, 0, NULL);
 	if (ret)
 		return ret;
 
@@ -368,7 +370,7 @@ static int ploop_grow_update_header(struct ploop *ploop,
 	offset = hdr->m_FirstBlockOffset = cpu_to_le32(first_block_off);
 	kunmap_atomic(hdr);
 
-	ploop_make_md_wb(ploop, piwb->md);
+	ploop_make_md_wb(ploop, md);
 	ploop_submit_index_wb_sync(ploop, piwb);
 	ret = blk_status_to_errno(piwb->bi_status);
 	if (!ret) {

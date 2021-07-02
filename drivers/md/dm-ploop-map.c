@@ -1807,6 +1807,7 @@ static void handle_cleanup(struct ploop *ploop, struct pio *pio)
  * is caller duty.
  */
 int ploop_prepare_reloc_index_wb(struct ploop *ploop,
+				 struct md_page **ret_md,
 				 struct ploop_index_wb *piwb,
 				 unsigned int clu,
 				 unsigned int *dst_clu)
@@ -1836,6 +1837,7 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 			goto out_reset;
 	}
 
+	*ret_md = md;
 	return 0;
 
 out_reset:
