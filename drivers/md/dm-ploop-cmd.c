@@ -786,11 +786,9 @@ static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 	/* Reread BAT of deltas[@level + 1] (or [@level - 1]) */
 	file = ploop->deltas[level + forward ? 1 : -1].file;
 
-	ret = ploop_read_delta_metadata(ploop, file, (void *)&d_hdr);
+	ret = ploop_read_delta_metadata(ploop, file, (void *)&d_hdr, &size_in_clus);
 	if (ret)
 		goto out;
-
-	size_in_clus = le32_to_cpu(d_hdr->m_Size);
 
 	ret = ploop_suspend_submitting_pios(ploop);
 	if (ret)
