@@ -866,6 +866,8 @@ out:
 static int ploop_update_delta_index(struct ploop *ploop, unsigned int level,
 				    const char *map)
 {
+	struct ploop_delta *delta;
+	loff_t file_size;
 	int ret;
 
 	if (ploop->maintaince)
@@ -877,8 +879,17 @@ static int ploop_update_delta_index(struct ploop *ploop, unsigned int level,
 	if (ret)
 		goto out;
 
+	delta = &ploop->deltas[level];
+	/* Index update may go together with file size increase */
+	ret = ploop_check_delta_length(ploop, delta->file, &file_size);
+	if (ret)
+		goto resume;
+	delta->file_size = file_size;
+	delta->file_preallocated_area_start = file_size;
+
 	ret = process_update_delta_index(ploop, level, map);
 
+resume:
 	ploop_resume_submitting_pios(ploop);
 out:
 	return ret;
