@@ -1322,6 +1322,7 @@ static void process_delta_wb(struct ploop *ploop, struct list_head *cow_list,
  */
 static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 					      struct ploop_index_wb *piwb,
+					      struct md_page *md,
 					      unsigned int clu,
 					      unsigned int *dst_clu,
 					      struct pio *pio)
@@ -1329,7 +1330,6 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 	bool bat_update_prepared = false;
 	bool attached = false;
 	unsigned int page_id;
-	struct md_page *md;
 
 	page_id = bat_clu_to_page_nr(clu);
 
@@ -1345,8 +1345,7 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 	if (piwb->page_id != page_id || piwb->type != PIWB_TYPE_ALLOC) {
 		/* Another BAT page wb is in process */
 		WARN_ON_ONCE(pio->queue_list_id != PLOOP_LIST_DEFERRED);
-		md = md_page_find(ploop, piwb->page_id);
-		delay_on_md_busy(ploop, md, pio);
+		delay_on_md_busy(ploop, piwb->md, pio);
 		goto out;
 	}
 
@@ -1420,7 +1419,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 		goto out;
 
 	/* Cluster exists nowhere. Allocate it and setup pio as outrunning */
-	ret = locate_new_cluster_and_attach_pio(ploop, piwb, clu,
+	ret = locate_new_cluster_and_attach_pio(ploop, piwb, md, clu,
 						&dst_clu, pio);
 	if (!ret)
 		goto out;
