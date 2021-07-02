@@ -96,6 +96,7 @@ struct ploop_index_wb {
 	struct completion comp;
 	enum piwb_type type;
 	spinlock_t lock;
+	struct md_page *md;
 	struct page *bat_page;
 	struct list_head ready_data_pios;
 	struct list_head cow_list;
@@ -112,6 +113,7 @@ struct md_page {
 	struct page *page;
 	u8 *bat_levels;
 	struct list_head wait_list;
+	struct ploop_index_wb *piwb;
 };
 
 enum {
