@@ -124,6 +124,7 @@ struct md_page {
 
 enum {
 	PLOOP_LIST_DEFERRED = 0,
+	PLOOP_LIST_FLUSH,
 	PLOOP_LIST_DISCARD,
 	PLOOP_LIST_COW,
 
@@ -188,7 +189,6 @@ struct ploop {
 
 	struct list_head pios[PLOOP_LIST_COUNT];
 
-	struct list_head flush_pios;
 	struct list_head resubmit_pios; /* After partial IO */
 	struct list_head enospc_pios; /* Delayed after ENOSPC */
 
@@ -258,7 +258,7 @@ struct pio {
 #define PLOOP_REF_INDEX_INVALID	2
 	unsigned int ref_index:2;
 
-	u8 queue_list_id:2; /* id in ploop->pios */
+	u8 queue_list_id:3; /* id in ploop->pios */
 
 	struct ploop_index_wb *piwb;
 
