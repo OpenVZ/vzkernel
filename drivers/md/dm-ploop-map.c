@@ -1477,16 +1477,35 @@ out:
 	return 0;
 }
 
+static void md_fsync_endio(struct pio *pio, void *piwb_ptr, blk_status_t bi_status)
+{
+	struct ploop_index_wb *piwb = piwb_ptr;
+
+	ploop_bat_write_complete(piwb, bi_status);
+}
+
 static void md_write_endio(struct pio *pio, void *piwb_ptr, blk_status_t bi_status)
 {
 	struct ploop_index_wb *piwb = piwb_ptr;
 	struct ploop *ploop = piwb->ploop;
+	unsigned long flags;
 	u32 dst_clu;
 
 	dst_clu = POS_TO_CLU(ploop, (u64)piwb->page_id << PAGE_SHIFT);
 	track_dst_cluster(ploop, dst_clu);
 
-	ploop_bat_write_complete(piwb, bi_status);
+	if (bi_status) {
+		md_fsync_endio(pio, piwb, bi_status);
+	} else {
+		init_pio(ploop, REQ_OP_FLUSH, pio);
+		pio->endio_cb = md_fsync_endio;
+		pio->endio_cb_data = piwb;
+
+		spin_lock_irqsave(&ploop->deferred_lock, flags);
+		list_add_tail(&pio->list, &ploop->flush_pios);
+		spin_unlock_irqrestore(&ploop->deferred_lock, flags);
+		queue_work(ploop->wq, &ploop->fsync_worker);
+	}
 }
 
 void ploop_index_wb_submit(struct ploop *ploop, struct ploop_index_wb *piwb)
