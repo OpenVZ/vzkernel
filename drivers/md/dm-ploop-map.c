@@ -787,12 +787,12 @@ static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 	put_piwb(piwb);
 }
 
-static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_id,
+static int ploop_prepare_bat_update(struct ploop *ploop, struct md_page *md,
 			     struct ploop_index_wb *piwb, enum piwb_type type)
 {
 	unsigned int i, off, last, *bat_entries;
 	bool is_last_page = true;
-	struct md_page *md;
+	u32 page_id = md->id;
 	struct page *page;
 	map_index_t *to;
 
@@ -800,8 +800,6 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_id,
 	if (!page)
 		return -ENOMEM;
 
-	md = md_page_find(ploop, page_id);
-	BUG_ON(!md);
 	bat_entries = kmap_atomic(md->page);
 
 	write_lock_irq(&ploop->bat_rwlock);
@@ -1276,7 +1274,7 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 
 	if (!(md->status & MD_DIRTY)) {
 		/* Unlocked, since MD_DIRTY is set and cleared from this work */
-		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_ALLOC) < 0)
+		if (ploop_prepare_bat_update(ploop, md, piwb, PIWB_TYPE_ALLOC) < 0)
 			goto err_resource;
 		ploop_md_make_dirty(ploop, md);
 	}
@@ -1365,7 +1363,7 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 	if (!(md->status & MD_DIRTY)) {
 		 /* Unlocked since MD_DIRTY is set and cleared from this work */
 		page_id = bat_clu_to_page_nr(clu);
-		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_ALLOC) < 0) {
+		if (ploop_prepare_bat_update(ploop, md, piwb, PIWB_TYPE_ALLOC) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto error;
 		}
@@ -1507,7 +1505,7 @@ static void process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 
 	if (!(md->status & MD_DIRTY)) {
 		 /* Unlocked since MD_DIRTY is set and cleared from this work */
-		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_DISCARD) < 0) {
+		if (ploop_prepare_bat_update(ploop, md, piwb, PIWB_TYPE_DISCARD) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto err;
 		}
@@ -1821,7 +1819,7 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 		type = PIWB_TYPE_RELOC;
 
 	if ((md->status & (MD_DIRTY|MD_WRITEBACK)) ||
-	    ploop_prepare_bat_update(ploop, page_id, piwb, type))
+	    ploop_prepare_bat_update(ploop, md, piwb, type))
 		goto out_eio;
 
 	piwb = md->piwb;
