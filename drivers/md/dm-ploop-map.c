@@ -1281,6 +1281,8 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 		ploop_md_make_dirty(ploop, md);
 	}
 
+	piwb = md->piwb;
+
 	clu -= page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 
 	to = kmap_atomic(piwb->bat_page);
@@ -1369,6 +1371,8 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 		}
 		bat_update_prepared = true;
 	}
+
+	piwb = md->piwb;
 
 	if (ploop_alloc_cluster(ploop, piwb, clu, dst_clu)) {
 		pio->bi_status = BLK_STS_IOERR;
@@ -1509,6 +1513,8 @@ static void process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 		}
 		bat_update_prepared = true;
 	}
+
+	piwb = md->piwb;
 
 	/* Cluster index related to the page[page_id] start */
 	clu -= piwb->page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
@@ -1817,6 +1823,9 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 	if ((md->status & (MD_DIRTY|MD_WRITEBACK)) ||
 	    ploop_prepare_bat_update(ploop, page_id, piwb, type))
 		goto out_eio;
+
+	piwb = md->piwb;
+
 	if (dst_clu) {
 		/*
 		 * For ploop_advance_local_after_bat_wb(): do not concern
