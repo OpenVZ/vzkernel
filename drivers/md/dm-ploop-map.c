@@ -101,7 +101,7 @@ static int ploop_pio_valid(struct ploop *ploop, struct pio *pio)
 	return 0;
 }
 
-static void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
+void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
 {
         struct ploop_rq *prq = prq_ptr;
         struct request *rq = prq->rq;
@@ -1780,10 +1780,10 @@ int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 	struct ploop_rq *prq;
 	struct pio *pio;
 
-	prq = map_info_to_prq(info);
+	prq = map_info_to_embedded_prq(info);
 	init_prq(prq, rq);
 
-	pio = map_info_to_pio(info); /* Embedded pio */
+	pio = map_info_to_embedded_pio(info); /* Embedded pio */
 	init_pio(ploop, req_op(rq), pio);
 
 	if (rq->bio != rq->biotail) {
