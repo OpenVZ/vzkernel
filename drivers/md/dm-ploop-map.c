@@ -1274,8 +1274,8 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 	if (delay_if_md_busy(ploop, piwb, md, PIWB_TYPE_ALLOC, cow->aux_pio))
 		goto out;
 
-	if (!md->piwb) {
-		/* No index wb in process. Prepare a new one */
+	if (!(md->status & MD_DIRTY)) {
+		/* Unlocked, since MD_DIRTY is set and cleared from this work */
 		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_ALLOC) < 0)
 			goto err_resource;
 		ploop_md_make_dirty(ploop, md);
@@ -1360,7 +1360,8 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 	if (delay_if_md_busy(ploop, piwb, md, PIWB_TYPE_ALLOC, pio))
 		goto out;
 
-	if (!md->piwb) {
+	if (!(md->status & MD_DIRTY)) {
+		 /* Unlocked since MD_DIRTY is set and cleared from this work */
 		page_id = bat_clu_to_page_nr(clu);
 		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_ALLOC) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
@@ -1500,7 +1501,8 @@ static void process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 	if (delay_if_md_busy(ploop, piwb, md, PIWB_TYPE_DISCARD, pio))
 		goto out;
 
-	if (!md->piwb) {
+	if (!(md->status & MD_DIRTY)) {
+		 /* Unlocked since MD_DIRTY is set and cleared from this work */
 		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_DISCARD) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto err;
@@ -1807,11 +1809,12 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 {
 	unsigned int page_id = bat_clu_to_page_nr(clu);
 	enum piwb_type type = PIWB_TYPE_ALLOC;
+	struct md_page *md = md_page_find(ploop, page_id);
 
 	if (dst_clu)
 		type = PIWB_TYPE_RELOC;
 
-	if (piwb->page_id != PAGE_NR_NONE ||
+	if ((md->status & (MD_DIRTY|MD_WRITEBACK)) ||
 	    ploop_prepare_bat_update(ploop, page_id, piwb, type))
 		goto out_eio;
 	if (dst_clu) {
