@@ -369,6 +369,7 @@ int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 	int ret;
 
 	size = (PLOOP_MAP_OFFSET + ploop->nr_bat_entries) * sizeof(map_index_t);
+	size = ALIGN(size, PAGE_SIZE); /* file may be open as direct */
 	*d_hdr = vzalloc(size);
 	if (!*d_hdr) {
 		ret = -ENOMEM;
