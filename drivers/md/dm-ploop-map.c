@@ -44,6 +44,7 @@ void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop)
 	piwb->ploop = ploop;
 	init_completion(&piwb->comp);
 	spin_lock_init(&piwb->lock);
+	piwb->md = NULL;
 	piwb->bat_page = NULL;
 	piwb->bi_status = 0;
 	INIT_LIST_HEAD(&piwb->ready_data_pios);
@@ -642,8 +643,8 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 					     struct ploop_index_wb *piwb,
 					     bool success)
 {
-	struct md_page *md = md_page_find(ploop, piwb->page_id);
 	unsigned int i, last, *bat_entries;
+	struct md_page *md = piwb->md;
 	map_index_t *dst_clu, off;
 	unsigned long flags;
 	LIST_HEAD(list);
@@ -778,6 +779,11 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_id,
 	BUG_ON(!md);
 	bat_entries = kmap_atomic(md->page);
 
+	write_lock_irq(&ploop->bat_rwlock);
+	md->piwb = piwb;
+	piwb->md = md;
+	write_unlock_irq(&ploop->bat_rwlock);
+
 	piwb->page_id = page_id;
 	to = kmap_atomic(page);
 	memcpy((void *)to, bat_entries, PAGE_SIZE);
@@ -816,6 +822,12 @@ static int ploop_prepare_bat_update(struct ploop *ploop, unsigned int page_id,
 void ploop_reset_bat_update(struct ploop_index_wb *piwb)
 {
 	struct ploop *ploop = piwb->ploop;
+	unsigned long flags;
+
+	write_lock_irqsave(&ploop->bat_rwlock, flags);
+	piwb->md->piwb = NULL;
+	piwb->md = NULL;
+	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
 
 	put_page(piwb->bat_page);
 	ploop_index_wb_init(piwb, ploop);

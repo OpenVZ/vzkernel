@@ -81,6 +81,7 @@ static struct md_page * alloc_md_page(unsigned int id)
 	INIT_LIST_HEAD(&md->wait_list);
 
 	md->bat_levels = levels;
+	md->piwb = NULL;
 	md->page = page;
 	md->id = id;
 	return md;
