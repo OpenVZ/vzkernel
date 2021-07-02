@@ -314,14 +314,12 @@ out:
 	return ret;
 }
 
-static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
-		       unsigned int *nr_pages, unsigned int *last_page_len)
+static int ploop_delta_check_header(struct ploop *ploop,
+				    struct ploop_pvd_header *d_hdr,
+				    u32 *delta_nr_be_ret)
 {
 	unsigned int bytes, delta_nr_be, offset_clusters, bat_clusters;
-	struct ploop_pvd_header *d_hdr;
 	int ret = -EPROTO;
-
-	d_hdr = kmap(page);
 
 	if (memcmp(d_hdr->m_Sig, ploop->m_Sig, sizeof(d_hdr->m_Sig)) ||
 	    d_hdr->m_Sectors != ploop->m_Sectors ||
@@ -337,12 +335,9 @@ static int ploop_delta_check_header(struct ploop *ploop, struct page *page,
 	    bat_clusters != offset_clusters)
 		goto out;
 
-	*nr_pages = DIV_ROUND_UP(bytes, PAGE_SIZE);
-	bytes &= ~PAGE_MASK;
-	*last_page_len = bytes ? : PAGE_SIZE;
+	*delta_nr_be_ret = delta_nr_be;
 	ret = 0;
 out:
-	kunmap(page);
 	return ret;
 }
 
@@ -363,69 +358,45 @@ int convert_bat_entries(u32 *bat_entries, u32 count)
 int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 			      void **d_hdr)
 {
-	unsigned int i, last_page_len, size, nr_pages = 1;
-	unsigned int *delta_bat_entries;
+	u32 size, delta_nr_be, *delta_bat_entries;
 	struct iov_iter iter;
-	struct bio_vec bvec;
-	struct page *page;
+	struct kvec kvec;
 	ssize_t len;
-	void *from;
 	loff_t pos;
 	int ret;
-
-	page = alloc_page(GFP_KERNEL);
-	if (!page)
-		return -ENOMEM;
 
 	size = (PLOOP_MAP_OFFSET + ploop->nr_bat_entries) * sizeof(map_index_t);
 	*d_hdr = vzalloc(size);
 	if (!*d_hdr) {
 		ret = -ENOMEM;
-		goto out_put_page;
+		goto out;
 	}
 
-	for (i = 0; i < nr_pages; i++) {
-		bvec.bv_page = page;
-		bvec.bv_len = PAGE_SIZE;
-		bvec.bv_offset = 0;
+	kvec.iov_base = *d_hdr;
+	kvec.iov_len = size;
 
-		iov_iter_bvec(&iter, READ, &bvec, 1, bvec.bv_len);
-		pos = i << PAGE_SHIFT;
+	iov_iter_kvec(&iter, READ, &kvec, 1, kvec.iov_len);
+	pos = 0;
 
-		len = vfs_iter_read(file, &iter, &pos, 0);
-		if (len != PAGE_SIZE) {
-			ret = len < 0 ? (int)len : -ENODATA;
-			goto out_vfree;
-		}
-
-		if (i == 0) {
-			/* First page with header. Updates nr_pages. */
-			ret = ploop_delta_check_header(ploop, page,
-					&nr_pages, &last_page_len);
-			if (ret)
-				goto out_vfree;
-		}
-
-		if (i + 1 == nr_pages) {
-			/* Last page, possible, incomplete */
-			len = last_page_len;
-		}
-
-		from = kmap(page);
-		memcpy(*d_hdr + (i << PAGE_SHIFT), from, len);
-		kunmap(page);
+	len = vfs_iter_read(file, &iter, &pos, 0);
+	if (len != size) {
+		ret = len < 0 ? (int)len : -ENODATA;
+		goto out_vfree;
 	}
+
+	ret = ploop_delta_check_header(ploop, *d_hdr, &delta_nr_be);
+	if (ret)
+		goto out_vfree;
 
 	delta_bat_entries = *d_hdr + PLOOP_MAP_OFFSET * sizeof(map_index_t);
-	ret = convert_bat_entries(delta_bat_entries, ploop->nr_bat_entries);
+	ret = convert_bat_entries(delta_bat_entries, delta_nr_be);
 
 out_vfree:
 	if (ret) {
 		vfree(*d_hdr);
 		*d_hdr = NULL;
 	}
-out_put_page:
-	put_page(page);
+out:
 	return ret;
 }
 
