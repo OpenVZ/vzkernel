@@ -283,12 +283,15 @@ struct ploop_cow {
 extern bool ignore_signature_disk_in_use;
 extern struct kmem_cache *cow_cache;
 
-#define ploop_for_each_md_page(ploop, md, node)		\
-	for (node = rb_first(&ploop->bat_entries),	\
+#define rb_root_for_each_md_page(rb_root, md, node)	\
+	for (node = rb_first(rb_root),			\
 	     md = rb_entry(node, struct md_page, node); \
 	     node != NULL;				\
 	     node = rb_next(node),			\
 	     md = rb_entry(node, struct md_page, node))
+
+#define ploop_for_each_md_page(ploop, md, node)	\
+	rb_root_for_each_md_page(&ploop->bat_entries, md, node)
 
 static inline bool ploop_is_ro(struct ploop *ploop)
 {
