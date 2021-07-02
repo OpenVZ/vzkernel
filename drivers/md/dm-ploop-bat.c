@@ -356,7 +356,7 @@ int convert_bat_entries(u32 *bat_entries, u32 count)
 }
 
 int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
-			      void **d_hdr)
+			      void **d_hdr, u32 *delta_nr_be_ret)
 {
 	u32 size, delta_nr_be, *delta_bat_entries;
 	struct iov_iter iter;
@@ -391,6 +391,7 @@ int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 	delta_bat_entries = *d_hdr + PLOOP_MAP_OFFSET * sizeof(map_index_t);
 	ret = convert_bat_entries(delta_bat_entries, delta_nr_be);
 
+	*delta_nr_be_ret = delta_nr_be;
 out_vfree:
 	if (ret) {
 		vfree(*d_hdr);
@@ -505,10 +506,10 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 		goto out;
 
 	if (!is_raw) {
-		ret = ploop_read_delta_metadata(ploop, file, (void *)&hdr);
+		ret = ploop_read_delta_metadata(ploop, file, (void *)&hdr,
+						&size_in_clus);
 		if (ret)
 			goto out;
-		size_in_clus = le32_to_cpu(hdr->m_Size);
 	} else {
 		size_in_clus = POS_TO_CLU(ploop, file_size);
 	}
