@@ -552,7 +552,7 @@ extern void pio_prepare_offsets(struct ploop *, struct pio *, unsigned int);
 
 extern int ploop_setup_metadata(struct ploop *ploop, struct page *page);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
-				     void **d_hdr);
+				     void **d_hdr, u32 *delta_nr_be);
 extern void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop);
 extern void ploop_call_rw_iter(struct file *file, loff_t pos, unsigned rw,
 			       struct iov_iter *iter, struct pio *pio);
