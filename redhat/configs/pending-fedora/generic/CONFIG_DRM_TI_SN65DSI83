@@ -1,0 +1,18 @@
+# CONFIG_DRM_TI_SN65DSI83:
+# 
+# Texas Instruments SN65DSI83 and SN65DSI84 DSI to LVDS Bridge driver
+# 
+# Symbol: DRM_TI_SN65DSI83 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/Kconfig:288
+#   Prompt: TI SN65DSI83 and SN65DSI84 DSI to LVDS bridge
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_BRIDGE [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# Selects: DRM_KMS_HELPER [=m] && REGMAP_I2C [=m] && DRM_PANEL [=y] && DRM_MIPI_DSI [=y]
+# 
+# 
+# 
+# CONFIG_DRM_TI_SN65DSI83 is not set

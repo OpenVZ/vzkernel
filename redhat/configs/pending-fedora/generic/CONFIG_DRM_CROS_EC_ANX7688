@@ -1,0 +1,22 @@
+# CONFIG_DRM_CROS_EC_ANX7688:
+# 
+# ChromeOS EC ANX7688 is an ultra-low power
+# 4K Ultra-HD (4096x2160p60) mobile HD transmitter
+# designed for ChromeOS devices. It converts HDMI
+# 2.0 to DisplayPort 1.3 Ultra-HD. It is connected
+# to the ChromeOS Embedded Controller.
+# 
+# Symbol: DRM_CROS_EC_ANX7688 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/Kconfig:53
+#   Prompt: ChromeOS EC ANX7688 bridge
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_BRIDGE [=y] && OF [=y] && (I2C_CROS_EC_TUNNEL [=m] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# Selects: DRM_KMS_HELPER [=m] && REGMAP_I2C [=y]
+# 
+# 
+# 
+# CONFIG_DRM_CROS_EC_ANX7688 is not set

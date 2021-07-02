@@ -1,0 +1,18 @@
+# CONFIG_CLK_SP810:
+# 
+# Supports clock muxing (REFCLK/TIMCLK to TIMERCLKEN0-3) capabilities
+# of the ARM SP810 System Controller cell.
+# 
+# Symbol: CLK_SP810 [=n]
+# Type  : bool
+# Defined at drivers/clk/versatile/Kconfig:14
+#   Prompt: Clock driver for ARM SP810 System Controller
+#   Depends on: COMMON_CLK [=y] && HAS_IOMEM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Clock driver for ARM Reference designs
+# 
+# 
+# 
+# CONFIG_CLK_SP810 is not set

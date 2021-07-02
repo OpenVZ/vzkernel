@@ -1,0 +1,21 @@
+# CONFIG_DRM_VMWGFX:
+# 
+# Choose this option if you would like to run 3D acceleration
+# in a VMware virtual machine.
+# This is a KMS enabled DRM driver for the VMware SVGA2
+# virtual hardware.
+# The compiled module will be called "vmwgfx.ko".
+# 
+# Symbol: DRM_VMWGFX [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/vmwgfx/Kconfig:2
+#   Prompt: DRM driver for VMware Virtual GPU
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && PCI [=y] && MMU [=y] && (X86 || ARM64 [=y])
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+# Selects: DRM_TTM [=m] && MAPPING_DIRTY_HELPERS [=n] && DRM_KMS_HELPER [=m]
+# 
+# 
+# 
+# CONFIG_DRM_VMWGFX is not set

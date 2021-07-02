@@ -1,0 +1,18 @@
+# CONFIG_COMMON_CLK_STM32MP157_SCMI:
+# 
+# Support for stm32mp157 SoC family clocks with Trusted Firmware using
+# SCMI protocol.
+# 
+# Symbol: COMMON_CLK_STM32MP157_SCMI [=y]
+# Type  : bool
+# Defined at drivers/clk/Kconfig:342
+#   Prompt: stm32mp157 Clock driver with Trusted Firmware
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_STM32MP157 [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+# Selects: COMMON_CLK_SCMI [=y] && ARM_SCMI_PROTOCOL [=y]
+# 
+# 
+# 
+CONFIG_COMMON_CLK_STM32MP157_SCMI=y

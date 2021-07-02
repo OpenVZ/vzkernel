@@ -1,0 +1,19 @@
+# CONFIG_SM_GCC_6125:
+# 
+# Support for the global clock controller on SM6125 devices.
+# Say Y if you want to use peripheral devices such as UART,
+# SPI, I2C, USB, SD/UFS, PCIe etc.
+# 
+# Symbol: SM_GCC_6125 [=n]
+# Type  : tristate
+# Defined at drivers/clk/qcom/Kconfig:509
+#   Prompt: SM6125 Global Clock Controller
+#   Depends on: COMMON_CLK [=y] && COMMON_CLK_QCOM [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Common Clock Framework (COMMON_CLK [=y])
+#         -> Support for Qualcomm's clock controllers (COMMON_CLK_QCOM [=y])
+# 
+# 
+# 
+# CONFIG_SM_GCC_6125 is not set

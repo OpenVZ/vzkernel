@@ -1,0 +1,18 @@
+# CONFIG_DRM_ITE_IT66121:
+# 
+# Support for ITE IT66121 HDMI bridge.
+# 
+# Symbol: DRM_ITE_IT66121 [=n]
+# Type  : tristate
+# Defined at drivers/gpu/drm/bridge/Kconfig:121
+#   Prompt: ITE IT66121 HDMI bridge
+#   Depends on: HAS_IOMEM [=y] && DRM [=m] && DRM_BRIDGE [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Display Interface Bridges
+# Selects: DRM_KMS_HELPER [=m] && REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_DRM_ITE_IT66121 is not set
