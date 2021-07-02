@@ -680,29 +680,28 @@ out:
 	return ret;
 }
 
-static void notify_delta_merged(struct ploop *ploop, u8 level, void *hdr,
+static void notify_delta_merged(struct ploop *ploop, u8 level,
+				struct rb_root *md_root,
 				bool forward, u32 size_in_clus)
 {
 	u32 i, end, *bat_entries, *delta_bat_entries;
+	struct md_page *md, *d_md;
 	struct rb_node *node;
-	struct md_page *md;
 	struct file *file;
 	bool stop = false;
 	u32 clu;
 
-	/* Points to hdr since md_page[0] also contains hdr. */
-	delta_bat_entries = (map_index_t *)hdr;
+	d_md = md_first_entry(md_root);
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
-		ploop_init_be_iter(ploop, md->id, &i, &end);
+		init_be_iter(size_in_clus, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
+		delta_bat_entries = kmap_atomic(d_md->page);
 		for (; i <= end; i++) {
 			clu = page_clu_idx_to_bat_clu(md->id, i);
-			if (clu >= size_in_clus) {
+			if (clu == size_in_clus - 1)
 				stop = true;
-				goto unmap;
-			}
 
 			if (md_page_cluster_is_in_top_delta(ploop, md, i) ||
 			    delta_bat_entries[i] == BAT_ENTRY_NONE ||
@@ -725,11 +724,12 @@ static void notify_delta_merged(struct ploop *ploop, u8 level, void *hdr,
 			if (!forward)
 				md->bat_levels[i]--;
 		}
-unmap:
+
 		kunmap_atomic(bat_entries);
+		kunmap_atomic(delta_bat_entries);
 		if (stop)
 			break;
-		delta_bat_entries += PAGE_SIZE / sizeof(map_index_t);
+		d_md = md_next_entry(delta_md);
 	}
 
 	file = ploop->deltas[level].file;
@@ -774,7 +774,7 @@ unlock:
 static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 				       bool forward)
 {
-	struct ploop_pvd_header *d_hdr = NULL;
+	struct rb_root md_root = RB_ROOT;
 	struct file *file;
 	u32 size_in_clus;
 	int ret;
@@ -782,7 +782,7 @@ static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 	/* Reread BAT of deltas[@level + 1] (or [@level - 1]) */
 	file = ploop->deltas[level + forward ? 1 : -1].file;
 
-	ret = ploop_read_delta_metadata(ploop, file, (void *)&d_hdr, &size_in_clus);
+	ret = ploop_read_delta_metadata(ploop, file, &md_root, &size_in_clus);
 	if (ret)
 		goto out;
 
@@ -790,12 +790,12 @@ static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 	if (ret)
 		goto out;
 
-	notify_delta_merged(ploop, level, d_hdr, forward, size_in_clus);
+	notify_delta_merged(ploop, level, &md_root, forward, size_in_clus);
 
 	ploop_resume_submitting_pios(ploop);
 	ret = 0;
 out:
-	vfree(d_hdr);
+	free_md_pages_tree(&md_root);
 	return ret;
 }
 
