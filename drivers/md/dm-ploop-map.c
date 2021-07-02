@@ -1461,26 +1461,23 @@ static void process_deferred_pios(struct ploop *ploop, struct list_head *pios,
 		process_one_deferred_bio(ploop, pio, piwb);
 }
 
-static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
-				   struct ploop_index_wb *piwb)
+static void process_one_discard_pio(struct ploop *ploop, struct pio *pio,
+				    struct ploop_index_wb *piwb)
 {
-	unsigned int page_id, clu;
-	bool bat_update_prepared;
+	unsigned int page_id, clu = pio->clu;
+	bool bat_update_prepared = false;
 	struct md_page *md;
 	map_index_t *to;
 
 	WARN_ON(ploop->nr_deltas != 1);
 
-	clu = pio->clu;
 	page_id = bat_clu_to_page_nr(clu);
-	bat_update_prepared = false;
 
 	if (piwb->page_id == PAGE_NR_NONE) {
 		/* No index wb in process. Prepare a new one */
 		if (ploop_prepare_bat_update(ploop, page_id, piwb) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
-			pio_endio(pio);
-			goto out;
+			goto err;
 		}
 		piwb->type = PIWB_TYPE_DISCARD;
 		bat_update_prepared = true;
@@ -1499,16 +1496,18 @@ static int process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 	to = kmap_atomic(piwb->bat_page);
 	if (WARN_ON_ONCE(!to[clu])) {
 		pio->bi_status = BLK_STS_IOERR;
-		pio_endio(pio);
-		if (bat_update_prepared)
-			ploop_reset_bat_update(piwb);
+		goto err;
 	} else {
 		to[clu] = 0;
 		list_add_tail(&pio->list, &piwb->ready_data_pios);
 	}
 	kunmap_atomic(to);
 out:
-	return 0;
+	return;
+err:
+	if (bat_update_prepared)
+		ploop_reset_bat_update(piwb);
+	pio_endio(pio);
 }
 
 static void process_discard_pios(struct ploop *ploop, struct list_head *pios,
