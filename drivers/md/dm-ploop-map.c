@@ -463,6 +463,23 @@ static void unlink_completed_pio(struct ploop *ploop, struct pio *pio)
 		dispatch_pios(ploop, NULL, &pio_list);
 }
 
+static bool ploop_md_make_dirty(struct ploop *ploop, struct md_page *md)
+{
+	unsigned long flags;
+	bool new = false;
+
+	write_lock_irqsave(&ploop->bat_rwlock, flags);
+	WARN_ON_ONCE((md->status & MD_WRITEBACK));
+        if (!(md->status & MD_DIRTY)) {
+                md->status |= MD_DIRTY;
+                list_add_tail(&md->wb_link, &ploop->wb_batch_list);
+                new = true;
+	}
+	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
+
+	return new;
+}
+
 static bool pio_endio_if_all_zeros(struct pio *pio)
 {
 	struct bvec_iter bi = {
@@ -695,6 +712,8 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 		}
 	}
 
+	WARN_ON_ONCE(!(md->status & MD_WRITEBACK));
+	md->status &= ~MD_WRITEBACK;
 	list_splice_tail_init(&md->wait_list, &list);
 	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
 	kunmap_atomic(dst_clu);
@@ -1259,6 +1278,7 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 		/* No index wb in process. Prepare a new one */
 		if (ploop_prepare_bat_update(ploop, page_id, piwb, PIWB_TYPE_ALLOC) < 0)
 			goto err_resource;
+		ploop_md_make_dirty(ploop, md);
 	}
 
 	clu -= page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
@@ -1353,6 +1373,9 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 		pio->bi_status = BLK_STS_IOERR;
 		goto error;
 	}
+
+	if (bat_update_prepared)
+		ploop_md_make_dirty(ploop, md);
 
 	ploop_attach_end_action(pio, piwb);
 	attached = true;
@@ -1497,6 +1520,9 @@ static void process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 		list_add_tail(&pio->list, &piwb->ready_data_pios);
 	}
 	kunmap_atomic(to);
+
+	if (bat_update_prepared)
+		ploop_md_make_dirty(ploop, md);
 out:
 	return;
 err:
@@ -1521,6 +1547,31 @@ static void process_resubmit_pios(struct ploop *ploop, struct list_head *pios)
 	while ((pio = pio_list_pop(pios)) != NULL) {
 		pio->queue_list_id = PLOOP_LIST_INVALID;
 		submit_rw_mapped(ploop, pio);
+	}
+}
+
+static void submit_metadata_writeback(struct ploop *ploop)
+{
+	struct md_page *md;
+
+	while (1) {
+		write_lock_irq(&ploop->bat_rwlock);
+		md = list_first_entry_or_null(&ploop->wb_batch_list,
+				struct md_page, wb_link);
+		if (!md) {
+			write_unlock_irq(&ploop->bat_rwlock);
+			break;
+		}
+		list_del_init(&md->wb_link);
+		/* L1L2 mustn't be redirtyed, when wb in-flight! */
+		WARN_ON_ONCE(!(md->status & MD_DIRTY) ||
+			     (md->status & MD_WRITEBACK));
+		md->status |= MD_WRITEBACK;
+		md->status &= ~MD_DIRTY;
+		write_unlock_irq(&ploop->bat_rwlock);
+
+		ploop_submit_index_wb_sync(ploop, md->piwb);
+		ploop_reset_bat_update(md->piwb);
 	}
 }
 
@@ -1555,11 +1606,7 @@ void do_ploop_work(struct work_struct *ws)
 	process_discard_pios(ploop, &discard_pios, &piwb);
 	process_delta_wb(ploop, &cow_pios, &piwb);
 
-	if (piwb.page_id != PAGE_NR_NONE) {
-		/* Index wb was prepared -- submit and wait it */
-		ploop_submit_index_wb_sync(ploop, &piwb);
-		ploop_reset_bat_update(&piwb);
-	}
+	submit_metadata_writeback(ploop);
 
 	current->flags = (current->flags & ~PF_IO_THREAD) | pf_io_thread;
 }

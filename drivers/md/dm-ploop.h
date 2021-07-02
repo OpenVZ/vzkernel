@@ -110,9 +110,14 @@ struct ploop_index_wb {
 struct md_page {
 	struct rb_node node;
 	unsigned int id; /* Number of this page starting from hdr */
+#define MD_DIRTY	(1U << 1) /* Page contains changes and wants writeback */
+#define MD_WRITEBACK	(1U << 2) /* Writeback was submitted */
+	unsigned int status;
 	struct page *page;
 	u8 *bat_levels;
 	struct list_head wait_list;
+
+	struct list_head wb_link;
 	struct ploop_index_wb *piwb;
 };
 
@@ -145,6 +150,8 @@ struct ploop {
 	void *holes_bitmap; /* Clearing a bit occurs from kwork only */
 	unsigned int hb_nr; /* holes_bitmap size in bits */
 	rwlock_t bat_rwlock;
+
+	struct list_head wb_batch_list;
 
 	void *tracking_bitmap;
 	unsigned int tb_nr; /* tracking_bitmap size in bits */
