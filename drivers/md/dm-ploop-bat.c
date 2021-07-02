@@ -437,7 +437,7 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 	ploop_for_each_md_page(ploop, md, node) {
 		bat_entries = kmap_atomic(md->page);
 
-		if (is_top_level && md->id == 0) {
+		if (is_top_level && md->id == 0 && !is_raw) {
 			/* bat_entries before PLOOP_MAP_OFFSET is hdr */
 			memcpy(bat_entries, hdr, sizeof(struct ploop_pvd_header));
 		}
