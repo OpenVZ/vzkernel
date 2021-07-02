@@ -491,11 +491,9 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 
 			if (!is_raw)
 				dst_clu = delta_bat_entries[i];
-			else {
+			else
 				dst_clu = clu;
-				if (dst_clu >= size_in_clus)
-					dst_clu = BAT_ENTRY_NONE;
-			}
+
 			if (dst_clu == BAT_ENTRY_NONE)
 				continue;
 			md->bat_levels[i] = level;
