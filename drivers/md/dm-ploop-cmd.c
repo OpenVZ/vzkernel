@@ -321,7 +321,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	init_completion(&comp);
 	piwb->comp = &comp;
 	/* Write new index on disk */
-	ploop_submit_index_wb_sync(ploop, piwb);
+	ploop_index_wb_submit(ploop, piwb);
 	wait_for_completion(&comp);
 
 	ret = blk_status_to_errno(piwb->bi_status);
@@ -379,7 +379,7 @@ static int ploop_grow_update_header(struct ploop *ploop,
 	ploop_make_md_wb(ploop, md);
 	init_completion(&comp);
 	piwb->comp = &comp;
-	ploop_submit_index_wb_sync(ploop, piwb);
+	ploop_index_wb_submit(ploop, piwb);
 	wait_for_completion(&comp);
 
 	ret = blk_status_to_errno(piwb->bi_status);

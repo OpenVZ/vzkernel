@@ -1489,8 +1489,7 @@ static void md_write_endio(struct pio *pio, void *piwb_ptr, blk_status_t bi_stat
 	ploop_bat_write_complete(piwb, bi_status);
 }
 
-void ploop_submit_index_wb_sync(struct ploop *ploop,
-				struct ploop_index_wb *piwb)
+void ploop_index_wb_submit(struct ploop *ploop, struct ploop_index_wb *piwb)
 {
 	loff_t pos = (loff_t)piwb->page_id << PAGE_SHIFT;
 	struct pio *pio = piwb->pio;
@@ -1608,7 +1607,7 @@ static void submit_metadata_writeback(struct ploop *ploop)
 		md->status &= ~MD_DIRTY;
 		write_unlock_irq(&ploop->bat_rwlock);
 
-		ploop_submit_index_wb_sync(ploop, md->piwb);
+		ploop_index_wb_submit(ploop, md->piwb);
 	}
 }
 
