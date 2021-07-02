@@ -279,6 +279,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	unsigned int new_dst, clu, dst_clu;
 	struct pio *pio = cmd->resize.pio;
 	struct ploop_index_wb *piwb;
+	struct completion comp;
 	struct md_page *md;
 	bool is_locked;
 	int ret = 0;
@@ -317,10 +318,13 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	}
 
 	ploop_make_md_wb(ploop, md);
+	init_completion(&comp);
+	piwb->comp = &comp;
 	/* Write new index on disk */
 	ploop_submit_index_wb_sync(ploop, piwb);
+	wait_for_completion(&comp);
+
 	ret = blk_status_to_errno(piwb->bi_status);
-	ploop_break_bat_update(ploop, md);
 	if (ret)
 		goto out;
 
@@ -349,6 +353,7 @@ static int ploop_grow_update_header(struct ploop *ploop,
 	struct ploop_pvd_header *hdr;
 	struct ploop_index_wb *piwb;
 	u32 nr_be, offset, clus;
+	struct completion comp;
 	struct md_page *md;
 	u64 sectors;
 	int ret;
@@ -372,7 +377,11 @@ static int ploop_grow_update_header(struct ploop *ploop,
 	kunmap_atomic(hdr);
 
 	ploop_make_md_wb(ploop, md);
+	init_completion(&comp);
+	piwb->comp = &comp;
 	ploop_submit_index_wb_sync(ploop, piwb);
+	wait_for_completion(&comp);
+
 	ret = blk_status_to_errno(piwb->bi_status);
 	if (!ret) {
 		/* Now update our cached page */
@@ -383,7 +392,6 @@ static int ploop_grow_update_header(struct ploop *ploop,
 		kunmap_atomic(hdr);
 	}
 
-	ploop_break_bat_update(ploop, md);
 	return ret;
 }
 
