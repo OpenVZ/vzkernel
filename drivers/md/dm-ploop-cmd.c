@@ -14,6 +14,7 @@
 #include "dm-ploop.h"
 
 #define DM_MSG_PREFIX "ploop"
+#define PLOOP_DEBUG
 
 /*
  * Assign newly allocated memory for BAT array and holes_bitmap
@@ -1117,9 +1118,62 @@ static int ploop_set_noresume(struct ploop *ploop, char *mode)
 	return 0;
 }
 
+static int ploop_check_delta_before_flip(struct ploop *ploop, struct file *file)
+{
+	int ret = 0;
+#ifdef PLOOP_DEBUG
+	u32 i, end, *d_bat_entries, clu, size_in_clus;
+	struct rb_root md_root = RB_ROOT;
+	struct md_page *md, *d_md;
+	struct rb_node *node;
+	bool stop = false;
+
+	ret = ploop_read_delta_metadata(ploop, file, &md_root,
+					&size_in_clus);
+	if (ret) {
+		pr_err("Error reading metadata\n");
+		goto out;
+	}
+
+	/* Points to hdr since md_page[0] also contains hdr. */
+	d_md = md_first_entry(&md_root);
+
+	write_lock_irq(&ploop->bat_rwlock);
+	ploop_for_each_md_page(ploop, md, node) {
+		init_be_iter(size_in_clus, md->id, &i, &end);
+		d_bat_entries = kmap(d_md->page);
+		for (; i <= end; i++) {
+			if (md_page_cluster_is_in_top_delta(ploop, md, i) &&
+			    d_bat_entries[i] != BAT_ENTRY_NONE) {
+				ret = -EEXIST;
+				stop = true;
+				goto unmap;
+			}
+		}
+
+		clu = page_clu_idx_to_bat_clu(md->id, i);
+		if (clu == size_in_clus - 1) {
+			stop = true;
+			goto unmap;
+		}
+unmap:
+		kunmap(d_md->page);
+		if (stop)
+			break;
+		d_md = md_next_entry(d_md);
+	}
+
+	write_unlock_irq(&ploop->bat_rwlock);
+	free_md_pages_tree(&md_root);
+out:
+#endif
+	return ret;
+}
+
 static int ploop_flip_upper_deltas(struct ploop *ploop)
 {
 	struct file *file;
+	int ret;
 
 	if (!ploop->suspended || !ploop->noresume || ploop->maintaince)
 		return -EBUSY;
@@ -1132,6 +1186,10 @@ static int ploop_flip_upper_deltas(struct ploop *ploop)
 	file = ploop->deltas[ploop->nr_deltas - 2].file;
         if (!(file->f_mode & FMODE_WRITE))
 		return -EACCES;
+
+	ret = ploop_check_delta_before_flip(ploop, file);
+	if (ret)
+		return ret;
 
 	return process_flip_upper_deltas(ploop);
 }
