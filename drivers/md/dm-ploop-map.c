@@ -684,12 +684,6 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 			bat_entries[i] = dst_clu[i];
 			md->bat_levels[i] = top_level(ploop);
 		} else {
-			/*
-			 * Despite set_bit() is atomic, we take read_lock()
-			 * to access ploop->bat_entries[] above (really it's
-			 * not need, since new wb to this page can't start
-			 * before this wb is ended).
-			 */
 			ploop_hole_set_bit(i + off, ploop);
 		}
 	}
