@@ -1322,7 +1322,7 @@ err_resource:
 	complete_cow(cow, BLK_STS_RESOURCE);
 }
 
-static void process_delta_wb(struct ploop *ploop, struct list_head *cow_list)
+static void process_delta_cow(struct ploop *ploop, struct list_head *cow_list)
 {
 	struct ploop_cow *cow;
 	struct pio *aux_pio;
@@ -1632,7 +1632,7 @@ void do_ploop_work(struct work_struct *ws)
 	process_resubmit_pios(ploop, &resubmit_pios);
 	process_deferred_pios(ploop, &deferred_pios);
 	process_discard_pios(ploop, &discard_pios);
-	process_delta_wb(ploop, &cow_pios);
+	process_delta_cow(ploop, &cow_pios);
 
 	submit_metadata_writeback(ploop);
 
