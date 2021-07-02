@@ -255,17 +255,19 @@ void dispatch_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_l
 	queue_work(ploop->wq, &ploop->worker);
 }
 
-static bool delay_if_md_busy(struct ploop *ploop, struct ploop_index_wb *piwb,
-		     struct md_page *md, enum piwb_type type, struct pio *pio)
+static bool delay_if_md_busy(struct ploop *ploop, struct md_page *md,
+			     enum piwb_type type, struct pio *pio)
 {
+	struct ploop_index_wb *piwb;
 	unsigned long flags;
 	bool busy = false;
 
 	WARN_ON_ONCE(!list_empty(&pio->list));
 
 	write_lock_irqsave(&ploop->bat_rwlock, flags);
-	if (piwb->md && (piwb->md != md || piwb->type != type)) {
-		list_add_tail(&pio->list, &piwb->md->wait_list);
+	piwb = md->piwb;
+	if (piwb && (piwb->type != type || (md->status & MD_WRITEBACK))) {
+		list_add_tail(&pio->list, &md->wait_list);
 		busy = true;
 	}
 	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
@@ -788,17 +790,23 @@ static void ploop_bat_write_complete(struct ploop_index_wb *piwb,
 }
 
 static int ploop_prepare_bat_update(struct ploop *ploop, struct md_page *md,
-			     struct ploop_index_wb *piwb, enum piwb_type type)
+				    enum piwb_type type)
 {
 	unsigned int i, off, last, *bat_entries;
+	struct ploop_index_wb *piwb;
 	bool is_last_page = true;
 	u32 page_id = md->id;
 	struct page *page;
 	map_index_t *to;
 
+	piwb = kmalloc(sizeof(*piwb), GFP_NOIO);
+	if (!piwb)
+		return -ENOMEM;
+	ploop_index_wb_init(piwb, ploop);
+
 	piwb->bat_page = page = alloc_page(GFP_NOIO);
 	if (!page)
-		return -ENOMEM;
+		goto err;
 
 	bat_entries = kmap_atomic(md->page);
 
@@ -842,6 +850,9 @@ static int ploop_prepare_bat_update(struct ploop *ploop, struct md_page *md,
 
 	piwb->type = type;
 	return 0;
+err:
+	kfree(piwb);
+	return -ENOMEM;
 }
 
 void ploop_break_bat_update(struct ploop *ploop, struct md_page *md)
@@ -856,7 +867,7 @@ void ploop_break_bat_update(struct ploop *ploop, struct md_page *md)
 	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
 
 	put_page(piwb->bat_page);
-	ploop_index_wb_init(piwb, ploop);
+	kfree(piwb);
 }
 
 static void ploop_bat_page_zero_cluster(struct ploop *ploop,
@@ -1256,12 +1267,12 @@ error:
 	complete_cow(cow, BLK_STS_IOERR);
 }
 
-static void submit_cow_index_wb(struct ploop_cow *cow,
-				struct ploop_index_wb *piwb)
+static void submit_cow_index_wb(struct ploop_cow *cow)
 {
 	struct pio *cow_pio = cow->cow_pio;
 	unsigned int clu = cow_pio->clu;
 	struct ploop *ploop = cow->ploop;
+	struct ploop_index_wb *piwb;
 	unsigned int page_id;
 	struct md_page *md;
 	map_index_t *to;
@@ -1270,12 +1281,12 @@ static void submit_cow_index_wb(struct ploop_cow *cow,
 	page_id = bat_clu_to_page_nr(clu);
 	md = md_page_find(ploop, page_id);
 
-	if (delay_if_md_busy(ploop, piwb, md, PIWB_TYPE_ALLOC, cow->aux_pio))
+	if (delay_if_md_busy(ploop, md, PIWB_TYPE_ALLOC, cow->aux_pio))
 		goto out;
 
 	if (!(md->status & MD_DIRTY)) {
 		/* Unlocked, since MD_DIRTY is set and cleared from this work */
-		if (ploop_prepare_bat_update(ploop, md, piwb, PIWB_TYPE_ALLOC) < 0)
+		if (ploop_prepare_bat_update(ploop, md, PIWB_TYPE_ALLOC) < 0)
 			goto err_resource;
 		ploop_md_make_dirty(ploop, md);
 	}
@@ -1300,8 +1311,7 @@ err_resource:
 	complete_cow(cow, BLK_STS_RESOURCE);
 }
 
-static void process_delta_wb(struct ploop *ploop, struct list_head *cow_list,
-			     struct ploop_index_wb *piwb)
+static void process_delta_wb(struct ploop *ploop, struct list_head *cow_list)
 {
 	struct ploop_cow *cow;
 	struct pio *aux_pio;
@@ -1327,7 +1337,7 @@ static void process_delta_wb(struct ploop *ploop, struct list_head *cow_list,
 			 * Stage #2: data is written to top delta.
 			 * Update index.
 			 */
-			submit_cow_index_wb(cow, piwb);
+			submit_cow_index_wb(cow);
 		}
 	}
 }
@@ -1347,24 +1357,24 @@ static void process_delta_wb(struct ploop *ploop, struct list_head *cow_list,
  * synchronously. Keep in mind this in case you make it async.
  */
 static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
-					      struct ploop_index_wb *piwb,
 					      struct md_page *md,
 					      unsigned int clu,
 					      unsigned int *dst_clu,
 					      struct pio *pio)
 {
 	bool bat_update_prepared = false;
+	struct ploop_index_wb *piwb;
 	bool attached = false;
 	unsigned int page_id;
 
 	WARN_ON_ONCE(pio->queue_list_id != PLOOP_LIST_DEFERRED);
-	if (delay_if_md_busy(ploop, piwb, md, PIWB_TYPE_ALLOC, pio))
+	if (delay_if_md_busy(ploop, md, PIWB_TYPE_ALLOC, pio))
 		goto out;
 
 	if (!(md->status & MD_DIRTY)) {
 		 /* Unlocked since MD_DIRTY is set and cleared from this work */
 		page_id = bat_clu_to_page_nr(clu);
-		if (ploop_prepare_bat_update(ploop, md, piwb, PIWB_TYPE_ALLOC) < 0) {
+		if (ploop_prepare_bat_update(ploop, md, PIWB_TYPE_ALLOC) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto error;
 		}
@@ -1393,8 +1403,7 @@ error:
 	return false;
 }
 
-static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
-				    struct ploop_index_wb *piwb)
+static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio)
 {
 	sector_t sector = pio->bi_iter.bi_sector;
 	unsigned int clu, dst_clu;
@@ -1446,8 +1455,7 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio,
 		goto out;
 
 	/* Cluster exists nowhere. Allocate it and setup pio as outrunning */
-	ret = locate_new_cluster_and_attach_pio(ploop, piwb, md, clu,
-						&dst_clu, pio);
+	ret = locate_new_cluster_and_attach_pio(ploop, md, clu, &dst_clu, pio);
 	if (!ret)
 		goto out;
 queue:
@@ -1479,20 +1487,19 @@ void ploop_submit_index_wb_sync(struct ploop *ploop,
 	wait_for_completion(&piwb->comp);
 }
 
-static void process_deferred_pios(struct ploop *ploop, struct list_head *pios,
-				  struct ploop_index_wb *piwb)
+static void process_deferred_pios(struct ploop *ploop, struct list_head *pios)
 {
 	struct pio *pio;
 
 	while ((pio = pio_list_pop(pios)) != NULL)
-		process_one_deferred_bio(ploop, pio, piwb);
+		process_one_deferred_bio(ploop, pio);
 }
 
-static void process_one_discard_pio(struct ploop *ploop, struct pio *pio,
-				    struct ploop_index_wb *piwb)
+static void process_one_discard_pio(struct ploop *ploop, struct pio *pio)
 {
 	unsigned int page_id, clu = pio->clu;
 	bool bat_update_prepared = false;
+	struct ploop_index_wb *piwb;
 	struct md_page *md;
 	map_index_t *to;
 
@@ -1501,12 +1508,12 @@ static void process_one_discard_pio(struct ploop *ploop, struct pio *pio,
 
 	page_id = bat_clu_to_page_nr(clu);
 	md = md_page_find(ploop, page_id);
-	if (delay_if_md_busy(ploop, piwb, md, PIWB_TYPE_DISCARD, pio))
+	if (delay_if_md_busy(ploop, md, PIWB_TYPE_DISCARD, pio))
 		goto out;
 
 	if (!(md->status & MD_DIRTY)) {
 		 /* Unlocked since MD_DIRTY is set and cleared from this work */
-		if (ploop_prepare_bat_update(ploop, md, piwb, PIWB_TYPE_DISCARD) < 0) {
+		if (ploop_prepare_bat_update(ploop, md, PIWB_TYPE_DISCARD) < 0) {
 			pio->bi_status = BLK_STS_RESOURCE;
 			goto err;
 		}
@@ -1538,13 +1545,12 @@ err:
 	pio_endio(pio);
 }
 
-static void process_discard_pios(struct ploop *ploop, struct list_head *pios,
-				 struct ploop_index_wb *piwb)
+static void process_discard_pios(struct ploop *ploop, struct list_head *pios)
 {
 	struct pio *pio;
 
 	while ((pio = pio_list_pop(pios)) != NULL)
-		process_one_discard_pio(ploop, pio, piwb);
+		process_one_discard_pio(ploop, pio);
 }
 
 static void process_resubmit_pios(struct ploop *ploop, struct list_head *pios)
@@ -1585,7 +1591,6 @@ static void submit_metadata_writeback(struct ploop *ploop)
 void do_ploop_work(struct work_struct *ws)
 {
 	struct ploop *ploop = container_of(ws, struct ploop, worker);
-	struct ploop_index_wb piwb;
 	LIST_HEAD(deferred_pios);
 	LIST_HEAD(discard_pios);
 	LIST_HEAD(cow_pios);
@@ -1593,25 +1598,15 @@ void do_ploop_work(struct work_struct *ws)
 
 	current->flags |= PF_IO_THREAD;
 
-	/*
-	 * In piwb we collect inquires of indexes updates, which are
-	 * related to the same page (of PAGE_SIZE), and then we submit
-	 * all of them in batch in ploop_submit_index_wb_sync().
-	 *
-	 * Currenly, it's impossible to submit two bat pages update
-	 * in parallel, since the update uses global ploop->bat_page.
-	 */
-	ploop_index_wb_init(&piwb, ploop);
-
 	spin_lock_irq(&ploop->deferred_lock);
 	list_splice_init(&ploop->pios[PLOOP_LIST_DEFERRED], &deferred_pios);
 	list_splice_init(&ploop->pios[PLOOP_LIST_DISCARD], &discard_pios);
 	list_splice_init(&ploop->pios[PLOOP_LIST_COW], &cow_pios);
 	spin_unlock_irq(&ploop->deferred_lock);
 
-	process_deferred_pios(ploop, &deferred_pios, &piwb);
-	process_discard_pios(ploop, &discard_pios, &piwb);
-	process_delta_wb(ploop, &cow_pios, &piwb);
+	process_deferred_pios(ploop, &deferred_pios);
+	process_discard_pios(ploop, &discard_pios);
+	process_delta_wb(ploop, &cow_pios);
 
 	submit_metadata_writeback(ploop);
 
@@ -1809,19 +1804,19 @@ static void handle_cleanup(struct ploop *ploop, struct pio *pio)
  */
 int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 				 struct md_page **ret_md,
-				 struct ploop_index_wb *piwb,
 				 unsigned int clu,
 				 unsigned int *dst_clu)
 {
 	unsigned int page_id = bat_clu_to_page_nr(clu);
 	enum piwb_type type = PIWB_TYPE_ALLOC;
 	struct md_page *md = md_page_find(ploop, page_id);
+	struct ploop_index_wb *piwb;
 
 	if (dst_clu)
 		type = PIWB_TYPE_RELOC;
 
 	if ((md->status & (MD_DIRTY|MD_WRITEBACK)) ||
-	    ploop_prepare_bat_update(ploop, md, piwb, type))
+	    ploop_prepare_bat_update(ploop, md, type))
 		goto out_eio;
 
 	piwb = md->piwb;
