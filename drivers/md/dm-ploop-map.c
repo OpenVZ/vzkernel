@@ -229,30 +229,40 @@ err:
 	return -ENOMEM;
 }
 
-static void dispatch_pio(struct ploop *ploop, struct pio *pio)
+static void dispatch_pio(struct ploop *ploop, struct pio *pio,
+			 bool *is_data, bool *is_flush)
 {
 	struct list_head *list = &ploop->pios[pio->queue_list_id];
 
 	lockdep_assert_held(&ploop->deferred_lock);
 	WARN_ON_ONCE(pio->queue_list_id >= PLOOP_LIST_COUNT);
 
+	if (pio->queue_list_id == PLOOP_LIST_FLUSH)
+		*is_flush = true;
+	else
+		*is_data = true;
+
 	list_add_tail(&pio->list, list);
 }
 
 void dispatch_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list)
 {
+	bool is_data = false, is_flush = false;
 	unsigned long flags;
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
 	if (pio)
-		dispatch_pio(ploop, pio);
+		dispatch_pio(ploop, pio, &is_data, &is_flush);
 	if (pio_list) {
 		while ((pio = pio_list_pop(pio_list)) != NULL)
-			dispatch_pio(ploop, pio);
+			dispatch_pio(ploop, pio, &is_data, &is_flush);
 	}
 	spin_unlock_irqrestore(&ploop->deferred_lock, flags);
 
-	queue_work(ploop->wq, &ploop->worker);
+	if (is_data)
+		queue_work(ploop->wq, &ploop->worker);
+	if (is_flush)
+		queue_work(ploop->wq, &ploop->fsync_worker);
 }
 
 static bool delay_if_md_busy(struct ploop *ploop, struct md_page *md,
@@ -1482,7 +1492,6 @@ static void md_write_endio(struct pio *pio, void *piwb_ptr, blk_status_t bi_stat
 {
 	struct ploop_index_wb *piwb = piwb_ptr;
 	struct ploop *ploop = piwb->ploop;
-	unsigned long flags;
 	u32 dst_clu;
 
 	dst_clu = POS_TO_CLU(ploop, (u64)piwb->page_id << PAGE_SHIFT);
@@ -1495,10 +1504,8 @@ static void md_write_endio(struct pio *pio, void *piwb_ptr, blk_status_t bi_stat
 		pio->endio_cb = md_fsync_endio;
 		pio->endio_cb_data = piwb;
 
-		spin_lock_irqsave(&ploop->deferred_lock, flags);
-		list_add_tail(&pio->list, &ploop->pios[PLOOP_LIST_FLUSH]);
-		spin_unlock_irqrestore(&ploop->deferred_lock, flags);
-		queue_work(ploop->wq, &ploop->fsync_worker);
+		pio->queue_list_id = PLOOP_LIST_FLUSH;
+		dispatch_pios(ploop, pio, NULL);
 	}
 }
 
