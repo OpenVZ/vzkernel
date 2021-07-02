@@ -844,14 +844,15 @@ static int ploop_prepare_bat_update(struct ploop *ploop, struct md_page *md,
 	return 0;
 }
 
-void ploop_reset_bat_update(struct ploop_index_wb *piwb)
+void ploop_break_bat_update(struct ploop *ploop, struct md_page *md)
 {
-	struct ploop *ploop = piwb->ploop;
+	struct ploop_index_wb *piwb;
 	unsigned long flags;
 
 	write_lock_irqsave(&ploop->bat_rwlock, flags);
-	piwb->md->piwb = NULL;
-	piwb->md = NULL;
+	piwb = md->piwb;
+	md->piwb->md = NULL;
+	md->piwb = NULL;
 	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
 
 	put_page(piwb->bat_page);
@@ -1387,7 +1388,7 @@ out:
 error:
 	/* Uninit piwb */
 	if (bat_update_prepared)
-		ploop_reset_bat_update(piwb);
+		ploop_break_bat_update(ploop, md);
 	pio_endio(pio);
 	return false;
 }
@@ -1533,7 +1534,7 @@ out:
 	return;
 err:
 	if (bat_update_prepared)
-		ploop_reset_bat_update(piwb);
+		ploop_break_bat_update(ploop, md);
 	pio_endio(pio);
 }
 
@@ -1577,7 +1578,7 @@ static void submit_metadata_writeback(struct ploop *ploop)
 		write_unlock_irq(&ploop->bat_rwlock);
 
 		ploop_submit_index_wb_sync(ploop, md->piwb);
-		ploop_reset_bat_update(md->piwb);
+		ploop_break_bat_update(ploop, md);
 	}
 }
 
@@ -1841,7 +1842,7 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 	return 0;
 
 out_reset:
-	ploop_reset_bat_update(piwb);
+	ploop_break_bat_update(ploop, md);
 out_eio:
 	return -EIO;
 }
