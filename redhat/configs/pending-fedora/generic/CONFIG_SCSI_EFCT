@@ -1,0 +1,19 @@
+# CONFIG_SCSI_EFCT:
+# 
+# The efct driver provides enhanced SCSI Target Mode
+# support for specific SLI-4 adapters.
+# 
+# Symbol: SCSI_EFCT [=n]
+# Type  : tristate
+# Defined at drivers/scsi/elx/Kconfig:1
+#   Prompt: Emulex Fibre Channel Target
+#   Depends on: SCSI_LOWLEVEL [=y] && PCI [=y] && SCSI [=y] && TARGET_CORE [=m] && SCSI_FC_ATTRS [=m]
+#   Location:
+#     -> Device Drivers
+#       -> SCSI device support
+#         -> SCSI low-level drivers (SCSI_LOWLEVEL [=y])
+# Selects: CRC_T10DIF [=y]
+# 
+# 
+# 
+# CONFIG_SCSI_EFCT is not set

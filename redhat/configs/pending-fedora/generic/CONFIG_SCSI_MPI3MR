@@ -1,0 +1,17 @@
+# CONFIG_SCSI_MPI3MR:
+# 
+# MPI3 based Storage & RAID Controllers Driver.
+# 
+# Symbol: SCSI_MPI3MR [=n]
+# Type  : tristate
+# Defined at drivers/scsi/mpi3mr/Kconfig:3
+#   Prompt: Broadcom MPI3 Storage Controller Device Driver
+#   Depends on: SCSI_LOWLEVEL [=y] && PCI [=y] && SCSI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> SCSI device support
+#         -> SCSI low-level drivers (SCSI_LOWLEVEL [=y])
+# 
+# 
+# 
+# CONFIG_SCSI_MPI3MR is not set

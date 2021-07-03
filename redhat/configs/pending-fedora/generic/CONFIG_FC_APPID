@@ -1,0 +1,22 @@
+# CONFIG_FC_APPID:
+# 
+# If you say Y here, it enables the support to track
+# FC I/O traffic over fabric. It enables the Fabric and the
+# storage targets to identify, monitor, and handle FC traffic
+# based on VM tags by inserting application specific
+# identification into the FC frame.
+# 
+# Symbol: FC_APPID [=y]
+# Type  : bool
+# Defined at drivers/scsi/Kconfig:238
+#   Prompt: Enable support to track FC I/O Traffic
+#   Depends on: BLOCK [=y] && BLK_CGROUP [=y] && SCSI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> SCSI device support
+#         -> SCSI Transports
+# Selects: BLK_CGROUP_FC_APPID [=y]
+# 
+# 
+# 
+CONFIG_FC_APPID=y

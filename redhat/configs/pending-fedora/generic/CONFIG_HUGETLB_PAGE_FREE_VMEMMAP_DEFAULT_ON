@@ -1,0 +1,19 @@
+# CONFIG_HUGETLB_PAGE_FREE_VMEMMAP_DEFAULT_ON:
+# 
+# When using HUGETLB_PAGE_FREE_VMEMMAP, the freeing unused vmemmap
+# pages associated with each HugeTLB page is default off. Say Y here
+# to enable freeing vmemmap pages of HugeTLB by default. It can then
+# be disabled on the command line via hugetlb_free_vmemmap=off.
+# 
+# Symbol: HUGETLB_PAGE_FREE_VMEMMAP_DEFAULT_ON [=n]
+# Type  : bool
+# Defined at fs/Kconfig:248
+#   Prompt: Default freeing vmemmap pages of HugeTLB to on
+#   Depends on: HUGETLB_PAGE_FREE_VMEMMAP [=y]
+#   Location:
+#     -> File systems
+#       -> Pseudo filesystems
+# 
+# 
+# 
+# CONFIG_HUGETLB_PAGE_FREE_VMEMMAP_DEFAULT_ON is not set
