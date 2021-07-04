@@ -1,0 +1,47 @@
+# CONFIG_OSNOISE_TRACER:
+# 
+# In the context of high-performance computing (HPC), the Operating
+# System Noise (osnoise) refers to the interference experienced by an
+# application due to activities inside the operating system. In the
+# context of Linux, NMIs, IRQs, SoftIRQs, and any other system thread
+# can cause noise to the system. Moreover, hardware-related jobs can
+# also cause noise, for example, via SMIs.
+# 
+# The osnoise tracer leverages the hwlat_detector by running a similar
+# loop with preemption, SoftIRQs and IRQs enabled, thus allowing all
+# the sources of osnoise during its execution. The osnoise tracer takes
+# note of the entry and exit point of any source of interferences,
+# increasing a per-cpu interference counter. It saves an interference
+# counter for each source of interference. The interference counter for
+# NMI, IRQs, SoftIRQs, and threads is increased anytime the tool
+# observes these interferences' entry events. When a noise happens
+# without any interference from the operating system level, the
+# hardware noise counter increases, pointing to a hardware-related
+# noise. In this way, osnoise can account for any source of
+# interference. At the end of the period, the osnoise tracer prints
+# the sum of all noise, the max single noise, the percentage of CPU
+# available for the thread, and the counters for the noise sources.
+# 
+# In addition to the tracer, a set of tracepoints were added to
+# facilitate the identification of the osnoise source.
+# 
+# The output will appear in the trace and trace_pipe files.
+# 
+# To enable this tracer, echo in "osnoise" into the current_tracer
+# file.
+# 
+# Symbol: OSNOISE_TRACER [=n]
+# Type  : bool
+# Defined at kernel/trace/Kconfig:359
+#   Prompt: OS Noise tracer
+#   Depends on: TRACING_SUPPORT [=y] && FTRACE [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> Tracers (FTRACE [=y])
+# Selects: GENERIC_TRACER [=y]
+# Selected by [n]:
+#   - TIMERLAT_TRACER [=n] && TRACING_SUPPORT [=y] && FTRACE [=y]
+# 
+# 
+# 
+# CONFIG_OSNOISE_TRACER is not set
