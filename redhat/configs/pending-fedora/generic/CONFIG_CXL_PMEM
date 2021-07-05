@@ -1,0 +1,22 @@
+# CONFIG_CXL_PMEM:
+# 
+# In addition to typical memory resources a platform may also advertise
+# support for persistent memory attached via CXL. This support is
+# managed via a bridge driver from CXL to the LIBNVDIMM system
+# subsystem. Say 'y/m' to enable support for enumerating and
+# provisioning the persistent memory capacity of CXL memory expanders.
+# 
+# If unsure say 'm'.
+# Symbol: CXL_PMEM [=m]
+# Type  : tristate
+# Defined at drivers/cxl/Kconfig:66
+#   Prompt: CXL PMEM: Persistent Memory Support
+#   Depends on: CXL_BUS [=m] && LIBNVDIMM [=m]
+#   Location:
+#     -> Device Drivers
+#       -> PCI support (PCI [=y])
+#         -> CXL (Compute Express Link) Devices Support (CXL_BUS [=m])
+# 
+# 
+# 
+CONFIG_CXL_PMEM=m

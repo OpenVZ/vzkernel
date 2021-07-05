@@ -1,0 +1,18 @@
+# CONFIG_BLK_CGROUP_FC_APPID:
+# 
+# Enabling this option enables the support to track FC I/O traffic across
+# cgroup applications. It enables the Fabric and the storage targets to
+# identify, monitor, and handle FC traffic based on VM tags by inserting
+# application specific identification into the FC frame.
+# 
+# Symbol: BLK_CGROUP_FC_APPID [=n]
+# Type  : bool
+# Defined at block/Kconfig:154
+#   Prompt: Enable support to track FC I/O Traffic across cgroup applications
+#   Depends on: BLOCK [=y] && BLK_CGROUP [=y] && NVME_FC [=m]
+#   Location:
+#     -> Enable the block layer (BLOCK [=y])
+# 
+# 
+# 
+# CONFIG_BLK_CGROUP_FC_APPID is not set
