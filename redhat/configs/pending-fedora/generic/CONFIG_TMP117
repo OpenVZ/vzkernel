@@ -1,0 +1,21 @@
+# CONFIG_TMP117:
+# 
+# If you say yes here you get support for the Texas Instruments
+# TMP117 Digital temperature sensor with integrated NV memory.
+# 
+# This driver can also be built as a module. If so, the module will
+# be called tmp117.
+# 
+# Symbol: TMP117 [=n]
+# Type  : tristate
+# Defined at drivers/iio/temperature/Kconfig:99
+#   Prompt: TMP117 Digital temperature sensor with integrated NV memory
+#   Depends on: IIO [=m] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Temperature sensors
+# 
+# 
+# 
+# CONFIG_TMP117 is not set

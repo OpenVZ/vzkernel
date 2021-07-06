@@ -1,0 +1,20 @@
+# CONFIG_FB_SSD1307:
+# 
+# This driver implements support for the Solomon SSD1307
+# OLED controller over I2C.
+# 
+# Symbol: FB_SSD1307 [=n]
+# Type  : tristate
+# Defined at drivers/video/fbdev/Kconfig:2209
+#   Prompt: Solomon SSD1307 framebuffer support
+#   Depends on: HAS_IOMEM [=y] && FB [=y] && I2C [=y] && (GPIOLIB [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Graphics support
+#         -> Frame buffer Devices
+#           -> Support for frame buffer devices (FB [=y])
+# Selects: FB_SYS_FOPS [=y] && FB_SYS_FILLRECT [=y] && FB_SYS_COPYAREA [=y] && FB_SYS_IMAGEBLIT [=y] && FB_DEFERRED_IO [=y] && PWM [=y] && FB_BACKLIGHT [=n]
+# 
+# 
+# 
+# CONFIG_FB_SSD1307 is not set

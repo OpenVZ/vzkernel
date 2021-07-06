@@ -1,0 +1,18 @@
+# CONFIG_PHY_ROCKCHIP_INNO_CSIDPHY:
+# 
+# Enable this to support the Rockchip MIPI CSI PHY with
+# Innosilicon IP block.
+# 
+# Symbol: PHY_ROCKCHIP_INNO_CSIDPHY [=n]
+# Type  : tristate
+# Defined at drivers/phy/rockchip/Kconfig:51
+#   Prompt: Rockchip Innosilicon MIPI CSI PHY driver
+#   Depends on: (ARCH_ROCKCHIP [=y] || COMPILE_TEST [=n]) && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> PHY Subsystem
+# Selects: GENERIC_PHY [=y] && GENERIC_PHY_MIPI_DPHY [=y]
+# 
+# 
+# 
+# CONFIG_PHY_ROCKCHIP_INNO_CSIDPHY is not set

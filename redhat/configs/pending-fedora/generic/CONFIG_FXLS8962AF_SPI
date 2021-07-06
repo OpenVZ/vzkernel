@@ -1,0 +1,22 @@
+# CONFIG_FXLS8962AF_SPI:
+# 
+# Say yes here to build support for the NXP 3-axis automotive
+# accelerometer FXLS8962AF/FXLS8964AF with SPI support.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called fxls8962af_spi.
+# 
+# Symbol: FXLS8962AF_SPI [=n]
+# Type  : tristate
+# Defined at drivers/iio/accel/Kconfig:247
+#   Prompt: NXP FXLS8962AF/FXLS8964AF Accelerometer SPI Driver
+#   Depends on: IIO [=m] && SPI [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Accelerometers
+# Selects: FXLS8962AF [=n] && REGMAP_SPI [=m]
+# 
+# 
+# 
+# CONFIG_FXLS8962AF_SPI is not set

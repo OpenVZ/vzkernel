@@ -1,0 +1,22 @@
+# CONFIG_IIO_ST_LSM9DS0:
+# 
+# Say yes here to build support for STMicroelectronics LSM9DS0 IMU
+# sensor. Supported devices: accelerometer/magnetometer of lsm9ds0.
+# 
+# To compile this driver as a module, choose M here: the module
+# will be called st_lsm9ds0.
+# 
+# Symbol: IIO_ST_LSM9DS0 [=n]
+# Type  : tristate
+# Defined at drivers/iio/imu/st_lsm9ds0/Kconfig:3
+#   Prompt: STMicroelectronics LSM9DS0 IMU driver
+#   Depends on: IIO [=m] && (I2C [=y] || SPI_MASTER [=y]) && SYSFS [=y] && !SENSORS_LIS3_I2C [=m] && !SENSORS_LIS3_SPI [=n]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Inertial measurement units
+# Selects: IIO_ST_LSM9DS0_I2C [=n] && IIO_ST_LSM9DS0_SPI [=n] && IIO_ST_ACCEL_3AXIS [=m] && IIO_ST_MAGN_3AXIS [=m]
+# 
+# 
+# 
+# CONFIG_IIO_ST_LSM9DS0 is not set

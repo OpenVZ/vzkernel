@@ -1,0 +1,19 @@
+# CONFIG_MTD_NAND_PL35X:
+# 
+# Enables support for PrimeCell SMC PL351 and PL353 NAND
+# controller found on Zynq7000.
+# 
+# Symbol: MTD_NAND_PL35X [=n]
+# Type  : tristate
+# Defined at drivers/mtd/nand/raw/Kconfig:456
+#   Prompt: ARM PL35X NAND controller
+#   Depends on: MTD [=m] && MTD_RAW_NAND [=m] && (OF [=y] || COMPILE_TEST [=n]) && PL353_SMC [=m]
+#   Location:
+#     -> Device Drivers
+#       -> Memory Technology Device (MTD) support (MTD [=m])
+#         -> NAND
+#           -> Raw/Parallel NAND Device Support (MTD_RAW_NAND [=m])
+# 
+# 
+# 
+# CONFIG_MTD_NAND_PL35X is not set

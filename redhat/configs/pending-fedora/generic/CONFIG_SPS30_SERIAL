@@ -1,0 +1,22 @@
+# CONFIG_SPS30_SERIAL:
+# 
+# Say Y here to build support for the Sensirion SPS30 serial interface
+# driver.
+# 
+# To compile this driver as a module, choose M here: the module will
+# be called sps30_serial.
+# 
+# Symbol: SPS30_SERIAL [=n]
+# Type  : tristate
+# Defined at drivers/iio/chemical/Kconfig:151
+#   Prompt: SPS30 particulate matter sensor serial driver
+#   Depends on: IIO [=m] && SERIAL_DEV_BUS [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Chemical Sensors
+# Selects: SPS30 [=n]
+# 
+# 
+# 
+# CONFIG_SPS30_SERIAL is not set
