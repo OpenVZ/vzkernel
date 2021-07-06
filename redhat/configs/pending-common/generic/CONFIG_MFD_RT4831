@@ -1,0 +1,19 @@
+# CONFIG_MFD_RT4831:
+# 
+# This enables support for the Richtek RT4831 that includes 4 channel
+# WLED driving and Display Bias Voltage. It's commonly used to provide
+# power to the LCD display and LCD backlight.
+# 
+# Symbol: MFD_RT4831 [=n]
+# Type  : tristate
+# Defined at drivers/mfd/Kconfig:1081
+#   Prompt: Richtek RT4831 four channel WLED and Display Bias Voltage
+#   Depends on: HAS_IOMEM [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Multifunction device drivers
+# Selects: MFD_CORE [=y] && REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_MFD_RT4831 is not set

@@ -1,0 +1,19 @@
+# CONFIG_PHY_HI3670_USB:
+# 
+# Enable this to support the HISILICON HI3670 USB PHY.
+# 
+# To compile this driver as a module, choose M here.
+# 
+# Symbol: PHY_HI3670_USB [=n]
+# Type  : tristate
+# Defined at drivers/phy/hisilicon/Kconfig:26
+#   Prompt: hi3670 USB PHY support
+#   Depends on: ARCH_HISI [=y] && ARM64 [=y] || COMPILE_TEST [=n]
+#   Location:
+#     -> Device Drivers
+#       -> PHY Subsystem
+# Selects: GENERIC_PHY [=y] && MFD_SYSCON [=y]
+# 
+# 
+# 
+# CONFIG_PHY_HI3670_USB is not set

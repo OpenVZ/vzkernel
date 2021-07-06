@@ -1,0 +1,17 @@
+# CONFIG_MTD_MCHP48L640:
+# 
+# This enables access to Microchip 48L640 EERAM chips, using SPI.
+# 
+# Symbol: MTD_MCHP48L640 [=n]
+# Type  : tristate
+# Defined at drivers/mtd/devices/Kconfig:92
+#   Prompt: Microchip 48L640 EERAM
+#   Depends on: MTD [=m] && HAS_IOMEM [=y] && SPI_MASTER [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Memory Technology Device (MTD) support (MTD [=m])
+#         -> Self-contained MTD device drivers
+# 
+# 
+# 
+# CONFIG_MTD_MCHP48L640 is not set

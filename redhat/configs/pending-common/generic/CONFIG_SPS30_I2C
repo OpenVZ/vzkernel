@@ -1,0 +1,22 @@
+# CONFIG_SPS30_I2C:
+# 
+# Say Y here to build support for the Sensirion SPS30 I2C interface
+# driver.
+# 
+# To compile this driver as a module, choose M here: the module will
+# be called sps30_i2c.
+# 
+# Symbol: SPS30_I2C [=n]
+# Type  : tristate
+# Defined at drivers/iio/chemical/Kconfig:139
+#   Prompt: SPS30 particulate matter sensor I2C driver
+#   Depends on: IIO [=m] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Industrial I/O support (IIO [=m])
+#         -> Chemical Sensors
+# Selects: SPS30 [=n] && CRC8 [=m]
+# 
+# 
+# 
+# CONFIG_SPS30_I2C is not set
