@@ -28,7 +28,7 @@ struct pb_bio {
 struct push_backup {
 	struct dm_target *ti;
 	struct dm_dev *origin_dev;
-	u64 cluster_size;
+	u64 clu_size;
 	u64 nr_clus;
 
 	u8 uuid[33];
@@ -74,8 +74,8 @@ static int pb_bio_cluster(struct push_backup *pb, struct bio *bio, u64 *clu)
 	loff_t off = to_bytes(bio->bi_iter.bi_sector);
 	u64 start_clu, end_clu;
 
-	start_clu = off / pb->cluster_size;
-	end_clu = (off + bio->bi_iter.bi_size - 1) / pb->cluster_size;
+	start_clu = off / pb->clu_size;
+	end_clu = (off + bio->bi_iter.bi_size - 1) / pb->clu_size;
 
 	if (unlikely(start_clu != end_clu))
 		return -EIO;
@@ -647,7 +647,7 @@ static int pb_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "could not parse cluster size";
 		goto err;
 	}
-	pb->cluster_size = to_bytes(sectors);
+	pb->clu_size = to_bytes(sectors);
 	pb->nr_clus = DIV_ROUND_UP(ti->len, sectors);
 	/*
 	 * TODO: we may avoid splitting bio by cluster size.
@@ -722,7 +722,7 @@ static void pb_status(struct dm_target *ti, status_type_t type,
 		status = "active";
 	else if (pb->ppb_map)
 		status = "expired";
-	DMEMIT("%s %llu %llu %s", pb->origin_dev->name, to_sector(pb->cluster_size),
+	DMEMIT("%s %llu %llu %s", pb->origin_dev->name, to_sector(pb->clu_size),
 				  pb->timeout_in_jiffies / HZ, status);
 	spin_unlock_irq(&pb->lock);
 }
