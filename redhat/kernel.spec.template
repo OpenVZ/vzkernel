@@ -556,7 +556,7 @@ BuildRequires: net-tools, hostname, bc, elfutils-devel
 BuildRequires: dwarves
 BuildRequires: python3-devel
 BuildRequires: gcc-plugin-devel
-%ifnarch %{nobuildarches}
+%ifnarch %{nobuildarches} noarch
 BuildRequires: bpftool
 %endif
 %if %{with_headers}
