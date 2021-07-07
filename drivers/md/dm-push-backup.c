@@ -532,8 +532,12 @@ static int pb_message(struct dm_target *ti, unsigned int argc, char **argv,
 		down_write(&pb->ctl_rwsem);
 
 	if (!strcmp(argv[0], "push_backup_start")) {
-		if (argc != 3 || kstrtou64(argv[1], 10, &val) < 0 ||
-				 kstrtou64(argv[2], 10, &val2) < 0)
+		if (argc < 2 || argc > 3)
+			goto unlock;
+		if (kstrtou64(argv[1], 10, &val) < 0)
+			goto unlock;
+		val2 = 0;
+		if (argc == 3 && kstrtou64(argv[2], 10, &val2) < 0)
 			goto unlock;
 		ret = push_backup_start(pb, val, (void *)val2);
 	} else if (!strcmp(argv[0], "push_backup_stop")) {
