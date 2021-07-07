@@ -31,7 +31,6 @@ struct push_backup {
 	u64 clu_size;
 	u64 nr_clus;
 
-	u8 uuid[33];
 	bool alive;
 	void *ppb_map;
 	u64 ppb_map_bits;
@@ -292,22 +291,19 @@ static int pb_map(struct dm_target *ti, struct bio *bio)
 
 static bool msg_wants_down_read(const char *cmd)
 {
-	if (!strcmp(cmd, "push_backup_get_uuid") ||
-	    !strcmp(cmd, "push_backup_read") ||
+	if (!strcmp(cmd, "push_backup_read") ||
 	    !strcmp(cmd, "push_backup_write"))
 		return true;
 
 	return false;
 }
 
-static int setup_pb(struct push_backup *pb, char *uuid,
-		    void __user *mask, int timeout)
+static int setup_pb(struct push_backup *pb, void __user *mask, int timeout)
 {
 	u64 i, map_bits, clus = pb->nr_clus;
 	size_t size;
 	void *map;
 
-	snprintf(pb->uuid, sizeof(pb->uuid), "%s", uuid);
 	pb->deadline_jiffies = S64_MAX;
 	pb->timeout_in_jiffies = timeout * HZ;
 
@@ -342,11 +338,9 @@ err:
 	return -EFAULT;
 }
 
-static int push_backup_start(struct push_backup *pb, char *uuid,
+static int push_backup_start(struct push_backup *pb,
 			     void __user *mask, u64 timeout)
 {
-	char *p = uuid;
-
 	if (pb->alive)
 		return -EEXIST;
 	if (timeout == 0 || timeout >= 60UL * 60 * 5)
@@ -358,28 +352,16 @@ static int push_backup_start(struct push_backup *pb, char *uuid,
 	 */
 	if (!dm_suspended(pb->ti))
 		return -EBUSY;
-	/* Check UUID */
-	while (*p) {
-		if (!isxdigit(*p))
-			return -EINVAL;
-		p++;
-	}
-	if (p != uuid + sizeof(pb->uuid) - 1)
-		return -EINVAL;
-
-	return setup_pb(pb, uuid, mask, timeout);
+	return setup_pb(pb, mask, timeout);
 }
 
-static int push_backup_stop(struct push_backup *pb, char *uuid,
+static int push_backup_stop(struct push_backup *pb,
 			    char *result, unsigned int maxlen)
 {
 	void *map = NULL;
 
         if (!pb->ppb_map)
                 return -EBADF;
-        if (strcmp(pb->uuid, uuid))
-                return -EINVAL;
-
 	cleanup_backup(pb);
 
 	/* Wait postpone_if_required_for_backup() starts timer */
@@ -395,20 +377,8 @@ static int push_backup_stop(struct push_backup *pb, char *uuid,
 	return 0;
 }
 
-static int push_backup_get_uuid(struct push_backup *pb, char *result,
-				unsigned int maxlen)
-{
-	unsigned int sz = 0;
-
-	if (pb->ppb_map)
-		DMEMIT("%s", pb->uuid);
-	else
-		result[0] = '\0';
-	return 1;
-}
-
-static int push_backup_read(struct push_backup *pb, char *uuid,
-			  char *result, unsigned int maxlen)
+static int push_backup_read(struct push_backup *pb,
+			    char *result, unsigned int maxlen)
 {
 	unsigned int left, right, sz = 0;
 	struct pb_bio *pbio, *orig_pbio;
@@ -417,8 +387,6 @@ static int push_backup_read(struct push_backup *pb, char *uuid,
 
 	if (!pb)
 		return -EBADF;
-	if (strcmp(uuid, pb->uuid))
-		return -EINVAL;
 	if (!pb->ppb_map)
 		return -ESTALE;
 again:
@@ -465,7 +433,7 @@ unlock:
 	return ret;
 }
 
-static int push_backup_write(struct push_backup *pb, char *uuid,
+static int push_backup_write(struct push_backup *pb,
 			     unsigned int clu, unsigned int nr)
 {
 	struct bio_list bio_list = BIO_EMPTY_LIST;
@@ -475,8 +443,6 @@ static int push_backup_write(struct push_backup *pb, char *uuid,
 
 	if (!pb)
 		return -EBADF;
-	if (strcmp(uuid, pb->uuid) || !nr)
-		return -EINVAL;
 	if (clu >= nr_clus || nr > nr_clus - clu)
 		return -E2BIG;
 	if (!pb->ppb_map)
@@ -563,26 +529,22 @@ static int pb_message(struct dm_target *ti, unsigned int argc, char **argv,
 		down_write(&pb->ctl_rwsem);
 
 	if (!strcmp(argv[0], "push_backup_start")) {
-		if (argc != 4 || kstrtou64(argv[2], 10, &val) < 0 ||
-				 kstrtou64(argv[3], 10, &val2) < 0)
+		if (argc != 3 || kstrtou64(argv[1], 10, &val) < 0 ||
+				 kstrtou64(argv[2], 10, &val2) < 0)
 			goto unlock;
-		ret = push_backup_start(pb, argv[1], (void *)val, val2);
+		ret = push_backup_start(pb, (void *)val, val2);
 	} else if (!strcmp(argv[0], "push_backup_stop")) {
-		if (argc != 2)
-			goto unlock;
-		ret = push_backup_stop(pb, argv[1], result, maxlen);
-	} else if (!strcmp(argv[0], "push_backup_get_uuid")) {
 		if (argc != 1)
 			goto unlock;
-		ret = push_backup_get_uuid(pb, result, maxlen);
+		ret = push_backup_stop(pb, result, maxlen);
 	} else if (!strcmp(argv[0], "push_backup_read")) {
-		if (argc != 2)
+		if (argc != 1)
 			goto unlock;
-		ret = push_backup_read(pb, argv[1], result, maxlen);
+		ret = push_backup_read(pb, result, maxlen);
 	} else if (!strcmp(argv[0], "push_backup_write")) {
-		if (argc != 3 || sscanf(argv[2], "%llu:%llu", &val, &val2) != 2)
+		if (argc != 2 || sscanf(argv[1], "%llu:%llu", &val, &val2) != 2)
 			goto unlock;
-		ret = push_backup_write(pb, argv[1], val, val2);
+		ret = push_backup_write(pb, val, val2);
 	} else if (!strcmp(argv[0], "push_backup_statistics")){
 		ret = push_backup_statistics(pb, result, maxlen);
 	} else {
