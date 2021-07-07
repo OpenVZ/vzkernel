@@ -32,6 +32,7 @@ struct push_backup {
 	u64 nr_clus;
 
 	bool alive;
+	bool suspended;
 	void *ppb_map;
 	u64 ppb_map_bits;
 
@@ -350,7 +351,7 @@ static int push_backup_start(struct push_backup *pb,
 	 * But this means userspace collects wrong backup. Warn it here.
 	 * Since the device is suspended, we do not care about inflight bios.
 	 */
-	if (!dm_suspended(pb->ti))
+	if (!pb->suspended)
 		return -EBUSY;
 	return setup_pb(pb, mask, timeout);
 }
@@ -591,6 +592,7 @@ static int pb_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		return -ENOMEM;
 	}
 
+	pb->suspended = true;
 	spin_lock_init(&pb->lock);
 	init_rwsem(&pb->ctl_rwsem);
 	bio_list_init(&pb->deferred_bios);
@@ -644,7 +646,6 @@ static int pb_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->num_discard_bios = 1;
 	ti->discards_supported = true;
 	return 0;
-
 err:
 	pb_destroy(pb);
 	return ret;
@@ -689,7 +690,22 @@ static void pb_status(struct dm_target *ti, status_type_t type,
 	spin_unlock_irq(&pb->lock);
 }
 
-/*----------------------------------------------------------------*/
+static void pb_set_suspended(struct dm_target *ti, bool suspended)
+{
+	struct push_backup *pb = ti->private;
+
+	down_write(&pb->ctl_rwsem);
+	pb->suspended = suspended;
+	up_write(&pb->ctl_rwsem);
+}
+static void pb_postsuspend(struct dm_target *ti)
+{
+        pb_set_suspended(ti, true);
+}
+static void pb_resume(struct dm_target *ti)
+{
+        pb_set_suspended(ti, false);
+}
 
 static struct target_type pb_target = {
 	.name = "push_backup",
@@ -701,6 +717,8 @@ static struct target_type pb_target = {
 	.map = pb_map,
 	.message = pb_message,
 	.iterate_devices = pb_iterate_devices,
+	.postsuspend = pb_postsuspend,
+	.resume = pb_resume,
 	.status = pb_status,
 };
 
