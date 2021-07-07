@@ -339,8 +339,8 @@ err:
 	return -EFAULT;
 }
 
-static int push_backup_start(struct push_backup *pb,
-			     void __user *mask, u64 timeout)
+static int push_backup_start(struct push_backup *pb, u64 timeout,
+			     void __user *mask)
 {
 	if (pb->alive)
 		return -EEXIST;
@@ -533,7 +533,7 @@ static int pb_message(struct dm_target *ti, unsigned int argc, char **argv,
 		if (argc != 3 || kstrtou64(argv[1], 10, &val) < 0 ||
 				 kstrtou64(argv[2], 10, &val2) < 0)
 			goto unlock;
-		ret = push_backup_start(pb, (void *)val, val2);
+		ret = push_backup_start(pb, val, (void *)val2);
 	} else if (!strcmp(argv[0], "push_backup_stop")) {
 		if (argc != 1)
 			goto unlock;
