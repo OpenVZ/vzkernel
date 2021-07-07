@@ -49,20 +49,20 @@ def load_symvers(symvers, filename):
         symvers[symbol] = in_line[0:-1]
 
 
-def load_whitelist(whitelist, order, filename):
+def load_stablelist(stablelist, order, filename):
     if os.path.isfile(filename):
-        load_whitelist_file(whitelist, order, filename)
+        load_stablelist_file(stablelist, order, filename)
     else:
-        load_whitelist_dir(whitelist, order, filename)
+        load_stablelist_dir(stablelist, order, filename)
 
 
-def load_whitelist_file(whitelist, order, filename):
-    """Load a reference whitelist file."""
+def load_stablelist_file(stablelist, order, filename):
+    """Load a reference stablelist file."""
 
-    whitelist_file = open(filename, "r")
+    stablelist_file = open(filename, "r")
 
     while true:
-        in_line = whitelist_file.readline()
+        in_line = stablelist_file.readline()
         if in_line == "":
             break
         if in_line == "\n":
@@ -72,14 +72,14 @@ def load_whitelist_file(whitelist, order, filename):
             continue
         symbol = in_line[1:-1]
 
-        whitelist[symbol] = []
+        stablelist[symbol] = []
         order.append(symbol)
 
     order.sort()
 
 
-def load_whitelist_dir(whitelist, order, dirname):
-    """Load a reference whitelist directory."""
+def load_stablelist_dir(stablelist, order, dirname):
+    """Load a reference stablelist directory."""
 
     for symbol in os.listdir(dirname):
         kabi_file = open(dirname + "/" + symbol, "r")
@@ -92,14 +92,14 @@ def load_whitelist_dir(whitelist, order, dirname):
         if re.match("#[0-9]+-[0-9]+", line[0]):
             print("Symbol {} is currently removed, ignoring".format(symbol))
             continue
-        whitelist[symbol] = line
+        stablelist[symbol] = line
         order.append(symbol)
 
     order.sort()
 
 
 def make_kabi_file(filename, symvers, order):
-    """Munge together whitelist and Module.symvers file."""
+    """Munge together stablelist and Module.symvers file."""
 
     if os.path.isfile(filename):
         print("{} already exists".format(filename))
@@ -114,16 +114,16 @@ def make_kabi_file(filename, symvers, order):
     kabi_file.close()
 
 
-def make_kabi_dir(dirname, symvers, whitelist):
-    """Munge together whitelist and Module.symvers file."""
+def make_kabi_dir(dirname, symvers, stablelist):
+    """Munge together stablelist and Module.symvers file."""
 
     current_dir = os.getcwd()
     os.chdir(dirname)
 
-    for symbol in whitelist:
+    for symbol in stablelist:
         if symbol in symvers:
             kabi_file = open(symbol, "w")
-            kabi_file.write(whitelist[symbol][0])
+            kabi_file.write(stablelist[symbol][0])
             kabi_file.write(symvers[symbol] + "\n")
             kabi_file.close()
 
@@ -132,9 +132,9 @@ def make_kabi_dir(dirname, symvers, whitelist):
 
 def usage():
     print("""make-kabi: process Module.symvers into reference Module.kabi output file/directory using
-           the kabi whitelist provided as a set of symbols to filer on.
+           the kabi stablelist provided as a set of symbols to filer on.
 
-    make-kabi [ -k Module.kabi or -d (kabi-module dir) ] [ -s Module.symvers ] [ -w kabi_whitelist ]
+    make-kabi [ -k Module.kabi or -d (kabi-module dir) ] [ -s Module.symvers ] [ -w kabi_stablelist ]
 
     examples:
         add checksums to files into kabi-module/kabi_x86_64/
@@ -146,7 +146,7 @@ def usage():
 
 if __name__ == "__main__":
 
-    whitelist_source = ""
+    stablelist_source = ""
     symvers_file = ""
     kabi_output = ""
     kabi_file = true
@@ -165,19 +165,19 @@ if __name__ == "__main__":
         if o == "-d":
             kabi_file = false
         if o == "-w":
-            whitelist_source = v
+            stablelist_source = v
 
-    if (whitelist_source == "") or (symvers_file == "") or (kabi_output == "" and kabi_file):
+    if (stablelist_source == "") or (symvers_file == "") or (kabi_output == "" and kabi_file):
         usage()
         sys.exit(1)
 
     symvers = {}
-    whitelist = {}
-    whitelist_order = []
+    stablelist = {}
+    stablelist_order = []
 
     load_symvers(symvers, symvers_file)
-    load_whitelist(whitelist, whitelist_order, whitelist_source)
+    load_stablelist(stablelist, stablelist_order, stablelist_source)
     if kabi_file:
-        make_kabi_file(kabi_output, symvers, whitelist_order)
+        make_kabi_file(kabi_output, symvers, stablelist_order)
     else:
-        make_kabi_dir(whitelist_source, symvers, whitelist)
+        make_kabi_dir(stablelist_source, symvers, stablelist)

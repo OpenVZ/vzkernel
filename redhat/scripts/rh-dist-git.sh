@@ -6,7 +6,7 @@
 # $3: alternate tmp directory (if you have faster storage)
 # $4: alternate dist-git server
 # $5: kernel source tarball
-# $6: kabi whitelists tarball
+# $6: kabi stablelists tarball
 # $7: dwarf-bases kabi tarball
 # $8: zstream build
 # $9: package name
@@ -63,10 +63,10 @@ echo "Uploading new tarballs"
 sed -i "/linux-.*.tar.xz/d" "$tmpdir/$package_name"/{sources,.gitignore};
 upload_list="$rhdistgit_tarball"
 
-# Only upload kernel-abi-whitelists tarball if its release counter changed.
+# Only upload kernel-abi-stablelists tarball if its release counter changed.
 if [ "$rhdistgit_zstream_flag" == "no" ]; then
 	if ! grep -q "$rhdistgit_kabi_tarball" "$tmpdir/$package_name"/sources; then
-		sed -i "/kernel-abi-whitelists.*.tar.bz2/d" "$tmpdir/$package_name"/{sources,.gitignore};
+		sed -i "/kernel-abi-stablelists.*.tar.bz2/d" "$tmpdir/$package_name"/{sources,.gitignore};
 		upload_list="$upload_list $rhdistgit_kabi_tarball"
 	fi
 	if ! grep -q "$rhdistgit_kabidw_tarball" "$tmpdir/$package_name"/sources; then

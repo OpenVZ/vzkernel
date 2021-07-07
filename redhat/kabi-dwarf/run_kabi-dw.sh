@@ -19,7 +19,7 @@
 # same options from both the Makefile and kernel.spec file.
 #
 # Usage:
-# 	./run_kabi-dw.sh generate whitelist module_dir kabi_dir
+# 	./run_kabi-dw.sh generate stablelist module_dir kabi_dir
 # 	./run_kabi-dw.sh compare kabi_dir1 kabi_dir2
 # shellcheck disable=SC2164
 
@@ -31,7 +31,7 @@ KABIDW=kabi-dw
 
 usage() {
 	echo "Usage:"
-	echo "	$PROG generate whitelist module_dir kabi_dir"
+	echo "	$PROG generate stablelist module_dir kabi_dir"
 	echo "	$PROG compare kabi_dir1 kabi_dir2"
 	exit 1
 }

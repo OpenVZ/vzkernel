@@ -26,7 +26,7 @@ import sys
 
 
 def load_kabi(dirname, kabi, order, arch):
-    """Load a reference whitelist content."""
+    """Load a reference stablelist content."""
 
     try:
         archlist = []
@@ -88,8 +88,8 @@ def show_kabi(kabi, order, release, fmt, show_head):
     else:
         rhel_minor = int(rhel_minor)
     for current_arch in kabi:
-        if show_head and (fmt == "whitelist"):
-            print("[rhel8_{}_whitelist]".format(current_arch))
+        if show_head and (fmt == "stablelist"):
+            print("[rhel9_{}_stablelist]".format(current_arch))
         for sym in order[current_arch]:
             if kabi[current_arch][sym][0][0] != "#":
                 print("Invalid metadata format: {}".format(kabi[current_arch][sym][0]))
@@ -107,7 +107,7 @@ def show_kabi(kabi, order, release, fmt, show_head):
             # format Module.kabi_$arch styled file
             if fmt == "module":
                 print(kabi[current_arch][sym][1])
-            # format kabi_whitelist_$arch styled file
+            # format kabi_stablelist_$arch styled file
             else:
                 print("\t{}".format(sym))
 
@@ -117,9 +117,9 @@ def usage():
     -a arch        architecture, ( default all archs )
     -k dir        kabi-module root directory ( default ./kabi-module )
     -m        output Module.kabi_$(arch) styled file
-            default output kabi_whitelist_$(arch) styled file
+            default output kabi_stablelist_$(arch) styled file
     -r release    release, for example 8.1 ( default latest )
-    -s        show header ( no headers like [rhel8_x86_64_whitelist] )
+    -s        show header ( no headers like [rhel9_x86_64_stablelist] )
     -h         this help""")
 
 
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     kabi_dir = "kabi-module"
     release = ""
     kabi_head = False
-    kabi_out = "whitelist"
+    kabi_out = "stablelist"
 
     opts, args = getopt.getopt(sys.argv[1:], 'a:k:mr:sh')
 

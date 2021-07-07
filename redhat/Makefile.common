@@ -140,7 +140,7 @@ endif
 TARFILE:=linux-$(TARFILE_RELEASE).tar.xz
 TARBALL:=$(REDHAT)/$(TARFILE)
 DISTRO_BUILD:=$(PREBUILD)$(shell echo $(BUILD) | sed -e 's|\(^[0-9]\{1,4\}\)\..*|\1|')
-KABI_TARFILE:=kernel-abi-whitelists-$(KVERSION)-$(DISTRO_BUILD).tar.bz2
+KABI_TARFILE:=kernel-abi-stablelists-$(KVERSION)-$(DISTRO_BUILD).tar.bz2
 KABI_TARBALL:=$(REDHAT)/rpm/SOURCES/$(KABI_TARFILE)
 KABIDW_TARFILE:=kernel-kabi-dw-$(KVERSION)-$(DISTRO_BUILD).tar.bz2
 KABIDW_TARBALL:=$(REDHAT)/rpm/SOURCES/$(KABIDW_TARFILE)
