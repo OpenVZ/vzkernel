@@ -311,25 +311,25 @@ static int setup_pb(struct push_backup *pb, void __user *mask, int timeout)
 	size = DIV_ROUND_UP(clus, 8);
 
 	map = kvzalloc(size, GFP_KERNEL);
-        if (!map)
+	if (!map)
 		return -ENOMEM;
 
-        if (!mask) {
-                /* Full backup */
-                memset(map, 0xff, clus / 8);
-                for (i = round_down(clus, 8); i < clus; i++)
-                        set_bit(i, map);
-        } else {
-                /* Partial backup */
-                size = DIV_ROUND_UP(clus, 8);
-                if (copy_from_user(map, mask, size))
+	if (!mask) {
+		/* Full backup */
+		memset(map, 0xff, clus / 8);
+		for (i = round_down(clus, 8); i < clus; i++)
+			set_bit(i, map);
+	} else {
+		/* Partial backup */
+		size = DIV_ROUND_UP(clus, 8);
+		if (copy_from_user(map, mask, size))
 			goto err;
-        }
+	}
 
 	map_bits = bitmap_weight(map, clus);
 
 	spin_lock_irq(&pb->lock);
-        pb->ppb_map = map;
+	pb->ppb_map = map;
 	pb->ppb_map_bits = map_bits;
 	pb->alive = true;
 	spin_unlock_irq(&pb->lock);
@@ -361,8 +361,8 @@ static int push_backup_stop(struct push_backup *pb,
 {
 	void *map = NULL;
 
-        if (!pb->ppb_map)
-                return -EBADF;
+	if (!pb->ppb_map)
+		return -EBADF;
 	cleanup_backup(pb);
 
 	/* Wait postpone_if_required_for_backup() starts timer */
@@ -391,8 +391,9 @@ static int push_backup_read(struct push_backup *pb,
 	if (!pb->ppb_map)
 		return -ESTALE;
 again:
-	if (wait_event_interruptible(pb->waitq, !list_empty_careful(&pb->pending) ||
-						!pb->alive || !pb->ppb_map_bits))
+	if (wait_event_interruptible(pb->waitq,
+				     !list_empty_careful(&pb->pending) ||
+				     !pb->alive || !pb->ppb_map_bits))
 		return -EINTR;
 
 	spin_lock_irq(&pb->lock);
@@ -402,14 +403,15 @@ again:
 	ret = 0;
 	if (!pb->ppb_map_bits)
 		goto unlock;
-	pbio = orig_pbio = list_first_entry_or_null(&pb->pending, typeof(*pbio), list);
-	if (unlikely(!pbio)) {
+	orig_pbio = list_first_entry_or_null(&pb->pending, typeof(*pbio), list);
+	if (unlikely(!orig_pbio)) {
 		spin_unlock_irq(&pb->lock);
 		goto again;
 	}
-	list_del_init(&pbio->list);
+	list_del_init(&orig_pbio->list);
 
-	left = right = pbio->clu;
+	left = right = orig_pbio->clu;
+	pbio = orig_pbio;
 	while ((node = rb_prev(&pbio->node)) != NULL) {
 		pbio = rb_entry(node, struct pb_bio, node);
 		if (pbio->clu + 1 != left || list_empty(&pbio->list))
@@ -546,7 +548,7 @@ static int pb_message(struct dm_target *ti, unsigned int argc, char **argv,
 		if (argc != 2 || sscanf(argv[1], "%llu:%llu", &val, &val2) != 2)
 			goto unlock;
 		ret = push_backup_write(pb, val, val2);
-	} else if (!strcmp(argv[0], "push_backup_statistics")){
+	} else if (!strcmp(argv[0], "push_backup_statistics")) {
 		ret = push_backup_statistics(pb, result, maxlen);
 	} else {
 		ret = -ENOTSUPP;
@@ -700,11 +702,11 @@ static void pb_set_suspended(struct dm_target *ti, bool suspended)
 }
 static void pb_postsuspend(struct dm_target *ti)
 {
-        pb_set_suspended(ti, true);
+	pb_set_suspended(ti, true);
 }
 static void pb_resume(struct dm_target *ti)
 {
-        pb_set_suspended(ti, false);
+	pb_set_suspended(ti, false);
 }
 
 static struct target_type pb_target = {
