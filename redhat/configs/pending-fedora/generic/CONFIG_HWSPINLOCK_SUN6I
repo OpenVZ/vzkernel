@@ -1,0 +1,19 @@
+# CONFIG_HWSPINLOCK_SUN6I:
+# 
+# Say y here to support the SUN6I Hardware Spinlock device which can be
+# found in most of the sun6i compatible Allwinner SoCs.
+# 
+# If unsure, say N.
+# 
+# Symbol: HWSPINLOCK_SUN6I [=n]
+# Type  : tristate
+# Defined at drivers/hwspinlock/Kconfig:47
+#   Prompt: SUN6I Hardware Spinlock device
+#   Depends on: HWSPINLOCK [=y] && (ARCH_SUNXI [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Hardware Spinlock drivers (HWSPINLOCK [=y])
+# 
+# 
+# 
+# CONFIG_HWSPINLOCK_SUN6I is not set
