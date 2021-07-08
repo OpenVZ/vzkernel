@@ -4,6 +4,11 @@
 # linked in the merge request and appropriate labels will be added to it.
 # Changes to this file will NOT be reflected in the webhook testing.
 
+include:
+  - project: cki-project/pipeline-definition
+    ref: main
+    file: kernel_templates.yml
+
 stages:
   - test
   - build
@@ -11,40 +16,89 @@ stages:
 
 workflow:
   rules:
-    - if: $CI_MERGE_REQUEST_ID
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'   # ARK release pipelines
+    - if: '$CI_MERGE_REQUEST_PROJECT_PATH =~ /^cki-project.kernel-ark/'   # ARK MR CI
+      variables:
+        REQUESTED_PIPELINE_TYPE: 'trusted-ark'
+    # We cannot merge rules through !reference and have to copy them over from the
+    # CKI pipeline: https://gitlab.com/gitlab-org/gitlab/-/issues/322992
+    - if: '$CI_MERGE_REQUEST_PROJECT_PATH =~ /^redhat.rhel/ || $CI_PROJECT_PATH =~ /^redhat.rhel/'
+      variables:
+        REQUESTED_PIPELINE_TYPE: 'internal'
+    - if: '$CI_MERGE_REQUEST_PROJECT_PATH =~ /^redhat.centos-stream/ || $CI_PROJECT_PATH =~ /^redhat.centos-stream/'
+      variables:
+        REQUESTED_PIPELINE_TYPE: 'trusted'
 
-trigger_pipeline:
-  stage: test
+# We need to differentiate between the pipeline types that are triggered from this
+# single file. Once the mirroring to c9s stops this anchor can be dropped and the
+# regular ".trusted" anchor and "trusted" type can be used. The template is added
+# here instead of into CKI to avoid having to clear up two places after mirror drop.
+.trusted-ark:
+  trigger:
+    project: redhat/red-hat-ci-tools/kernel/cki-internal-pipelines/cki-trusted-contributors
+    strategy: depend
   variables:
-    # The following ones are required by CKI pipeline definition
-    git_url: ${CI_MERGE_REQUEST_PROJECT_URL}
-    branch: ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}
-    commit_hash: ${CI_COMMIT_SHA}
-    mr_id: ${CI_MERGE_REQUEST_IID}
-    mr_url: ${CI_MERGE_REQUEST_PROJECT_URL}/-/merge_requests/${CI_MERGE_REQUEST_IID}
-    title: ${CI_COMMIT_TITLE}
-    name: kernel-ark
+    PIPELINE_TYPE: 'trusted-ark'
+    kernel_type: 'upstream'
 
-    # We only need srpm so skip the rest of the stages
-    kernel_type: upstream
-    make_target: rpm
+.trigger_ark_pipeline:
+  stage: test
+  trigger:
+    branch: kernel-ark
+  variables:
+    name: kernel-ark
     builder_image: registry.gitlab.com/cki-project/containers/builder-rawhide
     builder_image_tag: latest
     srpm_make_target: dist-srpm
+    # We only need srpm so skip the rest of the stages
     skip_build: 'true'
     skip_publish: 'true'
     skip_test: 'true'
+    skip_results: 'true'
 
+.9-common:
+  variables:
+    builder_image_tag: latest
+    srpm_make_target: dist-srpm
+    build_kabi_stablelist: 'true'
+    tree_yaml_name: rhel
+    publish_elsewhere: 'true'
+    native_tools: 'true'
+
+.trigger_c9s_pipeline:
   trigger:
-    project: redhat/red-hat-ci-tools/kernel/cki-internal-pipelines/cki-trusted-contributors
-    branch: kernel-ark
-    strategy: depend
+    branch: c9s
+  variables:
+    name: centos-stream-9
+    builder_image: registry.gitlab.com/cki-project/containers/builder-stream9
+    architectures: 'x86_64 ppc64le aarch64 s390x'
+    kpet_tree_family: c9s
 
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
-      when: never
-    - when: on_success
+.trigger_rhel9_pipeline:
+  trigger:
+    branch: rhel9
+  variables:
+    name: rhel9
+    builder_image: quay.io/cki/builder-rhel9
+    architectures: 'x86_64 aarch64 s390x'   #ppc64le container is not available yet
+    kpet_tree_family: rhel9
+
+ark_merge_request:
+  extends: [.trusted-ark, .merge_request, .trigger_ark_pipeline]
+
+# Only enable c9s pipelines once we have the composes available in Beaker
+# c9s_merge_request:
+#   extends: [.trusted, .merge_request, .9-common, .trigger_c9s_pipeline]
+# 
+# c9s_baseline:
+#   extends: [.trusted, .baseline, .9-common, .trigger_c9s_pipeline]
+
+rhel9_merge_request:
+  extends: [.internal, .merge_request, .9-common, .trigger_rhel9_pipeline]
+
+rhel9_baseline:
+  extends: [.internal, .baseline, .9-common, .trigger_rhel9_pipeline]
+
 
 # scheduled job
 merge_upstream:
