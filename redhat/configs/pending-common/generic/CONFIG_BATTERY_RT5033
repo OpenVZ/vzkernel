@@ -1,0 +1,19 @@
+# CONFIG_BATTERY_RT5033:
+# 
+# This adds support for battery fuel gauge in Richtek RT5033 PMIC.
+# The fuelgauge calculates and determines the battery state of charge
+# according to battery open circuit voltage.
+# 
+# Symbol: BATTERY_RT5033 [=n]
+# Type  : tristate
+# Defined at drivers/power/supply/Kconfig:713
+#   Prompt: RT5033 fuel gauge support
+#   Depends on: POWER_SUPPLY [=y] && I2C [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Power supply class support (POWER_SUPPLY [=y])
+# Selects: REGMAP_I2C [=m]
+# 
+# 
+# 
+# CONFIG_BATTERY_RT5033 is not set

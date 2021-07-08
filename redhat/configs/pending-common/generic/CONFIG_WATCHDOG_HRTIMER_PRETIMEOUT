@@ -1,0 +1,19 @@
+# CONFIG_WATCHDOG_HRTIMER_PRETIMEOUT:
+# 
+# Enable this if you want to use a hrtimer timer based pretimeout for
+# watchdogs that do not natively support pretimeout support. Be aware
+# that because this pretimeout functionality uses hrtimers, it may not
+# be able to fire before the actual watchdog fires in some situations.
+# 
+# Symbol: WATCHDOG_HRTIMER_PRETIMEOUT [=n]
+# Type  : bool
+# Defined at drivers/watchdog/Kconfig:76
+#   Prompt: Enable watchdog hrtimer-based pretimeouts
+#   Depends on: WATCHDOG [=y]
+#   Location:
+#     -> Device Drivers
+#       -> Watchdog Timer Support (WATCHDOG [=y])
+# 
+# 
+# 
+# CONFIG_WATCHDOG_HRTIMER_PRETIMEOUT is not set
