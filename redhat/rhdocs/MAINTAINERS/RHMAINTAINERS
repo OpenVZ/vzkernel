@@ -126,7 +126,7 @@ F:	redhat/
 X:	redhat/configs/
 
 RHEL 8.1 Kernel Maintainer
-M:	Brian Masney <bmasney@redhat.com>
+M:	Frantisek Hrbata <fhrbata@redhat.com>
 S:	Supported
 F:	makefile
 F:	Makefile.rhelver
@@ -212,7 +212,7 @@ F:	redhat/
 X:	redhat/configs/
 
 RHEL 7.4 Kernel Maintainer
-M:	Brian Masney <bmasney@redhat.com>
+M:	Frantisek Hrbata <fhrbata@redhat.com>
 S:	Supported
 F:	makefile
 F:	redhat/
@@ -430,6 +430,7 @@ F:	drivers/net/ethernet/atheros/
 
 AUDIT SUBSYSTEM
 M:	Richard Guy Briggs <rbriggs@redhat.com>
+R:	Ondrej Mosnacek <omosnace@redhat.com>
 S:	Supported
 F:	include/linux/audit.h
 F:	include/uapi/linux/audit.h
@@ -589,6 +590,12 @@ F:	include/linux/configfs.h
 
 CONTROL GROUP (CGROUP)
 M:	Waiman Long <longman@redhat.com>
+R:	Chris White <chwhite@redhat.com>
+R:	Clark Williams <williams@redhat.com>
+R:	Joel Savitz <jsavitz@redhat.com>
+R:	Lucas Zampieri <lzampier@redhat.com>
+R:	Luis Claudio Goncalves <lgoncalv@redhat.com>
+R:	Phil Auld <pauld@redhat.com>
 S:	Supported
 F:	Documentation/cgroup*
 F:	include/linux/cgroup*
@@ -622,7 +629,10 @@ F:	fs/cramfs/
 CRYPTO API
 M:	Herbert Xu <herbert.xu@redhat.com>
 M:	"David S. Miller" <davem@redhat.com>
+R:	Bruno Meneguele <bmeneg@redhat.com>
 R:	Ondrej Mosnacek <omosnace@redhat.com>
+R:	Phil Auld <pauld@redhat.com>
+R:	Vladis Dronov <vdronov@redhat.com>
 S:	Supported
 F:	Documentation/crypto/
 F:	Documentation/devicetree/bindings/crypto/
@@ -720,12 +730,17 @@ F:	drivers/dma/
 DMA SUPPORT
 M:	Jerry Snitselaar <jsnitsel@redhat.com>
 M:	Donald Dutile <ddutile@redhat.com>
+R:	Clark Williams <williams@redhat.com>
+R:	Joel Savitz <jsavitz@redhat.com>
+R:	Lucas Zampieri <lzampier@redhat.com>
 S:	Supported
 F:	kernel/dma/
 F:	include/linux/dma*
 
 EDAC/HERM
 M:	Aristeu Rozanski <arozansk@redhat.com>
+R:	Herton R. Krzesinski <herton@redhat.com>
+R:	Rafael Aquini <aquini@redhat.com>
 S:	Supported
 F:	drivers/edac/
 
@@ -806,6 +821,12 @@ F:	drivers/firmware/
 
 FTRACE
 M:	Jerome Marchand <jmarchan@redhat.com>
+R:	Jiri Olsa <jolsa@redhat.com>
+R:	Joe Lawrence <joe.lawrence@redhat.com>
+R:	Josh Poimboeuf <jpoimboe@redhat.com>
+R:	Luis Claudio Goncalves <lgoncalv@redhat.com>
+R:	Waiman Long <longman@redhat.com>
+R:	Yannick Cote <ycote@redhat.com>
 S:	Supported
 F:	kernel/trace/
 F:	include/linux/ftrace*
@@ -823,6 +844,11 @@ F:	drivers/message/fusion/
 
 FUTEX SUBSYSTEM
 M:	Waiman Long <longman@redhat.com>
+R:	Clark Williams <williams@redhat.com>
+R:	Donghai Qiao <dqiao@redhat.com>
+R:	Julia Denham <jdenham@redhat.com>
+R:	Nico Pache <npache@redhat.com>
+R:	Oleg Nesterov <onestero@redhat.com>
 S:	Supported
 F:	Documentation/*futex*
 F:	include/asm-generic/futex.h
@@ -895,6 +921,13 @@ F:	Documentation/infiniband/
 
 INIT
 M:	Prarit Bhargava <prarit@redhat.com>
+R:	Aristeu Rozanski <arozansk@redhat.com>
+R:	Artem Savkov <asavkov@redhat.com>
+R:	Clark Williams <williams@redhat.com>
+R:	Herton R. Krzesinski <herton@redhat.com>
+R:	Jan Stancek <jstancek@redhat.com>
+R:	Josh Poimboeuf <jpoimboe@redhat.com>
+R:	Kairui Song <kasong@redhat.com>
 S:	Supported
 F:	init/
 
@@ -914,8 +947,23 @@ F:	include/uapi/linux/input.h
 INTEGRITY SUBSYSTEM
 M:	Bruno Meneguele <bmeneg@redhat.com>
 R:	Jerry Snitselaar <jsnitsel@redhat.com>
+R:	Richard Guy Briggs <rbriggs@redhat.com>
+R:	Vladis Dronov <vdronov@redhat.com>
 S:	Supported
 F:	security/integrity/
+
+INTERPROCESS COMMUNICATION (IPC)
+M:	Aristeu Rozanski <arozansk@redhat.com>
+M:	Rafael Aquini <aquini@redhat.com>
+M:	Waiman Long <longman@redhat.com>
+R:	Herton R. Krzesinski <herton@redhat.com>
+R:	Eugene Syromiatnikov <esyromia@redhat.com>
+S:	Supported
+F:	include/linux/ipc*.h
+F:	include/linux/msg.h
+F:	include/linux/sem.h
+F:	include/linux/shm.h
+F:	ipc/
 
 INTERRUPT CONTROLLERS
 M:	Mark Salter <msalter@redhat.com>
@@ -998,7 +1046,7 @@ F:	drivers/char/tpm/*
 F:	include/linux/tpm.h
 
 INTEL QUICK ASSIST TECHNOLOGY (QAT)
-M:	Vlad Dronov <vdronov@redhat.com>
+M:	Vladis Dronov <vdronov@redhat.com>
 M:	Tony Camuso <tcamuso@redhat.com>
 S:	Supported
 F:	drivers/crypto/qat/*
@@ -1034,7 +1082,12 @@ F:	include/linux/jbd2.h
 
 KEXEC/KDUMP
 M:	Baoquan He <bhe@redhat.com>
+R:	Jiri Olsa <jolsa@redhat.com>
+R:	Julia Denham <jdenham@redhat.com>
 R:	Kairui Song <kasong@redhat.com>
+R:	Lucas Zampieri <lzampier@redhat.com>
+R:	Pingfan Liu <piliu@redhat.com>
+R:	Tao Liu <ltao@redhat.com>
 L:	kdump-bugs@redhat.com
 S:	Supported
 F:	Documentation/admin-guide/kdump/
@@ -1179,6 +1232,13 @@ F:	drivers/leds/
 
 LIB
 M:	Prarit Bhargava <prarit@redhat.com>
+R:	Aristeu Rozanski <arozansk@redhat.com>
+R:	Christoph von Recklinghausen <crecklin@redhat.com>
+R:	Eugene Syromiatnikov <esyromia@redhat.com>
+R:	Herton R. Krzesinski <herton@redhat.com>
+R:	Nico Pache <npache@redhat.com>
+R:	Oleg Nesterov <onestero@redhat.com>
+R:	Rafael Aquini <aquini@redhat.com>
 S:	Supported
 F:	lib/
 X:	lib/nlattr.c
@@ -1188,6 +1248,7 @@ M:	Josh Poimboeuf <jpoimboe@redhat.com>
 M:	Joe Lawrence <joe.lawrence@redhat.com>
 M:	Artem Savkov <asavkov@redhat.com>
 M:	Yannick Cote <ycote@redhat.com>
+R:	Joel Savitz <jsavitz@redhat.com>
 S:	Supported
 F:	Documentation/ABI/testing/sysfs-kernel-livepatch
 F:	Documentation/livepatch/
@@ -1202,6 +1263,12 @@ F:	tools/testing/selftests/livepatch/
 
 LOCKING PRIMITIVES
 M:	Waiman Long <longman@redhat.com>
+R:	Artem Savkov <asavkov@redhat.com>
+R:	Clark Williams <williams@redhat.com>
+R:	Donghai Qiao <dqiao@redhat.com>
+R:	Oleg Nesterov <onestero@redhat.com>
+R:	Phil Auld <pauld@redhat.com>
+R:	Wander Costa <wcosta@redhat.com>
 S:	Supported
 F:	Documentation/locking/
 F:	arch/*/include/asm/mutex*.h
@@ -1255,7 +1322,11 @@ F:	drivers/net/ethernet/mellanox/mlxsw/
 MEMORY MANAGEMENT
 M:	Rafael Aquini <aquini@redhat.com>
 R:	Aristeu Rozanski <arozansk@redhat.com>
+R:	Artem Savkov <asavkov@redhat.com>
+R:	Baoquan He <bhe@redhat.com>
+R:	Christoph von Recklinghausen <crecklin@redhat.com>
 R:	Don Dutile <ddutile@redhat.com>
+R:	Herton R. Krzesinski <herton@redhat.com>
 R:	Nico Pache <npache@redhat.com>
 R:	Waiman Long <longman@redhat.com>
 L:	mm-maint@redhat.com
@@ -1489,6 +1560,7 @@ X:	include/net/iucv/
 X:	include/net/iw*
 X:	include/net/regulatory.h
 X:	net/bluetooth/
+X:	net/ceph/
 X:	net/ieee802154/
 X:	net/irda/
 X:	net/iucv/
@@ -1557,7 +1629,7 @@ NON TRANSPARENT BRIDGE
 M:	Myron Stowe <myron.stowe@redhat.com>
 M:	Prarit Bhargava <prarit@redhat.com>
 M:	David Arcari <darcari@redhat.com>
-S:	Supported
+S:	Provided
 F:	drivers/ntb/
 F:	tools/testing/selftests/ntb/
 
@@ -1782,6 +1854,11 @@ F:	drivers/net/wireless/rt2x00/
 
 READ-COPY UPDATE (RCU)
 M:	Waiman Long <longman@redhat.com>
+R:	Artem Savkov <asavkov@redhat.com>
+R:	Clark Williams <williams@redhat.com>
+R:	Donghai Qiao <dqiao@redhat.com>
+R:	Phil Auld <pauld@redhat.com>
+R:	Wander Costa <wcosta@redhat.com>
 S:	Supported
 F:	Documentation/RCU/
 F:	include/linux/rcu*
@@ -1827,6 +1904,14 @@ F:	drivers/net/ethernet/rocker/
 
 SCHEDULER
 M:	Phil Auld <pauld@redhat.com>
+R:	Andrew Halaney <ahalaney@redhat.com>
+R:	Clark Williams <williams@redhat.com>
+R:	Daniel Bristot <bristot@redhat.com>
+R:	Fernando Pacheco <fpacheco@redhat.com>
+R:	Juri Lelli <jlelli@redhat.com>
+R:	Luis Claudio Goncalves <lgoncalv@redhat.com>
+R:	Nico Pache <npache@redhat.com>
+R:	Oleg Nesterov <onestero@redhat.com>
 S:	Supported
 F:	kernel/sched/
 F:	include/linux/sched/
@@ -1860,6 +1945,11 @@ F:	include/uapi/linux/sctp.h
 
 SECURITY SUBSYSTEM
 M:	Ondrej Mosnacek <omosnace@redhat.com>
+R:	Christoph von Recklinghausen <crecklin@redhat.com>
+R:	Richard Guy Briggs <rbriggs@redhat.com>
+R:	Vladis Dronov <vdronov@redhat.com>
+R:	Wander Costa <wcosta@redhat.com>
+R:	Yannick Cote <ycote@redhat.com>
 S:	Supported
 F:	include/linux/lsm_*
 F:	include/linux/security.h
@@ -2028,10 +2118,12 @@ F:	include/uapi/linux/tty.h
 X86 ARCHITECTURE
 M:	David Arcari <darcari@redhat.com>
 M:	Prarit Bhargava <prarit@redhat.com>
+M:	Dean Nelson <dnelson@redhat.com>
 S:	Supported
 F:	arch/x86/
-F:	tools/power/x86/
 F:	tools/arch/x86/
+F:	tools/power/cpupower/
+F:	tools/power/x86/
 X:	arch/x86/hyperv/hv_init.c
 X:	arch/x86/include/asm/kvm*
 X:	arch/x86/include/asm/mshyperv.h
@@ -2060,6 +2152,7 @@ F:	include/linux/efi.h
 
 USERSPACE I/O DRIVERS (UIO)
 M:	Aristeu Rozanski <arozansk@redhat.com>
+R:	Brian Masney <bmasney@redhat.com>
 S:	Supported
 F:	include/linux/uio_driver.h
 F:	include/linux/platform_data/uio_dmem_genirq.h
@@ -2290,8 +2383,10 @@ F:	.gitlab-ci.yml
 F:	.gitlab-ci-private.yml
 I:	INTERNAL
 
-watchdog
+WATCHDOG
 M:	Jonathan Toppins <jtoppins@redhat.com>
+M:	David Arcari <darcari@redhat.com>
+M:	Prarit Bhargava <prarit@redhat.com>
 S:	Supported
 F:	Documentation/watchdog/
 F:	drivers/watchdog/
