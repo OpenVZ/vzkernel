@@ -1148,15 +1148,17 @@ static int ve_state_show(struct seq_file *sf, void *v)
 	struct cgroup_subsys_state *css = seq_css(sf);
 	struct ve_struct *ve = css_to_ve(css);
 
+	down_read(&ve->op_sem);
 	if (ve->is_running)
 		seq_puts(sf, "RUNNING");
-	else if (!cgroup_is_populated(css->cgroup))
+	else if (!cgroup_is_populated(css->cgroup) && !ve->ve_ns)
 		seq_puts(sf, "STOPPED");
-	else if (rcu_access_pointer(ve->ve_ns))
+	else if (ve->ve_ns)
 		seq_puts(sf, "STOPPING");
 	else
 		seq_puts(sf, "STARTING");
 	seq_putc(sf, '\n');
+	up_read(&ve->op_sem);
 
 	return 0;
 }
