@@ -134,11 +134,7 @@ static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync
 	BUG_ON(!list_empty(sync_list));
 
 	down_read(&namespace_sem);
-	lock_ns_list(mnt_ns);
 	list_for_each_entry(mnt, &mnt_ns->list, mnt_list) {
-		if (mnt_is_cursor(mnt))
-			continue;
-
 		if (sync_filesystem_collected(sync_list, mnt->mnt.mnt_sb))
 			continue;
 
@@ -158,7 +154,6 @@ static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync
 		spin_unlock(&sb_lock);
 		list_add_tail(&ss->list, sync_list);
 	}
-	unlock_ns_list(mnt_ns);
 	up_read(&namespace_sem);
 	return ret;
 }

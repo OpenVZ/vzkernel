@@ -9,13 +9,7 @@ struct mnt_namespace {
 	atomic_t		count;
 	struct ns_common	ns;
 	struct mount *	root;
-	/*
-	 * Traversal and modification of .list is protected by either
-	 * - taking namespace_sem for write, OR
-	 * - taking namespace_sem for read AND taking .ns_lock.
-	 */
 	struct list_head	list;
-	spinlock_t              ns_lock;
 	struct user_namespace	*user_ns;
 	struct ucounts		*ucounts;
 	u64			seq;	/* Sequence number to prevent loops */
@@ -143,13 +137,12 @@ struct proc_mounts {
 	struct mnt_namespace *ns;
 	struct path root;
 	int (*show)(struct seq_file *, struct vfsmount *);
-	struct mount cursor;
+	void *cached_mount;
+	u64 cached_event;
+	loff_t cached_index;
 };
 
 extern const struct seq_operations mounts_op;
-extern inline void lock_ns_list(struct mnt_namespace *ns);
-extern inline void unlock_ns_list(struct mnt_namespace *ns);
-extern inline bool mnt_is_cursor(struct mount *mnt);
 
 extern bool __is_local_mountpoint(struct dentry *dentry);
 static inline bool is_local_mountpoint(struct dentry *dentry)
@@ -164,4 +157,3 @@ static inline bool is_anon_ns(struct mnt_namespace *ns)
 {
 	return ns->seq == 0;
 }
-extern void mnt_cursor_del(struct mnt_namespace *ns, struct mount *cursor);
