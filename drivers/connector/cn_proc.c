@@ -342,6 +342,7 @@ static void cn_proc_mcast_ctl(struct cn_msg *msg,
 {
 	enum proc_cn_mcast_op *mc_op = NULL;
 	struct ve_struct *ve = get_exec_env();
+	struct nsproxy *ve_ns;
 	int err = 0;
 
 	if (msg->len != sizeof(*mc_op))
@@ -352,9 +353,14 @@ static void cn_proc_mcast_ctl(struct cn_msg *msg,
 	 * and user namespaces so ignore requestors from
 	 * other namespaces.
 	 */
-	if (!current_user_ns_initial() ||
-	    (task_active_pid_ns(current) != ve->ve_ns->pid_ns_for_children))
+	rcu_read_lock();
+	ve_ns = rcu_dereference(ve->ve_ns);
+	if (!current_user_ns_initial() || !ve_ns ||
+	    (task_active_pid_ns(current) != ve_ns->pid_ns_for_children)) {
+		rcu_read_unlock();
 		return;
+	}
+	rcu_read_unlock();
 
 	/* Can only change if privileged. */
 	if (!__netlink_ns_capable(nsp, ve_init_user_ns(), CAP_NET_ADMIN)) {
