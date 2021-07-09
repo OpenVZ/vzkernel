@@ -127,13 +127,25 @@ static int sync_filesystem_collected(struct list_head *sync_list, struct super_b
 static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync_list)
 {
 	struct mount *mnt;
-	struct mnt_namespace *mnt_ns = ve->ve_ns->mnt_ns;
+	struct mnt_namespace *mnt_ns;
+	struct nsproxy *ve_ns;
 	struct sync_sb *ss;
 	int ret = 0;
 
 	BUG_ON(!list_empty(sync_list));
 
 	down_read(&namespace_sem);
+
+	rcu_read_lock();
+	ve_ns = rcu_dereference(ve->ve_ns);
+	if (!ve_ns) {
+		rcu_read_unlock();
+		up_read(&namespace_sem);
+		return 0;
+	}
+	mnt_ns = ve_ns->mnt_ns;
+	rcu_read_unlock();
+
 	mnt = mnt_list_next(mnt_ns, &mnt_ns->list);
 	while (mnt) {
 		if (sync_filesystem_collected(sync_list, mnt->mnt.mnt_sb))
@@ -189,10 +201,22 @@ static void sync_filesystems_ve(struct ve_struct *ve, int wait)
 static int is_sb_ve_accessible(struct ve_struct *ve, struct super_block *sb)
 {
 	struct mount *mnt;
-	struct mnt_namespace *mnt_ns = ve->ve_ns->mnt_ns;
+	struct mnt_namespace *mnt_ns;
+	struct nsproxy *ve_ns;
 	int ret = 0;
 
 	down_read(&namespace_sem);
+
+	rcu_read_lock();
+	ve_ns = rcu_dereference(ve->ve_ns);
+	if (!ve_ns) {
+		rcu_read_unlock();
+		up_read(&namespace_sem);
+		return 0;
+	}
+	mnt_ns = ve_ns->mnt_ns;
+	rcu_read_unlock();
+
 	list_for_each_entry(mnt, &mnt_ns->list, mnt_list) {
 		if (mnt->mnt.mnt_sb == sb) {
 			ret = 1;
