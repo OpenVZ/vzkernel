@@ -9,6 +9,8 @@
 #include <linux/dm-io.h>
 #include <linux/dm-kcopyd.h>
 #include <linux/sched/mm.h>
+#include <linux/cgroup.h>
+#include <linux/blk-cgroup.h>
 #include <linux/init.h>
 #include <linux/vmalloc.h>
 #include <linux/uio.h>
@@ -59,6 +61,7 @@ void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop)
 void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 {
 	pio->ploop = ploop;
+	pio->css = NULL;
 	pio->bi_op = bi_op;
 	pio->wants_discard_index_cleanup = false;
 	pio->is_data_alloc = false;
@@ -108,7 +111,8 @@ void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
 
 	if (prq->bvec)
 		kfree(prq->bvec);
-
+	if (prq->css)
+		css_put(prq->css);
 	dm_complete_request(rq, bi_status);
 }
 
@@ -182,6 +186,7 @@ static struct pio * split_and_chain_pio(struct ploop *ploop,
 		return NULL;
 
 	init_pio(ploop, pio->bi_op, split);
+	split->css = pio->css;
 	split->queue_list_id = pio->queue_list_id;
 	split->free_on_endio = true;
 	split->bi_io_vec = pio->bi_io_vec;
@@ -1175,7 +1180,13 @@ static void submit_rw_mapped(struct ploop *ploop, struct pio *pio)
 	pos = to_bytes(pio->bi_iter.bi_sector);
 
 	file = ploop->deltas[pio->level].file;
+
+	if (pio->css)
+		kthread_associate_blkcg(pio->css);
 	ploop_call_rw_iter(file, pos, rw, &iter, pio);
+	if (pio->css)
+		kthread_associate_blkcg(NULL);
+
 }
 
 void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level)
@@ -1233,6 +1244,7 @@ static int submit_cluster_cow(struct ploop *ploop, unsigned int level,
 	if (!aux_pio || !cow)
 		goto err;
 	init_pio(ploop, REQ_OP_READ, aux_pio);
+	aux_pio->css = cow_pio->css;
 	pio_prepare_offsets(ploop, aux_pio, clu);
 	aux_pio->endio_cb = ploop_cow_endio;
 	aux_pio->endio_cb_data = cow;
@@ -1275,6 +1287,7 @@ static void submit_cluster_write(struct ploop_cow *cow)
 	cow->dst_clu = dst_clu;
 
 	init_pio(ploop, REQ_OP_WRITE, aux_pio);
+	aux_pio->css = cow->cow_pio->css;
 	pio_prepare_offsets(ploop, aux_pio, dst_clu);
 
 	BUG_ON(irqs_disabled());
@@ -1768,6 +1781,13 @@ static void init_prq(struct ploop_rq *prq, struct request *rq)
 {
 	prq->rq = rq;
 	prq->bvec = NULL;
+	prq->css = NULL;
+#ifdef CONFIG_BLK_CGROUP
+	if (rq->bio && rq->bio->bi_blkg) {
+		prq->css = &bio_blkcg(rq->bio)->css;
+		css_get(prq->css); /* css_put is in prq_endio */
+	}
+#endif
 }
 
 static void submit_embedded_pio(struct ploop *ploop, struct pio *pio)
@@ -1826,6 +1846,7 @@ int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 
 	pio = map_info_to_embedded_pio(info);
 	init_pio(ploop, req_op(rq), pio);
+	pio->css = prq->css;
 	pio->endio_cb = prq_endio;
 	pio->endio_cb_data = prq;
 

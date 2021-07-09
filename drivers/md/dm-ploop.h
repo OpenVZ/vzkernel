@@ -223,6 +223,7 @@ struct ploop {
 struct ploop_rq {
 	struct request *rq;
 	struct bio_vec *bvec;
+	struct cgroup_subsys_state *css;
 };
 
 struct pio;
@@ -230,6 +231,7 @@ typedef void (*ploop_endio_t)(struct pio *, void *, blk_status_t);
 
 struct pio {
 	struct ploop *ploop;
+	struct cgroup_subsys_state *css;
 
 	struct list_head list;
 	struct hlist_node hlist_node;
