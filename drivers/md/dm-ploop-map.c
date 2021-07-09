@@ -78,10 +78,8 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 }
 
 /* Get clu related to pio sectors */
-static int ploop_prq_valid(struct ploop *ploop, struct ploop_rq *prq)
+static int ploop_rq_valid(struct ploop *ploop, struct request *rq)
 {
-	struct request *rq = prq->rq;
-
 	sector_t sector = blk_rq_pos(rq);
 	loff_t end_byte;
 	u32 end_clu;
@@ -1772,36 +1770,21 @@ static void init_prq(struct ploop_rq *prq, struct request *rq)
 	prq->bvec = NULL;
 }
 
-int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
-		    union map_info *info, struct request **clone)
+static void submit_embedded_pio(struct ploop *ploop, struct pio *pio)
 {
-	struct ploop *ploop = ti->private;
+	struct ploop_rq *prq = embedded_pio_to_prq(pio);
+	struct request *rq = prq->rq;
 	struct work_struct *worker;
-	struct ploop_rq *prq;
 	unsigned long flags;
 	bool queue = true;
-	struct pio *pio;
-
-	prq = map_info_to_embedded_prq(info);
-	init_prq(prq, rq);
-
-	pio = map_info_to_embedded_pio(info);
-	init_pio(ploop, req_op(rq), pio);
-	pio->endio_cb = prq_endio;
-	pio->endio_cb_data = prq;
 
 	if (blk_rq_bytes(rq)) {
-		if (ploop_prq_valid(ploop, prq) < 0)
-			return DM_MAPIO_KILL;
-
 		pio->queue_list_id = PLOOP_LIST_PREPARE;
 		worker = &ploop->worker;
 	} else {
+		WARN_ON_ONCE(pio->bi_op != REQ_OP_FLUSH);
 		pio->queue_list_id = PLOOP_LIST_FLUSH;
 		worker = &ploop->fsync_worker;
-
-		if (WARN_ON_ONCE(pio->bi_op != REQ_OP_FLUSH))
-			return DM_MAPIO_KILL;
 	}
 
 	spin_lock_irqsave(&ploop->deferred_lock, flags);
@@ -1818,7 +1801,35 @@ unlock:
 
 	if (queue)
 		queue_work(ploop->wq, worker);
+}
 
+void submit_embedded_pios(struct ploop *ploop, struct list_head *list)
+{
+	struct pio *pio;
+
+	while ((pio = pio_list_pop(list)) != NULL)
+		submit_embedded_pio(ploop, pio);
+}
+
+int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
+		    union map_info *info, struct request **clone)
+{
+	struct ploop *ploop = ti->private;
+	struct ploop_rq *prq;
+	struct pio *pio;
+
+	if (blk_rq_bytes(rq) && ploop_rq_valid(ploop, rq) < 0)
+		return DM_MAPIO_KILL;
+
+	prq = map_info_to_embedded_prq(info);
+	init_prq(prq, rq);
+
+	pio = map_info_to_embedded_pio(info);
+	init_pio(ploop, req_op(rq), pio);
+	pio->endio_cb = prq_endio;
+	pio->endio_cb_data = prq;
+
+	submit_embedded_pio(ploop, pio);
 	return DM_MAPIO_SUBMITTED;
 }
 

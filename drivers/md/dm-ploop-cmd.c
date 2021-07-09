@@ -140,7 +140,7 @@ static void ploop_resume_submitting_pios(struct ploop *ploop)
 	list_splice_tail_init(&ploop->suspended_pios, &list);
 	spin_unlock_irq(&ploop->deferred_lock);
 
-	dispatch_pios(ploop, NULL, &list);
+	submit_embedded_pios(ploop, &list);
 }
 
 /* Find existing BAT clu pointing to dst_clu */

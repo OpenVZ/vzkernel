@@ -552,6 +552,7 @@ extern bool try_update_bat_entry(struct ploop *ploop, u32 clu,
 
 extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
 extern int ploop_check_delta_length(struct ploop *ploop, struct file *file, loff_t *file_size);
+extern void submit_embedded_pios(struct ploop *ploop, struct list_head *list);
 extern void dispatch_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list);
 extern void do_ploop_work(struct work_struct *ws);
 extern void do_ploop_fsync_work(struct work_struct *ws);
