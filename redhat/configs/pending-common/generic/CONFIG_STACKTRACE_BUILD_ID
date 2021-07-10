@@ -1,0 +1,21 @@
+# CONFIG_STACKTRACE_BUILD_ID:
+# 
+# Selecting this option adds build ID information for symbols in
+# stacktraces printed with the printk format '%p[SR]b'.
+# 
+# This option is intended for distros where debuginfo is not easily
+# accessible but can be downloaded given the build ID of the vmlinux or
+# kernel module where the function is located.
+# 
+# Symbol: STACKTRACE_BUILD_ID [=n]
+# Type  : bool
+# Defined at lib/Kconfig.debug:38
+#   Prompt: Show build ID information in stacktraces
+#   Depends on: PRINTK [=y]
+#   Location:
+#     -> Kernel hacking
+#       -> printk and dmesg options
+# 
+# 
+# 
+# CONFIG_STACKTRACE_BUILD_ID is not set
