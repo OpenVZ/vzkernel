@@ -1,0 +1,17 @@
+# CONFIG_RESET_MCHP_SPARX5:
+# 
+# This driver supports switch core reset for the Microchip Sparx5 SoC.
+# 
+# Symbol: RESET_MCHP_SPARX5 [=n]
+# Type  : bool
+# Defined at drivers/reset/Kconfig:117
+#   Prompt: Microchip Sparx5 reset driver
+#   Depends on: RESET_CONTROLLER [=y] && (HAS_IOMEM [=y] || COMPILE_TEST [=n])
+#   Location:
+#     -> Device Drivers
+#       -> Reset Controller Support (RESET_CONTROLLER [=y])
+# Selects: MFD_SYSCON [=y]
+# 
+# 
+# 
+# CONFIG_RESET_MCHP_SPARX5 is not set
