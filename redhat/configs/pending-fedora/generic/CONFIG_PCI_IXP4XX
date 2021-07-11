@@ -1,0 +1,18 @@
+# CONFIG_PCI_IXP4XX:
+# 
+# Say Y here if you want support for the PCI host controller found
+# in the Intel IXP4xx XScale-based network processor SoC.
+# 
+# Symbol: PCI_IXP4XX [=n]
+# Type  : bool
+# Defined at drivers/pci/controller/Kconfig:40
+#   Prompt: Intel IXP4xx PCI controller
+#   Depends on: PCI [=y] && ARM [=y] && OF [=y]
+#   Location:
+#     -> Device Drivers
+#       -> PCI support (PCI [=y])
+#         -> PCI controller drivers
+# 
+# 
+# 
+# CONFIG_PCI_IXP4XX is not set
