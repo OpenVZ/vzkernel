@@ -5009,8 +5009,25 @@ void si_meminfo_node(struct sysinfo *val, int nid)
 	unsigned long free_highpages = 0;
 	pg_data_t *pgdat = NODE_DATA(nid);
 
-	for (zone_type = 0; zone_type < MAX_NR_ZONES; zone_type++)
-		managed_pages += pgdat->node_zones[zone_type].managed_pages;
+	for (zone_type = 0; zone_type < MAX_NR_ZONES; zone_type++) {
+		struct zone *zone = &pgdat->node_zones[zone_type];
+		unsigned long nr_managed = zone->managed_pages;
+		unsigned long nr_free = zone_page_state(zone, NR_FREE_PAGES);
+
+		/*
+		 * HACK, PSBM-129304
+		 * In certain cases, the number of managed pages becomes less
+		 * than the number of free pages in a zone, leading to negative
+		 * or overly large 'MemUsed' (managed_pages - free_pages).
+		 * 'Correct' the numbers until the root cause is resolved.
+		 */
+		if (nr_managed < nr_free) {
+			pr_notice_once("Node %d, zone %d: managed_pages (%lu) is less than free_pages (%lu)\n",
+				       nid, zone_type, nr_managed, nr_free);
+			nr_managed = nr_free;
+		}
+		managed_pages += nr_managed;
+	}
 	val->totalram = managed_pages;
 	val->sharedram = node_page_state(pgdat, NR_SHMEM);
 	val->freeram = sum_zone_node_page_state(nid, NR_FREE_PAGES);
