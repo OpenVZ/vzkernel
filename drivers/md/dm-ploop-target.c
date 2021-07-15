@@ -457,9 +457,9 @@ static void ploop_set_suspended(struct dm_target *ti, bool suspended)
 {
 	struct ploop *ploop = ti->private;
 
-	down_read(&ploop->ctl_rwsem);
+	down_write(&ploop->ctl_rwsem);
 	ploop->suspended = suspended;
-	up_read(&ploop->ctl_rwsem);
+	up_write(&ploop->ctl_rwsem);
 }
 
 static void ploop_presuspend(struct dm_target *ti)
@@ -501,9 +501,6 @@ static int ploop_preresume(struct dm_target *ti)
 		ploop_set_wants_suspend(ti, false);
 	}
 	return ret;
-}
-static void ploop_resume(struct dm_target *ti)
-{
 }
 
 /*----------------------------------------------------------------*/
