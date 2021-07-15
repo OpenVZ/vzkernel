@@ -140,6 +140,7 @@ struct ploop {
 	struct rb_root bat_entries;
 	struct ploop_delta *deltas;
 	u8 nr_deltas;
+	bool falloc_new_clu; /* fallocate() instead of truncate() */
 	u32 nr_bat_entries;
 	unsigned int cluster_log; /* In sectors */
 
