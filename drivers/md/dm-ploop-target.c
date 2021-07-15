@@ -502,6 +502,9 @@ static int ploop_preresume(struct dm_target *ti)
 	}
 	return ret;
 }
+static void ploop_resume(struct dm_target *ti)
+{
+}
 
 /*----------------------------------------------------------------*/
 
