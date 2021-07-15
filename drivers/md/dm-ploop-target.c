@@ -253,8 +253,8 @@ static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 	ploop->deltas = deltas;
 	ploop->nr_deltas = argc;
 
-	ret = -EINVAL;
 	for (i = argc - 1; i >= 0; i--) {
+		ret = -EINVAL;
 		arg = argv[i];
 		is_raw = false;
 		if (strncmp(arg, "raw@", 4) == 0) {
@@ -290,6 +290,13 @@ err_fput:
 	fput(file);
 	goto out;
 }
+
+#define EAT_ARG(argc, argv)					\
+	do {							\
+		BUILD_BUG_ON(sizeof(argc) != sizeof(int));	\
+		argc--;						\
+		argv++;						\
+	} while (0);
 /*
  * <data dev>
  */
@@ -366,13 +373,24 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "could not parse cluster_log";
 		goto err;
 	}
+	EAT_ARG(argc, argv);
 	ret = dm_set_target_max_io_len(ti, CLU_TO_SEC(ploop, 1));
 	if (ret) {
 		ti->error = "could not set max_io_len";
 		goto err;
 	}
 
-	ret = ploop_add_deltas_stack(ploop, &argv[1], argc - 1);
+	/* Optional parameter */
+	if (strcmp(argv[0], "falloc_new_clu") == 0) {
+		if (argc < 2) {
+			ret = -EINVAL;
+			goto err;
+		}
+		ploop->falloc_new_clu = true;
+		EAT_ARG(argc, argv);
+	}
+
+	ret = ploop_add_deltas_stack(ploop, &argv[0], argc);
 	if (ret)
 		goto err;
 
@@ -412,16 +430,19 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 	char stat[16] = { 0 }, *p = stat;
 	ssize_t sz = 0;
 
-	read_lock_irq(&ploop->bat_rwlock);
+	down_read(&ploop->ctl_rwsem);
+	if (ploop->falloc_new_clu)
+		p += sprintf(p, "f");
 	if (ploop->tracking_bitmap)
 		p += sprintf(p, "t");
 	if (READ_ONCE(ploop->noresume))
 		p += sprintf(p, "n");
 	if (p == stat)
 		p += sprintf(p, "o");
+	up_read(&ploop->ctl_rwsem);
+
 	BUG_ON(p - stat >= sizeof(stat));
 	DMEMIT("%u v2 %u %s", ploop->nr_deltas, (u32)CLU_TO_SEC(ploop, 1), stat);
-	read_unlock_irq(&ploop->bat_rwlock);
 }
 
 static void ploop_set_wants_suspend(struct dm_target *ti, bool wants)
