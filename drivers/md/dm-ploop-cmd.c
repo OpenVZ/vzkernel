@@ -120,16 +120,6 @@ static int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable)
 	return 0;
 }
 
-static int ploop_suspend_submitting_pios(struct ploop *ploop)
-{
-	spin_lock_irq(&ploop->deferred_lock);
-	WARN_ON_ONCE(ploop->stop_submitting_pios);
-	ploop->stop_submitting_pios = true;
-	spin_unlock_irq(&ploop->deferred_lock);
-
-	return ploop_inflight_bios_ref_switch(ploop, true);
-}
-
 static void ploop_resume_submitting_pios(struct ploop *ploop)
 {
 	LIST_HEAD(list);
@@ -141,6 +131,21 @@ static void ploop_resume_submitting_pios(struct ploop *ploop)
 	spin_unlock_irq(&ploop->deferred_lock);
 
 	submit_embedded_pios(ploop, &list);
+}
+
+static int ploop_suspend_submitting_pios(struct ploop *ploop)
+{
+	int ret;
+
+	spin_lock_irq(&ploop->deferred_lock);
+	WARN_ON_ONCE(ploop->stop_submitting_pios);
+	ploop->stop_submitting_pios = true;
+	spin_unlock_irq(&ploop->deferred_lock);
+
+	ret = ploop_inflight_bios_ref_switch(ploop, true);
+	if (ret)
+		ploop_resume_submitting_pios(ploop);
+	return ret;
 }
 
 /* Find existing BAT clu pointing to dst_clu */
