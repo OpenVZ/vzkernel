@@ -537,6 +537,12 @@ static int punch_hole(struct file *file, loff_t pos, loff_t len)
 			     pos, len);
 }
 
+static int zero_range(struct file *file, loff_t pos, loff_t len)
+{
+	return vfs_fallocate(file, FALLOC_FL_ZERO_RANGE|FALLOC_FL_KEEP_SIZE,
+			     pos, len);
+}
+
 static void handle_discard_pio(struct ploop *ploop, struct pio *pio,
 			       u32 clu, u32 dst_clu)
 {
@@ -924,19 +930,24 @@ static int find_dst_clu_bit(struct ploop *ploop,
 	return 0;
 }
 
-static int truncate_prealloc_safe(struct ploop_delta *delta, loff_t len, const char *func)
+static int truncate_prealloc_safe(struct ploop *ploop, struct ploop_delta *delta,
+				  loff_t len, const char *func)
 {
 	struct file *file = delta->file;
+	loff_t old_len = delta->file_size;
 	loff_t new_len = len;
 	int ret;
 
-	if (new_len <= delta->file_size)
+	if (new_len <= old_len)
 		return 0;
 	new_len = ALIGN(new_len, PREALLOC_SIZE);
 
-	ret = vfs_truncate2(&file->f_path, new_len, file);
+	if (!ploop->falloc_new_clu)
+		ret = vfs_truncate2(&file->f_path, new_len, file);
+	else
+		ret = vfs_fallocate(file, 0, old_len, new_len - old_len);
 	if (ret) {
-		pr_err("ploop: %s->truncate(): %d\n", func, ret);
+		pr_err("ploop: %s->prealloc: %d\n", func, ret);
 		return ret;
 	}
 
@@ -969,22 +980,25 @@ static int allocate_cluster(struct ploop *ploop, u32 *dst_clu)
 	if (pos < top->file_preallocated_area_start) {
 		/* Clu at @pos may contain dirty data */
 		off = min_t(loff_t, old_size, end);
-		ret = punch_hole(file, pos, off - pos);
+		if (!ploop->falloc_new_clu)
+			ret = punch_hole(file, pos, off - pos);
+		else
+			ret = zero_range(file, pos, off - pos);
 		if (ret) {
-			pr_err("ploop: punch hole: %d\n", ret);
+			pr_err("ploop: punch/zero area: %d\n", ret);
 			return ret;
 		}
 	}
 
 	if (end > old_size) {
-		ret = truncate_prealloc_safe(top, end, __func__);
+		ret = truncate_prealloc_safe(ploop, top, end, __func__);
 		if (ret)
 			return ret;
 	} else if (pos < top->file_preallocated_area_start) {
 		/*
-		 * Flush punch_hole() modifications.
-		 * TODO: track recentry unused blocks
-		 * and punch holes in background.
+		 * Flush punch_hole()/zero_range() modifications.
+		 * TODO: track recentry unused blocks and do that
+		 * in background.
 		 */
 		ret = vfs_fsync(file, 0);
 		if (ret)
