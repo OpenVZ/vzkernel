@@ -940,6 +940,14 @@ static int process_flip_upper_deltas(struct ploop *ploop)
 	return 0;
 }
 
+static int ploop_set_falloc_new_clu(struct ploop *ploop, u64 val)
+{
+	if (val > 1)
+		return -EINVAL;
+	ploop->falloc_new_clu = !!val;
+	return 0;
+}
+
 static int process_tracking_start(struct ploop *ploop, void *tracking_bitmap,
 				  u32 tb_nr)
 {
@@ -1269,6 +1277,10 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 		if (argc != 3 || kstrtou64(argv[1], 10, &val) < 0)
 			goto unlock;
 		ret = ploop_update_delta_index(ploop, val, argv[2]);
+	} else if (!strncmp(argv[0], "set_falloc_new_clu", 20)) {
+		if (argc != 2 || kstrtou64(argv[1], 10, &val) < 0)
+			goto unlock;
+		ret = ploop_set_falloc_new_clu(ploop, val);
 	} else if (!strncmp(argv[0], "tracking_", 9)) {
 		if (argc != 1)
 			goto unlock;
