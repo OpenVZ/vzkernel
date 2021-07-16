@@ -896,6 +896,7 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	if (err)
 		goto err_log;
 
+	err = -ENOMEM;
 	if (copy_vdso(&ve->vdso_64, &vdso_image_64))
 		goto err_vdso;
 
