@@ -1320,9 +1320,8 @@ struct vfsmount *mnt_clone_internal(const struct path *path)
 	return &p->mnt;
 }
 
-#ifdef CONFIG_PROC_FS
-static struct mount *mnt_list_next(struct mnt_namespace *ns,
-				   struct list_head *p)
+struct mount *mnt_list_next(struct mnt_namespace *ns,
+			    struct list_head *p)
 {
 	struct mount *mnt, *ret = NULL;
 
@@ -1339,6 +1338,7 @@ static struct mount *mnt_list_next(struct mnt_namespace *ns,
 	return ret;
 }
 
+#ifdef CONFIG_PROC_FS
 /* iterator; we want it to have access to namespace_sem, thus here... */
 static void *m_start(struct seq_file *m, loff_t *pos)
 {

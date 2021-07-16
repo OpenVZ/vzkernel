@@ -146,9 +146,10 @@ static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync
 	mnt_ns = ve_ns->mnt_ns;
 	rcu_read_unlock();
 
-	list_for_each_entry(mnt, &mnt_ns->list, mnt_list) {
+	mnt = mnt_list_next(mnt_ns, &mnt_ns->list);
+	while (mnt) {
 		if (sync_filesystem_collected(sync_list, mnt->mnt.mnt_sb))
-			continue;
+			goto next;
 
 		ss = kmalloc(sizeof(*ss), GFP_KERNEL);
 		if (ss == NULL) {
@@ -165,6 +166,8 @@ static int sync_collect_filesystems(struct ve_struct *ve, struct list_head *sync
 		ss->sb->s_count++;
 		spin_unlock(&sb_lock);
 		list_add_tail(&ss->list, sync_list);
+next:
+		mnt = mnt_list_next(mnt_ns, &mnt->mnt_list);
 	}
 	up_read(&namespace_sem);
 	return ret;

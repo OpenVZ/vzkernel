@@ -67,6 +67,7 @@ struct fscrypt_info;
 struct fscrypt_operations;
 struct fs_context;
 struct fs_parameter_spec;
+struct mnt_namespace;
 
 extern void __init inode_init(void);
 extern void __init inode_init_early(void);
@@ -3391,6 +3392,9 @@ extern int inode_newsize_ok(const struct inode *, loff_t offset);
 extern void setattr_copy(struct inode *inode, const struct iattr *attr);
 
 extern int file_update_time(struct file *file);
+
+extern struct mount *mnt_list_next(struct mnt_namespace *ns,
+				   struct list_head *p);
 
 static inline bool vma_is_dax(const struct vm_area_struct *vma)
 {
