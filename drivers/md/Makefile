@@ -21,6 +21,7 @@ dm-era-y	+= dm-era-target.o
 ploop-y		+= dm-ploop-target.o dm-ploop-map.o dm-ploop-cmd.o \
 		    dm-ploop-bat.o
 push-backup-y	+= dm-push-backup.o
+dm-qcow2-y	+= dm-qcow2-target.o dm-qcow2-map.o dm-qcow2-cmd.o
 dm-verity-y	+= dm-verity-target.o
 md-mod-y	+= md.o md-bitmap.o
 raid456-y	+= raid5.o raid5-cache.o raid5-ppl.o
@@ -69,6 +70,7 @@ obj-$(CONFIG_DM_CACHE_SMQ)	+= dm-cache-smq.o
 obj-$(CONFIG_DM_ERA)		+= dm-era.o
 obj-$(CONFIG_DM_PLOOP)		+= ploop.o
 obj-$(CONFIG_DM_PUSH_BACKUP)	+= push-backup.o
+obj-$(CONFIG_DM_QCOW2)		+= dm-qcow2.o
 obj-$(CONFIG_DM_LOG_WRITES)	+= dm-log-writes.o
 obj-$(CONFIG_DM_INTEGRITY)	+= dm-integrity.o
 obj-$(CONFIG_DM_ZONED)		+= dm-zoned.o
