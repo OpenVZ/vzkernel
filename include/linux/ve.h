@@ -23,6 +23,7 @@ struct nsproxy;
 struct veip_struct;
 struct user_namespace;
 struct cn_private;
+struct vfsmount;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -119,6 +120,8 @@ struct ve_struct {
 	 */
 	struct list_head	per_cgroot_list;
 	spinlock_t		per_cgroot_list_lock;
+
+	struct vfsmount		*devtmpfs_mnt;
 };
 
 struct ve_devmnt {

@@ -26,6 +26,7 @@
 #include <linux/slab.h>
 #include <linux/kthread.h>
 #include <uapi/linux/mount.h>
+#include <linux/ve.h>
 #include "base.h"
 
 static struct task_struct *thread;
@@ -62,6 +63,13 @@ static struct dentry *public_dev_mount(struct file_system_type *fs_type, int fla
 		      const char *dev_name, void *data)
 {
 	struct super_block *s = mnt->mnt_sb;
+#ifdef CONFIG_VE
+	struct ve_struct *ve = get_exec_env();
+
+	if (!ve_is_super(ve))
+		s = ve->devtmpfs_mnt->mnt_sb;
+#endif
+
 	atomic_inc(&s->s_active);
 	down_write(&s->s_umount);
 	return dget(s->s_root);
@@ -82,6 +90,7 @@ static struct file_system_type internal_fs_type = {
 static struct file_system_type dev_fs_type = {
 	.name = "devtmpfs",
 	.mount = public_dev_mount,
+	.fs_flags = FS_VIRTUALIZED | FS_VE_MOUNT,
 };
 
 #ifdef CONFIG_BLOCK
@@ -423,6 +432,22 @@ static int devtmpfsd(void *p)
 out:
 	complete(&setup_done);
 	return *err;
+}
+
+int ve_mount_devtmpfs(struct ve_struct *ve)
+{
+	char opts[] = "mode=0755";
+	struct vfsmount *mnt;
+
+	mnt = vfs_kern_mount(&internal_fs_type, 0, "devtmpfs", opts);
+	if (IS_ERR(mnt)) {
+		printk(KERN_ERR "CT#%s: devtmpfs: unable to create devtmpfs %ld\n",
+		       ve_name(ve), PTR_ERR(mnt));
+		return PTR_ERR(mnt);
+	}
+	ve->devtmpfs_mnt = mnt;
+
+	return 0;
 }
 
 /*

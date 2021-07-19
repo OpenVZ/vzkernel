@@ -28,6 +28,7 @@
 #include <linux/nsproxy.h>
 #include <linux/fs_struct.h>
 #include <linux/genhd.h>
+#include <linux/device.h>
 
 #include <uapi/linux/vzcalluser.h>
 #include <net/rtnetlink.h>
@@ -913,6 +914,10 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	if (copy_vdso(&ve->vdso_32, &vdso_image_32))
 		goto err_vdso;
 
+	err = ve_mount_devtmpfs(ve);
+	if (err)
+		goto err_vdso;
+
 	ve->features = VE_FEATURES_DEF;
 
 	INIT_WORK(&ve->release_agent_work, cgroup1_release_agent);
@@ -1024,6 +1029,7 @@ static void ve_destroy(struct cgroup_subsys_state *css)
 	kmapset_unlink(&ve->sysfs_perms_key, &sysfs_ve_perms_set);
 	ve_log_destroy(ve);
 	ve_free_vdso(ve);
+	mntput(ve->devtmpfs_mnt);
 #if IS_ENABLED(CONFIG_BINFMT_MISC)
 	kfree(ve->binfmt_misc);
 #endif
