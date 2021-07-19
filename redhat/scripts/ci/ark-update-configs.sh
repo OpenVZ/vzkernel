@@ -49,13 +49,18 @@ if ! git merge -m "Merge '$UPSTREAM_REF' into '$BRANCH'" "$UPSTREAM_REF"; then
 fi
 
 # Generates and commits all the pending configs
+
 make FLAVOR=fedora dist-configs-commit
+# Skip executing gen_config_patches.sh for new Fedora configs
+
+old_head="$(git rev-parse HEAD)"
 make FLAVOR=rhel dist-configs-commit
+new_head="$(git rev-parse HEAD)"
 
 # Converts each new pending config from above into its finalized git
 # configs/<date>/<config> branch.  These commits are used for Merge
 # Requests.
-if git show -s --oneline HEAD | grep -q "AUTOMATIC: New configs"; then
+if [ "$old_head" != "$new_head" ]; then
 	./redhat/gen_config_patches.sh
 else
 	printf "No new configuration values exposed from merging %s into $BRANCH\n" "$UPSTREAM_REF"

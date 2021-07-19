@@ -26,6 +26,11 @@ trap cleanup EXIT
 # Not interested in Fedora configs
 git diff --name-only HEAD HEAD^ | grep -v "pending-fedora" > "$tmpdir"/new_config_files
 
+if [ ! -s "$tmpdir"/new_config_files ]; then
+	echo "No config changes after filtering"
+	exit 0
+fi
+
 while read -r line; do
 	# Read all the files and split up by file path of each config item.
 	# ethernet and net get handled separately others can be added as needed
@@ -89,7 +94,10 @@ done < "$tmpdir"/new_config_files
 
 # $config_bundles_dir now contains files containing a list of configs per file path
 for f in "$config_bundles_dir"/*; do
-	[[ -e "$f" ]] || exit 1  # No files in config_bundles_dir, abort
+	if [ ! -e "$f" ]; then
+		echo "Missing generated config file: $f"
+		exit 1  # No files in config_bundles_dir, abort
+	fi
 	# we had to change to : for the file name so switch it back
 	_f=$(basename "$f" | sed -e 's/:/\//g')
 	# Commit subject
