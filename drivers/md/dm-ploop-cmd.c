@@ -1154,7 +1154,7 @@ static int ploop_check_delta_before_flip(struct ploop *ploop, struct file *file)
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
 		init_be_iter(size_in_clus, md->id, &i, &end);
-		d_bat_entries = kmap(d_md->page);
+		d_bat_entries = kmap_atomic(d_md->page);
 		for (; i <= end; i++) {
 			if (md_page_cluster_is_in_top_delta(ploop, md, i) &&
 			    d_bat_entries[i] != BAT_ENTRY_NONE) {
@@ -1170,7 +1170,7 @@ static int ploop_check_delta_before_flip(struct ploop *ploop, struct file *file)
 			goto unmap;
 		}
 unmap:
-		kunmap(d_md->page);
+		kunmap_atomic(d_bat_entries);
 		if (stop)
 			break;
 		d_md = md_next_entry(d_md);
