@@ -502,9 +502,6 @@ static int ploop_preresume(struct dm_target *ti)
 	}
 	return ret;
 }
-static void ploop_resume(struct dm_target *ti)
-{
-}
 
 /*----------------------------------------------------------------*/
 
@@ -521,7 +518,6 @@ static struct target_type ploop_target = {
 	.presuspend_undo = ploop_presuspend_undo,
 	.postsuspend = ploop_postsuspend,
 	.preresume = ploop_preresume,
-	.resume = ploop_resume,
 	.clone_and_map_rq = ploop_clone_and_map,
 	.status = ploop_status,
 };
