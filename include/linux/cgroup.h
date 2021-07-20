@@ -876,6 +876,8 @@ int cgroup_mark_ve_roots(struct ve_struct *ve);
 void cgroup_unmark_ve_roots(struct ve_struct *ve);
 struct cgroup_subsys_state *css_local_root(struct cgroup_subsys_state *css);
 struct ve_struct *cgroup_get_ve_owner(struct cgroup *cgrp);
+struct cgroup_subsys_state *cgroup_get_e_ve_css(struct cgroup *cgrp,
+						struct cgroup_subsys *ss);
 #endif
 
 #else /* !CONFIG_CGROUPS */
