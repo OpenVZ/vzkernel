@@ -2883,13 +2883,13 @@ fi
 /lib/modules/%{KVERREL}%{?3:+%{3}}/dtb \
 %ghost /%{image_install_path}/dtb-%{KVERREL}%{?3:+%{3}} \
 %endif\
-%attr(600,root,root) /lib/modules/%{KVERREL}%{?3:+%{3}}/System.map\
-%ghost /boot/System.map-%{KVERREL}%{?3:+%{3}}\
+%attr(0600, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/System.map\
+%ghost %attr(0600, root, root) /boot/System.map-%{KVERREL}%{?3:+%{3}}\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/symvers.gz\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/config\
-%ghost /boot/symvers-%{KVERREL}%{?3:+%{3}}.gz\
-%ghost /boot/config-%{KVERREL}%{?3:+%{3}}\
-%ghost /boot/initramfs-%{KVERREL}%{?3:+%{3}}.img\
+%ghost %attr(0600, root, root) /boot/symvers-%{KVERREL}%{?3:+%{3}}.gz\
+%ghost %attr(0600, root, root) /boot/initramfs-%{KVERREL}%{?3:+%{3}}.img\
+%ghost %attr(0644, root, root) /boot/config-%{KVERREL}%{?3:+%{3}}\
 %dir /lib/modules\
 %dir /lib/modules/%{KVERREL}%{?3:+%{3}}\
 %dir /lib/modules/%{KVERREL}%{?3:+%{3}}/kernel\
