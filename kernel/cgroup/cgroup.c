@@ -329,7 +329,7 @@ struct cgroup *cgroup_get_local_root(struct cgroup *cgrp)
 	return cgrp;
 }
 
-struct cgroup_subsys_state *css_get_local_root(struct cgroup_subsys_state *css)
+struct cgroup_subsys_state *css_local_root(struct cgroup_subsys_state *css)
 {
 	/*
 	 * Find css for nearest "root" cgroup, which might be
