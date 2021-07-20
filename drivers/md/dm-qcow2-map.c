@@ -2056,7 +2056,7 @@ int qcow2_truncate_safe(struct file *file, loff_t new_len)
 {
 	int ret;
 
-	ret = vfs_truncate(&file->f_path, new_len);
+	ret = vfs_truncate2(&file->f_path, new_len, file);
 	if (ret)
 		return ret;
 
