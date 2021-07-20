@@ -1,1 +1,1 @@
-# CONFIG_DRM_HYPERV is not set
+CONFIG_DRM_HYPERV=m
