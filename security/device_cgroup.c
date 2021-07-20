@@ -328,7 +328,7 @@ static int devcgroup_seq_show(struct seq_file *m, void *v)
 		 * as in ve root cgroup - show as if we allow everyting
 		 */
 		if (!ve_is_super(get_exec_env())) {
-			root_css  = css_get_local_root(seq_css(m));
+			root_css  = css_local_root(seq_css(m));
 			root_cgrp = css_to_devcgroup(root_css);
 
 			if (dev_exceptions_equal(&devcgroup->exceptions,
