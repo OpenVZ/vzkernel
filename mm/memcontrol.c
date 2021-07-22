@@ -4180,7 +4180,7 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 
 void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats)
 {
-	int cpu, i;
+	int i;
 	unsigned long limit = READ_ONCE(memcg->memory.max);
 	unsigned long memory = page_counter_read(&memcg->memory);
 	unsigned long *zone_stats = stats;
@@ -4203,28 +4203,18 @@ void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats)
 	node_stats[NR_FILE_PAGES] = node_stats[NR_ACTIVE_FILE] +
 				    node_stats[NR_INACTIVE_FILE];
 
-	node_stats[NR_SLAB_RECLAIMABLE_B] = mem_page_state_recursive(
-			memcg, NR_SLAB_RECLAIMABLE_B);
-	node_stats[NR_SLAB_UNRECLAIMABLE_B] = mem_page_state_recursive(
-			memcg, NR_SLAB_UNRECLAIMABLE_B);
-	node_stats[NR_FILE_MAPPED] = mem_page_state_recursive(
-			memcg, NR_FILE_MAPPED);
-	node_stats[NR_SHMEM] = mem_page_state_recursive(
-			memcg, NR_SHMEM);
-
-
+	node_stats[NR_SLAB_RECLAIMABLE_B] =
+				memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B);
+	node_stats[NR_SLAB_UNRECLAIMABLE_B] =
+				memcg_page_state(memcg, NR_SLAB_UNRECLAIMABLE_B);
+	node_stats[NR_FILE_MAPPED] = memcg_page_state(memcg, NR_FILE_MAPPED);
+	node_stats[NR_SHMEM] = memcg_page_state(memcg, NR_SHMEM);
 
 #ifdef CONFIG_VM_EVENT_COUNTERS
-	for_each_possible_cpu(cpu) {
-		vm_stats[PSWPIN] += per_cpu(
-			memcg->vmstats_local->events[PSWPIN], cpu);
-		vm_stats[PSWPOUT] += per_cpu(
-			memcg->vmstats_local->events[PSWPOUT], cpu);
-		vm_stats[PGFAULT] += per_cpu(
-			memcg->vmstats_local->events[PGFAULT], cpu);
-		vm_stats[PGMAJFAULT] += per_cpu(
-			memcg->vmstats_local->events[PGMAJFAULT], cpu);
-	}
+	vm_stats[PSWPIN] = memcg_events(memcg, PSWPIN);
+	vm_stats[PSWPOUT] = memcg_events(memcg, PSWPOUT);
+	vm_stats[PGFAULT] = memcg_events(memcg, PGFAULT);
+	vm_stats[PGMAJFAULT] = memcg_events(memcg, PGMAJFAULT);
 #endif
 }
 
