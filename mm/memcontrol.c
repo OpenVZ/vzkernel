@@ -4191,9 +4191,7 @@ void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats)
 				  NR_VM_NODE_STAT_ITEMS +
 				  NR_VM_WRITEBACK_STAT_ITEMS;
 
-
-
-	zone_stats[NR_FREE_PAGES] = memory > limit ? 0 : limit- memory;
+	zone_stats[NR_FREE_PAGES] = memory > limit ? 0 : limit - memory;
 
 	for (i = LRU_BASE; i < NR_LRU_LISTS; i++) {
 		node_stats[NR_LRU_BASE + i] =
@@ -4201,9 +4199,9 @@ void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats)
 	}
 
 	node_stats[NR_ANON_MAPPED] = node_stats[NR_ACTIVE_ANON] +
-		node_stats[NR_INACTIVE_ANON];
+				     node_stats[NR_INACTIVE_ANON];
 	node_stats[NR_FILE_PAGES] = node_stats[NR_ACTIVE_FILE] +
-		node_stats[NR_INACTIVE_FILE];
+				    node_stats[NR_INACTIVE_FILE];
 
 	node_stats[NR_SLAB_RECLAIMABLE_B] = mem_page_state_recursive(
 			memcg, NR_SLAB_RECLAIMABLE_B);
