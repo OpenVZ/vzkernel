@@ -2592,7 +2592,7 @@ if [ "$HARDLINK" != "no" -a -x /usr/bin/hardlink -a ! -e /run/ostree-booted ] \
 then\
     (cd /usr/src/kernels/%{KVERREL}%{?1:+%{1}} &&\
      /usr/bin/find . -type f | while read f; do\
-       hardlink -c /usr/src/kernels/*%{?dist}.*/$f $f\
+       hardlink -c /usr/src/kernels/*%{?dist}.*/$f $f > /dev/null\
      done)\
 fi\
 %{nil}
