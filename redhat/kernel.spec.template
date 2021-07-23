@@ -2206,12 +2206,10 @@ pushd tools/thermal/tmon/
 %{tools_make}
 popd
 pushd tools/iio/
-# Needs to be fixed to pick up CFLAGS
-%{__make}
+%{tools_make}
 popd
 pushd tools/gpio/
-# Needs to be fixed to pick up CFLAGS
-%{__make}
+%{tools_make}
 popd
 # build VM tools
 pushd tools/vm/
@@ -2466,10 +2464,10 @@ pushd tools/thermal/tmon
 %{tools_make} INSTALL_ROOT=%{buildroot} install
 popd
 pushd tools/iio
-%{__make} DESTDIR=%{buildroot} install
+%{tools_make} DESTDIR=%{buildroot} install
 popd
 pushd tools/gpio
-%{__make} DESTDIR=%{buildroot} install
+%{tools_make} DESTDIR=%{buildroot} install
 popd
 install -m644 -D %{SOURCE2002} %{buildroot}%{_sysconfdir}/logrotate.d/kvm_stat
 pushd tools/kvm/kvm_stat
