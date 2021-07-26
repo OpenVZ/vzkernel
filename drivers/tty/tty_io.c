@@ -106,6 +106,7 @@
 
 #include <linux/kmod.h>
 #include <linux/nsproxy.h>
+#include <linux/ve.h>
 
 #undef TTY_DEBUG_HANGUP
 #ifdef TTY_DEBUG_HANGUP
@@ -1832,6 +1833,20 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 {
 	struct tty_driver *driver;
 
+#ifdef CONFIG_VE
+	struct ve_struct *ve = get_exec_env();
+
+	if (!ve_is_super(ve)) {
+		driver = vtty_driver(device, index);
+		if (driver)
+			/*
+			 * noctty = 1 has been removed at porting in hope that
+			 * at tty_open noctty will be set as expected.
+			 */
+			return tty_driver_kref_get(driver);
+	}
+#endif
+
 	switch (device) {
 #ifdef CONFIG_VT
 	case MKDEV(TTY_MAJOR, 0): {
@@ -1843,6 +1858,10 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 #endif
 	case MKDEV(TTYAUX_MAJOR, 1): {
 		struct tty_driver *console_driver = console_device(index);
+#ifdef CONFIG_VE
+		if (!ve_is_super(ve))
+			console_driver = vtty_console_driver(index);
+#endif
 		if (console_driver) {
 			driver = tty_driver_kref_get(console_driver);
 			if (driver && filp) {
