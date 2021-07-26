@@ -145,9 +145,9 @@ parsenewconfigs()
                 BEGIN { inpatch=0;
 			outfile="none";
                         symbol="none"; }
-                /^CONFIG_.*:$/ {
-                        split($0, a, ":");
-                        symbol=a[1];
+                /^Symbol: .*$/ {
+                        split($0, a, " ");
+                        symbol="CONFIG_"a[2];
                         outfile=BASE "/fake_"symbol
                 }
                 /-----/ {

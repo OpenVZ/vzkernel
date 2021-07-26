@@ -83,10 +83,9 @@ while read -r line; do
 		print config >> subsystem_path;
 		next;
 	}
-	/^# CONFIG_.*:/ {
-		split($0, a);
-		split(a[2], b, ":");
-		config=b[1];
+	/^# Symbol: .*/ {
+		split($0, a, " ");
+		config="CONFIG_"a[3];
 		#print config;
 	}
 	' "$line"
