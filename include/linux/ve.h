@@ -17,6 +17,7 @@
 #include <linux/kmapset.h>
 #include <linux/kthread.h>
 #include <linux/binfmts.h>
+#include <linux/tty_driver.h>
 #include <asm/vdso.h>
 
 struct nsproxy;
@@ -208,6 +209,8 @@ struct user_namespace *ve_init_user_ns(void);
 extern struct tty_driver *vtty_driver(dev_t dev, int *index);
 extern struct tty_driver *vtty_console_driver(int *index);
 extern int vtty_open_master(envid_t veid, int idx);
+extern void vtty_release(struct tty_struct *tty, struct tty_struct *o_tty,
+			int *tty_closing, int *o_tty_closing);
 #endif /* CONFIG_TTY */
 
 extern struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp);
