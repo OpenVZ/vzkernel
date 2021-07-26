@@ -1963,22 +1963,21 @@ EXPORT_SYMBOL_GPL(tty_kopen);
  *	  - concurrent tty removal from driver table
  */
 static struct tty_struct *tty_open_by_driver(dev_t device, struct inode *inode,
-					     struct file *filp)
+					     struct file *filp, int *index)
 {
 	struct tty_struct *tty;
 	struct tty_driver *driver = NULL;
-	int index = -1;
 	int retval;
 
 	mutex_lock(&tty_mutex);
-	driver = tty_lookup_driver(device, filp, &index);
+	driver = tty_lookup_driver(device, filp, index);
 	if (IS_ERR(driver)) {
 		mutex_unlock(&tty_mutex);
 		return ERR_CAST(driver);
 	}
 
 	/* check whether we're reopening an existing tty */
-	tty = tty_driver_lookup_tty(driver, filp, index);
+	tty = tty_driver_lookup_tty(driver, filp, *index);
 	if (IS_ERR(tty)) {
 		mutex_unlock(&tty_mutex);
 		goto out;
@@ -2006,7 +2005,7 @@ static struct tty_struct *tty_open_by_driver(dev_t device, struct inode *inode,
 			tty = ERR_PTR(retval);
 		}
 	} else { /* Returns with the tty_lock held for now */
-		tty = tty_init_dev(driver, index);
+		tty = tty_init_dev(driver, *index);
 		mutex_unlock(&tty_mutex);
 	}
 out:
@@ -2044,6 +2043,7 @@ static int tty_open(struct inode *inode, struct file *filp)
 	int noctty, retval;
 	dev_t device = inode->i_rdev;
 	unsigned saved_flags = filp->f_flags;
+	int index = -1;
 
 	nonseekable_open(inode, filp);
 
@@ -2054,7 +2054,7 @@ retry_open:
 
 	tty = tty_open_current_tty(device, filp);
 	if (!tty)
-		tty = tty_open_by_driver(device, inode, filp);
+		tty = tty_open_by_driver(device, inode, filp, &index);
 
 	if (IS_ERR(tty)) {
 		tty_free_file(filp);
@@ -2102,6 +2102,14 @@ retry_open:
 		 device == MKDEV(TTYAUX_MAJOR, 1) ||
 		 (tty->driver->type == TTY_DRIVER_TYPE_PTY &&
 		  tty->driver->subtype == PTY_TYPE_MASTER);
+#ifdef CONFIG_VE
+	if (!noctty) {
+		if (vtty_driver(device, &index)) {
+			if (MINOR(device) == 0)
+				noctty = 1;
+		}
+	}
+#endif
 	if (!noctty)
 		tty_open_proc_set_tty(filp, tty);
 	tty_unlock(tty);
