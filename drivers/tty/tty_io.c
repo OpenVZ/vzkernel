@@ -1642,12 +1642,21 @@ EXPORT_SYMBOL_GPL(tty_release_struct);
 
 int tty_release(struct inode *inode, struct file *filp)
 {
-	struct tty_struct *tty = file_tty(filp);
+	struct tty_struct *tty;
 	struct tty_struct *o_tty = NULL;
 	int	do_sleep, final;
 	int	idx;
 	long	timeout = 0;
 	int	once = 1;
+
+	/*
+	 * filp can be released at error path with private_data already
+	 * reverted to NULL, see vtty_open_master.
+	 */
+	if (!filp->private_data)
+		return 0;
+
+	tty = file_tty(filp);
 
 	if (tty_paranoia_check(tty, inode, __func__))
 		return 0;

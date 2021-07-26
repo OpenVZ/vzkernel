@@ -1129,7 +1129,14 @@ err_install:
 	mutex_unlock(&tty_mutex);
 	tty_free_file(file);
 err_fput:
-	file->f_op = NULL;
+	/*
+	 * __fput will try to call file->f_op->fasync and file->f_op->release
+	 * We don't want that.
+	 * fasync ( will not get called without FASYNC flag.
+	 * release (tty_release in our case) has private_data == NULL checked
+	 * for early return.
+	 */
+	file->f_flags &= ~FASYNC;
 	fput(file);
 err_put_unused_fd:
 	put_unused_fd(fd);
