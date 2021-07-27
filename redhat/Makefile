@@ -260,6 +260,7 @@ sources-rh: $(TARBALL) generate-testpatch-tmp setup-source dist-configs-check
 		keys/rhel*.x509 \
 		kabi/check-kabi \
 		configs/$(PACKAGE_NAME)-*.config \
+		gating.yaml \
 		rpminspect.yaml \
 		update_scripts.sh \
 		kvm_stat.logrotate \
