@@ -1174,6 +1174,7 @@ static void data_rw_complete(struct pio *pio)
  */
 static void submit_rw_mapped(struct ploop *ploop, struct pio *pio)
 {
+	struct cgroup_subsys_state *css = pio->css;
 	unsigned int rw, nr_segs;
 	struct bio_vec *bvec;
 	struct iov_iter iter;
@@ -1195,10 +1196,11 @@ static void submit_rw_mapped(struct ploop *ploop, struct pio *pio)
 
 	file = ploop->deltas[pio->level].file;
 
-	if (pio->css)
+	if (css)
 		kthread_associate_blkcg(pio->css);
+	/* Don't touch @pio after that */
 	ploop_call_rw_iter(file, pos, rw, &iter, pio);
-	if (pio->css)
+	if (css)
 		kthread_associate_blkcg(NULL);
 
 }
