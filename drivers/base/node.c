@@ -365,10 +365,21 @@ static ssize_t node_read_meminfo(struct device *dev,
 	struct pglist_data *pgdat = NODE_DATA(nid);
 	struct sysinfo i;
 	unsigned long sreclaimable, sunreclaimable;
+	unsigned long totalram;
+	unsigned long kreclaimable;
+	unsigned long usableram;
 
 	si_meminfo_node(&i, nid);
 	sreclaimable = node_page_state(pgdat, NR_SLAB_RECLAIMABLE);
 	sunreclaimable = node_page_state(pgdat, NR_SLAB_UNRECLAIMABLE);
+	totalram = i.totalram;
+	kreclaimable = sreclaimable + node_page_state(pgdat,
+						      NR_KERNEL_MISC_RECLAIMABLE);
+	/* HACK, PSBM-129304 */
+	usableram = i.freeram + kreclaimable;
+	if (totalram < usableram)
+		totalram = usableram;
+
 	n = sprintf(buf,
 		       "Node %d MemTotal:       %8lu kB\n"
 		       "Node %d MemFree:        %8lu kB\n"
@@ -381,7 +392,7 @@ static ssize_t node_read_meminfo(struct device *dev,
 		       "Node %d Inactive(file): %8lu kB\n"
 		       "Node %d Unevictable:    %8lu kB\n"
 		       "Node %d Mlocked:        %8lu kB\n",
-		       nid, K(i.totalram),
+		       nid, K(totalram),
 		       nid, K(i.freeram),
 		       nid, K(i.totalram - i.freeram),
 		       nid, K(node_page_state(pgdat, NR_ACTIVE_ANON) +
@@ -439,8 +450,7 @@ static ssize_t node_read_meminfo(struct device *dev,
 		       nid, K(node_page_state(pgdat, NR_UNSTABLE_NFS)),
 		       nid, K(sum_zone_node_page_state(nid, NR_BOUNCE)),
 		       nid, K(node_page_state(pgdat, NR_WRITEBACK_TEMP)),
-		       nid, K(sreclaimable +
-			      node_page_state(pgdat, NR_KERNEL_MISC_RECLAIMABLE)),
+		       nid, K(kreclaimable),
 		       nid, K(sreclaimable + sunreclaimable),
 		       nid, K(sreclaimable),
 		       nid, K(sunreclaimable)
