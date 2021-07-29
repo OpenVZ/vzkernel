@@ -2542,6 +2542,8 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
 	unsigned long nr_reclaimed = 0;
 
 	do {
+		long cache_overused;
+
 		if (page_counter_read(&memcg->memory) >
 		    READ_ONCE(memcg->memory.high)) {
 			memcg_memory_event(memcg, MEMCG_HIGH);
@@ -2549,9 +2551,12 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
 						nr_pages, gfp_mask, true);
 		}
 
-		if (page_counter_read(&memcg->cache) > memcg->cache.max)
+		cache_overused = page_counter_read(&memcg->cache) -
+				 memcg->cache.max;
+
+		if (cache_overused > 0)
 			nr_reclaimed += try_to_free_mem_cgroup_pages(memcg,
-						nr_pages, gfp_mask, false);
+					cache_overused, gfp_mask, false);
 	} while ((memcg = parent_mem_cgroup(memcg)) &&
 		 !mem_cgroup_is_root(memcg));
 
