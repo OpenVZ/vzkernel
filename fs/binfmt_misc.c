@@ -875,9 +875,10 @@ static int bm_fill_super(struct super_block *sb, struct fs_context *fc)
 	}
 
 	sb->s_op = &s_ops;
+	sb->s_fs_info = ve;
+	get_ve(ve);
 
 	bm_data->enabled = 1;
-	get_ve(ve);
 
 	return 0;
 }
