@@ -285,6 +285,7 @@ struct mem_cgroup {
 	struct page_counter kmem;		/* v1 only */
 	struct page_counter tcpmem;		/* v1 only */
 #endif
+	struct page_counter cache;
 
 	/* Range enforcement for interrupt charges */
 	struct work_struct high_work;
@@ -500,6 +501,8 @@ enum mem_cgroup_protection mem_cgroup_protected(struct mem_cgroup *root,
 						struct mem_cgroup *memcg);
 
 int mem_cgroup_charge(struct page *page, struct mm_struct *mm, gfp_t gfp_mask);
+int mem_cgroup_charge_cache(struct page *page, struct mm_struct *mm,
+			    gfp_t gfp_mask);
 
 void mem_cgroup_uncharge(struct page *page);
 void mem_cgroup_uncharge_list(struct list_head *page_list);
@@ -1057,6 +1060,12 @@ static inline enum mem_cgroup_protection mem_cgroup_protected(
 
 static inline int mem_cgroup_charge(struct page *page, struct mm_struct *mm,
 				    gfp_t gfp_mask)
+{
+	return 0;
+}
+
+static inline int mem_cgroup_charge_cache(struct page *page, struct mm_struct *mm,
+					  gfp_t gfp_mask)
 {
 	return 0;
 }
