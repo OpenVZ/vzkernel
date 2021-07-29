@@ -862,7 +862,7 @@ static int __add_to_page_cache_locked(struct page *page,
 	page->index = offset;
 
 	if (!huge) {
-		error = mem_cgroup_charge(page, current->mm, gfp);
+		error = mem_cgroup_charge_cache(page, current->mm, gfp);
 		if (error)
 			goto error;
 		charged = true;
