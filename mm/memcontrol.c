@@ -2542,12 +2542,16 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
 	unsigned long nr_reclaimed = 0;
 
 	do {
-		if (page_counter_read(&memcg->memory) <=
-		    READ_ONCE(memcg->memory.high))
-			continue;
-		memcg_memory_event(memcg, MEMCG_HIGH);
-		nr_reclaimed += try_to_free_mem_cgroup_pages(memcg, nr_pages,
-							     gfp_mask, true);
+		if (page_counter_read(&memcg->memory) >
+		    READ_ONCE(memcg->memory.high)) {
+			memcg_memory_event(memcg, MEMCG_HIGH);
+			nr_reclaimed += try_to_free_mem_cgroup_pages(memcg,
+						nr_pages, gfp_mask, true);
+		}
+
+		if (page_counter_read(&memcg->cache) > memcg->cache.max)
+			nr_reclaimed += try_to_free_mem_cgroup_pages(memcg,
+						nr_pages, gfp_mask, false);
 	} while ((memcg = parent_mem_cgroup(memcg)) &&
 		 !mem_cgroup_is_root(memcg));
 
@@ -2829,12 +2833,7 @@ retry:
 			goto charge;
 		}
 
-		if (cache_charge && !page_counter_try_charge(
-				&memcg->cache, nr_pages, &counter)) {
-			refill_stock(memcg, nr_pages);
-			goto charge;
-		}
-		return 0;
+		goto done;
 	}
 
 charge:
@@ -2857,19 +2856,6 @@ charge:
 			if (do_memsw_account())
 				page_counter_uncharge(&memcg->memsw, batch);
 		}
-	}
-
-	if (!mem_over_limit && cache_charge) {
-		if (page_counter_try_charge(&memcg->cache, nr_pages, &counter))
-			goto done_restock;
-
-		may_swap = false;
-		mem_over_limit = mem_cgroup_from_counter(counter, cache);
-		page_counter_uncharge(&memcg->memory, batch);
-		if (do_memsw_account())
-			page_counter_uncharge(&memcg->memsw, batch);
-		if (kmem_charge)
-			page_counter_uncharge(&memcg->kmem, nr_pages);
 	}
 
 	if (!mem_over_limit)
@@ -3007,6 +2993,9 @@ force:
 done_restock:
 	if (batch > nr_pages)
 		refill_stock(memcg, batch - nr_pages);
+done:
+	if (cache_charge)
+		page_counter_charge(&memcg->cache, nr_pages);
 
 	/*
 	 * If the hierarchy is above the normal consumption range, schedule
@@ -3047,7 +3036,11 @@ done_restock:
 			current->memcg_nr_pages_over_high += batch;
 			set_notify_resume(current);
 			break;
+		} else if (page_counter_read(&memcg->cache) > memcg->cache.max) {
+			if (!work_pending(&memcg->high_work))
+				schedule_work(&memcg->high_work);
 		}
+
 	} while ((memcg = parent_mem_cgroup(memcg)));
 
 	return 0;
