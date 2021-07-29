@@ -2234,7 +2234,7 @@ popd
 # in the source tree. We installed them previously to $RPM_BUILD_ROOT/usr
 # but there's no way to tell the Makefile to take them from there.
 %{make} %{?_smp_mflags} headers_install
-%{make} %{?_smp_mflags} ARCH=$Arch V=1 samples/bpf/
+%{make} %{?_smp_mflags} ARCH=$Arch V=1 M=samples/bpf/
 
 # Prevent bpf selftests to build bpftool repeatedly:
 export BPFTOOL=$(pwd)/tools/bpf/bpftool/bpftool
