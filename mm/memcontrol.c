@@ -2322,6 +2322,7 @@ struct memcg_stock_pcp {
 	unsigned int nr_bytes;
 #endif
 
+	unsigned int cache_nr_pages;
 	struct work_struct work;
 	unsigned long flags;
 #define FLUSHING_CACHED_CHARGE	0
@@ -2356,7 +2357,8 @@ static bool obj_stock_flush_required(struct memcg_stock_pcp *stock,
  *
  * returns true if successful, false otherwise.
  */
-static bool consume_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
+static bool consume_stock(struct mem_cgroup *memcg, unsigned int nr_pages,
+			  bool cache)
 {
 	struct memcg_stock_pcp *stock;
 	unsigned long flags;
@@ -2368,9 +2370,16 @@ static bool consume_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
 	local_irq_save(flags);
 
 	stock = this_cpu_ptr(&memcg_stock);
-	if (memcg == stock->cached && stock->nr_pages >= nr_pages) {
-		stock->nr_pages -= nr_pages;
-		ret = true;
+	if (memcg == stock->cached) {
+		if (cache && stock->cache_nr_pages >= nr_pages) {
+			stock->cache_nr_pages -= nr_pages;
+			ret = true;
+		}
+
+		if (!cache && stock->nr_pages >= nr_pages) {
+			stock->nr_pages -= nr_pages;
+			ret = true;
+		}
 	}
 
 	local_irq_restore(flags);
@@ -2384,15 +2393,20 @@ static bool consume_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
 static void drain_stock(struct memcg_stock_pcp *stock)
 {
 	struct mem_cgroup *old = stock->cached;
+	unsigned long nr_pages = stock->nr_pages + stock->cache_nr_pages;
 
 	if (!old)
 		return;
 
-	if (stock->nr_pages) {
-		page_counter_uncharge(&old->memory, stock->nr_pages);
+	if (stock->cache_nr_pages)
+		page_counter_uncharge(&old->cache, stock->cache_nr_pages);
+
+	if (nr_pages) {
+		page_counter_uncharge(&old->memory, nr_pages);
 		if (do_memsw_account())
-			page_counter_uncharge(&old->memsw, stock->nr_pages);
+			page_counter_uncharge(&old->memsw, nr_pages);
 		stock->nr_pages = 0;
+		stock->cache_nr_pages = 0;
 	}
 
 	css_put(&old->css);
@@ -2422,10 +2436,12 @@ static void drain_local_stock(struct work_struct *dummy)
  * Cache charges(val) to local per_cpu area.
  * This will be consumed by consume_stock() function, later.
  */
-static void refill_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
+static void refill_stock(struct mem_cgroup *memcg, unsigned int nr_pages,
+			 bool cache)
 {
 	struct memcg_stock_pcp *stock;
 	unsigned long flags;
+	unsigned long stock_nr_pages;
 
 	local_irq_save(flags);
 
@@ -2435,9 +2451,15 @@ static void refill_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
 		css_get(&memcg->css);
 		stock->cached = memcg;
 	}
-	stock->nr_pages += nr_pages;
 
-	if (stock->nr_pages > MEMCG_CHARGE_BATCH)
+	if (cache)
+		stock->cache_nr_pages += nr_pages;
+	else
+		stock->nr_pages += nr_pages;
+
+	stock_nr_pages = stock->nr_pages + stock->cache_nr_pages;
+	/* checkme: looks like a bug in original patch */
+	if (stock_nr_pages > MEMCG_CHARGE_BATCH)
 		drain_stock(stock);
 
 	local_irq_restore(flags);
@@ -2465,10 +2487,12 @@ static void drain_all_stock(struct mem_cgroup *root_memcg)
 		struct memcg_stock_pcp *stock = &per_cpu(memcg_stock, cpu);
 		struct mem_cgroup *memcg;
 		bool flush = false;
+		unsigned long nr_pages = stock->nr_pages +
+					 stock->cache_nr_pages;
 
 		rcu_read_lock();
 		memcg = stock->cached;
-		if (memcg && stock->nr_pages &&
+		if (memcg && nr_pages &&
 		    mem_cgroup_is_descendant(memcg, root_memcg))
 			flush = true;
 		if (obj_stock_flush_required(stock, root_memcg))
@@ -2831,10 +2855,10 @@ static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask, bool kmem_charge
 retry:
 	may_swap = true;
 	kmem_limit = false;
-	if (consume_stock(memcg, nr_pages)) {
+	if (consume_stock(memcg, nr_pages, cache_charge)) {
 		if (kmem_charge && !page_counter_try_charge(
 				&memcg->kmem, nr_pages, &counter)) {
-			refill_stock(memcg, nr_pages);
+			refill_stock(memcg, nr_pages, false);
 			goto charge;
 		}
 
@@ -2854,7 +2878,7 @@ charge:
 		mem_over_limit = mem_cgroup_from_counter(counter, memory);
 
 	if (!mem_over_limit && kmem_charge) {
-		if (!page_counter_try_charge(&memcg->kmem, nr_pages, &counter)) {
+		if (!page_counter_try_charge(&memcg->kmem, batch, &counter)) {
 			kmem_limit = true;
 			mem_over_limit = mem_cgroup_from_counter(counter, kmem);
 			page_counter_uncharge(&memcg->memory, batch);
@@ -2996,12 +3020,12 @@ force:
 	return 0;
 
 done_restock:
-	if (batch > nr_pages)
-		refill_stock(memcg, batch - nr_pages);
-done:
 	if (cache_charge)
-		page_counter_charge(&memcg->cache, nr_pages);
+		page_counter_charge(&memcg->cache, batch);
 
+	if (batch > nr_pages)
+		refill_stock(memcg, batch - nr_pages, cache_charge);
+done:
 	/*
 	 * If the hierarchy is above the normal consumption range, schedule
 	 * reclaim on returning to userland.  We can perform reclaim here
@@ -3246,7 +3270,7 @@ void __memcg_kmem_uncharge(struct mem_cgroup *memcg, unsigned int nr_pages)
 	if (!cgroup_subsys_on_dfl(memory_cgrp_subsys))
 		page_counter_uncharge(&memcg->kmem, nr_pages);
 
-	refill_stock(memcg, nr_pages);
+	refill_stock(memcg, nr_pages, false);
 }
 
 /**
@@ -7893,7 +7917,7 @@ void mem_cgroup_uncharge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages)
 
 	mod_memcg_state(memcg, MEMCG_SOCK, -nr_pages);
 
-	refill_stock(memcg, nr_pages);
+	refill_stock(memcg, nr_pages, false);
 }
 
 static int __init cgroup_memory(char *s)
