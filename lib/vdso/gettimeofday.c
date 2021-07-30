@@ -6,6 +6,8 @@
 #include <vdso/datapage.h>
 #include <vdso/helpers.h>
 
+u64 ve_start_time 	__attribute__((visibility("hidden")));
+
 #ifndef vdso_calc_delta
 /*
  * Default implementation which works for all sane clocksources. That
@@ -45,6 +47,35 @@ static inline bool vdso_cycles_ok(u64 cycles)
 	return true;
 }
 #endif
+
+static inline u64 divu64(u64 dividend, u32 divisor, u64 *remainder)
+{
+	/* 32-bit wants __udivsi3() and fails to link, so fallback to iter */
+#ifndef BUILD_VDSO32
+	u64 res;
+
+	res = dividend/divisor;
+	*remainder = dividend % divisor;
+	return res;
+#else
+	return __iter_div_u64_rem(dividend, divisor, remainder);
+#endif
+}
+
+static inline void timespec_sub_ns(struct __kernel_timespec *ts, u64 ns)
+{
+	if ((s64)ns <= 0) {
+		ts->tv_sec += divu64(-ns, NSEC_PER_SEC, &ns);
+		ts->tv_nsec = ns;
+	} else {
+		ts->tv_sec -= divu64(ns, NSEC_PER_SEC, &ns);
+		if (ns) {
+			ts->tv_sec--;
+			ns = NSEC_PER_SEC - ns;
+		}
+		ts->tv_nsec = ns;
+	}
+}
 
 #ifdef CONFIG_TIME_NS
 static int do_hres_timens(const struct vdso_data *vdns, clockid_t clk,
@@ -149,12 +180,17 @@ static __always_inline int do_hres(const struct vdso_data *vd, clockid_t clk,
 		sec = vdso_ts->sec;
 	} while (unlikely(vdso_read_retry(vd, seq)));
 
-	/*
-	 * Do this outside the loop: a race inside the loop could result
-	 * in __iter_div_u64_rem() being extremely slow.
-	 */
-	ts->tv_sec = sec + __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
-	ts->tv_nsec = ns;
+	if (clk != CLOCK_MONOTONIC) {
+		/*
+		 * Do this outside the loop: a race inside the loop could result
+		 * in __iter_div_u64_rem() being extremely slow.
+		 */
+		ts->tv_sec = sec + __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
+		ts->tv_nsec = ns;
+	} else {
+		ts->tv_sec = sec;
+		timespec_sub_ns(ts, ve_start_time - ns);
+	}
 
 	return 0;
 }
@@ -201,6 +237,7 @@ static __always_inline int do_coarse(const struct vdso_data *vd, clockid_t clk,
 {
 	const struct vdso_timestamp *vdso_ts = &vd->basetime[clk];
 	u32 seq;
+	u64 ns;
 
 	do {
 		/*
@@ -216,8 +253,14 @@ static __always_inline int do_coarse(const struct vdso_data *vd, clockid_t clk,
 		smp_rmb();
 
 		ts->tv_sec = vdso_ts->sec;
-		ts->tv_nsec = vdso_ts->nsec;
+		if (clk != CLOCK_MONOTONIC_COARSE)
+			ts->tv_nsec = vdso_ts->nsec;
+		else
+			ns = vdso_ts->nsec;
 	} while (unlikely(vdso_read_retry(vd, seq)));
+
+	if (clk == CLOCK_MONOTONIC_COARSE)
+		timespec_sub_ns(ts, ve_start_time - ns);
 
 	return 0;
 }
