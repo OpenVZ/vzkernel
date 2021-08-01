@@ -42,6 +42,7 @@
  */
 
 #include <acpi/acpi.h>
+#include <linux/kmemleak.h>
 #include "accommon.h"
 #include "acnamesp.h"
 
@@ -104,6 +105,7 @@ union acpi_operand_object *acpi_ut_create_internal_object_dbg(const char
 	if (!object) {
 		return_PTR(NULL);
 	}
+	kmemleak_not_leak(object);
 
 	switch (type) {
 	case ACPI_TYPE_REGION:
@@ -129,6 +131,7 @@ union acpi_operand_object *acpi_ut_create_internal_object_dbg(const char
 		break;
 
 	default:
+
 		/* All others have no secondary object */
 		break;
 	}
@@ -353,6 +356,7 @@ u8 acpi_ut_valid_internal_object(void *object)
 		return (TRUE);
 
 	default:
+
 		ACPI_DEBUG_PRINT((ACPI_DB_EXEC,
 				  "%p is not not an ACPI operand obj [%s]\n",
 				  object, acpi_ut_get_descriptor_name(object)));
@@ -509,7 +513,6 @@ acpi_ut_get_simple_object_size(union acpi_operand_object *internal_object,
 
 		switch (internal_object->reference.class) {
 		case ACPI_REFCLASS_NAME:
-
 			/*
 			 * Get the actual length of the full pathname to this object.
 			 * The reference will be converted to the pathname to the object
@@ -525,7 +528,6 @@ acpi_ut_get_simple_object_size(union acpi_operand_object *internal_object,
 			break;
 
 		default:
-
 			/*
 			 * No other reference opcodes are supported.
 			 * Notably, Locals and Args are not supported, but this may be
@@ -585,7 +587,6 @@ acpi_ut_get_element_length(u8 object_type,
 
 	switch (object_type) {
 	case ACPI_COPY_TYPE_SIMPLE:
-
 		/*
 		 * Simple object - just get the size (Null object/entry is handled
 		 * here also) and sum it into the running package length

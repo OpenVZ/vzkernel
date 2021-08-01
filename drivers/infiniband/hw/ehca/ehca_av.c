@@ -85,7 +85,8 @@ int ehca_calc_ipd(struct ehca_shca *shca, int port,
 	return 0;
 }
 
-struct ib_ah *ehca_create_ah(struct ib_pd *pd, struct ib_ah_attr *ah_attr)
+struct ib_ah *ehca_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr,
+				struct ib_udata *udata)
 {
 	int ret;
 	struct ehca_av *av;
@@ -100,8 +101,8 @@ struct ib_ah *ehca_create_ah(struct ib_pd *pd, struct ib_ah_attr *ah_attr)
 	}
 
 	av->av.sl = ah_attr->sl;
-	av->av.dlid = ah_attr->dlid;
-	av->av.slid_path_bits = ah_attr->src_path_bits;
+	av->av.dlid = rdma_ah_get_dlid(ah_attr);
+	av->av.slid_path_bits = rdma_ah_get_path_bits(ah_attr);
 
 	if (ehca_static_rate < 0) {
 		u32 ipd;
@@ -165,7 +166,7 @@ create_ah_exit1:
 	return ERR_PTR(ret);
 }
 
-int ehca_modify_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr)
+int ehca_modify_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr)
 {
 	struct ehca_av *av;
 	struct ehca_ud_av new_ehca_av;
@@ -174,8 +175,8 @@ int ehca_modify_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr)
 
 	memset(&new_ehca_av, 0, sizeof(new_ehca_av));
 	new_ehca_av.sl = ah_attr->sl;
-	new_ehca_av.dlid = ah_attr->dlid;
-	new_ehca_av.slid_path_bits = ah_attr->src_path_bits;
+	new_ehca_av.dlid = rdma_ah_get_dlid(ah_attr);
+	new_ehca_av.slid_path_bits = rdma_ah_get_path_bits(ah_attr);
 	new_ehca_av.ipd = ah_attr->static_rate;
 	new_ehca_av.lnh = EHCA_BMASK_SET(GRH_FLAG_MASK,
 					 (ah_attr->ah_flags & IB_AH_GRH) > 0);
@@ -229,7 +230,7 @@ int ehca_modify_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr)
 	return 0;
 }
 
-int ehca_query_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr)
+int ehca_query_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr)
 {
 	struct ehca_av *av = container_of(ah, struct ehca_av, ib_ah);
 
@@ -237,9 +238,9 @@ int ehca_query_ah(struct ib_ah *ah, struct ib_ah_attr *ah_attr)
 	       sizeof(ah_attr->grh.dgid));
 	ah_attr->sl = av->av.sl;
 
-	ah_attr->dlid = av->av.dlid;
+	rdma_ah_set_dlid(ah_attr, av->av.dlid);
 
-	ah_attr->src_path_bits = av->av.slid_path_bits;
+	rdma_ah_set_path_bits(ah_attr, av->av.slid_path_bits);
 	ah_attr->static_rate = av->av.ipd;
 	ah_attr->ah_flags = EHCA_BMASK_GET(GRH_FLAG_MASK, av->av.lnh);
 	ah_attr->grh.traffic_class = EHCA_BMASK_GET(GRH_TCLASS_MASK,

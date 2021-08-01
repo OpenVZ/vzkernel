@@ -31,7 +31,6 @@ struct psb_framebuffer {
 	struct drm_framebuffer base;
 	struct address_space *addr_space;
 	struct fb_info *fbdev;
-	struct gtt_range *gtt;
 };
 
 struct psb_fbdev {
@@ -41,7 +40,7 @@ struct psb_fbdev {
 
 #define to_psb_fb(x) container_of(x, struct psb_framebuffer, base)
 
-extern int psb_intel_connector_clones(struct drm_device *dev, int type_mask);
+extern int gma_connector_clones(struct drm_device *dev, int type_mask);
 
 #endif
 

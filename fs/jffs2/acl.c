@@ -399,7 +399,7 @@ static int jffs2_acl_setxattr(struct dentry *dentry, const char *name,
 		if (IS_ERR(acl))
 			return PTR_ERR(acl);
 		if (acl) {
-			rc = posix_acl_valid(acl);
+			rc = posix_acl_valid(dentry->d_inode->i_sb->s_user_ns, acl);
 			if (rc)
 				goto out;
 		}

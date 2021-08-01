@@ -17,21 +17,14 @@
  */
 #include "xfs.h"
 #include "xfs_fs.h"
-#include "xfs_log.h"
-#include "xfs_trans.h"
-#include "xfs_sb.h"
-#include "xfs_ag.h"
-#include "xfs_alloc.h"
+#include "xfs_format.h"
+#include "xfs_log_format.h"
+#include "xfs_trans_resv.h"
 #include "xfs_quota.h"
 #include "xfs_mount.h"
-#include "xfs_bmap_btree.h"
 #include "xfs_inode.h"
-#include "xfs_itable.h"
-#include "xfs_bmap.h"
-#include "xfs_rtalloc.h"
 #include "xfs_error.h"
-#include "xfs_attr.h"
-#include "xfs_buf_item.h"
+#include "xfs_trans.h"
 #include "xfs_qm.h"
 
 
@@ -40,7 +33,7 @@ xfs_fill_statvfs_from_dquot(
 	struct kstatfs		*statp,
 	struct xfs_dquot	*dqp)
 {
-	__uint64_t		limit;
+	uint64_t		limit;
 
 	limit = dqp->q_core.d_blk_softlimit ?
 		be64_to_cpu(dqp->q_core.d_blk_softlimit) :
@@ -59,7 +52,7 @@ xfs_fill_statvfs_from_dquot(
 		statp->f_files = limit;
 		statp->f_ffree =
 			(statp->f_files > dqp->q_res_icount) ?
-			 (statp->f_ffree - dqp->q_res_icount) : 0;
+			 (statp->f_files - dqp->q_res_icount) : 0;
 	}
 }
 
@@ -112,17 +105,17 @@ xfs_qm_newmount(
 
 	if (((uquotaondisk && !XFS_IS_UQUOTA_ON(mp)) ||
 	    (!uquotaondisk &&  XFS_IS_UQUOTA_ON(mp)) ||
-	     (pquotaondisk && !XFS_IS_PQUOTA_ON(mp)) ||
-	    (!pquotaondisk &&  XFS_IS_PQUOTA_ON(mp)) ||
 	     (gquotaondisk && !XFS_IS_GQUOTA_ON(mp)) ||
-	    (!gquotaondisk &&  XFS_IS_OQUOTA_ON(mp)))  &&
+	    (!gquotaondisk &&  XFS_IS_GQUOTA_ON(mp)) ||
+	     (pquotaondisk && !XFS_IS_PQUOTA_ON(mp)) ||
+	    (!pquotaondisk &&  XFS_IS_PQUOTA_ON(mp)))  &&
 	    xfs_dev_is_read_only(mp, "changing quota state")) {
 		xfs_warn(mp, "please mount with%s%s%s%s.",
 			(!quotaondisk ? "out quota" : ""),
 			(uquotaondisk ? " usrquota" : ""),
-			(pquotaondisk ? " prjquota" : ""),
-			(gquotaondisk ? " grpquota" : ""));
-		return XFS_ERROR(EPERM);
+			(gquotaondisk ? " grpquota" : ""),
+			(pquotaondisk ? " prjquota" : ""));
+		return -EPERM;
 	}
 
 	if (XFS_IS_QUOTA_ON(mp) || quotaondisk) {

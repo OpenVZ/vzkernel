@@ -27,6 +27,7 @@ config MIPS
 	select HAVE_GENERIC_HARDIRQS
 	select GENERIC_IRQ_PROBE
 	select GENERIC_IRQ_SHOW
+	select GENERIC_PCI_IOMAP
 	select HAVE_ARCH_JUMP_LABEL
 	select ARCH_WANT_IPC_PARSE_VERSION
 	select IRQ_FORCED_THREADING
@@ -2412,7 +2413,6 @@ config PCI
 	bool "Support for PCI controller"
 	depends on HW_HAS_PCI
 	select PCI_DOMAINS
-	select GENERIC_PCI_IOMAP
 	select NO_GENERIC_PCI_IOPORT_MAP
 	help
 	  Find out whether you have a PCI motherboard. PCI is the name of a
@@ -2424,8 +2424,6 @@ config PCI_DOMAINS
 	bool
 
 source "drivers/pci/Kconfig"
-
-source "drivers/pci/pcie/Kconfig"
 
 #
 # ISA support is now enabled via select.  Too many systems still have the one
@@ -2482,8 +2480,6 @@ config ZONE_DMA32
 	bool
 
 source "drivers/pcmcia/Kconfig"
-
-source "drivers/pci/hotplug/Kconfig"
 
 config RAPIDIO
 	bool "RapidIO support"

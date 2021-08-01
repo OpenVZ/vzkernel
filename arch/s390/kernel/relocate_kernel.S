@@ -26,7 +26,6 @@
 ENTRY(relocate_kernel)
 		basr	%r13,0		# base address
 	.base:
-		stnsm	sys_msk-.base(%r13),0xfb	# disable DAT
 		stctl	%c0,%c15,ctlregs-.base(%r13)
 		stm	%r0,%r15,gprregs-.base(%r13)
 		la	%r1,load_psw-.base(%r13)
@@ -98,8 +97,6 @@ ENTRY(relocate_kernel)
 		.align	8
 	load_psw:
 		.long	0x00080000,0x80000000
-	sys_msk:
-		.quad	0
 	ctlregs:
 		.rept	16
 		.long	0

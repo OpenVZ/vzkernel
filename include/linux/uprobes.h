@@ -26,6 +26,7 @@
 
 #include <linux/errno.h>
 #include <linux/rbtree.h>
+#include <linux/rh_kabi.h>
 
 struct vm_area_struct;
 struct mm_struct;
@@ -81,6 +82,24 @@ struct uprobe_task {
 	unsigned long			vaddr;
 };
 
+#ifndef __GENKSYMS__
+struct return_instance {
+	struct uprobe		*uprobe;
+	unsigned long		func;
+	unsigned long		stack;		/* stack pointer */
+	unsigned long		orig_ret_vaddr; /* original return address */
+	bool			chained;	/* true, if instance is nested */
+
+	struct return_instance	*next;		/* keep as stack */
+};
+#endif
+
+enum rp_check {
+	RP_CHECK_CALL,
+	RP_CHECK_CHAIN_CALL,
+	RP_CHECK_RET,
+};
+
 /*
  * On a breakpoint hit, thread contests for a slot.  It frees the
  * slot after singlestep. Currently a fixed number of slots are
@@ -101,7 +120,11 @@ struct xol_area {
 };
 
 struct uprobes_state {
-	struct xol_area		*xol_area;
+#ifdef CONFIG_S390
+	RH_KABI_EXTEND(struct xol_area *xol_area)
+#else
+	struct xol_area *xol_area;
+#endif
 };
 
 extern int __weak set_swbp(struct arch_uprobe *aup, struct mm_struct *mm, unsigned long vaddr);
@@ -117,13 +140,14 @@ extern void uprobe_start_dup_mmap(void);
 extern void uprobe_end_dup_mmap(void);
 extern void uprobe_dup_mmap(struct mm_struct *oldmm, struct mm_struct *newmm);
 extern void uprobe_free_utask(struct task_struct *t);
-extern void uprobe_copy_process(struct task_struct *t);
+extern void uprobe_copy_process(struct task_struct *t, unsigned long flags);
 extern unsigned long __weak uprobe_get_swbp_addr(struct pt_regs *regs);
 extern int uprobe_post_sstep_notifier(struct pt_regs *regs);
 extern int uprobe_pre_sstep_notifier(struct pt_regs *regs);
 extern void uprobe_notify_resume(struct pt_regs *regs);
 extern bool uprobe_deny_signal(void);
 extern bool __weak arch_uprobe_skip_sstep(struct arch_uprobe *aup, struct pt_regs *regs);
+extern bool arch_uretprobe_is_alive(struct return_instance *ret, enum rp_check ctx, struct pt_regs *regs);
 extern void uprobe_clear_state(struct mm_struct *mm);
 #else /* !CONFIG_UPROBES */
 struct uprobes_state {
@@ -174,7 +198,7 @@ static inline unsigned long uprobe_get_swbp_addr(struct pt_regs *regs)
 static inline void uprobe_free_utask(struct task_struct *t)
 {
 }
-static inline void uprobe_copy_process(struct task_struct *t)
+static inline void uprobe_copy_process(struct task_struct *t, unsigned long flags)
 {
 }
 static inline void uprobe_clear_state(struct mm_struct *mm)

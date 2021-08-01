@@ -5,6 +5,11 @@
 #include <linux/init.h>
 #include <linux/list.h>
 #include <asm/page.h>		/* pgprot_t */
+#ifdef CONFIG_X86_64
+#include <asm/pgtable_types.h>	/* PAGE_KERNEL */
+#else
+#include <asm/pgtable.h>	/* PAGE_KERNEL */
+#endif
 #include <linux/rbtree.h>
 
 struct vm_area_struct;		/* vma defining user mapping in mm_types.h */
@@ -76,11 +81,34 @@ extern void *__vmalloc(unsigned long size, gfp_t gfp_mask, pgprot_t prot);
 extern void *__vmalloc_node_range(unsigned long size, unsigned long align,
 			unsigned long start, unsigned long end, gfp_t gfp_mask,
 			pgprot_t prot, int node, const void *caller);
+#ifndef CONFIG_MMU
+extern void *__vmalloc_node_flags(unsigned long size, int node, gfp_t flags);
+#else
+extern void *__vmalloc_node(unsigned long size, unsigned long align,
+			    gfp_t gfp_mask, pgprot_t prot,
+			    int node, const void *caller);
+
+/*
+ * We really want to have this inlined due to caller tracking. This
+ * function is used by the highlevel vmalloc apis and so we want to track
+ * their callers and inlining will achieve that.
+ */
+static inline void *__vmalloc_node_flags(unsigned long size,
+					int node, gfp_t flags)
+{
+	return __vmalloc_node(size, 1, flags, PAGE_KERNEL,
+					node, __builtin_return_address(0));
+}
+#endif
 extern void vfree(const void *addr);
 
 extern void *vmap(struct page **pages, unsigned int count,
 			unsigned long flags, pgprot_t prot);
 extern void vunmap(const void *addr);
+
+extern int remap_vmalloc_range_partial(struct vm_area_struct *vma,
+				       unsigned long uaddr, void *kaddr,
+				       unsigned long size);
 
 extern int remap_vmalloc_range(struct vm_area_struct *vma, void *addr,
 							unsigned long pgoff);

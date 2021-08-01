@@ -14,6 +14,7 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/spinlock.h>
+#include <linux/rh_kabi.h>
 #include <uapi/linux/xattr.h>
 
 struct inode;
@@ -31,7 +32,7 @@ struct xattr_handler {
 };
 
 struct xattr {
-	char *name;
+	RH_KABI_CONST char *name;
 	void *value;
 	size_t value_len;
 };

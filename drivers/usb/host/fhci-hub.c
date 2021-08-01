@@ -30,7 +30,7 @@
 /* virtual root hub specific descriptor */
 static u8 root_hub_des[] = {
 	0x09, /* blength */
-	0x29, /* bDescriptorType;hub-descriptor */
+	USB_DT_HUB, /* bDescriptorType;hub-descriptor */
 	0x01, /* bNbrPorts */
 	0x00, /* wHubCharacteristics */
 	0x00,

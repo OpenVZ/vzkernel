@@ -28,7 +28,6 @@
 #include <linux/percpu.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
-#include <linux/init.h>
 #include <linux/smp.h>
 
 #include <asm/hw_breakpoint.h>
@@ -73,7 +72,7 @@ int arch_install_hw_breakpoint(struct perf_event *bp)
 	 * If so, DABR will be populated in single_step_dabr_instruction().
 	 */
 	if (current->thread.last_hit_ubp != bp)
-		set_breakpoint(info);
+		__set_breakpoint(info);
 
 	return 0;
 }
@@ -110,8 +109,9 @@ void arch_unregister_hw_breakpoint(struct perf_event *bp)
 	 * If the breakpoint is unregistered between a hw_breakpoint_handler()
 	 * and the single_step_dabr_instruction(), then cleanup the breakpoint
 	 * restoration variables to prevent dangling pointers.
+	 * FIXME, this should not be using bp->ctx at all! Sayeth peterz.
 	 */
-	if (bp->ctx && bp->ctx->task)
+	if (bp->ctx && bp->ctx->task && bp->ctx->task != ((void *)-1L))
 		bp->ctx->task->thread.last_hit_ubp = NULL;
 }
 
@@ -176,7 +176,7 @@ int arch_validate_hwbkpt_settings(struct perf_event *bp)
 		length_max = 512 ; /* 64 doublewords */
 		/* DAWR region can't cross 512 boundary */
 		if ((bp->attr.bp_addr >> 10) != 
-		    ((bp->attr.bp_addr + bp->attr.bp_len) >> 10))
+		    ((bp->attr.bp_addr + bp->attr.bp_len - 1) >> 10))
 			return -EINVAL;
 	}
 	if (info->len >
@@ -199,7 +199,7 @@ void thread_change_pc(struct task_struct *tsk, struct pt_regs *regs)
 
 	info = counter_arch_bp(tsk->thread.last_hit_ubp);
 	regs->msr &= ~MSR_SE;
-	set_breakpoint(info);
+	__set_breakpoint(info);
 	tsk->thread.last_hit_ubp = NULL;
 }
 
@@ -250,6 +250,7 @@ int __kprobes hw_breakpoint_handler(struct die_args *args)
 	 * we still need to single-step the instruction, but we don't
 	 * generate an event.
 	 */
+	info->type &= ~HW_BRK_TYPE_EXTRANEOUS_IRQ;
 	if (!((bp->attr.bp_addr <= dar) &&
 	      (dar - bp->attr.bp_addr < bp->attr.bp_len)))
 		info->type |= HW_BRK_TYPE_EXTRANEOUS_IRQ;
@@ -274,7 +275,7 @@ int __kprobes hw_breakpoint_handler(struct die_args *args)
 	if (!stepped) {
 		WARN(1, "Unable to handle hardware breakpoint. Breakpoint at "
 			"0x%lx will be disabled.", info->address);
-		perf_event_disable(bp);
+		perf_event_disable_inatomic(bp);
 		goto out;
 	}
 	/*
@@ -284,7 +285,7 @@ int __kprobes hw_breakpoint_handler(struct die_args *args)
 	if (!(info->type & HW_BRK_TYPE_EXTRANEOUS_IRQ))
 		perf_bp_event(bp, regs);
 
-	set_breakpoint(info);
+	__set_breakpoint(info);
 out:
 	rcu_read_unlock();
 	return rc;
@@ -316,7 +317,7 @@ int __kprobes single_step_dabr_instruction(struct die_args *args)
 	if (!(info->type & HW_BRK_TYPE_EXTRANEOUS_IRQ))
 		perf_bp_event(bp, regs);
 
-	set_breakpoint(info);
+	__set_breakpoint(info);
 	current->thread.last_hit_ubp = NULL;
 
 	/*

@@ -259,9 +259,10 @@ static int osst_chk_result(struct osst_tape * STp, struct osst_request * SRpnt)
 		   SRpnt->cmd[0], SRpnt->cmd[1], SRpnt->cmd[2],
 		   SRpnt->cmd[3], SRpnt->cmd[4], SRpnt->cmd[5]);
 		if (scode) printk(OSST_DEB_MSG "%s:D: Sense: %02x, ASC: %02x, ASCQ: %02x\n",
-			       	name, scode, sense[12], sense[13]);
+				  name, scode, sense[12], sense[13]);
 		if (cmdstatp->have_sense)
-			__scsi_print_sense("osst ", SRpnt->sense, SCSI_SENSE_BUFFERSIZE);
+			__scsi_print_sense(STp->device, name,
+					   SRpnt->sense, SCSI_SENSE_BUFFERSIZE);
 	}
 	else
 #endif
@@ -275,7 +276,8 @@ static int osst_chk_result(struct osst_tape * STp, struct osst_request * SRpnt)
 		 SRpnt->cmd[0] != TEST_UNIT_READY)) { /* Abnormal conditions for tape */
 		if (cmdstatp->have_sense) {
 			printk(KERN_WARNING "%s:W: Command with sense data:\n", name);
-			__scsi_print_sense("osst ", SRpnt->sense, SCSI_SENSE_BUFFERSIZE);
+			__scsi_print_sense(STp->device, name,
+					   SRpnt->sense, SCSI_SENSE_BUFFERSIZE);
 		}
 		else {
 			static	int	notyetprinted = 1;
@@ -362,10 +364,10 @@ static int osst_execute(struct osst_request *SRpnt, const unsigned char *cmd,
 	int write = (data_direction == DMA_TO_DEVICE);
 
 	req = blk_get_request(SRpnt->stp->device->request_queue, write, GFP_KERNEL);
-	if (!req)
+	if (IS_ERR(req))
 		return DRIVER_ERROR << 24;
 
-	req->cmd_type = REQ_TYPE_BLOCK_PC;
+	blk_rq_set_block_pc(req);
 	req->cmd_flags |= REQ_QUIET;
 
 	SRpnt->bio = NULL;
@@ -3491,6 +3493,7 @@ static ssize_t osst_write(struct file * filp, const char __user * buf, size_t co
 				}
       			}	  
 			if ((STps->drv_file + STps->drv_block) > 0 && STps->drv_file < STp->filemark_cnt) {
+				gmb();
 				STp->filemark_cnt = STps->drv_file;
 				STp->last_mark_ppos =
 				       	ntohl(STp->header_cache->dat_fm_tab.fm_tab_ent[STp->filemark_cnt-1]);

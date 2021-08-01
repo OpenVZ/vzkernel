@@ -193,13 +193,6 @@ config PPC_EARLY_DEBUG_PAS_REALMODE
 	  Select this to enable early debugging for PA Semi.
 	  Output will be on UART0.
 
-config PPC_EARLY_DEBUG_BEAT
-	bool "Beat HV Console"
-	depends on PPC_CELLEB
-	select PPC_UDBG_BEAT
-	help
-	  Select this to enable early debugging for Celleb with Beat.
-
 config PPC_EARLY_DEBUG_44x
 	bool "Early serial debugging for IBM/AMCC 44x CPUs"
 	# PPC_EARLY_DEBUG on 440 leaves AS=1 mappings above the TLB high water
@@ -308,7 +301,6 @@ config PPC_EARLY_DEBUG_OPAL_VTERMNO
 	  This correspond to which /dev/hvcN you want to use for early
 	  debug.
 
-	  On OPAL v1 (takeover) this should always be 0
 	  On OPAL v2, this will be 0 for network console and 1 or 2 for
 	  the machine built-in serial ports.
 
@@ -362,5 +354,15 @@ config FAIL_IOMMU
 	  be selectively enabled via the fail_iommu property.
 
 	  If you are unsure, say N.
+
+config PPC_DEBUG_RFI
+	bool "Debug RFIs (Return From Interrupt)"
+	depends on PPC_BOOK3S_64
+	help
+	  The enables extra debug code in some RFI (Return From Interrupt)
+	  sequences, to detect that we are returning to the correct context
+	  (user, kernel or guest). This adds some performance overhead.
+
+	  If unsure, say N.
 
 endmenu
