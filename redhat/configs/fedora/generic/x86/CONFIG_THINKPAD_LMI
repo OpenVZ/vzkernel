@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_THINKPAD_LMI is not set
+CONFIG_THINKPAD_LMI=m

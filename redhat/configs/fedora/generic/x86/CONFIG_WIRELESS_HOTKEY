@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_WIRELESS_HOTKEY is not set
+CONFIG_WIRELESS_HOTKEY=m

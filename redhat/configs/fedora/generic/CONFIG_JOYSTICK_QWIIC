@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_JOYSTICK_QWIIC is not set
+CONFIG_JOYSTICK_QWIIC=m

@@ -20,4 +20,4 @@
 # 
 # 
 # 
-# CONFIG_ARM_FFA_TRANSPORT is not set
+CONFIG_ARM_FFA_TRANSPORT=m

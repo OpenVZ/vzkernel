@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_DELL_WMI_PRIVACY is not set
+CONFIG_DELL_WMI_PRIVACY=y
