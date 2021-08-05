@@ -695,9 +695,7 @@ static int fuse_parse_param(struct fs_context *fc, struct fs_parameter *param)
 		if (fc->source &&
 		    (strncmp(fc->source, "pstorage://", 11) == 0 ||
 		     strncmp(fc->source, "vstorage://", 11) == 0)) {
-			if (!ctx->disable_close_wait)
-				ctx->close_wait = 1;
-
+			ctx->close_wait = 1;
 			ctx->compat_inval_files = 1;
 		} else
 			ctx->no_fiemap = 1;
@@ -775,6 +773,7 @@ static int fuse_parse_param(struct fs_context *fc, struct fs_parameter *param)
 
 	case OPT_DISABLE_CLOSE_WAIT:
 		ctx->disable_close_wait = 1;
+		ctx->close_wait = 0;
 		break;
 
 	case OPT_KIO_NAME: {
