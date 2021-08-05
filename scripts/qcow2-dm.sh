@@ -7,7 +7,36 @@ usage () {
 Usage:
 	$prog_name create <file.qcow2> <dev_name>
 	$prog_name remove <file.qcow2>
+	$prog_name check [qemu-img check optional args] <file.qcow2>
+	$prog_name snapshot [qemu-img snapshot optional args] <file.qcow2>
+	$prog_name resize [qemu-img resize optional args] <file.qcow2> [+ | -]size
 EOF
+}
+
+get_dev_of_image () {
+	abs_path=$1
+
+	while read line; do
+		dev=`echo $line | sed "s/:.*//"`
+		nr_imgs=`echo $line | sed "s/.*\(\w\)$/\1/"`
+		top_img_id=$((nr_imgs - 1))
+
+		top_img_path=`dmsetup message $dev 0 get_img_name $top_img_id`
+		if [ -z "$top_img_path" ]; then
+			echo >&2 "Error during search of device"; exit 1;
+			return 1
+		fi
+
+		if [ "$abs_path" != "$top_img_path" ]; then
+			continue
+		fi
+
+		echo $dev
+		return 0
+
+	done < <(LANG=C dmsetup table --target=qcow2 | grep -v "No devices found")
+
+	return 0
 }
 
 create () {
@@ -19,6 +48,8 @@ create () {
 	dev=$2
 	files=()
 	fds=""
+
+	qemu-img check $file || exit 1
 
 	disk_sz=`qemu-img info -f qcow2 $file | grep "virtual size" | sed 's/.*(\(.*\) bytes)/\1/'`
 	if [ -z "$disk_sz" ]; then
@@ -51,37 +82,94 @@ remove () {
 		echo >&2 "Wrong number of arguments."; usage; exit 1;
 	fi
 	user_path=$1
-	path=`realpath $user_path`
+	abs_path=`realpath $user_path`
 
-	while read line; do
-		dev=`echo $line | sed "s/:.*//"`
-		nr_imgs=`echo $line | sed "s/.*\(\w\)$/\1/"`
-		top_img_id=$((nr_imgs - 1))
+	dev=$(get_dev_of_image "$abs_path")
+	if [ -z "$dev" ]; then
+		echo >&2 "Can't find device with [$user_path] top image."; exit 1
+	fi
 
-		top_img_path=`dmsetup message $dev 0 get_img_name $top_img_id`
-		if [ -z "$top_img_path" ]; then
-			echo "Can't get image path."; exit 1;
-		fi
+	echo "Removing device [$dev]."
+	dmsetup remove $dev
+	ret=$?
 
-		if [ "$path" != "$top_img_path" ]; then
-			continue
-		fi
+	if [ $ret -eq 0 ]; then
+		#Sanity check
+		echo "Checking [$abs_path]."
+		qemu-img check $abs_path
+	fi
+	exit $ret
+}
 
-		echo "Removing device [$dev]."
-		dmsetup remove $dev
+qemu_img ()
+{
+	if [ "$#" -lt 3 ]; then
+		echo >&2 "Wrong number of arguments."; usage; exit 1;
+	fi
+
+	user_path=$1
+	cmd=$2
+	abs_path=`realpath $user_path`
+	qemu_img_args=${@: 2}
+
+	dev=$(get_dev_of_image "$abs_path")
+	if [ -z "$dev" ]; then
+		echo >&2 "Can't find device by [$user_path]."; return 1
+	fi
+
+	echo "Suspending $dev"
+	dmsetup suspend $dev || exit 1
+
+	if [ "$cmd" != "check" ]; then
+		echo "Checking $abs_path"
+		qemu-img check $abs_path
 		ret=$?
-
-		if [ $? -eq 0 ]; then
-			#Sanity check
-			echo "Checking [$top_img_path]."
-			qemu-img check $top_img_path
+		if [ $ret -ne 0 ]; then
+			echo "Resume $dev."
+			dmsetup resume $dev
+			exit 1
 		fi
-		exit $ret
+	fi
 
-	done < <(LANG=C dmsetup table --target=qcow2 | grep -v "No devices found")
+	echo "===== Call:  qemu-img $qemu_img_args. ====="
+	qemu-img $qemu_img_args
+	ret=$?
+	if [ $ret -ne 0 ]; then
+		echo >&2 "Failed during qemu-img call."
+	fi
+	echo "===== End of qemu-img $qemu_img_args. ====="
 
-	echo "Can't find device with [$user_path] top image."
-	exit 1
+	echo "Resume $dev."
+	dmsetup resume $dev || exit 1
+	if [ $? -ne 0 ]; then
+		ret=$?
+	fi
+
+	return $ret
+}
+
+check () {
+	user_path=${@: -1}
+	qemu_img_args=$@
+
+	qemu_img $user_path check $qemu_img_args
+	return $?
+}
+
+snapshot () {
+	user_path=${@: -1}
+	qemu_img_args=$@
+
+	qemu_img $user_path snapshot $qemu_img_args
+	return $?
+}
+
+resize () {
+	user_path=${@:(-2):1}
+	qemu_img_args=$@
+
+	qemu_img $user_path resize $qemu_img_args
+	return $?
 }
 
 prog_name=$(basename $0)
@@ -95,6 +183,18 @@ case $1 in
 	"remove")
 		shift
 		remove "$@"
+		;;
+	"check")
+		shift
+		check "$@"
+		;;
+	"snapshot")
+		shift
+		snapshot "$@"
+		;;
+	"resize")
+		shift
+		resize "$@"
 		;;
 	*)
 		usage
