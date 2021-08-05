@@ -136,6 +136,8 @@ enum {
 
 struct ploop {
 	struct dm_target *ti;
+#define PLOOP_PIO_POOL_SIZE 256
+	mempool_t *pio_pool;
 
 	struct rb_root bat_entries;
 	struct ploop_delta *deltas;
@@ -284,7 +286,6 @@ struct ploop_cow {
 };
 
 extern bool ignore_signature_disk_in_use;
-extern struct kmem_cache *pio_cache;
 extern struct kmem_cache *cow_cache;
 
 #define rb_root_for_each_md_page(rb_root, md, node)	\
@@ -550,12 +551,12 @@ static inline bool fake_merge_pio(struct pio *pio)
 
 static inline struct pio *alloc_pio(struct ploop *ploop, gfp_t flags)
 {
-	return kmem_cache_alloc(pio_cache, flags);
+	return mempool_alloc(ploop->pio_pool, flags);
 }
 
 static inline void free_pio(struct ploop *ploop, struct pio *pio)
 {
-	kmem_cache_free(pio_cache, pio);
+	mempool_free(pio, ploop->pio_pool);
 }
 
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);

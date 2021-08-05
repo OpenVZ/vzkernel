@@ -27,7 +27,7 @@ module_param(ignore_signature_disk_in_use, bool, 0444);
 MODULE_PARM_DESC(ignore_signature_disk_in_use,
                 "Does not check for SIGNATURE_DISK_IN_USE");
 
-struct kmem_cache *pio_cache;
+static struct kmem_cache *pio_cache;
 struct kmem_cache *cow_cache;
 
 static void ploop_aio_do_completion(struct pio *pio)
@@ -174,6 +174,7 @@ static void ploop_destroy(struct ploop *ploop)
 	WARN_ON(!ploop_empty_htable(ploop->inflight_pios));
 	kfree(ploop->inflight_pios);
 	kfree(ploop->exclusive_pios);
+	mempool_destroy(ploop->pio_pool);
 	kfree(ploop->deltas);
 	kvfree(ploop->holes_bitmap);
 	kvfree(ploop->tracking_bitmap);
@@ -315,13 +316,16 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	if (!ploop)
 		return -ENOMEM;
 
+	ploop->pio_pool = mempool_create_slab_pool(PLOOP_PIO_POOL_SIZE,
+						   pio_cache);
 	ploop->exclusive_pios = kcalloc(PLOOP_HASH_TABLE_SIZE,
 					sizeof(struct hlist_head),
 					GFP_KERNEL);
 	ploop->inflight_pios = kcalloc(PLOOP_HASH_TABLE_SIZE,
 					sizeof(struct hlist_head),
 					GFP_KERNEL);
-	if (!ploop->exclusive_pios || !ploop->inflight_pios) {
+	if (!ploop->pio_pool || !ploop->exclusive_pios ||
+				!ploop->inflight_pios) {
 		ret = -ENOMEM;
 		goto err;
 	}
