@@ -586,7 +586,7 @@ struct fuse_fs_context {
 	unsigned int max_read;
 	unsigned int blksize;
 	const char *subtype;
-	char kio_name[FUSE_KIO_NAME];
+	char kio_name[FUSE_KIO_NAME + 1];
 
 	/* DAX device, may be NULL */
 	struct dax_device *dax_dev;
