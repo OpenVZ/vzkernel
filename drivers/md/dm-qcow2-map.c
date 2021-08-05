@@ -1919,12 +1919,10 @@ static int parse_metadata(struct qcow2 *qcow2, struct qio **qio,
 		return pos;
 
 	map->data_clu_pos = pos;
-	if (!write)
+	if (!write || !map->clu_is_cow)
 		return 0;
 
 	/* Now refcounters table/block */
-	if (!qcow2->hdr.nb_snapshots && !map->compressed)
-		return 0;
 	ret = handle_r1r2_maps(qcow2, pos, qio, &map->r1,
 			       &map->r2, map->compressed);
 	return ret < 0 ? ret : 0;
