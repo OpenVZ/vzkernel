@@ -211,7 +211,7 @@ static void do_pio_endio(struct pio *pio)
 	endio_cb(pio, endio_cb_data, pio->bi_status);
 
 	if (free_on_endio)
-		kfree(pio);
+		free_pio(pio->ploop, pio);
 }
 
 void pio_endio(struct pio *pio)
@@ -264,7 +264,7 @@ static struct pio * split_and_chain_pio(struct ploop *ploop,
 {
 	struct pio *split;
 
-	split = kmalloc(sizeof(*split), GFP_NOIO);
+	split = alloc_pio(ploop, GFP_NOIO);
 	if (!split)
 		return NULL;
 
@@ -833,7 +833,7 @@ static void ploop_advance_local_after_bat_wb(struct ploop *ploop,
 
 static void free_piwb(struct ploop_index_wb *piwb)
 {
-	kfree(piwb->pio);
+	free_pio(piwb->ploop, piwb->pio);
 	put_page(piwb->bat_page);
 	kfree(piwb);
 }
@@ -921,7 +921,7 @@ static int ploop_prepare_bat_update(struct ploop *ploop, struct md_page *md,
 	ploop_index_wb_init(piwb, ploop);
 
 	piwb->bat_page = page = alloc_page(GFP_NOIO);
-	piwb->pio = pio = kmalloc(sizeof(*pio), GFP_NOIO);
+	piwb->pio = pio = alloc_pio(ploop, GFP_NOIO);
 	if (!page || !pio)
 		goto err;
 	init_pio(ploop, REQ_OP_WRITE, pio);

@@ -547,6 +547,16 @@ static inline bool fake_merge_pio(struct pio *pio)
 	return false;
 }
 
+static inline struct pio *alloc_pio(struct ploop *ploop, gfp_t flags)
+{
+	return kmalloc(sizeof(struct pio), flags);
+}
+
+static inline void free_pio(struct ploop *ploop, struct pio *pio)
+{
+	kfree(pio);
+}
+
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);
 extern void ploop_free_md_page(struct md_page *md);
 extern void free_md_pages_tree(struct rb_root *root);

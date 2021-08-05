@@ -613,7 +613,7 @@ static int process_merge_latest_snapshot(struct ploop *ploop)
 			ret = -EINTR;
 			break;
 		}
-		pio = kmalloc(sizeof(*pio), GFP_KERNEL);
+		pio = alloc_pio(ploop, GFP_KERNEL);
 		if (!pio) {
 			ret = -ENOMEM;
 			break;
