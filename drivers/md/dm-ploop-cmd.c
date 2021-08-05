@@ -209,7 +209,7 @@ static void wake_completion(struct pio *pio, void *data, blk_status_t status)
 static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
 				   u32 dst_clu)
 {
-	DECLARE_COMPLETION(completion);
+	DECLARE_COMPLETION_ONSTACK(completion);
 
 	init_pio(ploop, REQ_OP_READ, pio);
 	pio_prepare_offsets(ploop, pio, dst_clu);
@@ -230,7 +230,7 @@ static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 				    u32 dst_clu)
 {
 	struct file *file = top_delta(ploop)->file;
-	DECLARE_COMPLETION(completion);
+	DECLARE_COMPLETION_ONSTACK(completion);
 	int ret;
 
 	ret = vfs_fsync(file, 0);
