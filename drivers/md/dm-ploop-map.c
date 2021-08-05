@@ -1125,10 +1125,9 @@ static int ploop_alloc_cluster(struct ploop *ploop, struct ploop_index_wb *piwb,
 	if (already_alloced)
 		goto out;
 
-	if (allocate_cluster(ploop, dst_clu) < 0) {
-		ret = -EIO;
+	ret = allocate_cluster(ploop, dst_clu);
+	if (ret < 0)
 		goto out;
-	}
 
 	to = kmap_atomic(page);
 	to[clu] = *dst_clu;
@@ -1332,8 +1331,10 @@ static void submit_cluster_write(struct ploop_cow *cow)
 	struct pio *aux_pio = cow->aux_pio;
 	struct ploop *ploop = cow->ploop;
 	u32 dst_clu;
+	int ret;
 
-	if (allocate_cluster(ploop, &dst_clu) < 0)
+	ret = allocate_cluster(ploop, &dst_clu);
+	if (unlikely(ret < 0))
 		goto error;
 	cow->dst_clu = dst_clu;
 
@@ -1348,7 +1349,7 @@ static void submit_cluster_write(struct ploop_cow *cow)
 	map_and_submit_rw(ploop, dst_clu, aux_pio, top_level(ploop));
 	return;
 error:
-	complete_cow(cow, BLK_STS_IOERR);
+	complete_cow(cow, errno_to_blk_status(ret));
 }
 
 static void submit_cow_index_wb(struct ploop_cow *cow)
@@ -1448,6 +1449,7 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 	struct ploop_index_wb *piwb;
 	bool attached = false;
 	u32 page_id;
+	int err;
 
 	WARN_ON_ONCE(pio->queue_list_id != PLOOP_LIST_DEFERRED);
 	if (delay_if_md_busy(ploop, md, PIWB_TYPE_ALLOC, pio))
@@ -1465,8 +1467,9 @@ static bool locate_new_cluster_and_attach_pio(struct ploop *ploop,
 
 	piwb = md->piwb;
 
-	if (ploop_alloc_cluster(ploop, piwb, clu, dst_clu)) {
-		pio->bi_status = BLK_STS_IOERR;
+	err = ploop_alloc_cluster(ploop, piwb, clu, dst_clu);
+	if (err) {
+		pio->bi_status = errno_to_blk_status(err);
 		goto error;
 	}
 
@@ -1920,13 +1923,16 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 	u32 page_id = bat_clu_to_page_nr(clu);
 	struct md_page *md = md_page_find(ploop, page_id);
 	struct ploop_index_wb *piwb;
+	int err;
 
 	if (dst_clu)
 		type = PIWB_TYPE_RELOC;
 
 	if ((md->status & (MD_DIRTY|MD_WRITEBACK)) ||
-	    ploop_prepare_bat_update(ploop, md, type))
-		goto out_eio;
+	    ploop_prepare_bat_update(ploop, md, type)) {
+		err = -EIO;
+		goto out_error;
+	}
 
 	piwb = md->piwb;
 
@@ -1938,7 +1944,8 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 		 * holes_bitmap.
 		 */
 		ploop_bat_page_zero_cluster(ploop, piwb, clu);
-		if (ploop_alloc_cluster(ploop, piwb, clu, dst_clu))
+		err = ploop_alloc_cluster(ploop, piwb, clu, dst_clu);
+		if (err)
 			goto out_reset;
 	}
 
@@ -1947,6 +1954,6 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 
 out_reset:
 	ploop_break_bat_update(ploop, md);
-out_eio:
-	return -EIO;
+out_error:
+	return errno_to_blk_status(err);
 }
