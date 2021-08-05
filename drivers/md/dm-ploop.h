@@ -284,6 +284,7 @@ struct ploop_cow {
 };
 
 extern bool ignore_signature_disk_in_use;
+extern struct kmem_cache *pio_cache;
 extern struct kmem_cache *cow_cache;
 
 #define rb_root_for_each_md_page(rb_root, md, node)	\
@@ -549,12 +550,12 @@ static inline bool fake_merge_pio(struct pio *pio)
 
 static inline struct pio *alloc_pio(struct ploop *ploop, gfp_t flags)
 {
-	return kmalloc(sizeof(struct pio), flags);
+	return kmem_cache_alloc(pio_cache, flags);
 }
 
 static inline void free_pio(struct ploop *ploop, struct pio *pio)
 {
-	kfree(pio);
+	kmem_cache_free(pio_cache, pio);
 }
 
 extern void md_page_insert(struct ploop *ploop, struct md_page *md);

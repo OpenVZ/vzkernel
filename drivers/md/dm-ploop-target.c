@@ -27,6 +27,7 @@ module_param(ignore_signature_disk_in_use, bool, 0444);
 MODULE_PARM_DESC(ignore_signature_disk_in_use,
                 "Does not check for SIGNATURE_DISK_IN_USE");
 
+struct kmem_cache *pio_cache;
 struct kmem_cache *cow_cache;
 
 static void ploop_aio_do_completion(struct pio *pio)
@@ -526,9 +527,12 @@ static int __init dm_ploop_init(void)
 {
 	int r = -ENOMEM;
 
+	/* This saves some memory in comparison with kmalloc memcache */
+	pio_cache = kmem_cache_create("ploop-pio", sizeof(struct pio),
+				      0, 0, NULL);
 	cow_cache = kmem_cache_create("ploop-cow", sizeof(struct ploop_cow),
 				      0, 0, NULL);
-	if (!cow_cache)
+	if (!pio_cache || !cow_cache)
 		goto err;
 
 	r = dm_register_target(&ploop_target);
@@ -539,6 +543,7 @@ static int __init dm_ploop_init(void)
 
 	return 0;
 err:
+	kmem_cache_destroy(pio_cache);
 	kmem_cache_destroy(cow_cache);
 	return r;
 }
@@ -546,6 +551,7 @@ err:
 static void __exit dm_ploop_exit(void)
 {
 	dm_unregister_target(&ploop_target);
+	kmem_cache_destroy(pio_cache);
 	kmem_cache_destroy(cow_cache);
 }
 
