@@ -104,6 +104,30 @@ static int ploop_rq_valid(struct ploop *ploop, struct request *rq)
 	return 0;
 }
 
+static void init_prq(struct ploop_rq *prq, struct request *rq)
+{
+	prq->rq = rq;
+	prq->bvec = NULL;
+	prq->css = NULL;
+#ifdef CONFIG_BLK_CGROUP
+	if (rq->bio && rq->bio->bi_blkg) {
+		prq->css = &bio_blkcg(rq->bio)->css;
+		css_get(prq->css); /* css_put is in prq_endio */
+	}
+#endif
+}
+
+static void init_prq_and_embedded_pio(struct ploop *ploop, struct request *rq,
+				      struct ploop_rq *prq, struct pio *pio)
+{
+	init_prq(prq, rq);
+	init_pio(ploop, req_op(rq), pio);
+	pio->css = prq->css;
+
+	pio->endio_cb = prq_endio;
+	pio->endio_cb_data = prq;
+}
+
 void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
 {
         struct ploop_rq *prq = prq_ptr;
@@ -1793,19 +1817,6 @@ void do_ploop_fsync_work(struct work_struct *ws)
 	}
 }
 
-static void init_prq(struct ploop_rq *prq, struct request *rq)
-{
-	prq->rq = rq;
-	prq->bvec = NULL;
-	prq->css = NULL;
-#ifdef CONFIG_BLK_CGROUP
-	if (rq->bio && rq->bio->bi_blkg) {
-		prq->css = &bio_blkcg(rq->bio)->css;
-		css_get(prq->css); /* css_put is in prq_endio */
-	}
-#endif
-}
-
 static void submit_embedded_pio(struct ploop *ploop, struct pio *pio)
 {
 	struct ploop_rq *prq = embedded_pio_to_prq(pio);
@@ -1858,13 +1869,8 @@ int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 		return DM_MAPIO_KILL;
 
 	prq = map_info_to_embedded_prq(info);
-	init_prq(prq, rq);
-
 	pio = map_info_to_embedded_pio(info);
-	init_pio(ploop, req_op(rq), pio);
-	pio->css = prq->css;
-	pio->endio_cb = prq_endio;
-	pio->endio_cb_data = prq;
+	init_prq_and_embedded_pio(ploop, rq, prq, pio);
 
 	submit_embedded_pio(ploop, pio);
 	return DM_MAPIO_SUBMITTED;
