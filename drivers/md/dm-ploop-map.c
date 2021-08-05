@@ -1895,11 +1895,6 @@ static void handle_cleanup(struct ploop *ploop, struct pio *pio)
 	/*
 	 * This function is called from the very beginning
 	 * of call_bio_endio().
-	 *
-	 * DM_ENDIO_DONE return value means handling goes OK.
-	 * DM_ENDIO_INCOMPLETE tells the caller to stop end io
-	 * processing, and that we are going to call bi_end_io
-	 * directly later again.
 	 */
 	if (pio->wants_discard_index_cleanup)
 		ploop_discard_index_pio_end(ploop, pio);
