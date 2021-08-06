@@ -1,1 +1,1 @@
-# CONFIG_POWER9_CPU is not set
+CONFIG_POWER9_CPU=y
