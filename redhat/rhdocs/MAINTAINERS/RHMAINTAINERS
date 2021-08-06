@@ -411,18 +411,6 @@ F:	drivers/iommu/arm-smmu.c
 F:	drivers/iommu/arm-smmu-v3.c
 F:	drivers/iommu/io-pgtable-arm.c
 
-ATHEROS WIRELESS 5K LAN DRIVERS
-M:	Jarod Wilson <jarod@redhat.com>
-M:	John Linville <linville@redhat.com>
-S:	Supported
-F:	drivers/net/wireless/ath5k
-
-ATHEROS WIRELESS 9K LAN DRIVERS
-M:	Jarod Wilson <jarod@redhat.com>
-M:	John Linville <linville@redhat.com>
-S:	Supported
-F:	drivers/net/wireless/ath9k
-
 ATHEROS ETHERNET DRIVERS
 M:	Jarod Wilson <jarod@redhat.com>
 S:	Supported
@@ -1088,6 +1076,8 @@ R:	Kairui Song <kasong@redhat.com>
 R:	Lucas Zampieri <lzampier@redhat.com>
 R:	Pingfan Liu <piliu@redhat.com>
 R:	Tao Liu <ltao@redhat.com>
+R:	Lianbo Jiang <lijiang@redhat.com>
+R:	Philipp Rudo <prudo@redhat.com>
 L:	kdump-bugs@redhat.com
 S:	Supported
 F:	Documentation/admin-guide/kdump/
@@ -1102,6 +1092,12 @@ F:	kernel/kexec*
 F:	arch/x86/kernel/machine_kexec_*.c
 F:	arch/x86/kernel/crash*.c
 F:	arch/x86/kernel/kexec-bzimage64.c
+
+KASLR
+M:	Baoquan He <bhe@redhat.com>
+S:	Supported
+F:	arch/x86/boot/compressed/kaslr.c
+F:	arch/x86/mm/kaslr.c
 
 KERNEL VIRTUAL MACHINE (KVM)
 M:	Paolo Bonzini <pbonzini@redhat.com>
@@ -1847,11 +1843,6 @@ F:	Documentation/ABI/testing/sysfs-bus-rbd
 F:	drivers/block/rbd.c
 F:	drivers/block/rbd_types.h
 
-RALINK RT2X00 WIRELESS LAN DRIVER
-M:	Jarod Wilson <jarod@redhat.com>
-S:	Supported
-F:	drivers/net/wireless/rt2x00/
-
 READ-COPY UPDATE (RCU)
 M:	Waiman Long <longman@redhat.com>
 R:	Artem Savkov <asavkov@redhat.com>
@@ -1863,12 +1854,6 @@ S:	Supported
 F:	Documentation/RCU/
 F:	include/linux/rcu*
 F:	kernel/rcu/
-
-REALTEK WIRELESS LAN DRIVERS
-M:	Jarod Wilson <jarod@redhat.com>
-M:	John Linville <linville@redhat.com>
-S:	Supported
-F:	drivers/net/wireless/rtl818x
 
 RFKILL
 M:	John Linville <linville@redhat.com>
@@ -2199,7 +2184,6 @@ VIDEO DRIVERS
 M:	David Airlie <airlied@redhat.com>
 M:	Adam Jackson <ajax@redhat.com>
 M:	Lyude Paul <lyude@redhat.com>
-R:	Jeremy Cline <jcline@redhat.com>
 R:	Michel Dänzer <mdaenzer@redhat.com>
 R:	Jérôme Glisse <jglisse@redhat.com>
 R:	Karol Herbst <kherbst@redhat.com>
@@ -2303,12 +2287,20 @@ F:	drivers/infiniband/hw/vmw_pvrdma/
 F:	include/uapi/rdma/vmw_pvrdma-abi.h
 
 WIRELESS DRIVERS AND STACK
-M:	Jarod Wilson <jarod@redhat.com>
-M:	John Linville <linville@redhat.com>
+M:	Íñigo Huguet <ihuguet@redhat.com>
+R:	Jarod Wilson <jarod@redhat.com>
+R:	John Linville <linville@redhat.com>
 S:	Supported
 F:	drivers/net/wireless/
 F:	net/mac80211/
 F:	net/wireless/
+F:	net/rfkill/
+F:	net/qrtr/
+F:	include/net/*80211*
+F:	include/net/iw*
+F:	include/net/regulatory.h
+F:	include/uapi/linux/nl80211.h
+F:	include/uapi/linux/wireless.h
 
 XEN
 M:	Vitaly Kuznetsov <vkuznets@redhat.com>
