@@ -1,1 +1,1 @@
-CONFIG_RDMA_RXE=m
+# CONFIG_RDMA_RXE is not set
