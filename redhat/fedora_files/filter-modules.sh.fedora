@@ -39,7 +39,7 @@ netprots="6lowpan appletalk atm ax25 batman-adv bluetooth can dsa ieee802154 l2t
 
 drmdrvs="amd ast bridge gma500 i2c i915 mgag200 nouveau panel radeon"
 
-singlemods="ntb_netdev iscsi_ibft iscsi_boot_sysfs megaraid pmcraid qedi qla1280 9pnet_rdma rpcrdma nvmet-rdma nvme-rdma hid-picolcd hid-prodikeys hwpoison-inject target_core_user sbp_target cxgbit  chcr parport_serial regmap-sdw hid-asus iTCO_wdt rnbd-client rnbd-server mlx5_vdpa spi-altera-dfl"
+singlemods="ntb_netdev iscsi_ibft iscsi_boot_sysfs megaraid pmcraid qedi qla1280 9pnet_rdma rpcrdma nvmet-rdma nvme-rdma hid-picolcd hid-prodikeys hwpoison-inject target_core_user sbp_target cxgbit  chcr parport_serial regmap-sdw regmap-sdw-mbq arizona-micsupp hid-asus iTCO_wdt rnbd-client rnbd-server mlx5_vdpa spi-altera-dfl"
 
 # Grab the arch-specific filter list overrides
 source ./filter-$2.sh
@@ -146,6 +146,7 @@ done
 
 # Just kill sound.
 filter_dir $1 kernel/sound
+filter_dir $1 kernel/drivers/soundwire
 
 # Now go through and filter any single .ko files that might have deps on the
 # things we filtered above
