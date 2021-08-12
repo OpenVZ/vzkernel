@@ -5730,7 +5730,6 @@ mmu_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 	int nr_to_scan = sc->nr_to_scan;
 	unsigned long freed = 0;
 	int idx, found = 0;
-	LIST_HEAD(invalid_list);
 
 	mutex_lock(&kvm_lock);
 
