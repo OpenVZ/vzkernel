@@ -346,8 +346,8 @@ static int oom_evaluate_task(struct task_struct *task, void *arg)
 	if (!points)
 		goto next;
 
-	if (oom_worse(points, overdraft, &oc->chosen_points, &oc->max_overdraft))
-		goto select;
+	if (!oom_worse(points, overdraft, &oc->chosen_points, &oc->max_overdraft))
+		goto next;
 select:
 	if (oc->chosen)
 		put_task_struct(oc->chosen);
