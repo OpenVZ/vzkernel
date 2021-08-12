@@ -114,4 +114,6 @@
 
 #define SO_DETACH_REUSEPORT_BPF 68
 
+#define SO_BUF_LOCK		72
+
 #endif /* __ASM_GENERIC_SOCKET_H */

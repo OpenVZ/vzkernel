@@ -107,4 +107,6 @@
 #define SO_TXTIME		0x4036
 #define SCM_TXTIME		SO_TXTIME
 
+#define SO_BUF_LOCK		0x4046
+
 #endif /* _UAPI_ASM_SOCKET_H */

@@ -73,6 +73,7 @@
 #include <linux/net_tstamp.h>
 #include <net/smc.h>
 #include <net/l3mdev.h>
+#include <uapi/linux/socket.h>
 
 #include <linux/rh_kabi.h>
 
@@ -1417,8 +1418,6 @@ static inline int __sk_prot_rehash(struct sock *sk)
 #define RCV_SHUTDOWN	1
 #define SEND_SHUTDOWN	2
 
-#define SOCK_SNDBUF_LOCK	1
-#define SOCK_RCVBUF_LOCK	2
 #define SOCK_BINDADDR_LOCK	4
 #define SOCK_BINDPORT_LOCK	8
 
