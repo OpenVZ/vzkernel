@@ -152,7 +152,7 @@ invalid:
 }
 
 struct dentry *ovl_decode_real_fh(struct ovl_fh *fh, struct vfsmount *mnt,
-				  bool connected, bool nouuid)
+				  bool connected)
 {
 	struct dentry *real;
 	int bytes;
@@ -161,7 +161,7 @@ struct dentry *ovl_decode_real_fh(struct ovl_fh *fh, struct vfsmount *mnt,
 	 * Make sure that the stored uuid matches the uuid of the lower
 	 * layer where file handle will be decoded.
 	 */
-	if (!nouuid && !uuid_equal(&fh->fb.uuid, &mnt->mnt_sb->s_uuid))
+	if (!uuid_equal(&fh->fb.uuid, &mnt->mnt_sb->s_uuid))
 		return NULL;
 
 	bytes = (fh->fb.len - offsetof(struct ovl_fb, fid));
@@ -324,7 +324,6 @@ int ovl_check_origin_fh(struct ovl_fs *ofs, struct ovl_fh *fh, bool connected,
 {
 	struct dentry *origin = NULL;
 	int i;
-	bool nouuid = ofs->config.index == OVL_INDEX_NOUUID;
 
 	for (i = 1; i < ofs->numlayer; i++) {
 		/*
@@ -336,7 +335,7 @@ int ovl_check_origin_fh(struct ovl_fs *ofs, struct ovl_fh *fh, bool connected,
 			continue;
 
 		origin = ovl_decode_real_fh(fh, ofs->layers[i].mnt,
-					    connected, nouuid);
+					    connected);
 		if (origin)
 			break;
 	}
@@ -401,7 +400,7 @@ static int ovl_check_origin(struct ovl_fs *ofs, struct dentry *upperdentry,
  * Return 0 on match, -ESTALE on mismatch, < 0 on error.
  */
 static int ovl_verify_fh(struct dentry *dentry, const char *name,
-			 const struct ovl_fh *fh, bool nouuid)
+			 const struct ovl_fh *fh)
 {
 	struct ovl_fh *ofh = ovl_get_fh(dentry, name);
 	int err = 0;
@@ -412,14 +411,8 @@ static int ovl_verify_fh(struct dentry *dentry, const char *name,
 	if (IS_ERR(ofh))
 		return PTR_ERR(ofh);
 
-	if (fh->fb.len != ofh->fb.len) {
+	if (fh->fb.len != ofh->fb.len || memcmp(&fh->fb, &ofh->fb, fh->fb.len))
 		err = -ESTALE;
-	} else {
-		if (nouuid && !uuid_equal(&fh->fb.uuid, &ofh->fb.uuid))
-			ofh->fb.uuid = fh->fb.uuid;
-		if (memcmp(&fh->fb, &ofh->fb, fh->fb.len))
-			err = -ESTALE;
-	}
 
 	kfree(ofh);
 	return err;
@@ -434,8 +427,7 @@ static int ovl_verify_fh(struct dentry *dentry, const char *name,
  * Return 0 on match, -ESTALE on mismatch, -ENODATA on no xattr, < 0 on error.
  */
 int ovl_verify_set_fh(struct dentry *dentry, const char *name,
-		      struct dentry *real, bool is_upper, bool set,
-		      bool nouuid)
+		      struct dentry *real, bool is_upper, bool set)
 {
 	struct inode *inode;
 	struct ovl_fh *fh;
@@ -448,7 +440,7 @@ int ovl_verify_set_fh(struct dentry *dentry, const char *name,
 		goto fail;
 	}
 
-	err = ovl_verify_fh(dentry, name, fh, nouuid);
+	err = ovl_verify_fh(dentry, name, fh);
 	if (set && err == -ENODATA)
 		err = ovl_do_setxattr(dentry, name, fh->buf, fh->fb.len, 0);
 	if (err)
@@ -471,7 +463,6 @@ struct dentry *ovl_index_upper(struct ovl_fs *ofs, struct dentry *index)
 {
 	struct ovl_fh *fh;
 	struct dentry *upper;
-	bool nouuid = ofs->config.index == OVL_INDEX_NOUUID;
 
 	if (!d_is_dir(index))
 		return dget(index);
@@ -480,7 +471,7 @@ struct dentry *ovl_index_upper(struct ovl_fs *ofs, struct dentry *index)
 	if (IS_ERR_OR_NULL(fh))
 		return ERR_CAST(fh);
 
-	upper = ovl_decode_real_fh(fh, ofs->upper_mnt, true, nouuid);
+	upper = ovl_decode_real_fh(fh, ofs->upper_mnt, true);
 	kfree(fh);
 
 	if (IS_ERR_OR_NULL(upper))
@@ -515,7 +506,6 @@ int ovl_verify_index(struct ovl_fs *ofs, struct dentry *index)
 	struct ovl_path *stack = &origin;
 	struct dentry *upper = NULL;
 	int err;
-	bool nouuid = ofs->config.index == OVL_INDEX_NOUUID;
 
 	if (!d_inode(index))
 		return 0;
@@ -581,7 +571,7 @@ int ovl_verify_index(struct ovl_fs *ofs, struct dentry *index)
 		goto fail;
 	}
 
-	err = ovl_verify_fh(upper, OVL_XATTR_ORIGIN, fh, nouuid);
+	err = ovl_verify_fh(upper, OVL_XATTR_ORIGIN, fh);
 	dput(upper);
 	if (err)
 		goto fail;
@@ -697,7 +687,6 @@ struct dentry *ovl_lookup_index(struct ovl_fs *ofs, struct dentry *upper,
 	struct qstr name;
 	bool is_dir = d_is_dir(origin);
 	int err;
-	bool nouuid = ofs->config.index == OVL_INDEX_NOUUID;
 
 	err = ovl_get_index_name(origin, &name);
 	if (err)
@@ -749,7 +738,7 @@ struct dentry *ovl_lookup_index(struct ovl_fs *ofs, struct dentry *upper,
 		}
 
 		/* Verify that dir index 'upper' xattr points to upper dir */
-		err = ovl_verify_upper(index, upper, false, nouuid);
+		err = ovl_verify_upper(index, upper, false);
 		if (err) {
 			if (err == -ESTALE) {
 				pr_warn_ratelimited("suspected multiply redirected dir found (upper=%pd2, origin=%pd2, index=%pd2).\n",
@@ -848,7 +837,6 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 		.redirect = NULL,
 		.metacopy = false,
 	};
-	bool nouuid = ofs->config.index == OVL_INDEX_NOUUID;
 
 	if (dentry->d_name.len > ofs->namelen)
 		return ERR_PTR(-ENAMETOOLONG);
@@ -951,8 +939,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 		if (upperdentry && !ctr &&
 		    ((d.is_dir && ovl_verify_lower(dentry->d_sb)) ||
 		     (!d.is_dir && ofs->config.index && origin_path))) {
-			err = ovl_verify_origin(upperdentry, this, false,
-						nouuid);
+			err = ovl_verify_origin(upperdentry, this, false);
 			if (err) {
 				dput(this);
 				if (d.is_dir)
