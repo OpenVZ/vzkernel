@@ -833,10 +833,8 @@ static const struct file_operations bm_status_operations = {
 static void bm_put_super(struct super_block *sb)
 {
 	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
-	struct ve_struct *ve = sb->s_fs_info;
 
 	bm_data->enabled = 0;
-	put_ve(ve);
 }
 
 static const struct super_operations s_ops = {
@@ -875,8 +873,6 @@ static int bm_fill_super(struct super_block *sb, struct fs_context *fc)
 	}
 
 	sb->s_op = &s_ops;
-	sb->s_fs_info = ve;
-	get_ve(ve);
 
 	bm_data->enabled = 1;
 
@@ -885,10 +881,39 @@ static int bm_fill_super(struct super_block *sb, struct fs_context *fc)
 
 static int bm_get_tree(struct fs_context *fc)
 {
-	return get_tree_single(fc, bm_fill_super);
+	struct ve_struct *ve = get_exec_env();
+
+	/*
+	 * We need one binfmt_misc superblock per VE,
+	 * use get_tree_keyed() helper to get vfs_tree.
+	 *
+	 * It allows us to find sb by key (in our case ve is the key),
+	 * and if it doesn't exists creates new.
+	 *
+	 * Important: we take ve refcnt here. It will be put
+	 * in one of two places:
+	 * 1. bm_free_fc()
+	 * on error path (wrong mnt opt provided for instance)
+	 * if sb exists and initialized already
+	 * 2. bm_kill_sb() when sb refcnt becomes zero (last mount umounted)
+	 */
+	return get_tree_keyed(fc, bm_fill_super, get_ve(ve));
 }
 
+static void bm_free_fc(struct fs_context *fc)
+{
+	/*
+	 * fc->s_fs_info will be NULL if bm_fill_super() was called and
+	 * no error occured (it means that new sb was allocated successfuly)
+	 * see fs/super.c sget_fc() helper
+	 */
+	if (fc->s_fs_info)
+		put_ve(fc->s_fs_info);
+}
+
+
 static const struct fs_context_operations bm_context_ops = {
+	.free		= bm_free_fc,
 	.get_tree	= bm_get_tree,
 };
 
@@ -896,6 +921,14 @@ static int bm_init_fs_context(struct fs_context *fc)
 {
 	fc->ops = &bm_context_ops;
 	return 0;
+}
+
+static void bm_kill_sb(struct super_block *sb)
+{
+	struct ve_struct *ve = sb->s_fs_info;
+
+	kill_litter_super(sb);
+	put_ve(ve);
 }
 
 static struct linux_binfmt misc_format = {
@@ -907,7 +940,7 @@ static struct file_system_type bm_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "binfmt_misc",
 	.init_fs_context = bm_init_fs_context,
-	.kill_sb	= kill_litter_super,
+	.kill_sb	= bm_kill_sb,
 	.fs_flags	= FS_VIRTUALIZED | FS_VE_MOUNT,
 };
 MODULE_ALIAS_FS("binfmt_misc");
