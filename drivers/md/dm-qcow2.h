@@ -178,6 +178,7 @@ struct qcow2 {
 	spinlock_t md_pages_lock;
 
 	struct list_head qios[QLIST_COUNT];
+	struct list_head resubmit_qios;
 	struct list_head paused_qios; /* For pause_submitting_qios */
 
 	/* For batching md update: */

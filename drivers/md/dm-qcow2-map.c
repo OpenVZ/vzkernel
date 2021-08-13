@@ -2698,6 +2698,19 @@ endio:
 	return 0;
 }
 
+static void qcow2_queue_resubmit(struct qio *qio)
+{
+	struct qcow2 *qcow2 = qio->qcow2;
+	unsigned long flags;
+
+	qio->queue_list_id = QLIST_INVALID;
+
+	spin_lock_irqsave(&qcow2->deferred_lock, flags);
+	list_add_tail(&qio->link, &qcow2->resubmit_qios);
+	spin_unlock_irqrestore(&qcow2->deferred_lock, flags);
+	queue_work(qcow2->tgt->wq, &qcow2->worker);
+}
+
 static void data_rw_complete(struct qio *qio)
 {
 	bool finalize_wbd = false, call_endio = true;
@@ -2707,9 +2720,15 @@ static void data_rw_complete(struct qio *qio)
 	struct wb_desc *wbd;
 	unsigned long flags;
 
-	/* FIXME: short read/write */
-	if (qio->ret != qio->bi_iter.bi_size)
-		bi_status = BLK_STS_IOERR;
+	if (unlikely(qio->ret != qio->bi_iter.bi_size)) {
+		if (qio->ret >= 0) {
+			WARN_ON_ONCE(qio->ret == 0);
+			qio_advance(qio, qio->ret);
+			qcow2_queue_resubmit(qio);
+			return;
+		}
+		bi_status = errno_to_blk_status(qio->ret);
+	}
 
 	wbd = qio->data;
 	if (wbd) {
@@ -3898,6 +3917,15 @@ next:		qio = qio_list_pop(qio_list);
 		}
 	}
 }
+static void process_resubmit_qios(struct qcow2 *qcow2, struct list_head *qios)
+{
+	struct qio *qio;
+
+	while ((qio = qio_list_pop(qios)) != NULL) {
+		qio->queue_list_id = QLIST_INVALID;
+		submit_rw_mapped(qcow2, qio);
+	}
+}
 
 void do_qcow2_work(struct work_struct *ws)
 {
@@ -3909,6 +3937,7 @@ void do_qcow2_work(struct work_struct *ws)
 	LIST_HEAD(cow_data_qios);
 	LIST_HEAD(cow_indexes_qios);
 	LIST_HEAD(cow_end_qios);
+	LIST_HEAD(resubmit_qios);
 	unsigned int pflags = current->flags;
 
 	current->flags |= PF_LOCAL_THROTTLE|PF_MEMALLOC_NOIO;
@@ -3920,6 +3949,7 @@ void do_qcow2_work(struct work_struct *ws)
 	list_splice_init(&qcow2->qios[QLIST_COW_DATA], &cow_data_qios);
 	list_splice_init(&qcow2->qios[QLIST_COW_INDEXES], &cow_indexes_qios);
 	list_splice_init(&qcow2->qios[QLIST_COW_END], &cow_end_qios);
+	list_splice_init(&qcow2->resubmit_qios, &resubmit_qios);
 	spin_unlock_irq(&qcow2->deferred_lock);
 
 	process_embedded_qios(qcow2, &embedded_qios, &deferred_qios);
@@ -3929,6 +3959,7 @@ void do_qcow2_work(struct work_struct *ws)
 	process_cow_data_write(qcow2, &cow_data_qios);
 	process_cow_indexes_write(qcow2, &cow_indexes_qios);
 	process_cow_end(qcow2, &cow_end_qios);
+	process_resubmit_qios(qcow2, &resubmit_qios);
 
 	/* This actually submits batch of md writeback, initiated above */
 	submit_metadata_writeback(qcow2);
