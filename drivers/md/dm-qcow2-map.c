@@ -854,7 +854,6 @@ static struct wb_desc *alloc_wbd(bool needs_prealloced)
 			goto err;
 	}
 
-	INIT_LIST_HEAD(&wbd->submitted_list);
 	INIT_LIST_HEAD(&wbd->completed_list);
 	INIT_LIST_HEAD(&wbd->dependent_list);
 	return wbd;
@@ -1357,7 +1356,7 @@ static void do_md_page_write_complete(int ret, struct qcow2 *qcow2,
 		 * parallel data qios, wbd is finalized by last
 		 * completed data qio.
 		 */
-		finalize_wbd = list_empty(&wbd->submitted_list);
+		finalize_wbd = (wbd->nr_submitted == 0);
 		/*
 		 * We can finish wb only in case of success.
 		 * Otherwise this is done in finalize_wbd()
@@ -1761,7 +1760,7 @@ static loff_t parse_l2(struct qcow2 *qcow2, struct qcow2_map *map,
 		 * but fast zeroing may be useful optimizations on big
 		 * clusters (say, 1Mb).
 		 * In case of md is dirty, WRITE is not delayed. It becomes
-		 * linked to md->wbd in perform_rw_mapped(), and it runs
+		 * referred to md->wbd in perform_rw_mapped(), and it runs
 		 * in parallel with md writeback (accompanying qio).
 		 */
 		if (!write && dirty_or_writeback(qcow2, l2->md, l2->index_in_page)) {
@@ -2692,19 +2691,18 @@ static void data_rw_complete(struct qio *qio)
 		bi_status = BLK_STS_IOERR;
 
 	wbd = qio->data;
-	if (write && wbd) {
+	if (wbd) {
+		WARN_ON_ONCE(!write);
 		spin_lock_irqsave(&qcow2->md_pages_lock, flags);
-		if (!list_empty(&qio->link)) {
-			list_del_init(&qio->link);
-			if (wbd->completed) {
-				if (wbd->ret != 0)
-					bi_status = errno_to_blk_status(wbd->ret);
-				/* Last user of wbd? */
-				finalize_wbd = list_empty(&wbd->submitted_list);
-			} else if (bi_status == BLK_STS_OK) {
-				call_endio = false;
-				list_add_tail(&qio->link, &wbd->completed_list);
-			}
+		wbd->nr_submitted--;
+		if (wbd->completed) {
+			if (wbd->ret != 0)
+				bi_status = errno_to_blk_status(wbd->ret);
+			/* Last user of wbd? */
+			finalize_wbd = (wbd->nr_submitted == 0);
+		} else if (bi_status == BLK_STS_OK) {
+			call_endio = false;
+			list_add_tail(&qio->link, &wbd->completed_list);
 		}
 		spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
 	}
@@ -2747,12 +2745,11 @@ static void perform_rw_mapped(struct qcow2_map *map, struct qio *qio)
 	rw = (op_is_write(qio->bi_op) ? WRITE : READ);
 	qio->complete = data_rw_complete;
 	qio->data = NULL;
-	INIT_LIST_HEAD(&qio->link);
 
 	/*
 	 * The idea is to submit L2 update and qio data write in parallel
 	 * for better performance. But since qio_endio() can't be called
-	 * till both of them are written, we link qio to md to track that.
+	 * till both of them are written, we attach qio to md to track that.
 	 * In case of qio is not related to changed indexes, it shouldn't
 	 * wait for md writeback completion.
 	 *
@@ -2763,7 +2760,7 @@ static void perform_rw_mapped(struct qcow2_map *map, struct qio *qio)
 	if (rw == WRITE && (md->status & MD_DIRTY) &&
 	    test_bit(index_in_page, md->wbd->changed_indexes)) {
 		spin_lock_irqsave(&qcow2->md_pages_lock, flags);
-		list_add(&qio->link, &md->wbd->submitted_list);
+		md->wbd->nr_submitted++;
 		qio->data = md->wbd;
 		spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
 	}
