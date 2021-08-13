@@ -2784,27 +2784,47 @@ static void cow_read_complete(struct qio *qio)
 	dispatch_qios(qio->qcow2, qio, NULL);
 }
 
+static void cow_read_endio(struct qcow2_target *tgt, struct qio *unused,
+			   void *qio_ptr, blk_status_t bi_status)
+
+{
+	struct qio *qio = qio_ptr;
+	struct qcow2 *qcow2 = qio->qcow2;
+
+	if (bi_status)
+		qio->ret = blk_status_to_errno(bi_status);
+	else
+		qio->ret = qcow2->clu_size;
+
+	cow_read_complete(qio);
+}
+
 static void submit_read_whole_cow_clu(struct qcow2_map *map, struct qio *qio)
 {
+	loff_t clu_pos = map->cow_clu_pos;
 	struct qcow2 *qcow2 = map->qcow2;
 	struct md_page *md = map->l1.md;
 	u32 clu_size = qcow2->clu_size;
-	loff_t pos = map->cow_clu_pos;
 	struct qcow2_bvec *qvec;
-	struct iov_iter iter;
+	struct qio *read_qio;
 	u32 nr_pages;
 
 	WARN_ON_ONCE(map->level & L2_LEVEL);
 
 	nr_pages = clu_size >> PAGE_SHIFT;
-	qvec = alloc_qvec_with_pages(nr_pages, true);
-	if (!qvec) {
+	read_qio = alloc_qio_with_qvec(qcow2, nr_pages, REQ_OP_READ, true, &qvec);
+	if (!read_qio) {
 		qio->bi_status = BLK_STS_RESOURCE;
 		qio_endio(qio); /* Frees ext */
 		return;
 	}
+	read_qio->bi_iter.bi_sector = 0;
+	read_qio->complete = data_rw_complete;
+	read_qio->data = NULL;
+	read_qio->flags |= QIO_FREE_ON_ENDIO_FL;
+	read_qio->endio_cb = cow_read_endio;
+	read_qio->endio_cb_data = qio;
 
-	qio->complete = cow_read_complete;
 	qio->data = qvec;
 	qio->ext->cleanup_mask |= FREE_QIO_DATA_QVEC;
 	qio->ext->lx_md = md;
@@ -2815,8 +2835,7 @@ static void submit_read_whole_cow_clu(struct qcow2_map *map, struct qio *qio)
 	 */
 	inc_wpc_readers(md);
 
-	iov_iter_bvec(&iter, READ, qvec->bvec, nr_pages, clu_size);
-	call_rw_iter(qcow2->file, pos, READ, &iter, qio);
+	map_and_submit_rw(qcow2, clu_pos, read_qio);
 }
 
 static int decompress_zlib_clu(struct qcow2 *qcow2, struct qcow2_bvec *qvec,
