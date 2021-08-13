@@ -3643,17 +3643,17 @@ static void process_backward_merge_write(struct qcow2 *qcow2, struct list_head *
 	}
 }
 
-static void cow_data_write_complete(struct qio *qio)
+static void cow_data_write_endio(struct qcow2_target *tgt, struct qio *unused,
+				 void *qio_ptr, blk_status_t bi_status)
+
 {
+	struct qio *qio = qio_ptr;
 	struct qcow2 *qcow2 = qio->qcow2;
-	int ret = qio->ret;
 
 	BUG_ON(!qio->ext);
 
-	if (ret > 0 && ret != qcow2->clu_size)
-		ret = -EIO;
-	if (ret < 0) {
-		qio->bi_status = errno_to_blk_status(ret);
+	if (unlikely(bi_status)) {
+		qio->bi_status = bi_status;
 		qio_endio(qio);
 	} else {
 		qio->queue_list_id = QLIST_COW_INDEXES;
@@ -3663,17 +3663,32 @@ static void cow_data_write_complete(struct qio *qio)
 
 static void submit_cow_data_write(struct qcow2 *qcow2, struct qio *qio, loff_t pos)
 {
-	u32 nr_segs, clu_size = qcow2->clu_size;
+	struct qcow2_target *tgt = qcow2->tgt;
 	struct qcow2_bvec *qvec = qio->data;
-	struct iov_iter iter;
+	u32 clu_size = qcow2->clu_size;
+	struct qio *write_qio;
 
-	nr_segs = clu_size >> PAGE_SHIFT;
-	WARN_ON_ONCE(qvec->nr_pages < nr_segs);
+	write_qio = alloc_qio(tgt->qio_pool, true);
+	if (!write_qio) {
+		qio->bi_status = BLK_STS_RESOURCE;
+		qio_endio(qio);
+		return;
+	}
+	init_qio(write_qio, REQ_OP_WRITE, qcow2);
 
-	iov_iter_bvec(&iter, WRITE, qvec->bvec, nr_segs, clu_size);
-	qio->complete = cow_data_write_complete;
+	write_qio->flags |= QIO_FREE_ON_ENDIO_FL;
+	write_qio->bi_io_vec = qvec->bvec;
+	write_qio->bi_iter.bi_size = clu_size;
+	write_qio->bi_iter.bi_idx = 0;
+	write_qio->bi_iter.bi_bvec_done = 0;
+	write_qio->endio_cb = cow_data_write_endio;
+	write_qio->endio_cb_data = qio;
+	write_qio->complete = data_rw_complete;
+	write_qio->data = NULL;
 
-	call_rw_iter(qcow2->file, pos, WRITE, &iter, qio);
+	write_qio->bi_iter.bi_sector = to_sector(pos);
+
+	submit_rw_mapped(qcow2, write_qio);
 }
 
 static void sliced_cow_data_write_complete(struct qcow2_target *tgt, struct qio *unused,
