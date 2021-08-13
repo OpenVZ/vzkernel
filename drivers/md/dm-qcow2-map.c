@@ -379,7 +379,8 @@ static void do_qio_endio(struct qio *qio)
 
 	qio->ref_index = REF_INDEX_INVALID;
 	/* Note, that this may free qio or its container memory */
-	endio_cb(tgt, qio, endio_cb_data, qio->bi_status);
+	if (endio_cb)
+		endio_cb(tgt, qio, endio_cb_data, qio->bi_status);
 
 	if (ref_index < REF_INDEX_INVALID)
 		qcow2_ref_dec(tgt, ref_index);
@@ -532,29 +533,6 @@ err:
 static void perform_zero_read(struct qio *qio, u32 size)
 {
 	zero_fill_qio(qio, 0, size);
-}
-
-static void inc_inflight_md(struct qcow2 *qcow2, struct qio *qio)
-{
-	struct qcow2_target *tgt = qcow2->tgt;
-	struct percpu_ref *ref;
-	u8 ref_index;
-
-	do {
-		ref_index = tgt->inflight_ref_index;
-		ref = &tgt->inflight_ref[ref_index];
-	} while (unlikely(!percpu_ref_tryget_live(ref)));
-
-	qio->ref_index = ref_index;
-}
-
-static void dec_inflight_md(struct qcow2 *qcow2, struct qio *qio)
-{
-	struct qcow2_target *tgt = qcow2->tgt;
-	u8 ref_index = qio->ref_index;
-
-	if (!(WARN_ON_ONCE(ref_index > 1)))
-		percpu_ref_put(&tgt->inflight_ref[ref_index]);
 }
 
 static void inc_wpc_readers(struct md_page *md)
@@ -1430,8 +1408,10 @@ static void md_page_read_complete(struct qio *qio)
 		ret = 0;
 
 	do_md_page_read_complete(ret, qcow2, md);
-	dec_inflight_md(qcow2, qio);
-	kfree(qvec); /* qio and ext are tail bytes after qvec */
+	if (ret)
+		qio->bi_status = errno_to_blk_status(ret);
+	kfree(qvec);
+	qio_endio(qio);
 }
 
 static void md_page_write_complete(struct qio *qio)
@@ -1449,12 +1429,17 @@ static void md_page_write_complete(struct qio *qio)
 static void submit_rw_md_page(unsigned int rw, struct qcow2 *qcow2,
 			      struct md_page *md)
 {
+	struct qcow2_target *tgt = qcow2->tgt;
 	loff_t pos = md->id << PAGE_SHIFT;
 	struct qcow2_bvec *qvec = NULL;
 	struct bio_vec *bvec;
 	struct iov_iter iter;
-	int size, err = 0;
+	unsigned int bi_op;
 	struct qio *qio;
+	u8 ref_index;
+	int err = 0;
+
+	bi_op = (rw == READ ? REQ_OP_READ : REQ_OP_WRITE);
 
 	if (pos > qcow2->file_size) {
 		pr_err_once("qcow2: rw=%x pos=%lld behind EOF %lld\n",
@@ -1465,10 +1450,12 @@ static void submit_rw_md_page(unsigned int rw, struct qcow2 *qcow2,
 		 * Note, this is fake qio, and qio_endio()
 		 * can't be called on it!
 		 */
-		size = sizeof(struct qio) + sizeof(struct qio_ext);
-		qvec = alloc_qvec_with_data(1, (void *)&qio, size);
-		if (!qvec)
+		qio = alloc_qio_with_qvec(qcow2, 1, bi_op, false, &qvec);
+		if (!qio || alloc_qio_ext(qio)) {
+			if (qio)
+				free_qio(qio, tgt->qio_pool);
 			err = -ENOMEM;
+		}
 	}
 	if (err) {
 		if (rw == READ)
@@ -1478,14 +1465,18 @@ static void submit_rw_md_page(unsigned int rw, struct qcow2 *qcow2,
 		return;
 	}
 
-	init_qio(qio, rw == READ ? REQ_OP_READ : REQ_OP_WRITE, qcow2);
-	qio->ext = (void *)qio + sizeof(*qio);
-	qio->ext->md = md;
+	WARN_ON_ONCE(qio->endio_cb);
+	qio->flags |= QIO_FREE_ON_ENDIO_FL;
 	qio->data = qvec;
+	qio->ext->md = md;
 	if (rw == READ)
 		qio->complete = md_page_read_complete;
 	else
 		qio->complete = md_page_write_complete;
+
+	/* This may return other qcow2, and it does not matter */
+	qcow2_ref_inc(tgt, &ref_index);
+	qio->ref_index = ref_index;
 
 	bvec = &qvec->bvec[0];
 	bvec->bv_page = md->page;
@@ -1493,8 +1484,6 @@ static void submit_rw_md_page(unsigned int rw, struct qcow2 *qcow2,
 	bvec->bv_offset = 0;
 
 	iov_iter_bvec(&iter, rw, bvec, 1, PAGE_SIZE);
-
-	inc_inflight_md(qcow2, qio);
 	call_rw_iter(qcow2->file, pos, rw, &iter, qio);
 }
 
@@ -3494,8 +3483,10 @@ static int complete_metadata_writeback(struct qcow2 *qcow2)
 			ret = fsync_ret;
 
 		do_md_page_write_complete(ret, qcow2, md);
-		dec_inflight_md(qcow2, qio);
-		kfree(qvec); /* qio and ext are tail bytes after qvec */
+		if (ret)
+			qio->bi_status = errno_to_blk_status(ret);
+		kfree(qvec);
+		qio_endio(qio);
 	}
 
 	return fsync_ret;
