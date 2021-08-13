@@ -1458,7 +1458,6 @@ static void submit_rw_md_page(unsigned int rw, struct qcow2 *qcow2,
 	loff_t pos = md->id << PAGE_SHIFT;
 	struct qcow2_bvec *qvec = NULL;
 	struct bio_vec *bvec;
-	struct iov_iter iter;
 	unsigned int bi_op;
 	struct qio *qio;
 	u8 ref_index;
@@ -1508,8 +1507,9 @@ static void submit_rw_md_page(unsigned int rw, struct qcow2 *qcow2,
 	bvec->bv_len = PAGE_SIZE;
 	bvec->bv_offset = 0;
 
-	iov_iter_bvec(&iter, rw, bvec, 1, PAGE_SIZE);
-	call_rw_iter(qcow2->file, pos, rw, &iter, qio);
+	/* @pos is not clu-aligned, so we can't use map_and_submit_rw() */
+	qio->bi_iter.bi_sector = to_sector(pos);
+	submit_rw_mapped(qcow2, qio);
 }
 
 static int submit_read_md_page(struct qcow2 *qcow2, struct qio **qio,
