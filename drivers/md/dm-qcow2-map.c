@@ -2766,37 +2766,24 @@ static void perform_rw_mapped(struct qcow2_map *map, struct qio *qio)
 	map_and_submit_rw(qcow2, map->data_clu_pos, qio);
 }
 
-static void cow_read_complete(struct qio *qio)
+static void cow_read_endio(struct qcow2_target *tgt, struct qio *unused,
+			   void *qio_ptr, blk_status_t bi_status)
+
 {
+	struct qio *qio = qio_ptr;
 	struct md_page *md = qio->ext->lx_md;
 	struct qcow2 *qcow2 = qio->qcow2;
-	int ret = qio->ret;
 
 	dec_wpc_readers(qcow2, md); /* We ended to use shared clu on disk */
 
-	if (qio->ret != qcow2->clu_size) {
-		qio->bi_status = errno_to_blk_status(ret < 0 ? ret : -EIO);
+	if (unlikely(bi_status)) {
+		qio->bi_status = bi_status;
 		qio_endio(qio);
 		return;
 	}
 
 	qio->queue_list_id = QLIST_COW_DATA;
 	dispatch_qios(qio->qcow2, qio, NULL);
-}
-
-static void cow_read_endio(struct qcow2_target *tgt, struct qio *unused,
-			   void *qio_ptr, blk_status_t bi_status)
-
-{
-	struct qio *qio = qio_ptr;
-	struct qcow2 *qcow2 = qio->qcow2;
-
-	if (bi_status)
-		qio->ret = blk_status_to_errno(bi_status);
-	else
-		qio->ret = qcow2->clu_size;
-
-	cow_read_complete(qio);
 }
 
 static void submit_read_whole_cow_clu(struct qcow2_map *map, struct qio *qio)
@@ -3036,10 +3023,9 @@ static void submit_read_compressed(struct qcow2_map *map, struct qio *qio,
 		 * Optimization: do not read clu from disk
 		 * in case of here is complete clu rewrite.
 		 * See the way process_cow_data_write()
-		 * updates qvec.
+		 * updates qvec. Also skips extract part.
 		 */
-		qio->ret = clu_size;
-		cow_read_complete(qio); /* Also skip extract part */
+		cow_read_endio(qcow2->tgt, NULL, qio, BLK_STS_OK);
 		return;
 	}
 
