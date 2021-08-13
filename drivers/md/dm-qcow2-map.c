@@ -828,6 +828,30 @@ err:
 	return NULL;
 }
 
+static struct qio *alloc_qio_with_qvec(struct qcow2 *qcow2, u32 nr_pages,
+			    unsigned int bi_op, struct qcow2_bvec **qvec)
+{
+	struct qcow2_target *tgt = qcow2->tgt;
+	struct qio *qio;
+
+	qio = alloc_qio(tgt->qio_pool, true);
+	if (!qio)
+		return NULL;
+
+	*qvec = alloc_qvec_with_pages(nr_pages);
+	if (!*qvec) {
+		free_qio(qio, tgt->qio_pool);
+		return NULL;
+	}
+
+	init_qio(qio, bi_op, qcow2);
+	qio->bi_io_vec = (*qvec)->bvec;
+	qio->bi_iter.bi_size = nr_pages << PAGE_SHIFT;
+	qio->bi_iter.bi_idx = 0;
+	qio->bi_iter.bi_bvec_done = 0;
+	return qio;
+}
+
 static void free_wbd(struct wb_desc *wbd)
 {
 	if (wbd) {
@@ -2540,30 +2564,6 @@ static int prepare_l1l2_cow(struct qcow2 *qcow2, struct qio *qio,
 				  map->cow_clu_end, L2_LEVEL);
 }
 
-static struct qio *alloc_clu_read_qio(struct qcow2 *qcow2, u32 nr_pages,
-				      struct qcow2_bvec **qvec)
-{
-	struct qcow2_target *tgt = qcow2->tgt;
-	struct qio *qio;
-
-	qio = alloc_qio(tgt->qio_pool, true);
-	if (!qio)
-		return NULL;
-
-	*qvec = alloc_qvec_with_pages(nr_pages);
-	if (!*qvec) {
-		free_qio(qio, tgt->qio_pool);
-		return NULL;
-	}
-
-	init_qio(qio, REQ_OP_READ, qcow2);
-	qio->bi_io_vec = (*qvec)->bvec;
-	qio->bi_iter.bi_size = nr_pages << PAGE_SHIFT;
-	qio->bi_iter.bi_idx = 0;
-	qio->bi_iter.bi_bvec_done = 0;
-	return qio;
-}
-
 static void backward_merge_write_complete(struct qcow2_target *tgt, struct qio *unused,
 					  void *qio_ptr, blk_status_t bi_status)
 {
@@ -3119,7 +3119,7 @@ static void submit_read_sliced_clu(struct qcow2_map *map, struct qio *qio,
 		goto out;
 	}
 
-	read_qio = alloc_clu_read_qio(qcow2, nr_pages, &qvec);
+	read_qio = alloc_qio_with_qvec(qcow2, nr_pages, REQ_OP_READ, &qvec);
 	if (!read_qio)
 		goto err_alloc;
 	read_qio->flags |= QIO_FREE_ON_ENDIO_FL;
