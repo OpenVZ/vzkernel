@@ -2946,19 +2946,21 @@ static int prepare_zcow_slices(struct qcow2 *qcow2, void *buf, struct qio *qio)
 	return 0;
 }
 
-static void compressed_read_complete(struct qio *qio)
+static void compressed_read_endio(struct qcow2_target *tgt, struct qio *unused,
+				  void *qio_ptr, blk_status_t bi_status)
+
 {
+	struct qio *qio = qio_ptr;
 	struct md_page *md = qio->ext->lx_md;
 	struct qcow2 *qcow2 = qio->qcow2;
-	int ret = qio->ret;
 
 	dec_wpc_readers(qcow2, md); /* We ended to use compressed clu on disk */
 	/*
 	 * We don't interpret as error a positive ret, which is less,
 	 * then submitted. Decompress will fail, if we read not enough.
 	 */
-	if (ret < 0) {
-		qio->bi_status = errno_to_blk_status(ret ? : -EIO);
+	if (bi_status) {
+		qio->bi_status = bi_status;
 		qio_endio(qio);
 		return;
 	}
@@ -2970,12 +2972,13 @@ static void compressed_read_complete(struct qio *qio)
 static void submit_read_compressed(struct qcow2_map *map, struct qio *qio,
 				   bool for_cow)
 {
+	struct qcow2 *qcow2 = map->qcow2;
+	struct qcow2_target *tgt = qcow2->tgt;
 	u32 off, nr_pages, nr_alloc, nr_segs;
 	struct md_page *l2_md = map->l2.md;
-	struct qcow2 *qcow2 = map->qcow2;
 	u32 clu_size = qcow2->clu_size;
 	struct qcow2_bvec *qvec;
-	struct iov_iter iter;
+	struct qio *read_qio;
 	loff_t pos, end;
 
 	WARN_ON_ONCE(!map->data_clu_pos);
@@ -2998,10 +3001,14 @@ static void submit_read_compressed(struct qcow2_map *map, struct qio *qio,
 		qio->ext->cow_segs = nr_segs;
 	}
 
-	qvec = alloc_qvec_with_pages(nr_alloc, true);
+	read_qio = alloc_qio_with_qvec(qcow2, nr_alloc, REQ_OP_READ,
+				       true, &qvec);
 	/* COW may already allocate qio->ext */
-	if (!qvec || (!qio->ext && alloc_qio_ext(qio) < 0)) {
-		free_qvec_with_pages(qvec);
+	if (!read_qio || (!qio->ext && alloc_qio_ext(qio) < 0)) {
+		if (read_qio) {
+			free_qvec_with_pages(qvec);
+			free_qio(read_qio, tgt->qio_pool);
+		}
 		qio->bi_status = BLK_STS_RESOURCE;
 		qio_endio(qio); /* Frees ext */
 		return;
@@ -3009,7 +3016,8 @@ static void submit_read_compressed(struct qcow2_map *map, struct qio *qio,
 	qio->ext->zdata_off = off = map->data_clu_pos - pos;
 	WARN_ON_ONCE(off > ~(u16)0);
 
-	qio->complete = compressed_read_complete;
+	/* Reuse this to pass len to process_compressed_read() */
+	qio->ret = end - pos;
 	qio->data = qvec;
 	qio->ext->cleanup_mask |= FREE_QIO_DATA_QVEC;
 	qio->ext->lx_md = l2_md;
@@ -3025,11 +3033,20 @@ static void submit_read_compressed(struct qcow2_map *map, struct qio *qio,
 		 * updates qvec. Also skips extract part.
 		 */
 		cow_read_endio(qcow2->tgt, NULL, qio, BLK_STS_OK);
+		free_qio(read_qio, tgt->qio_pool);
 		return;
 	}
 
-	iov_iter_bvec(&iter, READ, qvec->bvec, nr_pages, end - pos);
-	call_rw_iter(qcow2->file, pos, READ, &iter, qio);
+	read_qio->flags |= QIO_FREE_ON_ENDIO_FL;
+	read_qio->endio_cb = compressed_read_endio;
+	read_qio->endio_cb_data = qio;
+
+	read_qio->complete = data_rw_complete;
+	read_qio->data = NULL;
+	read_qio->bi_iter.bi_sector = to_sector(pos);
+	read_qio->bi_iter.bi_size = end - pos;
+
+	submit_rw_mapped(qcow2, read_qio);
 }
 
 static void sliced_cow_read_complete(struct qcow2_target *tgt, struct qio *read_qio,
