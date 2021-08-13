@@ -2716,7 +2716,7 @@ static void data_rw_complete(struct qio *qio)
 		complete_wbd(qcow2, wbd);
 }
 
-static void submit_rw_mapped(struct qcow2 *qcow2, loff_t clu_pos, struct qio *qio)
+static void submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio)
 {
 	unsigned int rw, nr_segs;
 	struct bio_vec *bvec;
@@ -2726,12 +2726,20 @@ static void submit_rw_mapped(struct qcow2 *qcow2, loff_t clu_pos, struct qio *qi
 	rw = (op_is_write(qio->bi_op) ? WRITE : READ);
 	nr_segs = qio_nr_segs(qio);
 	bvec = __bvec_iter_bvec(qio->bi_io_vec, qio->bi_iter);
+	pos = to_bytes(qio->bi_iter.bi_sector);
 
 	iov_iter_bvec(&iter, rw, bvec, nr_segs, qio->bi_iter.bi_size);
 	iter.iov_offset = qio->bi_iter.bi_bvec_done;
 
-	pos = clu_pos + bytes_off_in_cluster(qcow2, qio);
 	call_rw_iter(qcow2->file, pos, rw, &iter, qio);
+}
+
+static void map_and_submit_rw(struct qcow2 *qcow2, loff_t clu_pos, struct qio *qio)
+{
+	WARN_ON_ONCE(qio->qcow2 != qcow2);
+	remap_to_clu(qcow2, qio, clu_pos);
+
+	submit_rw_mapped(qcow2, qio);
 }
 
 static void perform_rw_mapped(struct qcow2_map *map, struct qio *qio)
@@ -2765,7 +2773,7 @@ static void perform_rw_mapped(struct qcow2_map *map, struct qio *qio)
 		spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
 	}
 
-	submit_rw_mapped(qcow2, map->data_clu_pos, qio);
+	map_and_submit_rw(qcow2, map->data_clu_pos, qio);
 }
 
 static void cow_read_complete(struct qio *qio)
@@ -3685,7 +3693,7 @@ static void submit_sliced_cow_data_write(struct qcow2 *qcow2, struct qio *qio, l
 	while ((write_qio = qio_list_pop(&list)) != NULL) {
 		write_qio->complete = data_rw_complete;
 		write_qio->data = NULL;
-		submit_rw_mapped(qcow2, clu_pos, write_qio);
+		map_and_submit_rw(qcow2, clu_pos, write_qio);
 	}
 }
 
