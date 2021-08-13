@@ -3478,9 +3478,7 @@ static int complete_metadata_writeback(struct qcow2 *qcow2)
 	if (unlikely(fsync_ret))
 		pr_err_ratelimited("qcow2: can't sync md: %d\n", fsync_ret);
 
-	while (!list_empty(&wb_list)) {
-		qio = list_first_entry(&wb_list, struct qio, link);
-		list_del(&qio->link);
+	while ((qio = qio_list_pop(&wb_list)) != NULL) {
 		md = qio->ext->md;
 		qvec = qio->data;
 		ret = qio->ret;
