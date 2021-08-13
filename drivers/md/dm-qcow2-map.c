@@ -1231,15 +1231,14 @@ static void dec_cluster_usage(struct qcow2 *qcow2, struct md_page *r2_md,
 	spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
 }
 
-static void submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio)
+static void __submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio, u32 nr_segs)
 {
-	unsigned int rw, nr_segs;
 	struct bio_vec *bvec;
 	struct iov_iter iter;
+	unsigned int rw;
 	loff_t pos;
 
 	rw = (op_is_write(qio->bi_op) ? WRITE : READ);
-	nr_segs = qio_nr_segs(qio);
 	bvec = __bvec_iter_bvec(qio->bi_io_vec, qio->bi_iter);
 	pos = to_bytes(qio->bi_iter.bi_sector);
 
@@ -1247,6 +1246,13 @@ static void submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio)
 	iter.iov_offset = qio->bi_iter.bi_bvec_done;
 
 	call_rw_iter(qcow2->file, pos, rw, &iter, qio);
+}
+
+static void submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio)
+{
+	u32 nr_segs = qio_nr_segs(qio);
+
+	__submit_rw_mapped(qcow2, qio, nr_segs);
 }
 
 static void map_and_submit_rw(struct qcow2 *qcow2, loff_t clu_pos, struct qio *qio)
@@ -1509,7 +1515,7 @@ static void submit_rw_md_page(unsigned int rw, struct qcow2 *qcow2,
 
 	/* @pos is not clu-aligned, so we can't use map_and_submit_rw() */
 	qio->bi_iter.bi_sector = to_sector(pos);
-	submit_rw_mapped(qcow2, qio);
+	__submit_rw_mapped(qcow2, qio, 1);
 }
 
 static int submit_read_md_page(struct qcow2 *qcow2, struct qio **qio,
@@ -3046,7 +3052,7 @@ static void submit_read_compressed(struct qcow2_map *map, struct qio *qio,
 	read_qio->bi_iter.bi_sector = to_sector(pos);
 	read_qio->bi_iter.bi_size = end - pos;
 
-	submit_rw_mapped(qcow2, read_qio);
+	__submit_rw_mapped(qcow2, read_qio, nr_pages);
 }
 
 static void sliced_cow_read_complete(struct qcow2_target *tgt, struct qio *read_qio,
@@ -3688,7 +3694,7 @@ static void submit_cow_data_write(struct qcow2 *qcow2, struct qio *qio, loff_t p
 
 	write_qio->bi_iter.bi_sector = to_sector(pos);
 
-	submit_rw_mapped(qcow2, write_qio);
+	__submit_rw_mapped(qcow2, write_qio, clu_size >> PAGE_SHIFT);
 }
 
 static void sliced_cow_data_write_complete(struct qcow2_target *tgt, struct qio *unused,
