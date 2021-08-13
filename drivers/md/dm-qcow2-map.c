@@ -1231,6 +1231,31 @@ static void dec_cluster_usage(struct qcow2 *qcow2, struct md_page *r2_md,
 	spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
 }
 
+static void submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio)
+{
+	unsigned int rw, nr_segs;
+	struct bio_vec *bvec;
+	struct iov_iter iter;
+	loff_t pos;
+
+	rw = (op_is_write(qio->bi_op) ? WRITE : READ);
+	nr_segs = qio_nr_segs(qio);
+	bvec = __bvec_iter_bvec(qio->bi_io_vec, qio->bi_iter);
+	pos = to_bytes(qio->bi_iter.bi_sector);
+
+	iov_iter_bvec(&iter, rw, bvec, nr_segs, qio->bi_iter.bi_size);
+	iter.iov_offset = qio->bi_iter.bi_bvec_done;
+
+	call_rw_iter(qcow2->file, pos, rw, &iter, qio);
+}
+
+static void map_and_submit_rw(struct qcow2 *qcow2, loff_t clu_pos, struct qio *qio)
+{
+	WARN_ON_ONCE(qio->qcow2 != qcow2);
+	remap_to_clu(qcow2, qio, clu_pos);
+
+	submit_rw_mapped(qcow2, qio);
+}
 
 static void do_md_page_read_complete(int ret, struct qcow2 *qcow2,
 				     struct md_page *md)
@@ -2704,32 +2729,6 @@ static void data_rw_complete(struct qio *qio)
 	}
 	if (finalize_wbd)
 		complete_wbd(qcow2, wbd);
-}
-
-static void submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio)
-{
-	unsigned int rw, nr_segs;
-	struct bio_vec *bvec;
-	struct iov_iter iter;
-	loff_t pos;
-
-	rw = (op_is_write(qio->bi_op) ? WRITE : READ);
-	nr_segs = qio_nr_segs(qio);
-	bvec = __bvec_iter_bvec(qio->bi_io_vec, qio->bi_iter);
-	pos = to_bytes(qio->bi_iter.bi_sector);
-
-	iov_iter_bvec(&iter, rw, bvec, nr_segs, qio->bi_iter.bi_size);
-	iter.iov_offset = qio->bi_iter.bi_bvec_done;
-
-	call_rw_iter(qcow2->file, pos, rw, &iter, qio);
-}
-
-static void map_and_submit_rw(struct qcow2 *qcow2, loff_t clu_pos, struct qio *qio)
-{
-	WARN_ON_ONCE(qio->qcow2 != qcow2);
-	remap_to_clu(qcow2, qio, clu_pos);
-
-	submit_rw_mapped(qcow2, qio);
 }
 
 static void perform_rw_mapped(struct qcow2_map *map, struct qio *qio)
