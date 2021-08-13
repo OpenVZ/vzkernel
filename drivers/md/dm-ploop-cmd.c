@@ -709,14 +709,19 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 			if (clu == size_in_clus - 1)
 				stop = true;
 
-			if (md_page_cluster_is_in_top_delta(ploop, md, i) ||
-			    d_bat_entries[i] == BAT_ENTRY_NONE ||
-			    md->bat_levels[i] < level)
+			/* deltas above @level become renumbered */
+			if (bat_entries[i] != BAT_ENTRY_NONE &&
+			    md->bat_levels[i] > level) {
+				md->bat_levels[i]--;
+				continue;
+			}
+
+			if (bat_entries[i] != BAT_ENTRY_NONE &&
+			     md->bat_levels[i] < level)
 				continue;
 
-			/* deltas above @level become renumbered */
-			if (md->bat_levels[i] > level) {
-				md->bat_levels[i]--;
+			if (d_bat_entries[i] == BAT_ENTRY_NONE) {
+				WARN_ON_ONCE(bat_entries[i] != BAT_ENTRY_NONE);
 				continue;
 			}
 
@@ -726,11 +731,11 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 			 * 2)prev delta (if !@forward).
 			 */
 			bat_entries[i] = d_bat_entries[i];
-			WARN_ON(bat_entries[i] == BAT_ENTRY_NONE);
 			if (!forward)
-				md->bat_levels[i]--;
+				md->bat_levels[i] = level - 1;
+			else
+				md->bat_levels[i] = level;
 		}
-
 		kunmap_atomic(bat_entries);
 		kunmap_atomic(d_bat_entries);
 		if (stop)
@@ -742,7 +747,8 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 	/* Renumber deltas above @level */
 	for (i = level + 1; i < ploop->nr_deltas; i++)
 		ploop->deltas[i - 1] = ploop->deltas[i];
-	ploop->deltas[--ploop->nr_deltas].file = NULL;
+	memset(&ploop->deltas[--ploop->nr_deltas], 0,
+	       sizeof(struct ploop_delta));
 	write_unlock_irq(&ploop->bat_rwlock);
 	fput(file);
 }
@@ -780,16 +786,29 @@ unlock:
 static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 				       bool forward)
 {
+	struct ploop_delta *deltas = ploop->deltas;
 	struct rb_root md_root = RB_ROOT;
 	struct file *file;
+	loff_t file_size;
 	u32 size_in_clus;
+	u8 changed_level;
 	int ret;
 
 	/* Reread BAT of deltas[@level + 1] (or [@level - 1]) */
-	file = ploop->deltas[level + forward ? 1 : -1].file;
+	changed_level = level + (forward ? 1 : -1);
+	file = deltas[changed_level].file;
+
+	ret = ploop_check_delta_length(ploop, file, &file_size);
+	if (ret)
+		goto out;
 
 	ret = ploop_read_delta_metadata(ploop, file, &md_root, &size_in_clus);
 	if (ret)
+		goto out;
+
+	ret = -EFBIG;
+	if (changed_level != top_level(ploop) &&
+	    size_in_clus > deltas[changed_level + 1].size_in_clus)
 		goto out;
 
 	ret = ploop_suspend_submitting_pios(ploop);
@@ -797,6 +816,10 @@ static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 		goto out;
 
 	notify_delta_merged(ploop, level, &md_root, forward, size_in_clus);
+
+	deltas[changed_level].file_size = file_size;
+	deltas[changed_level].file_preallocated_area_start = file_size;
+	deltas[changed_level].size_in_clus = size_in_clus;
 
 	ploop_resume_submitting_pios(ploop);
 	ret = 0;
@@ -813,6 +836,8 @@ static int ploop_notify_merged(struct ploop *ploop, u8 level, bool forward)
 		return -ENOENT;
 	if (level == 0 && !forward)
 		return -EINVAL;
+	if (level == 0 && ploop->deltas[0].is_raw)
+		return -ENOTSUPP;
 	if (level == top_level(ploop) - 1 && forward)
 		return -EINVAL;
 	if (ploop->nr_deltas < 3)
