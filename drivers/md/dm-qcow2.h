@@ -62,7 +62,6 @@ struct wb_desc {
 	 * to restore them in case of md writeback fails.
 	 */
 	struct page *pe_page;
-	struct list_head submitted_list;
 	struct list_head completed_list;
 	/*
 	 * These bios want to be dispatched in case of writeback
@@ -70,6 +69,7 @@ struct wb_desc {
 	 * XXX: Possible we need the same for plain struct md_page.
 	 */
 	struct list_head dependent_list;
+	int nr_submitted;
 	bool completed;
 	int ret;
 };
