@@ -357,4 +357,9 @@ static inline bool qcow2_wants_check(struct qcow2_target *tgt)
 	return !!(tgt->md_writeback_error|tgt->truncate_error);
 }
 
+static inline void remap_to_clu(struct qcow2 *qcow2, struct qio *qio, loff_t clu_pos)
+{
+	qio->bi_iter.bi_sector &= (to_sector(qcow2->clu_size) - 1);
+	qio->bi_iter.bi_sector |= (to_sector(clu_pos));
+}
 #endif
