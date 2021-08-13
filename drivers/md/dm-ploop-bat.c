@@ -269,6 +269,7 @@ int ploop_setup_metadata(struct ploop *ploop, struct page *page)
 {
 	struct ploop_pvd_header *m_hdr = NULL;
 	u32 bat_clusters, offset_clusters;
+	struct dm_target *ti = ploop->ti;
 	unsigned long size;
 	int ret;
 
@@ -300,6 +301,11 @@ int ploop_setup_metadata(struct ploop *ploop, struct page *page)
 	offset_clusters = SEC_TO_CLU(ploop, le32_to_cpu(m_hdr->m_FirstBlockOffset));
 	if (bat_clusters != offset_clusters) {
 		pr_err("ploop: custom FirstBlockOffset\n");
+		goto out;
+	}
+	ret = -EBADSLT;
+	if (le64_to_cpu(m_hdr->m_SizeInSectors_v2) < ti->len) {
+		pr_err("ploop: Too short BAT\n");
 		goto out;
 	}
 	kunmap(page);
