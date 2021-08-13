@@ -346,15 +346,16 @@ out:
 }
 
 static int convert_bat_entries(struct ploop *ploop, struct rb_root *md_root,
-			       u32 nr_be, u32 nr_pages)
+			       u32 nr_be, u32 nr_pages, loff_t file_size)
 {
-	u32 i, end, bytes, bat_clusters, page_id, *bat_entries;
+	u32 i, end, bytes, bat_clusters, page_id, *bat_entries, max_file_clu;
 	struct rb_node *node;
 	struct md_page *md;
 	int ret = 0;
 
 	bytes = (PLOOP_MAP_OFFSET + nr_be) * sizeof(map_index_t);
 	bat_clusters = DIV_ROUND_UP(bytes, CLU_SIZE(ploop));
+	max_file_clu = file_size / CLU_SIZE(ploop) - 1;
 
 	page_id = 0;
 	rb_root_for_each_md_page(md_root, md, node) {
@@ -364,7 +365,7 @@ static int convert_bat_entries(struct ploop *ploop, struct rb_root *md_root,
 		page_id++;
 
 		for (; i <= end; i++) {
-			if (bat_entries[i] == BAT_ENTRY_NONE)
+			if (bat_entries[i] > max_file_clu)
 				ret = -EPROTO;
 			if (!bat_entries[i])
 				bat_entries[i] = BAT_ENTRY_NONE;
@@ -385,11 +386,11 @@ int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 {
 	struct bio_vec bvec_on_stack, *bvec = &bvec_on_stack;
 	u32 i, size, delta_nr_be, nr_segs;
+	loff_t pos, file_size;
 	struct iov_iter iter;
 	struct rb_node *node;
 	struct md_page *md;
 	ssize_t len;
-	loff_t pos;
 	int ret;
 
 	ret = -ENOMEM;
@@ -444,7 +445,9 @@ int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 		goto out;
 	}
 
-	ret = convert_bat_entries(ploop, md_root, delta_nr_be, nr_segs);
+	file_size = i_size_read(file->f_mapping->host);
+
+	ret = convert_bat_entries(ploop, md_root, delta_nr_be, nr_segs, file_size);
 
 	*delta_nr_be_ret = delta_nr_be;
 out:
