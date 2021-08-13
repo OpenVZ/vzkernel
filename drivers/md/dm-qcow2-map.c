@@ -802,15 +802,15 @@ static void free_qvec_with_pages(struct qcow2_bvec *qvec)
 	}
 }
 
-static struct qcow2_bvec *alloc_qvec_with_pages(ushort nr_pages)
+static struct qcow2_bvec *alloc_qvec_with_pages(ushort nr_pages, bool wants_pages)
 {
 	struct qcow2_bvec *qvec;
 	struct bio_vec *bvec;
 	int i;
 
 	qvec = alloc_qvec_with_data(nr_pages, NULL, 0);
-	if (!qvec)
-		return NULL;
+	if (!qvec || !wants_pages)
+		return qvec;
 
 	bvec = qvec->bvec;
 	for (i = 0; i < nr_pages; i++) {
@@ -829,7 +829,8 @@ err:
 }
 
 static struct qio *alloc_qio_with_qvec(struct qcow2 *qcow2, u32 nr_pages,
-			    unsigned int bi_op, struct qcow2_bvec **qvec)
+				       unsigned int bi_op, bool wants_pages,
+				       struct qcow2_bvec **qvec)
 {
 	struct qcow2_target *tgt = qcow2->tgt;
 	struct qio *qio;
@@ -838,7 +839,7 @@ static struct qio *alloc_qio_with_qvec(struct qcow2 *qcow2, u32 nr_pages,
 	if (!qio)
 		return NULL;
 
-	*qvec = alloc_qvec_with_pages(nr_pages);
+	*qvec = alloc_qvec_with_pages(nr_pages, wants_pages);
 	if (!*qvec) {
 		free_qio(qio, tgt->qio_pool);
 		return NULL;
@@ -2807,7 +2808,7 @@ static void submit_read_whole_cow_clu(struct qcow2_map *map, struct qio *qio)
 	WARN_ON_ONCE(map->level & L2_LEVEL);
 
 	nr_pages = clu_size >> PAGE_SHIFT;
-	qvec = alloc_qvec_with_pages(nr_pages);
+	qvec = alloc_qvec_with_pages(nr_pages, true);
 	if (!qvec) {
 		qio->bi_status = BLK_STS_RESOURCE;
 		qio_endio(qio); /* Frees ext */
@@ -3003,7 +3004,7 @@ static void submit_read_compressed(struct qcow2_map *map, struct qio *qio,
 		qio->ext->cow_segs = nr_segs;
 	}
 
-	qvec = alloc_qvec_with_pages(nr_alloc);
+	qvec = alloc_qvec_with_pages(nr_alloc, true);
 	/* COW may already allocate qio->ext */
 	if (!qvec || (!qio->ext && alloc_qio_ext(qio) < 0)) {
 		free_qvec_with_pages(qvec);
@@ -3119,7 +3120,7 @@ static void submit_read_sliced_clu(struct qcow2_map *map, struct qio *qio,
 		goto out;
 	}
 
-	read_qio = alloc_qio_with_qvec(qcow2, nr_pages, REQ_OP_READ, &qvec);
+	read_qio = alloc_qio_with_qvec(qcow2, nr_pages, REQ_OP_READ, true, &qvec);
 	if (!read_qio)
 		goto err_alloc;
 	read_qio->flags |= QIO_FREE_ON_ENDIO_FL;
