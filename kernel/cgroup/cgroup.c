@@ -2242,6 +2242,8 @@ void init_cgroup_root(struct cgroup_fs_context *ctx)
 	init_cgroup_housekeeping(cgrp);
 
 	root->flags = ctx->flags;
+
+	RCU_INIT_POINTER(cgrp->ve_owner, &ve0);
 	if (ctx->release_agent)
 		ve_set_release_agent_path(cgrp->ve_owner, root,
 					  ctx->release_agent);
@@ -2352,8 +2354,6 @@ int cgroup_do_get_tree(struct fs_context *fc)
 {
 	struct cgroup_fs_context *ctx = cgroup_fc2context(fc);
 	int ret;
-
-	RCU_INIT_POINTER(ctx->root->cgrp.ve_owner, &ve0);
 
 	ctx->kfc.root = ctx->root->kf_root;
 	if (fc->fs_type == &cgroup2_fs_type)
