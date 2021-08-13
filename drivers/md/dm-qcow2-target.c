@@ -580,6 +580,7 @@ static struct qcow2 *qcow2_alloc_delta(struct qcow2_target *tgt, struct qcow2 *u
 
 	for (i = 0; i < QLIST_COUNT; i++)
 		INIT_LIST_HEAD(&qcow2->qios[i]);
+	INIT_LIST_HEAD(&qcow2->resubmit_qios);
 	INIT_LIST_HEAD(&qcow2->paused_qios);
 	INIT_LIST_HEAD(&qcow2->wb_batch_list);
 	INIT_LIST_HEAD(&qcow2->slow_wb_batch_list);
