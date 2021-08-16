@@ -27,7 +27,7 @@ workflow:
         REQUESTED_PIPELINE_TYPE: 'internal'
     - if: '$CI_MERGE_REQUEST_PROJECT_PATH =~ /^redhat.centos-stream/ || $CI_PROJECT_PATH =~ /^redhat.centos-stream/'
       variables:
-        REQUESTED_PIPELINE_TYPE: 'trusted'
+        REQUESTED_PIPELINE_TYPE: '/^(trusted|centos-rhel)$/'
 
 # We need to differentiate between the pipeline types that are triggered from this
 # single file. Once the mirroring to c9s stops this anchor can be dropped and the
@@ -81,18 +81,34 @@ workflow:
     builder_image: quay.io/cki/builder-rhel9
     kpet_tree_family: rhel9
 
+.trigger_rhel9_build:
+  extends: .trigger_rhel9_pipeline
+  variables:
+    skip_test: 'true'
+    skip_results: 'true'
+
+# ARK CI
 ark_merge_request:
   extends: [.trusted-ark, .merge_request, .trigger_ark_pipeline]
 
-# Only enable c9s pipelines once we have the composes available in Beaker
-# c9s_merge_request:
-#   extends: [.trusted, .merge_request, .rhel_common,
-#             .9-common, .trigger_c9s_pipeline]
-# 
-# c9s_baseline:
-#   extends: [.trusted, .baseline, .rhel_common,
-#             .9-common, .trigger_c9s_pipeline]
+# c9s CI
+c9s_merge_request:
+  extends: [.trusted, .merge_request, .rhel_common,
+            .9-common, .trigger_c9s_pipeline]
 
+c9s_baseline:
+  extends: [.trusted, .baseline, .rhel_common,
+            .9-common, .trigger_c9s_pipeline]
+
+c9s_rhel9_compat_merge_request:
+  extends: [.centos_stream_rhel_internal, .merge_request, .rhel_common,
+            .9-common, .trigger_rhel9_build]
+
+c9s_rhel9_compat_baseline:
+  extends: [.centos_stream_rhel_internal, .baseline, .rhel_common,
+            .9-common, .trigger_rhel9_build]
+
+# RHEL9 CI
 rhel9_merge_request:
   extends: [.internal, .merge_request, .rhel_common,
             .9-common, .trigger_rhel9_pipeline]
