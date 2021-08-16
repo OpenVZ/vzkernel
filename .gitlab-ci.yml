@@ -60,9 +60,6 @@ workflow:
   variables:
     builder_image_tag: latest
     srpm_make_target: dist-srpm
-    build_kabi_stablelist: 'true'
-    tree_yaml_name: rhel
-    publish_elsewhere: 'true'
     native_tools: 'true'
 
 .trigger_c9s_pipeline:
@@ -73,6 +70,7 @@ workflow:
     builder_image: registry.gitlab.com/cki-project/containers/builder-stream9
     architectures: 'x86_64 ppc64le aarch64 s390x'
     kpet_tree_family: c9s
+    kernel_type: 'upstream'  # Needs to be overriden due to inheriting from .rhel_common
 
 .trigger_rhel9_pipeline:
   trigger:
@@ -88,16 +86,20 @@ ark_merge_request:
 
 # Only enable c9s pipelines once we have the composes available in Beaker
 # c9s_merge_request:
-#   extends: [.trusted, .merge_request, .9-common, .trigger_c9s_pipeline]
+#   extends: [.trusted, .merge_request, .rhel_common,
+#             .9-common, .trigger_c9s_pipeline]
 # 
 # c9s_baseline:
-#   extends: [.trusted, .baseline, .9-common, .trigger_c9s_pipeline]
+#   extends: [.trusted, .baseline, .rhel_common,
+#             .9-common, .trigger_c9s_pipeline]
 
 rhel9_merge_request:
-  extends: [.internal, .merge_request, .9-common, .trigger_rhel9_pipeline]
+  extends: [.internal, .merge_request, .rhel_common,
+            .9-common, .trigger_rhel9_pipeline]
 
 rhel9_baseline:
-  extends: [.internal, .baseline, .9-common, .trigger_rhel9_pipeline]
+  extends: [.internal, .baseline, .rhel_common,
+            .9-common, .trigger_rhel9_pipeline]
 
 
 # scheduled job
