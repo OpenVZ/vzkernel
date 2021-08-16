@@ -61,6 +61,8 @@ workflow:
     builder_image_tag: latest
     srpm_make_target: dist-srpm
     native_tools: 'true'
+    architectures: 'x86_64 ppc64le aarch64 s390x'
+    POWER_BUILDER_SUFFIX: '-p9'
 
 .trigger_c9s_pipeline:
   trigger:
@@ -68,7 +70,6 @@ workflow:
   variables:
     name: centos-stream-9
     builder_image: registry.gitlab.com/cki-project/containers/builder-stream9
-    architectures: 'x86_64 ppc64le aarch64 s390x'
     kpet_tree_family: c9s
     kernel_type: 'upstream'  # Needs to be overriden due to inheriting from .rhel_common
 
@@ -78,7 +79,6 @@ workflow:
   variables:
     name: rhel9
     builder_image: quay.io/cki/builder-rhel9
-    architectures: 'x86_64 aarch64 s390x'   #ppc64le container is not available yet
     kpet_tree_family: rhel9
 
 ark_merge_request:
