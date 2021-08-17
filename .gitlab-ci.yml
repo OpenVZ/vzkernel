@@ -19,7 +19,7 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'   # ARK release pipelines
     - if: '$CI_MERGE_REQUEST_PROJECT_PATH =~ /^cki-project.kernel-ark/'   # ARK MR CI
       variables:
-        REQUESTED_PIPELINE_TYPE: 'trusted-ark'
+        REQUESTED_PIPELINE_TYPE: 'ark-ci'
     # We cannot merge rules through !reference and have to copy them over from the
     # CKI pipeline: https://gitlab.com/gitlab-org/gitlab/-/issues/322992
     - if: '$CI_MERGE_REQUEST_PROJECT_PATH =~ /^redhat.rhel/ || $CI_PROJECT_PATH =~ /^redhat.rhel/'
@@ -38,7 +38,7 @@ workflow:
     project: redhat/red-hat-ci-tools/kernel/cki-internal-pipelines/cki-trusted-contributors
     strategy: depend
   variables:
-    PIPELINE_TYPE: 'trusted-ark'
+    PIPELINE_TYPE: 'ark-ci'
     kernel_type: 'upstream'
 
 .trigger_ark_pipeline:
