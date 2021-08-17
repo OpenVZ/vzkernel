@@ -817,7 +817,7 @@ static void fuse_fput_routine(struct work_struct *data)
 		struct fuse_io_priv *io = list_entry(fuse_fput_head.next,
 						     struct fuse_io_priv,
 						     list);
-		struct file *file = io->iocb->ki_filp;
+		struct file *file = io->file;
 
 		list_del(&io->list);
 		spin_unlock(&fuse_fput_lock);
@@ -895,6 +895,7 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 		io->iocb->ki_complete(io->iocb, res, 0);
 
 		if (unlikely(atomic_long_dec_and_test(&file->f_count))) {
+			io->file = file;
 			spin_lock(&fuse_fput_lock);
 			list_add(&io->list, &fuse_fput_head);
 			spin_unlock(&fuse_fput_lock);
