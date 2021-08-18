@@ -4302,9 +4302,9 @@ void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats)
 				    node_stats[NR_INACTIVE_FILE];
 
 	node_stats[NR_SLAB_RECLAIMABLE_B] =
-				memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B);
+		memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B) >> PAGE_SHIFT;
 	node_stats[NR_SLAB_UNRECLAIMABLE_B] =
-				memcg_page_state(memcg, NR_SLAB_UNRECLAIMABLE_B);
+		memcg_page_state(memcg, NR_SLAB_UNRECLAIMABLE_B) >> PAGE_SHIFT;
 	node_stats[NR_FILE_MAPPED] = memcg_page_state(memcg, NR_FILE_MAPPED);
 	node_stats[NR_SHMEM] = memcg_page_state(memcg, NR_SHMEM);
 
