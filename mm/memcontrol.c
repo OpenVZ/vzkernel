@@ -1521,7 +1521,11 @@ bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio)
 
 	anon = memcg_page_state(memcg, NR_ANON_MAPPED);
 	file = memcg_page_state(memcg, NR_FILE_PAGES);
-	dcache = memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B);
+	/*
+	 * After ms commit d42f3245c7e2 ("mm: memcg: convert vmstat slab
+	 * counters to bytes") NR_SLAB_{,UN}RECLAIMABLE_B are in bytes.
+	 */
+	dcache = memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B) >> PAGE_SHIFT;
 
 	return dcache / vfs_cache_min_ratio <
 			(anon + file + dcache) / 100;

@@ -65,7 +65,7 @@ bool dcache_is_low(struct mem_cgroup *memcg)
 
 	anon = global_node_page_state(NR_ANON_MAPPED);
 	file = global_node_page_state(NR_FILE_PAGES);
-	dcache = global_node_page_state(NR_SLAB_RECLAIMABLE_B);
+	dcache = global_node_page_state_pages(NR_SLAB_RECLAIMABLE_B);
 
 	return dcache / vfs_cache_min_ratio <
 			(anon + file + dcache) / 100;
