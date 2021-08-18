@@ -870,6 +870,7 @@ int cgroup_path_ns(struct cgroup *cgrp, char *buf, size_t buflen,
 void cgroup1_release_agent(struct work_struct *work);
 
 #ifdef CONFIG_VE
+struct ve_struct *get_curr_ve(void);
 int cgroup_mark_ve_roots(struct ve_struct *ve);
 void cgroup_unmark_ve_roots(struct ve_struct *ve);
 struct cgroup_subsys_state *css_local_root(struct cgroup_subsys_state *css);
