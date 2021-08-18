@@ -2823,7 +2823,7 @@ extern bool dcache_is_low(struct mem_cgroup *memcg);
  */
 static bool kmem_reclaim_is_low(struct mem_cgroup *memcg)
 {
-#define	KMEM_RECLAIM_LOW_MARK	32
+#define	KMEM_RECLAIM_LOW_MARK	32 * PAGE_SIZE
 
 	unsigned long dcache;
 	int vfs_cache_min_ratio = READ_ONCE(sysctl_vfs_cache_min_ratio);
