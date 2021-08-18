@@ -4252,8 +4252,10 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 	memset(&mi->pages, 0, sizeof(mi->pages));
 	mem_cgroup_get_nr_pages(memcg, mi->pages);
 
-	mi->slab_reclaimable = memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B);
-	mi->slab_unreclaimable = memcg_page_state(memcg, NR_SLAB_UNRECLAIMABLE_B);
+	mi->slab_reclaimable = memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B)
+								>> PAGE_SHIFT;
+	mi->slab_unreclaimable = memcg_page_state(memcg, NR_SLAB_UNRECLAIMABLE_B)
+								>> PAGE_SHIFT;
 	mi->cached = memcg_page_state(memcg, NR_FILE_PAGES);
 	mi->shmem = memcg_page_state(memcg, NR_SHMEM);
 	mi->dirty_pages = memcg_page_state(memcg, NR_FILE_DIRTY);
