@@ -15,4 +15,4 @@ ethdrvs="3com adaptec arc alteon atheros broadcom cadence calxeda chelsio cisco 
 
 drmdrvs="amd arm bridge ast exynos hisilicon i2c imx mgag200 meson msm nouveau panel pl111 radeon rockchip tegra sun4i tiny vc4"
 
-singlemods="ntb_netdev iscsi_ibft iscsi_boot_sysfs megaraid pmcraid qedi qla1280 9pnet_rdma rpcrdma nvmet-rdma nvme-rdma hid-picolcd hid-prodikeys hwpoison-inject target_core_user sbp_target cxgbit chcr rnbd-client rnbd-server mlx5_vdpa dfl-emif octeontx2-cpt octeontx2-cptvf spi-altera-dfl rvu_cptpf rvu_cptvf"
+singlemods="ntb_netdev iscsi_ibft iscsi_boot_sysfs megaraid pmcraid qedi qla1280 9pnet_rdma rpcrdma nvmet-rdma nvme-rdma hid-picolcd hid-prodikeys hwpoison-inject target_core_user sbp_target cxgbit chcr rnbd-client rnbd-server mlx5_vdpa dfl-emif octeontx2-cpt octeontx2-cptvf spi-altera-dfl rvu_cptpf rvu_cptvf regmap-sdw regmap-sdw-mbq"
