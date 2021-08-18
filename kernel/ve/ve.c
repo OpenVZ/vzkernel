@@ -1134,7 +1134,7 @@ static void ve_attach(struct cgroup_taskset *tset)
 			set_tsk_thread_flag(task, TIF_CPUID_OVERRIDE);
 
 		ve_set_task_start_time(ve, task);
-		task->task_ve = ve;
+		rcu_assign_pointer(task->task_ve, ve);
 	}
 }
 
