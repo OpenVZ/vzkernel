@@ -282,6 +282,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	struct ploop_index_wb *piwb;
 	u32 new_dst, clu, dst_clu;
 	struct completion comp;
+	blk_status_t bi_status;
 	struct md_page *md;
 	bool is_locked;
 	int ret = 0;
@@ -322,11 +323,12 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	ploop_make_md_wb(ploop, md);
 	init_completion(&comp);
 	piwb->comp = &comp;
+	piwb->comp_bi_status = &bi_status;
 	/* Write new index on disk */
 	ploop_index_wb_submit(ploop, piwb);
 	wait_for_completion(&comp);
 
-	ret = blk_status_to_errno(piwb->bi_status);
+	ret = blk_status_to_errno(bi_status);
 	if (ret)
 		goto out;
 
@@ -356,6 +358,7 @@ static int ploop_grow_update_header(struct ploop *ploop,
 	struct ploop_index_wb *piwb;
 	u32 nr_be, offset, clus;
 	struct completion comp;
+	blk_status_t bi_status;
 	struct md_page *md;
 	u64 sectors;
 	int ret;
@@ -381,10 +384,11 @@ static int ploop_grow_update_header(struct ploop *ploop,
 	ploop_make_md_wb(ploop, md);
 	init_completion(&comp);
 	piwb->comp = &comp;
+	piwb->comp_bi_status = &bi_status;
 	ploop_index_wb_submit(ploop, piwb);
 	wait_for_completion(&comp);
 
-	ret = blk_status_to_errno(piwb->bi_status);
+	ret = blk_status_to_errno(bi_status);
 	if (!ret) {
 		/* Now update our cached page */
 		hdr = kmap_atomic(cmd->resize.md0->page);

@@ -45,6 +45,7 @@ void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop)
 {
 	piwb->ploop = ploop;
 	piwb->comp = NULL;
+	piwb->comp_bi_status = NULL;
 	spin_lock_init(&piwb->lock);
 	piwb->md = NULL;
 	piwb->bat_page = NULL;
@@ -849,8 +850,11 @@ static void put_piwb(struct ploop_index_wb *piwb)
 		if (piwb->bi_status)
 			ploop_advance_local_after_bat_wb(ploop, piwb, false);
 
-		if (piwb->comp)
+		if (piwb->comp) {
 			complete(piwb->comp);
+			if (piwb->comp_bi_status)
+				*piwb->comp_bi_status = piwb->bi_status;
+		}
 		free_piwb(piwb);
 	}
 }

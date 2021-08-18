@@ -94,6 +94,7 @@ enum piwb_type {
 struct ploop_index_wb {
 	struct ploop *ploop;
 	struct completion *comp;
+	blk_status_t *comp_bi_status;
 	enum piwb_type type;
 	spinlock_t lock;
 	struct md_page *md;
@@ -103,7 +104,7 @@ struct ploop_index_wb {
 	struct list_head cow_list;
 	atomic_t count;
 	bool completed;
-	int bi_status;
+	blk_status_t bi_status;
 	u32 page_id;
 };
 
