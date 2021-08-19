@@ -18,4 +18,4 @@
 # 
 # 
 # 
-# CONFIG_XILLYUSB is not set
+CONFIG_XILLYUSB=m

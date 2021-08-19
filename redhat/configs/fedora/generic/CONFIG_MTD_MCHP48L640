@@ -14,4 +14,4 @@
 # 
 # 
 # 
-# CONFIG_MTD_MCHP48L640 is not set
+CONFIG_MTD_MCHP48L640=m

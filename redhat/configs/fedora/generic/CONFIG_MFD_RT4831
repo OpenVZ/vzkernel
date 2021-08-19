@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_MFD_RT4831 is not set
+CONFIG_MFD_RT4831=m

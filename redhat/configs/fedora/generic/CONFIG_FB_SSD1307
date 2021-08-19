@@ -17,4 +17,4 @@
 # 
 # 
 # 
-# CONFIG_FB_SSD1307 is not set
+CONFIG_FB_SSD1307=m

@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_MDM_GCC_9607 is not set
+CONFIG_MDM_GCC_9607=m

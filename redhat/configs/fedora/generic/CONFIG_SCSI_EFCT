@@ -16,4 +16,4 @@
 # 
 # 
 # 
-# CONFIG_SCSI_EFCT is not set
+CONFIG_SCSI_EFCT=m
