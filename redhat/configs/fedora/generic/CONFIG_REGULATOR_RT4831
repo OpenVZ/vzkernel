@@ -9,4 +9,4 @@
 # 
 # 
 # 
-# CONFIG_REGULATOR_RT4831 is not set
+CONFIG_REGULATOR_RT4831=m
