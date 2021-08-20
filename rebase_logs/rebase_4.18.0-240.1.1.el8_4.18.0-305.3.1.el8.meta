@@ -1,0 +1,345 @@
+# command:
+# git-check-rebase --meta rebase_4.18.0-240.1.1.el8_4.18.0-305.3.1.el8.meta --format=full rhel8.4:rh8-4.18.0-305.3.1.el8..9fdfd6a7c491 rhel8.2:rh8-4.18.0-240.1.1.el8..origin/branch-rh8-4.18.0-240.1.1.vz8.5.x-ovz-merged
+#
+
+drop:
+drivers/base: Adjust the total amount of RAM shown for a NUMA node
+  (hack for buggy rhel8.2)
+Revert "ms/proc/mounts: add cursor"
+  (feature backported from ms later)
+ms/proc/mounts: add cursor
+  (already backported by RH)
+vtty: fixed error path in vtty_map_alloc
+  (merged into ("ve/tty: vt -- Implement per VE support for console and terminals)")
+Revert "vtty: fixed error path in vtty_map_alloc"
+  (this was temporary revert, we returned the feature back later)
+ve/tty: vt -- Implement per VE support for console and terminals
+  (initially we ported the feature then - dropped, then resurrected)
+Revert "ve/tty: vt -- Implement per VE support for console and terminals"
+  (initially we ported the feature then - dropped, then resurrected)
+vtty: possible ERR_PTR dereferencing in vtty_open_master
+  (initially we ported the feature then - dropped, then resurrected)
+Revert "vtty: possible ERR_PTR dereferencing in vtty_open_master"
+  (initially we ported the feature then - dropped, then resurrected)
+ve/devtmpfs: lightweight virtualization
+  (added later: 5272c65b9910 ve/devtmpfs: lightweight virtualization)
+
+ve/tty: TIOSAK Secure Attention Key ioctl
+  (added later: 49c683886d2f ve/tty: TIOSAK Secure Attention Key ioctl)
+mm/memcg: limit page cache in memcg hack
+  (added later: 397b92a42b5d mm/memcg: limit page cache in memcg hack)
+ve/cgroup: Allow mounting cgroups in containers.
+  (merged into" ve/cgroup: Add pseudosuper state for restore sake)
+userfaultfd: wp: hook userfault handler to write protection fault
+  (renamed: ms/)
+userfaultfd: wp: add WP pagetable tracking to x86
+  (renamed: ms/)
+mm: merge parameters for change_protection()
+  (renamed: ms/)
+fuse: Fix parse_fuse_opt() return values wrong interpretation
+  (checked: https://jira.sw.ru/browse/PSBM-131964)
+fuse: Switch unused engines off in Kconfig
+  (merged into: 6d41efd0c97b config.OpenVZ: enable modules for in-kernel fast path for vStorage)
+mm/memcg: reclaim memory.cache.limit_in_bytes from background
+  (added later: 9306efe03390 mm/memcg: reclaim memory.cache.limit_in_bytes from background)
+mm/memcg: fix cache growth above cache.limit_in_bytes
+  (added later: 81bb2cb8893c mm/memcg: fix cache growth above cache.limit_in_bytes)
+memcg: fixes accounting for allocations called in "disabled
+=memcg: fixes accounting for allocations called in "disabled BH" context #PSBM-120694)
+
+memcg: Fix missing memcg->cache charges during page
+  (reimplemented and merged into: 397b92a42b5d mm/memcg: limit page cache in memcg hack)
+mm/memcg: Use per-cpu stock charges for ->kmem and ->cache counters #PSBM-101300
+  (added later: 0c64c2763e68 mm/memcg: Use per-cpu stock charges for ->cache counter)
+ve: add per-ve CLOCK_MONOTONIC time via __vdso_gettimeofday()
+  (added later: b0b80903261d ve: add per-ve CLOCK_MONOTONIC time via __vdso_gettimeofday())
+COPYING: Move COPYING-4.18.0 -> COPYING file
+  (rebase script enhanced, no need anymore)
+perf/x86/intel: Move LBR-related data into a separate structure
+  (ms fixed in another way: https://jira.sw.ru/browse/PSBM-131884)
+perf/x86/intel: Make LBR initialization reusable
+  (ms fixed in another way: https://jira.sw.ru/browse/PSBM-131884)
+KVM: x86/vPMU: Ignore access to LBR-related MSRs
+  (ms fixed in another way: https://jira.sw.ru/browse/PSBM-131884)
+sync: sync_collect_filesystems: fix possible infinite loop
+  (added later as merged into: 37b363566ee2 ve/sync/mounts: skip cursor mounts when iterating over mnt_ns->list)
+mm/page_alloc: Adjust the number of managed pages for a zone if it is wrong
+  (A temporary hack, to be dropped after the rebase on top of RHEL 8.4. https://jira.sw.ru/browse/PSBM-129304.)
+proc/mounts: fix skipping mount after cursor
+  (fixed later as 37b363566ee2 ve/sync/mounts: skip cursor mounts when iterating over mnt_ns->list https://jira.sw.ru/browse/PSBM-131995)
+
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.51
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.52
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.53
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.54
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.55
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.56
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.57
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.58
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.59
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.60
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.61
+OpenVZ kernel rh8-4.18.0-240.1.1.vz8.5.62
+
+# mainstream patches backported by RedHat in RHEL8.4
+ms/linux/bits.h: make BIT(), GENMASK(), and friends available in assembly
+ms/mm/vmscan: remove unused lru_pages argument
+ms/mm/workingset: remove unused @mapping argument in workingset_eviction()
+ms/mm: vmscan: simplify lruvec_lru_size()
+ms/mm: vmscan: move inactive_list_is_low() swap check to the caller
+ms/mm: vmscan: naming fixes: global_reclaim() and sane_reclaim()
+ms/mm: vmscan: replace shrink_node() loop with a retry jump
+ms/mm: vmscan: turn shrink_node_memcg() into shrink_lruvec()
+ms/mm: vmscan: split shrink_node() into node part and memcgs part
+ms/mm: vmscan: harmonize writeback congestion tracking for nodes & memcgs
+ms/mm: vmscan: move file exhaustion detection to the node level
+ms/mm: vmscan: detect file thrashing at the reclaim root
+ms/mm: vmscan: enforce inactive:active ratio at the reclaim root
+ms/mm: check shrinker is memcg-aware in register_shrinker_prepared()
+ms/mm/gup: Let __get_user_pages_locked() return -EINTR for fatal signal
+ms/mm/gup: Mark lock taken only after a successful retake
+ms/saner handling of temporary namespaces
+ms/vfs: syscall: Add open_tree(2) to reference or clone a mount
+ms/vfs: syscall: Add move_mount(2) to move mounts around
+ms/teach move_mount(2) to work with OPEN_TREE_CLONE
+ms/vt: vt_ioctl: fix VT_DISALLOCATE freeing in-use virtual console
+ms/nfs: Fix getxattr kernel panic and memory overflow
+ms/mm: memcg: charge memcg percpu memory to the parent cgroup
+ms/KVM: x86: reinstate vendor-agnostic check on SPEC_CTRL cpuid bits #PSBM-120787 #PSBM-123538
+ms/tty: Fix ->pgrp locking in tiocspgrp()
+ms/fuse: fix bad inode
+ms/mm: list_lru: set shrinker map bit when child nr_items is not zero
+ms/nfsd: memory corruption in nfsd4_lock()
+ms/nfsd: Don't add locks to closed or closing open stateids
+ms/net: introduce helper sendpage_ok() in include/linux/net.h
+ms/asm-generic/tlb: Track freeing of page-table directories in struct mmu_gather
+ms/asm-generic/tlb: Track which levels of the page tables have been cleared
+ms/list: introduce list_for_each_continue()
+mm/vmscan.c: move check for SHRINKER_NUMA_AWARE to do_shrink_slab()
+mm: use special value SHRINKER_REGISTERING instead of list_empty() check
+mm/gup: rename "nonblocking" to "locked" where proper
+mm/gup: fix __get_user_pages() on fault retry of hugetlb
+mm: introduce fault_signal_pending()
+x86/mm: use helper fault_signal_pending()
+arm64/mm: use helper fault_signal_pending()
+powerpc/mm: use helper fault_signal_pending()
+mm: return faster for non-fatal signals in user mode faults
+userfaultfd: don't retake mmap_sem to emulate NOPAGE
+mm: introduce FAULT_FLAG_DEFAULT
+mm: introduce FAULT_FLAG_INTERRUPTIBLE
+mm: allow VM_FAULT_RETRY for multiple times
+mm/gup: allow VM_FAULT_RETRY for multiple times
+mm/gup: allow to react to fatal signals
+mm/userfaultfd: honor FAULT_FLAG_KILLABLE in fault path
+ms: fs/namespace.c: fix mountpoint reference counter race
+mm: Fix int overflow in callers of do_shrink_slab()
+
+###################################################################
+ok:
+mm: fix hanging shrinker management on long do_shrink_slab
+ve/memcg: Fix /proc/vmstat virtualization (drop extra recursion)
+ve/memcg: Cleanup /proc/vmstat virtualization
+  (because of dropped recursion and new arg in mem_cgroup_nr_lru_pages())
+ve/memcg: Fix /proc/meminfo virtualization (eliminate double recursion)
+  (MEMCG_CACHE -> NR_FILE_PAGES + formatting)
+ve/fs/inotify: do not impose limit on the number of instances by default
+mm/backing-dev: associate writeback with correct blkcg
+  (formatting)
+
+# context
+ve: Add ve cgroup and ve_hook subsys
+ve: Add veowner
+net: Add NETIF_F_VIRTUAL feature to mask devices allowed in CT
+mm/fuse/oom: Show writeback_temp stats in oom message
+
+ms/psi: Move PF_MEMSTALL out of task->flags
+mm/vmscan: Introduce PF_MEMCG_RECLAIM task flag to identify memcg reclaim.
+mm: introduce transcendent file cache
+  (ok, but it revealed another potential issue: PSBM-133176)
+memcg: allow to disable cleancache per memcg
+meminfo: show size of tcache
+ve/mm,oom: print information about ve of killed task
+veip: initial patch
+ve/cgroup: Add pseudosuper state for restore sake
+cgroup: Mark cgroup CGRP_VE_ROOT
+ve/cgroups: Introduce subgroups_limit control
+ve: use ve_printk() to print VMA address in case of segfault
+ve/net: restrict ethtool to CT root userns and prohibit EEPROM change
+ve: allow mounts in non-init but VE-init user namespace
+device_cgroup: add device visibility virtualization in CT
+vzeth: bits and pieces of our interface
+
+sched: Port CONFIG_CFS_CPULIMIT feature
+sched: Split tg_set_cfs_bandwidth() and export default_cfs_period()
+exit: clear TIF_MEMDIE after exit_task_work
+memcg: add oom_guarantee
+vzstat: Add base kstat structures and variables
+vzstat,sched: Track sched_lat_ve
+fs: Mask appropriate filesystems FS_VIRTUALIZED
+ve/fs: add ve_capable to check capabilities relative to the current VE
+ve/netlink: allow IPVS netlink messages to CT init userns
+ve/lockdep: Port diff-lockdep-taint-kernel-on-circular-locking-complains
+sysctl: Change sysctl::show_unhandled_signals default
+ve/proc: restricted proc-entries scope
+ve/time: Customize VE uptime
+KMAPSET: set of key-value mappings with build-in
+ve/kernfs: implement ve-based permissions
+ve/sysfs: add dentries visibility filter
+ve/fs/nfs: NFS containerization
+ve/netns: limit number of network namespaces per container
+ve/mm/trace: introduce vps_dumpable flag
+ve/kthreadd: add per-ve kthreads creation interface
+ve/umh: make queue function one of the subprocess_info parameters
+ve/umh: introduce per-container user mode helper macroses and functions
+fs/ve: add new FS_VE_MOUNT flag to allow mount in container init userns
+sunrpc: do not place task to sleep if has to be killed
+ve/fs/nfsd: NFSd containerization
+ve/proc: virtualize /proc/meminfo in a Container
+ve/net: allow to rename devices in non-ve namespaces
+mm, cgroup, writeback: Enable per-cgroup writeback for v1 cgroup.
+connector: store all private data on VE structure
+proc connector: generic proc_event_connector() helper introduced
+proc connector: add per-ve init and fini foutines
+proc connector: take number of listeners and per-cpu conters from VE
+  (__this_cpu_inc_return() returns valus _after_ inc())
+proc connector: pass VE to event fillers
+proc connector: use per-ve netlink sender helper
+mm: memcontrol: add stats for reclaimable and unreclaimable stats
+ve/mm: introduce min threshold for dcache
+mm: memcontrol: add memory.numa_migrate file
+mm/mecontrol: add memcg_[un]charge_kmem() API
+mm/memcg: reclaim memory on reaching kmem limit.
+configs: OpenVZ related config options are added
+config.debug: OpenVZ related config options are added
+cbt: introduce changed block tracking
+cbt: Allow BLKCBTMISC for userspace
+mm/vmscan: shrink tcache upfront everything else
+userfaultfd: wp: add UFFDIO_COPY_MODE_WP
+mnt: allow to add a mount into an existing group
+ve/fs/binfmt: move all internal data to structure
+ve/fs/binfmt: virtualization
+  (breaks git-check-rebase)
+ve/kernfs: fix lookup for kernfs superblock
+ext4: add mfsync support
+fuse: Turn writeback cache on
+fuse: direct_enable mount option
+fuse: fuse-ve-odirect sysctl
+fuse: Show open files in fusectl
+fuse: some fairness in handling writeback
+fuse: reimplement synchronous close
+fuse: i_size to be updated on first open
+fuse: implement invalidate_files notification
+fuse: make umount synchronous
+fuse: add mount option to disable close_wait
+fuse: do not flush files opened ro
+fuse: the list of all opened files
+fuse: add "killed" bit to fuse request
+fuse: invalidate_files backward compatibility mode
+fuse: enable synchronous close for both "pstorage://" and "vstorage://" fs types
+fuse: trust server file size unless opened
+fuse: fuse_prepare_write() cannot handle page from killed request
+fuse: separate iqueue for clones
+fuse: optimize writepages search
+fuse: add kdirect io engine v0.1
+fuse kio: minimal noop engine skeleton
+fuse kio: Add nullio engine
+fuse kio: Add pcs engine combo v0.8
+config.OpenVZ: enable modules for in-kernel fast path for vStorage
+fuse kio: Make KIO to require writeback_cache
+fuse kio: Read file attributes every first open
+fuse kio: Make struct fuse_inode::num_openers int
+fuse kio: Refactoring in fuse_show_options()
+fuse kio: Introduce cached_op
+fuse kio: Do not try to populate fuse_inode::private on second open
+fuse: Prohibit kio engine from containers
+fs/fuse kio: create sysfs stat directory
+fs/fuse kio: don't wait read requests in case of fsync/flush
+kernfs/sysfs: add ioctl to get fd network namespace tag
+net: openvswitch: add capability to specify ifindex of new links
+ve/perf: forbid perf events syscall in containers
+ipc: add export_operations to mqueue sb
+keys, user: Fix high order allocation in user_instantiate() #PSBM-107794
+ovl: introduce new "index=nouuid" option for inodes index feature
+ve: Virtualize sysinfo
+ve/posix-timers: reference ve monotonic clock from ve start (v2)
+ve/futex/timeout: adjust futex timeout to absolule
+fs/fuse kio: implement internal cs connection
+fs/fuse kio: make pcs auth socket independent
+fs/fuse kio: implement support RDMA transport
+mm/swap: activate swapped in pages on fault
+ve/sched: Link VE root cpu cgroups in separate list
+sched: Make calc_global_load() return true when it's need to update ve statistic
+ve/sched/loadavg: Calculate avenrun for Containers root cpu cgroups
+ve/sysinfo/loadavg: Virtualize loadavg values in sysinfo()
+ve, x86_64: add per-ve vdso mapping.
+ve: patch linux_version_code in vdso
+ve/fs/devmnt: process mount options
+ve/sched/stat: Introduce functions to calculate vcpustat data
+  (breaks git-check-rebase)
+ve/time/stat: idle time virtualization in /proc/loadavg
+arch/x86: introduce cpuid override
+ext4: add generic uevent infrastructure
+proc,memcg: use memcg limits for showing oom_score inside CT
+oom: resurrect berserker mode
+ve/proc: Added separate start time field to task_struct to show in container
+ms/netfilter: ipset: Fix "INFO: rcu detected stall in hash_xxx" reports
+ve/aio: Add a handle to checkpoint/restore AIO context
+ve/cgroup: Implement per-ve workqueue
+cgroup: Add rcu node string wrapper for in-cgroup usage
+ve/cgroup: Add ve_owner field to cgroup
+ve/cgroup: Move release_agent from system_wq to per-ve workqueues
+ve/cgroup: Set release_agent_path for root cgroups separately
+ve/cgroup: Add release_agent to each container root cgroup
+cgroup/ve: Pass cgroup_root to ve_set(get)_release_agent
+ext4: Teach the fs where the balloon inode is
+ext4: Provide a balloon nipple for management
+ve/ext4: treat panic_on_errors as remount-ro_on_errors in CTs
+jbd2: raid amnesia protection for the journal
+scripts/gdb: Fixed python gdb lib errors
+ve/fs/sync: Per containter sync and syncfs and fs.fsync-enable sysctl
+ve/fs: add per-VE limit of mount points
+pidns: add proc mount option 'hidepidns=0|1'
+ve/fs: Allow mount fs in init userns if it's mounted in another userns
+memcg: Enable accounting for new namespaces and struct nsproxy
+fuse: enable async_dio for pcs
+fuse: process small sync direct reads synchronously
+fuse: add support for fallocate(FL_ZERO_RANGE)
+fuse: don't declare FUSE FIEMAP support for any FUSE fs
+ve/fs/files: Shrink big fdtable on close in is_pseudosuper mode
+core: Add glob_kstat, percpu kstat and account mm stat
+ve/cgroup: Hide ve cgroup in Containers
+dm: Introduce dm_request_set_error()
+block: introduce multi-page bvec helpers
+block: introduce bio_for_each_bvec() and rq_for_each_bvec()
+ve/sunrpc: Enable rpc_pipefs mounts inside non-init user namespaces
+xfs: Allow to mount XFS in non-init userns
+ploop: Export dm_complete_request()
+net: Primitives to enable conntrack allocation
+ve/memcg: Virtualize /proc/vmstat view inside CT
+ve/page_alloc, kstat: account allocation latencies per-task and per-thread
+mm/page_alloc: use sched_clock() instead of jiffies to measure latency
+ve/sunrpc: Prohibit mounting rpc_pipefs in CT without nfsd feature
+fbcon: use kvmalloc() for scrollback buffer
+net/sock: teach sock_kmalloc() to call kvmalloc() when possible
+shmem/ve: virtualize tmpfs default size
+ms/tracing: Fix race in trace_open and buffer resize call
+ve/proc/block: show /proc/diskstats inside a Container
+ve/mm: add heuristic check for memory overcommit
+trusted/block: Added trusted flag to struct genhd
+trusted/ve/fs/exec: Don't allow a privileged user to execute untrusted files
+trusted/ve/mmap: Protect from unsecure library load from CT image
+mnt_ns: introduce global list of mount namespaces for debug
+net/skbuff: Don't waste memory reserves
+kvm: move VMs which we skip during shrink to vm_list tail
+kvm: move actual VM memory shrink out of kvm_lock
+ms/mm: speed up mremap by 20x on large regions
+ms/mm: select HAVE_MOVE_PMD on x86 for faster mremap
+mm: allow kmem limit bypassing if reclaimable slabs detected
+configs: provide kernel config via proc
+DMA-API: exceeded 7 overlapping mappings of cacheline share
+ext4: Care about reserves in case of IO thread
+mm: Add and use batched version of __tlb_remove_table()
+mempolicy: Prohibit VE processes numa binding syscalls
+ms/asm-generic/tlb: avoid potential double flush
+fs/sync: fix nullptr dereference ve->ve_ns->mnt_ns
+dm-qcow2: Introduce driver to create block devices over QCOW2 files
