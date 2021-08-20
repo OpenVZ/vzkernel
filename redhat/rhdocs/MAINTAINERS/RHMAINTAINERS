@@ -398,7 +398,7 @@ F:	arch/arm/oprofile/common.c
 F:	arch/arm*/kernel/hw_breakpoint.c
 F:	arch/arm*/include/asm/hw_breakpoint.h
 F:	arch/arm*/include/asm/perf_event.h
-F:	drivers/perf/*
+F:	drivers/perf/
 F:	include/linux/perf/arm_pmu.h
 
 ARM SMMU DRIVERS
@@ -650,7 +650,7 @@ F:	include/uapi/rdma/cxgb4-abi.h
 DEVICE DIRECT ACCESS
 M:	Jeff Moyer <jmoyer@redhat.com>
 S:	Supported
-F:	drivers/dax
+F:	drivers/dax/
 
 DM and MD build and config files
 M:	Mike Snitzer <snitzer@redhat.com>
@@ -735,7 +735,7 @@ F:	drivers/edac/
 EMULEX FC DRIVER
 M:	Ewan D. Milne <emilne@redhat.com>
 S:	Supported
-F:	drivers/scsi/lpfc
+F:	drivers/scsi/lpfc/
 
 ETHERNET
 S:	Supported
@@ -850,8 +850,8 @@ GENERIC PHY FRAMEWORK
 M:	John Linville <linville@redhat.com>
 S:	Supported
 F:	Documentation/devicetree/bindings/phy/
-F:	drivers/phy
-F:	include/linux/phy
+F:	drivers/phy/
+F:	include/linux/phy/
 
 GFS2 FILE SYSTEM
 M:	Bob Peterson <rpeterso@redhat.com>
@@ -892,7 +892,6 @@ S:	Supported
 F:	Documentation/devicetree/bindings/i2c/
 F:	Documentation/i2c/
 F:	drivers/i2c/
-F:	drivers/i2c/*/
 F:	include/linux/i2c.h
 F:	include/linux/i2c-*.h
 F:	include/uapi/linux/i2c.h
@@ -1030,14 +1029,14 @@ F:	drivers/powercap/intel_rapl.c
 INTEL TRUSTED PLATFORM MODULE (TPM)
 M:	Jerry Snitselaar <jsnitsel@redhat.com>
 S:	Supported
-F:	drivers/char/tpm/*
+F:	drivers/char/tpm/
 F:	include/linux/tpm.h
 
 INTEL QUICK ASSIST TECHNOLOGY (QAT)
 M:	Vladis Dronov <vdronov@redhat.com>
 M:	Tony Camuso <tcamuso@redhat.com>
 S:	Supported
-F:	drivers/crypto/qat/*
+F:	drivers/crypto/qat/
 
 IOMMU DRIVERS
 M:	Jerry Snitselaar <jsnitsel@redhat.com>
@@ -1112,7 +1111,7 @@ F:	include/uapi/linux/kvm*
 F:	include/asm-generic/kvm*
 F:	include/linux/kvm*
 F:	include/kvm/iodev.h
-F:	virt/kvm/*
+F:	virt/kvm/
 F:	tools/kvm/
 F:	tools/testing/selftests/kvm/
 
@@ -1169,7 +1168,6 @@ M:	Vitaly Kuznetsov <vkuznets@redhat.com>
 L:	rhvirt-patches@redhat.com
 S:	Supported
 F:	arch/x86/kvm/
-F:	arch/x86/kvm/*/
 F:	arch/x86/include/uapi/asm/kvm*
 F:	arch/x86/include/uapi/asm/vmx.h
 F:	arch/x86/include/asm/kvm*
@@ -1493,6 +1491,7 @@ S:	Supported
 F:	net/
 F:	Documentation/networking/
 F:	drivers/net/Space.c
+F:	drivers/net/bareudp.c
 F:	drivers/net/dummy.c
 F:	drivers/net/geneve.c
 F:	drivers/net/ifb.c
@@ -1561,6 +1560,7 @@ X:	net/ieee802154/
 X:	net/irda/
 X:	net/iucv/
 X:	net/mac80211/
+X:	net/mac802154/
 X:	net/rds/
 X:	net/rfkill/
 X:	net/sunrpc/
@@ -1599,14 +1599,26 @@ S:	Supported
 F:	drivers/net/ethernet/qlogic/netxen/
 
 NETWORK LOCK MANAGER (lockd)
+M:	Benjamin Coddington <bcodding@redhat.com>
+M:	J. Bruce Fields <bfields@redhat.com>
+M:	Steve Dickson <steved@redhat.com>
+M:	Scott Mayhew <smayhew@redhat.com>
 S:	Supported
 F:	fs/lockd/
 
 NFS FILE SYSTEM (nfs)
+M:	Benjamin Coddington <bcodding@redhat.com>
+M:	J. Bruce Fields <bfields@redhat.com>
+M:	Steve Dickson <steved@redhat.com>
+M:	Scott Mayhew <smayhew@redhat.com>
 S:	Supported
 F:	fs/nfs/
 
 NFS SERVER (nfsd)
+M:	Benjamin Coddington <bcodding@redhat.com>
+M:	J. Bruce Fields <bfields@redhat.com>
+M:	Steve Dickson <steved@redhat.com>
+M:	Scott Mayhew <smayhew@redhat.com>
 S:	Supported
 F:	fs/nfsd/
 
@@ -1637,8 +1649,8 @@ S:	Supported
 NVDIMM SUBSYSTEM
 M:	Jeff Moyer <jmoyer@redhat.com>
 S:	Supported
-F:	drivers/acpi/nfit
-F:	drivers/nvdimm
+F:	drivers/acpi/nfit/
+F:	drivers/nvdimm/
 F:	include/linux/libnvdimm.h
 F:	include/linux/nd.h
 F:	include/uapi/linux/ndctl.h
@@ -1707,7 +1719,7 @@ PERFORMANCE EVENTS SUBSYSTEM
 M:	Jiri Olsa <jolsa@redhat.com>
 M:	Michael Petlan <mpetlan@redhat.com>
 S:	Supported
-F:	kernel/events/*
+F:	kernel/events/
 F:	include/linux/perf_event.h
 F:	include/uapi/linux/perf_event.h
 F:	arch/*/kernel/perf_event*.c
@@ -1816,19 +1828,19 @@ QLOGIC QED NETWORK DRIVER
 M:	Manish Chopra <mchopra@redhat.com>
 M:	John W. Linville <linville@redhat.com>
 S:	Supported
-F:	drivers/net/ethernet/qlogic/qed
+F:	drivers/net/ethernet/qlogic/qed/
 
 QLOGIC QEDE ETHERNET NETWORK DRIVER
 M:	Manish Chopra <mchopra@redhat.com>
 M:	John W. Linville <linville@redhat.com>
 S:	Supported
-F:	drivers/net/ethernet/qlogic/qede
+F:	drivers/net/ethernet/qlogic/qede/
 
 QLOGIC QEDR RDMA ETHERNET NETWORK DRIVER
 M:	Manish Chopra <mchopra@redhat.com>
 M:	John W. Linville <linville@redhat.com>
 S:	Supported
-F:	drivers/infiniband/hw/qedr
+F:	drivers/infiniband/hw/qedr/
 
 QLOGIC QLGE 10Gb ETHERNET DRIVER
 M:	Manish Chopra <mchopra@redhat.com>
@@ -2027,6 +2039,10 @@ S:	Supported
 F:	drivers/spi/
 
 SUN REMOTE PROCEDURE CALL (sunrpc)
+M:	Benjamin Coddington <bcodding@redhat.com>
+M:	J. Bruce Fields <bfields@redhat.com>
+M:	Steve Dickson <steved@redhat.com>
+M:	Scott Mayhew <smayhew@redhat.com>
 S:	Supported
 F:	net/sunrpc/
 
@@ -2046,7 +2062,7 @@ SYSTEM ON CHIP
 M:	Mark Salter <msalter@redhat.com>
 S:	Supported
 F:	drivers/soc/
-F:	include/linux/soc
+F:	include/linux/soc/
 
 TC subsystem
 M:	Ivan Vecera <ivecera@redhat.com>
@@ -2122,7 +2138,6 @@ X:	arch/x86/kernel/cpu/mshyperv.c
 X:	arch/x86/kernel/kvm.c
 X:	arch/x86/kernel/kvmclock.c
 X:	arch/x86/kvm/
-X:	arch/x86/kvm/*/
 X:	arch/x86/kvm/svm.c
 X:	arch/x86/net/
 
@@ -2278,7 +2293,7 @@ F:	include/uapi/linux/virtio_input.h
 VMWARE VMXNET3 ETHERNET DRIVER (vmxnet3)
 M:	Cathy Avery <cavery@redhat.com>
 S:	Supported
-F:	drivers/net/vmxnet3/*
+F:	drivers/net/vmxnet3/
 
 VMWARE PVRDMA DRIVER (vmw_pvrdma)
 M:	Kamal Heib <kheib@redhat.com>
@@ -2301,6 +2316,15 @@ F:	include/net/iw*
 F:	include/net/regulatory.h
 F:	include/uapi/linux/nl80211.h
 F:	include/uapi/linux/wireless.h
+
+WIRELESS [LR-WPAN] (IEEE 802.15.4)
+M:	Chris von Recklinghausen <crecklin@redhat.com>
+S:	Supported
+F:	drivers/net/ieee802154/fakelb.c
+F:	include/linux/*802154*
+F:	include/net/*802154*
+F:	net/ieee802154/
+F:	net/mac802154/
 
 XEN
 M:	Vitaly Kuznetsov <vkuznets@redhat.com>
