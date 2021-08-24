@@ -84,4 +84,6 @@
 
 #define SCM_TIMESTAMPING_PKTINFO	58
 
+#define SO_BUF_LOCK		72
+
 #endif /* __ASM_GENERIC_SOCKET_H */
