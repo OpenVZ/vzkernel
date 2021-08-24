@@ -18,4 +18,9 @@ struct __kernel_sockaddr_storage {
 				/* _SS_MAXSIZE value minus size of ss_family */
 } __attribute__ ((aligned(_K_SS_ALIGNSIZE)));	/* force desired alignment */
 
+#define SOCK_SNDBUF_LOCK	1
+#define SOCK_RCVBUF_LOCK	2
+
+#define SOCK_BUF_LOCK_MASK (SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK)
+
 #endif /* _UAPI_LINUX_SOCKET_H */
