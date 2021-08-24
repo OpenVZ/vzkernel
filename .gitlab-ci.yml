@@ -81,6 +81,20 @@ workflow:
     builder_image: quay.io/cki/builder-rhel9
     kpet_tree_family: rhel9
 
+.realtime_check_c9s:
+  trigger:
+    branch: c9s-rt
+  variables:
+    merge_branch: main-rt
+    name: kernel-rt-c9s
+
+.realtime_check_rhel9:
+  trigger:
+    branch: rhel9-rt
+  variables:
+    merge_branch: main-rt
+    name: kernel-rt-rhel9
+
 .trigger_rhel9_build:
   extends: .trigger_rhel9_pipeline
   variables:
@@ -95,6 +109,12 @@ ark_merge_request:
 c9s_merge_request:
   extends: [.trusted, .merge_request, .rhel_common,
             .9-common, .trigger_c9s_pipeline]
+
+c9s_realtime_check_merge_request:
+  extends: [.trusted, .merge_request,
+            .9-common,
+            .realtime_check_common,
+            .trigger_c9s_pipeline, .realtime_check_c9s]
 
 c9s_baseline:
   extends: [.trusted, .baseline, .rhel_common,
@@ -112,6 +132,12 @@ c9s_rhel9_compat_baseline:
 rhel9_merge_request:
   extends: [.internal, .merge_request, .rhel_common,
             .9-common, .trigger_rhel9_pipeline]
+
+rhel9_realtime_check_merge_request:
+  extends: [.internal, .merge_request,
+            .9-common,
+            .realtime_check_common,
+            .trigger_rhel9_pipeline, .realtime_check_rhel9]
 
 rhel9_baseline:
   extends: [.internal, .baseline, .rhel_common,
