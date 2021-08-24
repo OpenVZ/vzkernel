@@ -75,4 +75,6 @@
 
 #define SCM_TIMESTAMPING_PKTINFO	58
 
+#define SO_BUF_LOCK		0x4046
+
 #endif /* _UAPI_ASM_SOCKET_H */
