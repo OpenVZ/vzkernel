@@ -490,6 +490,7 @@ struct ploop_device
 	unsigned long		locking_state; /* plo locked by userspace */
 	unsigned int		fast_path_disabled_count;
 	unsigned int		discard_disabled_count;
+	bool			has_disable_merge;
 };
 
 enum
@@ -648,6 +649,19 @@ static inline struct ploop_delta * ploop_top_delta(struct ploop_device * plo)
 static inline struct ploop_delta * map_top_delta(struct ploop_map * map)
 {
 	return list_first_entry(&map->delta_list, struct ploop_delta, list);
+}
+
+static inline void ploop_delta_list_changed(struct ploop_device *plo)
+{
+	bool has_disable_merge = false;
+	struct ploop_delta *delta;
+
+	list_for_each_entry(delta, &plo->map.delta_list, list) {
+		if (delta->io.ops->disable_merge)
+			has_disable_merge = true;
+	}
+
+	plo->has_disable_merge = has_disable_merge;
 }
 
 static inline unsigned int cluster_size_in_bytes(struct ploop_device *plo)
