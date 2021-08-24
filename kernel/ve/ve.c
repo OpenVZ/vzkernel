@@ -1099,7 +1099,7 @@ static void ve_attach(struct cgroup *cg, struct cgroup_taskset *tset)
 
 		ve_try_set_task_start_time(ve, task);
 
-		task->task_ve = ve;
+		rcu_assign_pointer(task->task_ve, ve);
 	}
 
 	/* Adjust cpuid faulting */
