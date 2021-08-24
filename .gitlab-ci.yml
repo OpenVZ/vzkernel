@@ -101,6 +101,18 @@ workflow:
     skip_test: 'true'
     skip_results: 'true'
 
+.realtime_full_c9s:
+  variables:
+    name: kernel-rt-c9s
+    kpet_tree_family: c9s-rt
+    RUN_ONLY_FOR_RT: 'true'
+
+.realtime_full_rhel9:
+  variables:
+    name: kernel-rt-rhel9
+    kpet_tree_family: rhel9-rt
+    RUN_ONLY_FOR_RT: 'true'
+
 # ARK CI
 ark_merge_request:
   extends: [.trusted-ark, .merge_request, .trigger_ark_pipeline]
@@ -128,6 +140,19 @@ c9s_rhel9_compat_baseline:
   extends: [.centos_stream_rhel_internal, .baseline, .rhel_common,
             .9-common, .trigger_rhel9_build]
 
+# c9s realtime branch CI
+c9s_realtime_merge_request:
+  extends: [.trusted, .merge_request,
+            .9-common,
+            .realtime_pipeline_common,
+            .trigger_c9s_pipeline, .realtime_full_c9s]
+
+c9s_realtime_baseline:
+  extends: [.trusted, .baseline,
+            .9-common,
+            .realtime_pipeline_common,
+            .trigger_c9s_pipeline, .realtime_full_c9s]
+
 # RHEL9 CI
 rhel9_merge_request:
   extends: [.internal, .merge_request, .rhel_common,
@@ -143,6 +168,18 @@ rhel9_baseline:
   extends: [.internal, .baseline, .rhel_common,
             .9-common, .trigger_rhel9_pipeline]
 
+# RHEL9 realtime branch CI
+rhel9_realtime_merge_request:
+  extends: [.internal, .merge_request,
+            .9-common,
+            .realtime_pipeline_common,
+            .trigger_rhel9_pipeline, .realtime_full_rhel9]
+
+rhel9_realtime_baseline:
+  extends: [.internal, .baseline,
+            .9-common,
+            .realtime_pipeline_common,
+            .trigger_rhel9_pipeline, .realtime_full_rhel9]
 
 # scheduled job
 .scheduled_setup:
