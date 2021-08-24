@@ -671,6 +671,7 @@ int cgroup_task_count(const struct cgroup *cgrp);
 void cgroup_release_agent(struct work_struct *work);
 
 #ifdef CONFIG_VE
+struct ve_struct *get_curr_ve(void);
 int cgroup_mark_ve_roots(struct ve_struct *ve);
 void cgroup_unmark_ve_roots(struct ve_struct *ve);
 struct cgroup *cgroup_get_local_root(struct cgroup *cgrp);
