@@ -3519,6 +3519,7 @@ static int ploop_add_delta(struct ploop_device * plo, unsigned long arg)
 	mutex_lock(&plo->sysfs_mutex);
 	list_add(&delta->list, &plo->map.delta_list);
 	mutex_unlock(&plo->sysfs_mutex);
+	ploop_delta_list_changed(plo);
 	set_bit(PLOOP_S_CHANGED, &plo->state);
 
 	/*
@@ -3602,6 +3603,7 @@ static int ploop_replace_delta(struct ploop_device * plo, unsigned long arg)
 
 	ploop_map_destroy(&plo->map);
 	list_replace_init(&old_delta->list, &delta->list);
+	ploop_delta_list_changed(plo);
 	clear_bit(PLOOP_S_ABORT, &plo->state);
 
 	spin_lock_irq(plo->queue->queue_lock);
@@ -3892,6 +3894,7 @@ static int ploop_snapshot(struct ploop_device * plo, unsigned long arg,
 		list_add(&delta->list, &plo->map.delta_list);
 		clear_bit(PLOOP_MAP_IDENTICAL, &plo->map.flags);
 		mutex_unlock(&plo->sysfs_mutex);
+		ploop_delta_list_changed(plo);
 	}
 	ploop_relax(plo);
 
@@ -4010,6 +4013,7 @@ static int ploop_del_delta(struct ploop_device * plo, unsigned long arg)
 	ploop_quiesce(plo);
 	next = list_entry(delta->list.next, struct ploop_delta, list);
 	list_del(&delta->list);
+	ploop_delta_list_changed(plo);
 	if (list_empty(&plo->map.delta_list))
 		plo->cookie[0] = 0;
 	if (level != 0)
@@ -4111,6 +4115,7 @@ static void ploop_merge_complete(struct ploop_device * plo,
 	plo->trans_map = NULL;
 	plo->maintenance_type = PLOOP_MNTN_OFF;
 	mutex_unlock(&plo->sysfs_mutex);
+	ploop_delta_list_changed(plo);
 	ploop_map_destroy(map);
 	ploop_relax(plo);
 }
@@ -4194,6 +4199,7 @@ static int ploop_merge(struct ploop_device * plo)
 		plo->trans_map = map;
 		plo->maintenance_type = PLOOP_MNTN_MERGE;
 		mutex_unlock(&plo->sysfs_mutex);
+		ploop_delta_list_changed(plo);
 	} else {
 		/* Yes. All transient obstacles must be resolved
 		 * in prepare_merge. Failed start_merge means
@@ -4540,6 +4546,7 @@ static void destroy_deltas(struct ploop_device * plo, struct ploop_map * map)
 		mutex_lock(&plo->sysfs_mutex);
 		list_del(&delta->list);
 		mutex_unlock(&plo->sysfs_mutex);
+		ploop_delta_list_changed(plo);
 
 		kobject_del(&delta->kobj);
 		kobject_put(&plo->kobj);
