@@ -1248,18 +1248,27 @@ ploop_merge_bvec(struct request_queue *q, struct bvec_merge_data *bm_data,
 		return 0;
 	}
 
-	/* We can return ret right now, the further action is an optimization
-	 * to prevent splitting overhead and to enable fast path.
-	 */
-	spin_lock_irqsave(&plo->lock, flags);
-	delta = ploop_fast_lookup(plo, sec, 0, &isector);
-	if (delta &&
-	    delta->io.ops->disable_merge &&
-	    delta->io.ops->disable_merge(&delta->io, isector, len)) {
-		plo->st.merge_neg_disable++;
-		ret = 0;
+	if (plo->has_disable_merge) {
+		/*
+		 * We can return ret right now, the further action
+		 * is an optimization to prevent splitting overhead
+		 * and to enable fast path.
+		 * We do that only in case of there is a delta
+		 * with disable_merge method: otherwise this just
+		 * brings spinlock taking overhead (seen on NVME).
+		 * Since below is only optimization, we check
+		 * plo->has_disable_merge without any synchronization.
+		 */
+		spin_lock_irqsave(&plo->lock, flags);
+		delta = ploop_fast_lookup(plo, sec, 0, &isector);
+		if (delta &&
+		    delta->io.ops->disable_merge &&
+		    delta->io.ops->disable_merge(&delta->io, isector, len)) {
+			plo->st.merge_neg_disable++;
+			ret = 0;
+		}
+		spin_unlock_irqrestore(&plo->lock, flags);
 	}
-	spin_unlock_irqrestore(&plo->lock, flags);
 
 	/* If no mapping is available, merge up to cluster boundary */
 	return ret;
