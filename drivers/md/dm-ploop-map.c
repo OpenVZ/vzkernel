@@ -198,7 +198,7 @@ static void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
 			return;
 	}
 
-	kfree(prq);
+	mempool_free(prq, pio->ploop->prq_pool);
 	dm_complete_request(rq, bi_status);
 }
 
@@ -1888,7 +1888,7 @@ int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 	if (blk_rq_bytes(rq) && ploop_rq_valid(ploop, rq) < 0)
 		return DM_MAPIO_KILL;
 
-	prq = kmalloc(sizeof(*prq) + sizeof(*pio), GFP_ATOMIC); /* TODO: memcache */
+	prq = mempool_alloc(ploop->prq_pool, GFP_ATOMIC);
 	if (!prq)
 		return DM_MAPIO_KILL;
 	pio = (void *)prq + sizeof(*prq);

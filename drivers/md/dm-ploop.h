@@ -137,6 +137,8 @@ enum {
 
 struct ploop {
 	struct dm_target *ti;
+#define PLOOP_PRQ_POOL_SIZE 512 /* Twice nr_requests from blk_mq_init_sched() */
+	mempool_t *prq_pool;
 #define PLOOP_PIO_POOL_SIZE 256
 	mempool_t *pio_pool;
 

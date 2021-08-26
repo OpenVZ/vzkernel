@@ -27,6 +27,7 @@ module_param(ignore_signature_disk_in_use, bool, 0444);
 MODULE_PARM_DESC(ignore_signature_disk_in_use,
                 "Does not check for SIGNATURE_DISK_IN_USE");
 
+static struct kmem_cache *prq_cache;
 static struct kmem_cache *pio_cache;
 struct kmem_cache *cow_cache;
 
@@ -175,6 +176,7 @@ static void ploop_destroy(struct ploop *ploop)
 	kfree(ploop->inflight_pios);
 	kfree(ploop->exclusive_pios);
 	mempool_destroy(ploop->pio_pool);
+	mempool_destroy(ploop->prq_pool);
 	kfree(ploop->deltas);
 	kvfree(ploop->holes_bitmap);
 	kvfree(ploop->tracking_bitmap);
@@ -316,6 +318,8 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	if (!ploop)
 		return -ENOMEM;
 
+	ploop->prq_pool = mempool_create_slab_pool(PLOOP_PRQ_POOL_SIZE,
+						   prq_cache);
 	ploop->pio_pool = mempool_create_slab_pool(PLOOP_PIO_POOL_SIZE,
 						   pio_cache);
 	ploop->exclusive_pios = kcalloc(PLOOP_HASH_TABLE_SIZE,
@@ -324,8 +328,8 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ploop->inflight_pios = kcalloc(PLOOP_HASH_TABLE_SIZE,
 					sizeof(struct hlist_head),
 					GFP_KERNEL);
-	if (!ploop->pio_pool || !ploop->exclusive_pios ||
-				!ploop->inflight_pios) {
+	if (!ploop->prq_pool || !ploop->pio_pool ||
+	    !ploop->exclusive_pios || !ploop->inflight_pios) {
 		ret = -ENOMEM;
 		goto err;
 	}
@@ -531,11 +535,13 @@ static int __init dm_ploop_init(void)
 	int r = -ENOMEM;
 
 	/* This saves some memory in comparison with kmalloc memcache */
+	prq_cache = kmem_cache_create("ploop-prq", sizeof(struct ploop_rq) +
+				      sizeof(struct pio), 0, 0, NULL);
 	pio_cache = kmem_cache_create("ploop-pio", sizeof(struct pio),
 				      0, 0, NULL);
 	cow_cache = kmem_cache_create("ploop-cow", sizeof(struct ploop_cow),
 				      0, 0, NULL);
-	if (!pio_cache || !cow_cache)
+	if (!prq_cache || !pio_cache || !cow_cache)
 		goto err;
 
 	r = dm_register_target(&ploop_target);
@@ -546,6 +552,7 @@ static int __init dm_ploop_init(void)
 
 	return 0;
 err:
+	kmem_cache_destroy(prq_cache);
 	kmem_cache_destroy(pio_cache);
 	kmem_cache_destroy(cow_cache);
 	return r;
@@ -554,6 +561,7 @@ err:
 static void __exit dm_ploop_exit(void)
 {
 	dm_unregister_target(&ploop_target);
+	kmem_cache_destroy(prq_cache);
 	kmem_cache_destroy(pio_cache);
 	kmem_cache_destroy(cow_cache);
 }
