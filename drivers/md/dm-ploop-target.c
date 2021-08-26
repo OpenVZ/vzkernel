@@ -399,7 +399,6 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	if (ret)
 		goto err;
 
-	ti->per_io_data_size = ploop_per_io_data_size();
 	ti->num_flush_bios = 1;
 	ti->flush_supported = true;
 	ti->num_discard_bios = 1;
@@ -513,7 +512,7 @@ static int ploop_preresume(struct dm_target *ti)
 static struct target_type ploop_target = {
 	.name = "ploop",
 	.version = {1, 0, 0},
-	.features = DM_TARGET_SINGLETON|DM_TARGET_IMMUTABLE,
+	.features = DM_TARGET_SINGLETON,
 	.module = THIS_MODULE,
 	.ctr = ploop_ctr,
 	.dtr = ploop_dtr,

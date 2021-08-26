@@ -22,6 +22,7 @@
 #define PREALLOC_SIZE (128ULL * 1024 * 1024)
 
 static void handle_cleanup(struct ploop *ploop, struct pio *pio);
+static void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status);
 
 #define DM_MSG_PREFIX "ploop"
 
@@ -175,7 +176,7 @@ unlock:
 	return delayed;
 }
 
-void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
+static void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
 {
         struct ploop_rq *prq = prq_ptr;
         struct request *rq = prq->rq;
@@ -197,6 +198,7 @@ void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status)
 			return;
 	}
 
+	kfree(prq);
 	dm_complete_request(rq, bi_status);
 }
 
@@ -1631,7 +1633,7 @@ out:
 static void prepare_one_embedded_pio(struct ploop *ploop, struct pio *pio,
 				     struct list_head *deferred_pios)
 {
-	struct ploop_rq *prq = embedded_pio_to_prq(pio);
+	struct ploop_rq *prq = pio->endio_cb_data;
 	struct request *rq = prq->rq;
 	struct bio_vec *bvec = NULL;
 	LIST_HEAD(list);
@@ -1837,7 +1839,7 @@ void do_ploop_fsync_work(struct work_struct *ws)
 
 static void submit_embedded_pio(struct ploop *ploop, struct pio *pio)
 {
-	struct ploop_rq *prq = embedded_pio_to_prq(pio);
+	struct ploop_rq *prq = pio->endio_cb_data;
 	struct request *rq = prq->rq;
 	struct work_struct *worker;
 	unsigned long flags;
@@ -1886,8 +1888,11 @@ int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 	if (blk_rq_bytes(rq) && ploop_rq_valid(ploop, rq) < 0)
 		return DM_MAPIO_KILL;
 
-	prq = map_info_to_embedded_prq(info);
-	pio = map_info_to_embedded_pio(info);
+	prq = kmalloc(sizeof(*prq) + sizeof(*pio), GFP_ATOMIC); /* TODO: memcache */
+	if (!prq)
+		return DM_MAPIO_KILL;
+	pio = (void *)prq + sizeof(*prq);
+
 	init_prq_and_embedded_pio(ploop, rq, prq, pio);
 
 	submit_embedded_pio(ploop, pio);

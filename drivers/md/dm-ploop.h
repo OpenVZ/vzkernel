@@ -323,28 +323,6 @@ static inline bool whole_cluster(struct ploop *ploop, struct pio *pio)
 	return !(end_sector & ((1 << ploop->cluster_log) - 1));
 }
 
-static inline ssize_t ploop_per_io_data_size(void)
-{
-	return sizeof(struct ploop_rq) + sizeof(struct pio);
-}
-static inline struct ploop_rq *map_info_to_embedded_prq(union map_info *info)
-{
-	return (void *)info->ptr;
-}
-static inline struct pio *map_info_to_embedded_pio(union map_info *info)
-{
-	return (void *)info->ptr + sizeof(struct ploop_rq);
-}
-
-extern void prq_endio(struct pio *pio, void *prq_ptr, blk_status_t bi_status);
-
-static inline struct ploop_rq *embedded_pio_to_prq(struct pio *pio)
-{
-	struct ploop_rq *prq = (void *)pio - sizeof(struct ploop_rq);
-	WARN_ON_ONCE(pio->endio_cb != prq_endio);
-	return prq;
-}
-
 #define BAT_LEVEL_MAX		(U8_MAX - 1)
 #define BAT_LEVEL_INVALID	U8_MAX
 static inline u8 top_level(struct ploop *ploop)
