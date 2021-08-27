@@ -1364,8 +1364,6 @@ static int nfs_init_fs_context(struct fs_context *fc)
 
 	if (!(get_exec_env()->features & VE_FEATURE_NFS))
 		return -ENODEV;
-	if (!current_user_ns_initial())
-		return -EPERM;
 
 	ctx = kzalloc(sizeof(struct nfs_fs_context), GFP_KERNEL);
 	if (unlikely(!ctx))
