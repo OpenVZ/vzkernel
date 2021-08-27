@@ -853,9 +853,9 @@ static void put_piwb(struct ploop_index_wb *piwb)
 			ploop_advance_local_after_bat_wb(ploop, piwb, false);
 
 		if (piwb->comp) {
-			complete(piwb->comp);
 			if (piwb->comp_bi_status)
 				*piwb->comp_bi_status = piwb->bi_status;
+			complete(piwb->comp);
 		}
 		free_piwb(piwb);
 	}
