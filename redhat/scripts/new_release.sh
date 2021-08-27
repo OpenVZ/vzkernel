@@ -7,6 +7,7 @@ fi
 RHPATH="$1";
 YSTREAM_FLAG="$2";
 ZSTREAM_FLAG="$3";
+BUMP_RELEASE="$4";
 
 if [ -s "$RHPATH/linux-kernel-test.patch" ]; then
 	echo "linux-kernel-test.patch is not empty, aborting" >&2;
@@ -22,7 +23,9 @@ ZMAJ=${ZMAJ:=0}
 ZMIN=$(echo "$RELEASE" | cut -s -d "." -f 3)
 ZMIN=${ZMIN:=0}
 
-if [ "$ZSTREAM_FLAG" == "no" ]; then
+if [ "$BUMP_RELEASE" == "no" ]; then
+	NEW_RELEASE="$RELEASE";
+elif [ "$ZSTREAM_FLAG" == "no" ]; then
 	if [ "$YSTREAM_FLAG" == "yes" ]; then
 		NEW_RELEASE="$((RELEASE + 1))";
 	else

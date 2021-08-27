@@ -124,6 +124,7 @@ Summary: The Linux kernel
 %define kversion %%KVERSION%%.%%KPATCHLEVEL%%
 
 %define rpmversion %%KVERSION%%.%%KPATCHLEVEL%%.%%KSUBLEVEL%%
+%define patchversion %%KVERSION%%.%%KPATCHLEVEL%%
 %define pkgrelease %%PKGRELEASE%%
 
 # This is needed to do merge window version magic
@@ -827,7 +828,7 @@ Source4002: gating.yaml
 
 %if !%{nopatches}
 
-Patch1: patch-%{rpmversion}-redhat.patch
+Patch1: patch-%{patchversion}-redhat.patch
 %endif
 
 # empty final patch to facilitate testing of kernel patches
@@ -1365,7 +1366,7 @@ cp -a %{SOURCE1} .
 
 %if !%{nopatches}
 
-ApplyOptionalPatch patch-%{rpmversion}-redhat.patch
+ApplyOptionalPatch patch-%{patchversion}-redhat.patch
 %endif
 
 ApplyOptionalPatch linux-kernel-test.patch

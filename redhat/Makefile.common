@@ -1,6 +1,7 @@
 TOPDIR:=$(shell $(GIT) rev-parse --show-toplevel)
 REDHAT:=$(TOPDIR)/redhat
 include $(TOPDIR)/Makefile.rhelver
+include $(REDHAT)/Makefile.variables
 
 RPMBUILD := $(shell if [ -x "/usr/bin/rpmbuild" ]; then echo rpmbuild; \
                    else echo rpm; fi)
@@ -15,15 +16,17 @@ GITID:= $(shell $(GIT) log --max-count=1 --pretty=format:%H $(HEAD))
 # marker is git tag which we base off of for exporting patches
 # Make sure marker uses RPMKPATCHLEVEL and RPMKEXTRAVERSION from the kernel
 # makefile as opposed to any adjusted version for snapshotting.
-MARKER:=v$(RPMKVERSION).$(RPMKPATCHLEVEL)$(RPMKEXTRAVERSION)
 ifneq ($(RPMKEXTRAVERSION),)
+  MARKER:=v$(RPMKVERSION).$(RPMKPATCHLEVEL)$(RPMKEXTRAVERSION)
   KEXTRAVERSION:=$(shell echo $(RPMKEXTRAVERSION) | sed -e s/-/./)
   PREBUILD:=0$(KEXTRAVERSION).
   UPSTREAM_TARBALL_NAME:=$(RPMKVERSION).$(RPMKPATCHLEVEL)$(RPMKEXTRAVERSION)
 else
   ifeq ($(RPMKSUBLEVEL),0)
+    MARKER:=v$(RPMKVERSION).$(RPMKPATCHLEVEL)
     UPSTREAM_TARBALL_NAME:=$(RPMKVERSION).$(RPMKPATCHLEVEL)
   else
+    MARKER:=v$(RPMKVERSION).$(RPMKPATCHLEVEL).$(RPMKSUBLEVEL)
     UPSTREAM_TARBALL_NAME:=$(RPMKVERSION).$(RPMKPATCHLEVEL).$(RPMKSUBLEVEL)
   endif
   PREBUILD:=
@@ -39,21 +42,23 @@ endif
 # If VERSION_ON_UPSTREAM is set, the versioning of the rpm package is based
 # on a branch tracking upstream. This allows for generating rpms
 # based on untagged releases.
-ifeq ("$(DIST)", ".elrdy")
-  VERSION_ON_UPSTREAM:=1
-else ifeq ("$(DISTRO)", "fedora")
-  VERSION_ON_UPSTREAM:=1
-else
-  VERSION_ON_UPSTREAM:=0
+ifndef VERSION_ON_UPSTREAM
+  ifeq ("$(DIST)", ".elrdy")
+    VERSION_ON_UPSTREAM:=1
+  else ifeq ("$(DISTRO)", "fedora")
+    VERSION_ON_UPSTREAM:=1
+  else
+    VERSION_ON_UPSTREAM:=0
+  endif
 endif
 ifeq ($(VERSION_ON_UPSTREAM),1)
-  # master is expected to track mainline.
-  MASTER:=$(shell $(GIT) rev-parse -q --verify origin/master || \
-                  $(GIT) rev-parse -q --verify master)
-  ifeq ($(MASTER),)
-      $(error "Missing an 'origin/master' or 'master' branch")
+  # UPSTREAM_BRANCH is expected to track mainline.
+  UPSTREAM:=$(shell $(GIT) rev-parse -q --verify origin/$(UPSTREAM_BRANCH) || \
+                  $(GIT) rev-parse -q --verify $(UPSTREAM_BRANCH))
+  ifeq ($(UPSTREAM),)
+      $(error "Missing an $(UPSTREAM_BRANCH) branch")
   endif
-  MERGE_BASE:=$(shell $(GIT) merge-base $(HEAD) $(MASTER))
+  MERGE_BASE:=$(shell $(GIT) merge-base $(HEAD) $(UPSTREAM))
   _TAG:=$(shell $(GIT) describe $(MERGE_BASE))
   # a snapshot off of a tagged git is of the form [tag]-[cnt]-g[hash]
   SNAPSHOT:=$(shell echo $(_TAG) | grep -c '\-g')
@@ -106,14 +111,6 @@ else ifeq ("$(DISTRO)", "fedora")
 else
   SINGLE_TARBALL:=1
 endif
-
-# RELEASED_KERNEL: swaps between the pre-release secureboot keys and
-# 		   the release one, for vmlinux signing.
-#
-#	0 : pre-release (devel) secureboot keys are used for signing
-#	1 : release (RC/GA) secureboot keys are used for signing
-#
-RELEASED_KERNEL:=0
 
 STAMP_VERSION:=$(KVERSION)
 

@@ -1,0 +1,36 @@
+
+# Variables below should be changed as needed for building on a different
+# branch, or with a different upstream branch. This should be the only
+# file that needs to be changed now, and is included in redhat/Makefile
+# and redhat/Makefile.common
+
+# This is the source branch that you are building out of typically this is
+# the current branch.
+DIST_BRANCH ?= "os-build"
+
+# The branch used as upstream. This is what the upstream tarball is it
+# should be tracked in a local branch. This would be "master" for the
+# Linus master branch or linux-5.x.y for a stable branch. It can also be
+# any other upstream you have added as a branch locally.
+UPSTREAM_BRANCH ?= master
+
+# If VERSION_ON_UPSTREAM is set, the versioning of the rpm package is based
+# on a branch tracking upstream. This allows for generating rpms
+# based on untagged releases.
+VERSION_ON_UPSTREAM:=1
+
+# RELEASED_KERNEL swaps between the pre-release secureboot keys and
+# the release one, for vmlinux signing. It also controls whether Fedora
+# kernels are built as debug kernels or release kernels with a separate
+# kernel-debug build.
+# Set RELEASED_KERNEL to 1 when the upstream source tarball contains a
+#  kernel release. (This includes prepatch or "rc" releases.)
+# Set RELEASED_KERNEL to 0 when the upstream source tarball contains an
+#  unreleased kernel development snapshot.
+RELEASED_KERNEL:=0
+
+# BUMP_RELEASE determines whether the pkgrelease is bumped when you call
+# 'make dist-release'.  It should be set to "yes" if you expect to do
+# multiple updates and builds without bumping the base version, and no
+# when you expect every build to use a different base kernel version.
+BUMP_RELEASE:=yes
