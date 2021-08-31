@@ -782,7 +782,7 @@ static int fuse_parse_param(struct fs_context *fc, struct fs_parameter *param)
 		if (param->size > FUSE_KIO_NAME)
 			return -EINVAL;
 
-		strncpy(ctx->kio_name, param->string, param->size);
+		strncpy(ctx->kio_name, param->string, FUSE_KIO_NAME);
 		ctx->kio_name[FUSE_KIO_NAME] = '\0';
 		ctx->kdirect_io = 1;
 
