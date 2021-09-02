@@ -15,12 +15,14 @@
 
 /* maximum number of pages concerning our own memory management */
 #define MAX_KMEM_PAGES (sizeof(unsigned long) << 3)
-#define MAX_CONSOLE_PAGES	6
+#define SCLP_CONSOLE_PAGES	6
 
 #define EVTYP_OPCMD		0x01
 #define EVTYP_MSG		0x02
+#define EVTYP_DIAG_TEST		0x07
 #define EVTYP_STATECHANGE	0x08
 #define EVTYP_PMSGCMD		0x09
+#define EVTYP_ERRNOTIFY		0x18
 #define EVTYP_CNTLPROGOPCMD	0x20
 #define EVTYP_CNTLPROGIDENT	0x0B
 #define EVTYP_SIGQUIESCE	0x1D
@@ -32,8 +34,10 @@
 
 #define EVTYP_OPCMD_MASK	0x80000000
 #define EVTYP_MSG_MASK		0x40000000
+#define EVTYP_DIAG_TEST_MASK	0x02000000
 #define EVTYP_STATECHANGE_MASK	0x01000000
 #define EVTYP_PMSGCMD_MASK	0x00800000
+#define EVTYP_ERRNOTIFY_MASK	0x00000100
 #define EVTYP_CTLPROGOPCMD_MASK	0x00000001
 #define EVTYP_CTLPROGIDENT_MASK	0x00200000
 #define EVTYP_SIGQUIESCE_MASK	0x00000008
@@ -99,6 +103,7 @@ struct init_sccb {
 } __attribute__((packed));
 
 extern u64 sclp_facilities;
+
 #define SCLP_HAS_CHP_INFO	(sclp_facilities & 0x8000000000000000ULL)
 #define SCLP_HAS_CHP_RECONFIG	(sclp_facilities & 0x2000000000000000ULL)
 #define SCLP_HAS_CPU_INFO	(sclp_facilities & 0x0800000000000000ULL)
@@ -171,9 +176,17 @@ int sclp_remove_processed(struct sccb_header *sccb);
 int sclp_deactivate(void);
 int sclp_reactivate(void);
 int sclp_service_call(sclp_cmdw_t command, void *sccb);
+int sclp_sync_request(sclp_cmdw_t command, void *sccb);
 
 int sclp_sdias_init(void);
 void sclp_sdias_exit(void);
+
+extern int sclp_console_pages;
+extern int sclp_console_drop;
+extern unsigned long sclp_console_full;
+extern u8 sclp_fac84;
+extern unsigned long long sclp_rzm;
+extern unsigned long long sclp_rnmax;
 
 /* useful inlines */
 

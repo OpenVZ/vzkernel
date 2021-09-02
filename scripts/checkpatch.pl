@@ -2330,10 +2330,11 @@ sub process {
 				$herecurr);
                }
 
-# check for declarations of struct pci_device_id
-		if ($line =~ /\bstruct\s+pci_device_id\s+\w+\s*\[\s*\]\s*\=\s*\{/) {
+# check for uses of DEFINE_PCI_DEVICE_TABLE
+		if ($line =~ /\bDEFINE_PCI_DEVICE_TABLE\s*\(\s*(\w+)\s*\)\s*=/) {
 			WARN("DEFINE_PCI_DEVICE_TABLE",
-			     "Use DEFINE_PCI_DEVICE_TABLE for struct pci_device_id\n" . $herecurr);
+			     "Prefer struct pci_device_id over deprecated DEFINE_PCI_DEVICE_TABLE\n" .
+			     $herecurr);
 		}
 
 # check for new typedefs, only function parameters and sparse annotations

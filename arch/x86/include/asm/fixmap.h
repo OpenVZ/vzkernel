@@ -86,6 +86,9 @@ enum fixed_addresses {
 	PVCLOCK_FIXMAP_BEGIN,
 	PVCLOCK_FIXMAP_END = PVCLOCK_FIXMAP_BEGIN+PVCLOCK_VSYSCALL_NR_PAGES-1,
 #endif
+#ifdef CONFIG_HYPERV_TSCPAGE
+	HVCLOCK_TSC_PAGE,
+#endif
 	FIX_DBGP_BASE,
 	FIX_EARLYCON_MEM_BASE,
 #ifdef CONFIG_PROVIDE_OHCI1394_DMA_INIT
@@ -123,14 +126,14 @@ enum fixed_addresses {
 	__end_of_permanent_fixed_addresses,
 
 	/*
-	 * 256 temporary boot-time mappings, used by early_ioremap(),
+	 * 512 temporary boot-time mappings, used by early_ioremap(),
 	 * before ioremap() is functional.
 	 *
-	 * If necessary we round it up to the next 256 pages boundary so
+	 * If necessary we round it up to the next 512 pages boundary so
 	 * that we can have a single pgd entry and a single pte table:
 	 */
 #define NR_FIX_BTMAPS		64
-#define FIX_BTMAPS_SLOTS	4
+#define FIX_BTMAPS_SLOTS	8
 #define TOTAL_FIX_BTMAPS	(NR_FIX_BTMAPS * FIX_BTMAPS_SLOTS)
 	FIX_BTMAP_END =
 	 (__end_of_permanent_fixed_addresses ^
@@ -175,6 +178,26 @@ static inline void __set_fixmap(enum fixed_addresses idx,
 }
 #endif
 
+/*
+ * FIXMAP_PAGE_NOCACHE is used for MMIO. Memory encryption is not
+ * supported for MMIO addresses, so make sure that the memory encryption
+ * mask is not part of the page attributes.
+ */
+#define FIXMAP_PAGE_NOCACHE PAGE_KERNEL_IO_NOCACHE
+
+/*
+ * Early memremap routines used for in-place encryption. The mappings created
+ * by these routines are intended to be used as temporary mappings.
+ */
+void __init *early_memremap_encrypted(resource_size_t phys_addr,
+				      unsigned long size);
+void __init *early_memremap_encrypted_wp(resource_size_t phys_addr,
+					 unsigned long size);
+void __init *early_memremap_decrypted(resource_size_t phys_addr,
+				      unsigned long size);
+void __init *early_memremap_decrypted_wp(resource_size_t phys_addr,
+					 unsigned long size);
+
 #define set_fixmap(idx, phys)				\
 	__set_fixmap(idx, phys, PAGE_KERNEL)
 
@@ -182,7 +205,13 @@ static inline void __set_fixmap(enum fixed_addresses idx,
  * Some hardware wants to get fixmapped without caching.
  */
 #define set_fixmap_nocache(idx, phys)			\
-	__set_fixmap(idx, phys, PAGE_KERNEL_NOCACHE)
+	__set_fixmap(idx, phys, FIXMAP_PAGE_NOCACHE)
+
+/*
+ * Some fixmaps are for IO
+ */
+#define set_fixmap_io(idx, phys)			\
+	__set_fixmap(idx, phys, PAGE_KERNEL_IO)
 
 #define clear_fixmap(idx)			\
 	__set_fixmap(idx, 0, __pgprot(0))

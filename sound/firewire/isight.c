@@ -131,14 +131,8 @@ static void isight_samples(struct isight *isight,
 
 static void isight_pcm_abort(struct isight *isight)
 {
-	unsigned long flags;
-
-	if (ACCESS_ONCE(isight->pcm_active)) {
-		snd_pcm_stream_lock_irqsave(isight->pcm, flags);
-		if (snd_pcm_running(isight->pcm))
-			snd_pcm_stop(isight->pcm, SNDRV_PCM_STATE_XRUN);
-		snd_pcm_stream_unlock_irqrestore(isight->pcm, flags);
-	}
+	if (ACCESS_ONCE(isight->pcm_active))
+		snd_pcm_stop_xrun(isight->pcm);
 }
 
 static void isight_dropped_samples(struct isight *isight, unsigned int total)
@@ -463,7 +457,6 @@ static int isight_create_pcm(struct isight *isight)
 		.trigger   = isight_trigger,
 		.pointer   = isight_pointer,
 		.page      = snd_pcm_lib_get_vmalloc_page,
-		.mmap      = snd_pcm_lib_mmap_vmalloc,
 	};
 	struct snd_pcm *pcm;
 	int err;
@@ -634,10 +627,10 @@ static int isight_probe(struct device *unit_dev)
 	struct isight *isight;
 	int err;
 
-	err = snd_card_create(-1, NULL, THIS_MODULE, sizeof(*isight), &card);
+	err = snd_card_new(&unit->device, -1, NULL, THIS_MODULE,
+			   sizeof(*isight), &card);
 	if (err < 0)
 		return err;
-	snd_card_set_dev(card, unit_dev);
 
 	isight = card->private_data;
 	isight->card = card;

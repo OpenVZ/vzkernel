@@ -18,6 +18,11 @@ config EFI_VARS
 	  Subsequent efibootmgr releases may be found at:
 	  <http://linux.dell.com/efibootmgr>
 
+config EFI_ESRT
+	bool
+	depends on EFI && !IA64
+	default y
+
 config EFI_VARS_PSTORE
 	tristate "Register efivars backend for pstore"
 	depends on EFI_VARS && PSTORE
@@ -36,4 +41,26 @@ config EFI_VARS_PSTORE_DEFAULT_DISABLE
 	  backend for pstore by default. This setting can be overridden
 	  using the efivars module's pstore_disable parameter.
 
+config EFI_RUNTIME_MAP
+	bool "Export efi runtime maps to sysfs"
+	depends on X86 && EFI && KEXEC_CORE
+	default y
+	help
+	  Export efi runtime memory maps to /sys/firmware/efi/runtime-map.
+	  That memory map is used for example by kexec to set up efi virtual
+	  mapping the 2nd kernel, but can also be used for debugging purposes.
+
+	  See also Documentation/ABI/testing/sysfs-firmware-efi-runtime-map.
+
+config UEFI_CPER
+	def_bool n
+
+config EFI_RUNTIME_WRAPPERS
+	bool
+
 endmenu
+
+config EFI_DEV_PATH_PARSER
+	bool
+	depends on ACPI
+	default n

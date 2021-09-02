@@ -73,9 +73,9 @@ static u32 hpet_nhpet, hpet_max_freq = HPET_USER_FREQ;
 #ifdef CONFIG_IA64
 static void __iomem *hpet_mctr;
 
-static cycle_t read_hpet(struct clocksource *cs)
+static u64 read_hpet(struct clocksource *cs)
 {
-	return (cycle_t)read_counter((void __iomem *)hpet_mctr);
+	return (u64)read_counter((void __iomem *)hpet_mctr);
 }
 
 static struct clocksource clocksource_hpet = {
@@ -367,11 +367,29 @@ static unsigned int hpet_poll(struct file *file, poll_table * wait)
 	return 0;
 }
 
+#ifdef CONFIG_HPET_MMAP
+#ifdef CONFIG_HPET_MMAP_DEFAULT
+static int hpet_mmap_enabled = 1;
+#else
+static int hpet_mmap_enabled = 0;
+#endif
+
+static __init int hpet_mmap_enable(char *str)
+{
+	get_option(&str, &hpet_mmap_enabled);
+	pr_info("HPET MMAP %s\n",
+		hpet_mmap_enabled ? "enabled" : "disabled");
+	return 1;
+}
+__setup("hpet_mmap=", hpet_mmap_enable);
+
 static int hpet_mmap(struct file *file, struct vm_area_struct *vma)
 {
-#ifdef	CONFIG_HPET_MMAP
 	struct hpet_dev *devp;
 	unsigned long addr;
+
+	if (!hpet_mmap_enabled)
+		return -EACCES;
 
 	devp = file->private_data;
 	addr = devp->hd_hpets->hp_hpet_phys;
@@ -381,10 +399,13 @@ static int hpet_mmap(struct file *file, struct vm_area_struct *vma)
 
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 	return vm_iomap_memory(vma, addr, PAGE_SIZE);
-#else
-	return -ENOSYS;
-#endif
 }
+#else
+static int hpet_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	return -ENOSYS;
+}
+#endif
 
 static int hpet_fasync(int fd, struct file *file, int on)
 {
@@ -960,8 +981,8 @@ static acpi_status hpet_resources(struct acpi_resource *res, void *data)
 	status = acpi_resource_to_address64(res, &addr);
 
 	if (ACPI_SUCCESS(status)) {
-		hdp->hd_phys_address = addr.minimum;
-		hdp->hd_address = ioremap(addr.minimum, addr.address_length);
+		hdp->hd_phys_address = addr.address.minimum;
+		hdp->hd_address = ioremap(addr.address.minimum, addr.address.address_length);
 
 		if (hpet_is_known(hdp)) {
 			iounmap(hdp->hd_address);

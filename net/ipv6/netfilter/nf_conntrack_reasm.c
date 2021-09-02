@@ -144,12 +144,24 @@ static inline u8 ip6_frag_ecn(const struct ipv6hdr *ipv6h)
 	return 1 << (ipv6_get_dsfield(ipv6h) & INET_ECN_MASK);
 }
 
+static unsigned int nf_hash_frag(__be32 id, const struct in6_addr *saddr,
+				 const struct in6_addr *daddr)
+{
+	u32 c;
+
+	net_get_random_once(&nf_frags.rnd, sizeof(nf_frags.rnd));
+	c = jhash_3words(ipv6_addr_hash(saddr), ipv6_addr_hash(daddr),
+			 (__force u32)id, nf_frags.rnd);
+	return c & (INETFRAGS_HASHSZ - 1);
+}
+
+
 static unsigned int nf_hashfn(struct inet_frag_queue *q)
 {
 	const struct frag_queue *nq;
 
 	nq = container_of(q, struct frag_queue, q);
-	return inet6_hash_frag(nq->id, &nq->saddr, &nq->daddr, nf_frags.rnd);
+	return nf_hash_frag(nq->id, &nq->saddr, &nq->daddr);
 }
 
 static void nf_skb_free(struct sk_buff *skb)
@@ -172,7 +184,7 @@ static void nf_ct_frag6_expire(unsigned long data)
 /* Creation primitives. */
 static inline struct frag_queue *fq_find(struct net *net, __be32 id,
 					 u32 user, struct in6_addr *src,
-					 struct in6_addr *dst, u8 ecn)
+					 struct in6_addr *dst, int iif, u8 ecn)
 {
 	struct inet_frag_queue *q;
 	struct ip6_create_arg arg;
@@ -182,10 +194,11 @@ static inline struct frag_queue *fq_find(struct net *net, __be32 id,
 	arg.user = user;
 	arg.src = src;
 	arg.dst = dst;
+	arg.iif = iif;
 	arg.ecn = ecn;
 
 	read_lock_bh(&nf_frags.lock);
-	hash = inet6_hash_frag(id, src, dst, nf_frags.rnd);
+	hash = nf_hash_frag(id, src, dst);
 
 	q = inet_frag_find(&net->nf_frag.frags, &nf_frags, &arg, hash);
 	local_bh_enable();
@@ -439,7 +452,7 @@ nf_ct_frag6_reasm(struct frag_queue *fq, struct net_device *dev)
 	}
 	sub_frag_mem_limit(&fq->q, head->truesize);
 
-	head->local_df = 1;
+	head->ignore_df = 1;
 	head->next = NULL;
 	head->dev = dev;
 	head->tstamp = fq->q.stamp;
@@ -454,6 +467,7 @@ nf_ct_frag6_reasm(struct frag_queue *fq, struct net_device *dev)
 					  head->csum);
 
 	fq->q.fragments = NULL;
+	fq->q.rb_fragments = RB_ROOT;
 	fq->q.fragments_tail = NULL;
 
 	/* all original skbs are linked into the NFCT_FRAG6_CB(head).orig */
@@ -550,8 +564,8 @@ struct sk_buff *nf_ct_frag6_gather(struct sk_buff *skb, u32 user)
 {
 	struct sk_buff *clone;
 	struct net_device *dev = skb->dev;
-	struct net *net = skb_dst(skb) ? dev_net(skb_dst(skb)->dev)
-				       : dev_net(skb->dev);
+	struct net *net = skb_dst(skb) && skb_dst(skb)->dev ?
+			  dev_net(skb_dst(skb)->dev) : dev_net(skb->dev);
 	struct frag_hdr *fhdr;
 	struct frag_queue *fq;
 	struct ipv6hdr *hdr;
@@ -585,12 +599,17 @@ struct sk_buff *nf_ct_frag6_gather(struct sk_buff *skb, u32 user)
 	hdr = ipv6_hdr(clone);
 	fhdr = (struct frag_hdr *)skb_transport_header(clone);
 
+	if (skb->len - skb_network_offset(skb) < IPV6_MIN_MTU &&
+	    fhdr->frag_off & htons(IP6_MF))
+		goto ret_orig;
+
 	local_bh_disable();
 	inet_frag_evictor(&net->nf_frag.frags, &nf_frags, false);
 	local_bh_enable();
 
+	skb_orphan(skb);
 	fq = fq_find(net, fhdr->identification, user, &hdr->saddr, &hdr->daddr,
-		     ip6_frag_ecn(hdr));
+		     skb->dev ? skb->dev->ifindex : 0, ip6_frag_ecn(hdr));
 	if (fq == NULL) {
 		pr_debug("Can't find and can't create new queue\n");
 		goto ret_orig;
@@ -620,33 +639,20 @@ ret_orig:
 	kfree_skb(clone);
 	return skb;
 }
+EXPORT_SYMBOL_GPL(nf_ct_frag6_gather);
 
-void nf_ct_frag6_output(unsigned int hooknum, struct sk_buff *skb,
-			struct net_device *in, struct net_device *out,
-			int (*okfn)(struct sk_buff *))
+void nf_ct_frag6_consume_orig(struct sk_buff *skb)
 {
 	struct sk_buff *s, *s2;
-	unsigned int ret = 0;
 
 	for (s = NFCT_FRAG6_CB(skb)->orig; s;) {
-		nf_conntrack_put_reasm(s->nfct_reasm);
-		nf_conntrack_get_reasm(skb);
-		s->nfct_reasm = skb;
-
 		s2 = s->next;
 		s->next = NULL;
-
-		if (ret != -ECANCELED)
-			ret = NF_HOOK_THRESH(NFPROTO_IPV6, hooknum, s,
-					     in, out, okfn,
-					     NF_IP6_PRI_CONNTRACK_DEFRAG + 1);
-		else
-			kfree_skb(s);
-
+		consume_skb(s);
 		s = s2;
 	}
-	nf_conntrack_put_reasm(skb);
 }
+EXPORT_SYMBOL_GPL(nf_ct_frag6_consume_orig);
 
 static int nf_ct_net_init(struct net *net)
 {

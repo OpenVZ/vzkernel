@@ -21,6 +21,7 @@
 
 #include <asm/dasd.h>
 #include <asm/debug.h>
+#include <asm/diag.h>
 #include <asm/ebcdic.h>
 #include <asm/io.h>
 #include <asm/irq.h>
@@ -66,7 +67,7 @@ static const u8 DASD_DIAG_CMS1[] = { 0xc3, 0xd4, 0xe2, 0xf1 };/* EBCDIC CMS1 */
  * and function code cmd.
  * In case of an exception return 3. Otherwise return result of bitwise OR of
  * resulting condition code and DIAG return code. */
-static inline int dia250(void *iob, int cmd)
+static inline int __dia250(void *iob, int cmd)
 {
 	register unsigned long reg2 asm ("2") = (unsigned long) iob;
 	typedef union {
@@ -89,6 +90,12 @@ static inline int dia250(void *iob, int cmd)
 	return rc;
 }
 
+static inline int dia250(void *iob, int cmd)
+{
+	diag_stat_inc(DIAG_STAT_X250);
+	return __dia250(iob, cmd);
+}
+
 /* Initialize block I/O to DIAG device using the specified blocksize and
  * block offset. On success, return zero and set end_block to contain the
  * number of blocks on the device minus the specified offset. Return non-zero
@@ -97,12 +104,10 @@ static inline int
 mdsk_init_io(struct dasd_device *device, unsigned int blocksize,
 	     blocknum_t offset, blocknum_t *end_block)
 {
-	struct dasd_diag_private *private;
-	struct dasd_diag_init_io *iib;
+	struct dasd_diag_private *private = device->private;
+	struct dasd_diag_init_io *iib = &private->iib;
 	int rc;
 
-	private = (struct dasd_diag_private *) device->private;
-	iib = &private->iib;
 	memset(iib, 0, sizeof (struct dasd_diag_init_io));
 
 	iib->dev_nr = private->dev_id.devno;
@@ -123,12 +128,10 @@ mdsk_init_io(struct dasd_device *device, unsigned int blocksize,
 static inline int
 mdsk_term_io(struct dasd_device * device)
 {
-	struct dasd_diag_private *private;
-	struct dasd_diag_init_io *iib;
+	struct dasd_diag_private *private = device->private;
+	struct dasd_diag_init_io *iib = &private->iib;
 	int rc;
 
-	private = (struct dasd_diag_private *) device->private;
-	iib = &private->iib;
 	memset(iib, 0, sizeof (struct dasd_diag_init_io));
 	iib->dev_nr = private->dev_id.devno;
 	rc = dia250(iib, TERM_BIO);
@@ -173,8 +176,8 @@ dasd_start_diag(struct dasd_ccw_req * cqr)
 		cqr->status = DASD_CQR_ERROR;
 		return -EIO;
 	}
-	private = (struct dasd_diag_private *) device->private;
-	dreq = (struct dasd_diag_req *) cqr->data;
+	private = device->private;
+	dreq = cqr->data;
 
 	private->iob.dev_nr = private->dev_id.devno;
 	private->iob.key = 0;
@@ -313,18 +316,17 @@ static void dasd_ext_handler(struct ext_code ext_code,
 static int
 dasd_diag_check_device(struct dasd_device *device)
 {
-	struct dasd_block *block;
-	struct dasd_diag_private *private;
+	struct dasd_diag_private *private = device->private;
 	struct dasd_diag_characteristics *rdc_data;
-	struct dasd_diag_bio bio;
 	struct vtoc_cms_label *label;
-	blocknum_t end_block;
+	struct dasd_block *block;
+	struct dasd_diag_bio *bio;
 	unsigned int sb, bsize;
+	blocknum_t end_block;
 	int rc;
 
-	private = (struct dasd_diag_private *) device->private;
 	if (private == NULL) {
-		private = kzalloc(sizeof(struct dasd_diag_private),GFP_KERNEL);
+		private = kzalloc(sizeof(*private), GFP_KERNEL);
 		if (private == NULL) {
 			DBF_DEV_EVENT(DBF_WARNING, device, "%s",
 				"Allocating memory for private DASD data "
@@ -332,7 +334,7 @@ dasd_diag_check_device(struct dasd_device *device)
 			return -ENOMEM;
 		}
 		ccw_device_get_id(device->cdev, &private->dev_id);
-		device->private = (void *) private;
+		device->private = private;
 	}
 	block = dasd_alloc_block();
 	if (IS_ERR(block)) {
@@ -346,7 +348,7 @@ dasd_diag_check_device(struct dasd_device *device)
 	block->base = device;
 
 	/* Read Device Characteristics */
-	rdc_data = (void *) &(private->rdc_data);
+	rdc_data = &private->rdc_data;
 	rdc_data->dev_nr = private->dev_id.devno;
 	rdc_data->rdc_len = sizeof (struct dasd_diag_characteristics);
 
@@ -393,29 +395,36 @@ dasd_diag_check_device(struct dasd_device *device)
 		rc = -ENOMEM;
 		goto out;
 	}
+	bio = kzalloc(sizeof(*bio), GFP_KERNEL);
+	if (bio == NULL)  {
+		DBF_DEV_EVENT(DBF_WARNING, device, "%s",
+			      "No memory to allocate initialization bio");
+		rc = -ENOMEM;
+		goto out_label;
+	}
 	rc = 0;
 	end_block = 0;
 	/* try all sizes - needed for ECKD devices */
 	for (bsize = 512; bsize <= PAGE_SIZE; bsize <<= 1) {
 		mdsk_init_io(device, bsize, 0, &end_block);
-		memset(&bio, 0, sizeof (struct dasd_diag_bio));
-		bio.type = MDSK_READ_REQ;
-		bio.block_number = private->pt_block + 1;
-		bio.buffer = label;
+		memset(bio, 0, sizeof(*bio));
+		bio->type = MDSK_READ_REQ;
+		bio->block_number = private->pt_block + 1;
+		bio->buffer = label;
 		memset(&private->iob, 0, sizeof (struct dasd_diag_rw_io));
 		private->iob.dev_nr = rdc_data->dev_nr;
 		private->iob.key = 0;
 		private->iob.flags = 0;	/* do synchronous io */
 		private->iob.block_count = 1;
 		private->iob.interrupt_params = 0;
-		private->iob.bio_list = &bio;
+		private->iob.bio_list = bio;
 		private->iob.flaga = DASD_DIAG_FLAGA_DEFAULT;
 		rc = dia250(&private->iob, RW_BIO);
 		if (rc == 3) {
 			pr_warning("%s: A 64-bit DIAG call failed\n",
 				   dev_name(&device->cdev->dev));
 			rc = -EOPNOTSUPP;
-			goto out_label;
+			goto out_bio;
 		}
 		mdsk_term_io(device);
 		if (rc == 0)
@@ -426,7 +435,7 @@ dasd_diag_check_device(struct dasd_device *device)
 			   "incorrect format (rc=%d)\n",
 			   dev_name(&device->cdev->dev), rc);
 		rc = -EIO;
-		goto out_label;
+		goto out_bio;
 	}
 	/* check for label block */
 	if (memcmp(label->label_id, DASD_DIAG_CMS1,
@@ -456,6 +465,8 @@ dasd_diag_check_device(struct dasd_device *device)
 			(rc == 4) ? ", read-only device" : "");
 		rc = 0;
 	}
+out_bio:
+	kfree(bio);
 out_label:
 	free_page((long) label);
 out:
@@ -505,7 +516,7 @@ static struct dasd_ccw_req *dasd_diag_build_cp(struct dasd_device *memdev,
 	struct req_iterator iter;
 	struct bio_vec *bv;
 	char *dst;
-	unsigned int count, datasize;
+	unsigned int count;
 	sector_t recid, first_rec, last_rec;
 	unsigned int blksize, off;
 	unsigned char rw_cmd;
@@ -533,9 +544,8 @@ static struct dasd_ccw_req *dasd_diag_build_cp(struct dasd_device *memdev,
 	if (count != last_rec - first_rec + 1)
 		return ERR_PTR(-EINVAL);
 	/* Build the request */
-	datasize = sizeof(struct dasd_diag_req) +
-		count*sizeof(struct dasd_diag_bio);
-	cqr = dasd_smalloc_request(DASD_DIAG_MAGIC, 0, datasize, memdev);
+	cqr = dasd_smalloc_request(DASD_DIAG_MAGIC, 0, struct_size(dreq, bio, count),
+				   memdev);
 	if (IS_ERR(cqr))
 		return cqr;
 
@@ -590,16 +600,14 @@ static int
 dasd_diag_fill_info(struct dasd_device * device,
 		    struct dasd_information2_t * info)
 {
-	struct dasd_diag_private *private;
+	struct dasd_diag_private *private = device->private;
 
-	private = (struct dasd_diag_private *) device->private;
 	info->label_block = (unsigned int) private->pt_block;
 	info->FBA_layout = 1;
 	info->format = DASD_FORMAT_LDL;
-	info->characteristics_size = sizeof (struct dasd_diag_characteristics);
-	memcpy(info->characteristics,
-	       &((struct dasd_diag_private *) device->private)->rdc_data,
-	       sizeof (struct dasd_diag_characteristics));
+	info->characteristics_size = sizeof(private->rdc_data);
+	memcpy(info->characteristics, &private->rdc_data,
+	       sizeof(private->rdc_data));
 	info->confdata_size = 0;
 	return 0;
 }
@@ -641,8 +649,8 @@ dasd_diag_init(void)
 	}
 	ASCEBC(dasd_diag_discipline.ebcname, 4);
 
-	service_subclass_irq_register();
-	register_external_interrupt(0x2603, dasd_ext_handler);
+	irq_subclass_register(IRQ_SUBCLASS_SERVICE_SIGNAL);
+	register_external_irq(EXT_IRQ_CP_SERVICE, dasd_ext_handler);
 	dasd_diag_discipline_pointer = &dasd_diag_discipline;
 	return 0;
 }
@@ -650,8 +658,8 @@ dasd_diag_init(void)
 static void __exit
 dasd_diag_cleanup(void)
 {
-	unregister_external_interrupt(0x2603, dasd_ext_handler);
-	service_subclass_irq_unregister();
+	unregister_external_irq(EXT_IRQ_CP_SERVICE, dasd_ext_handler);
+	irq_subclass_unregister(IRQ_SUBCLASS_SERVICE_SIGNAL);
 	dasd_diag_discipline_pointer = NULL;
 }
 

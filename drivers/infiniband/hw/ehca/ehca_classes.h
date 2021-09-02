@@ -55,6 +55,7 @@ struct ehca_av;
 #include <linux/wait.h>
 #include <linux/mutex.h>
 
+#include <rdma/ib_mad.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_user_verbs.h>
 
@@ -316,13 +317,12 @@ struct ehca_mr_pginfo {
 
 	union {
 		struct { /* type EHCA_MR_PGI_PHYS section */
-			int num_phys_buf;
-			struct ib_phys_buf *phys_buf_array;
-			u64 next_buf;
+			u64 addr;
+			u16 size;
 		} phy;
 		struct { /* type EHCA_MR_PGI_USER section */
 			struct ib_umem *region;
-			struct ib_umem_chunk *next_chunk;
+			struct scatterlist *next_sg;
 			u64 next_nmap;
 		} usr;
 		struct { /* type EHCA_MR_PGI_FMR section */

@@ -53,43 +53,43 @@ static int ip175c_config_init(struct phy_device *phydev)
 	if (full_reset_performed == 0) {
 
 		/* master reset */
-		err = mdiobus_write(phydev->bus, 30, 0, 0x175c);
+		err = mdiobus_write(phydev->mdio_bus, 30, 0, 0x175c);
 		if (err < 0)
 			return err;
 
 		/* ensure no bus delays overlap reset period */
-		err = mdiobus_read(phydev->bus, 30, 0);
+		err = mdiobus_read(phydev->mdio_bus, 30, 0);
 
 		/* data sheet specifies reset period is 2 msec */
 		mdelay(2);
 
 		/* enable IP175C mode */
-		err = mdiobus_write(phydev->bus, 29, 31, 0x175c);
+		err = mdiobus_write(phydev->mdio_bus, 29, 31, 0x175c);
 		if (err < 0)
 			return err;
 
 		/* Set MII0 speed and duplex (in PHY mode) */
-		err = mdiobus_write(phydev->bus, 29, 22, 0x420);
+		err = mdiobus_write(phydev->mdio_bus, 29, 22, 0x420);
 		if (err < 0)
 			return err;
 
 		/* reset switch ports */
 		for (i = 0; i < 5; i++) {
-			err = mdiobus_write(phydev->bus, i,
+			err = mdiobus_write(phydev->mdio_bus, i,
 					    MII_BMCR, BMCR_RESET);
 			if (err < 0)
 				return err;
 		}
 
 		for (i = 0; i < 5; i++)
-			err = mdiobus_read(phydev->bus, i, MII_BMCR);
+			err = mdiobus_read(phydev->mdio_bus, i, MII_BMCR);
 
 		mdelay(2);
 
 		full_reset_performed = 1;
 	}
 
-	if (phydev->addr != 4) {
+	if (phydev->mdio_addr != 4) {
 		phydev->state = PHY_RUNNING;
 		phydev->speed = SPEED_100;
 		phydev->duplex = DUPLEX_FULL;
@@ -187,7 +187,7 @@ static int ip101a_g_config_init(struct phy_device *phydev)
 
 static int ip175c_read_status(struct phy_device *phydev)
 {
-	if (phydev->addr == 4) /* WAN port */
+	if (phydev->mdio_addr == 4) /* WAN port */
 		genphy_read_status(phydev);
 	else
 		/* Don't need to read status for switch ports */
@@ -198,7 +198,7 @@ static int ip175c_read_status(struct phy_device *phydev)
 
 static int ip175c_config_aneg(struct phy_device *phydev)
 {
-	if (phydev->addr == 4) /* WAN port */
+	if (phydev->mdio_addr == 4) /* WAN port */
 		genphy_config_aneg(phydev);
 
 	return 0;

@@ -116,7 +116,7 @@ static struct nlm_host *nlm_alloc_host(struct nlm_lookup_host_info *ni,
 		atomic_inc(&nsm->sm_count);
 	else {
 		host = NULL;
-		nsm = nsm_get_handle(ni->sap, ni->salen,
+		nsm = nsm_get_handle(ni->net, ni->sap, ni->salen,
 					ni->hostname, ni->hostname_len);
 		if (unlikely(nsm == NULL)) {
 			dprintk("lockd: %s failed; no nsm handle\n",
@@ -288,12 +288,11 @@ void nlmclnt_release_host(struct nlm_host *host)
 
 	WARN_ON_ONCE(host->h_server);
 
-	if (atomic_dec_and_test(&host->h_count)) {
+	if (atomic_dec_and_mutex_lock(&host->h_count, &nlm_host_mutex)) {
 		WARN_ON_ONCE(!list_empty(&host->h_lockowners));
 		WARN_ON_ONCE(!list_empty(&host->h_granted));
 		WARN_ON_ONCE(!list_empty(&host->h_reclaim));
 
-		mutex_lock(&nlm_host_mutex);
 		nlm_destroy_host_locked(host);
 		mutex_unlock(&nlm_host_mutex);
 	}
@@ -534,17 +533,18 @@ static struct nlm_host *next_host_state(struct hlist_head *cache,
 
 /**
  * nlm_host_rebooted - Release all resources held by rebooted host
+ * @net:  network namespace
  * @info: pointer to decoded results of NLM_SM_NOTIFY call
  *
  * We were notified that the specified host has rebooted.  Release
  * all resources held by that peer.
  */
-void nlm_host_rebooted(const struct nlm_reboot *info)
+void nlm_host_rebooted(const struct net *net, const struct nlm_reboot *info)
 {
 	struct nsm_handle *nsm;
 	struct nlm_host	*host;
 
-	nsm = nsm_reboot_lookup(info);
+	nsm = nsm_reboot_lookup(net, info);
 	if (unlikely(nsm == NULL))
 		return;
 
@@ -615,9 +615,8 @@ nlm_shutdown_hosts_net(struct net *net)
 
 	/* Then, perform a garbage collection pass */
 	nlm_gc_hosts(net);
-	mutex_unlock(&nlm_host_mutex);
-
 	nlm_complain_hosts(net);
+	mutex_unlock(&nlm_host_mutex);
 }
 
 /*

@@ -40,7 +40,6 @@
 #include <linux/module.h>
 #include <linux/gfp.h>
 #include <linux/pci.h>
-#include <linux/init.h>
 #include <linux/blkdev.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
@@ -600,7 +599,7 @@ MODULE_DEVICE_TABLE(pci, nv_pci_tbl);
 MODULE_VERSION(DRV_VERSION);
 
 static bool adma_enabled;
-static bool swncq_enabled = 1;
+static bool swncq_enabled = true;
 static bool msi_enabled;
 
 static void nv_adma_register_mode(struct ata_port *ap)

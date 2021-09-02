@@ -16,6 +16,7 @@
 #include <linux/linkage.h>
 #include <asm/alternative-asm.h>
 #include <asm/dwarf2.h>
+#include <asm/frame.h>
 
 #define __ASM_HALF_REG(reg)	__ASM_SEL(reg, e##reg)
 #define __ASM_HALF_SIZE(inst)	__ASM_SEL(inst##w, inst##l)
@@ -86,6 +87,7 @@
 /* Fix up special calling conventions */
 ENTRY(call_rwsem_down_read_failed)
 	CFI_STARTPROC
+	FRAME_BEGIN
 	save_common_regs
 	__ASM_SIZE(push,_cfi) %__ASM_REG(dx)
 	CFI_REL_OFFSET __ASM_REG(dx), 0
@@ -94,22 +96,26 @@ ENTRY(call_rwsem_down_read_failed)
 	__ASM_SIZE(pop,_cfi) %__ASM_REG(dx)
 	CFI_RESTORE __ASM_REG(dx)
 	restore_common_regs
+	FRAME_END
 	ret
 	CFI_ENDPROC
 ENDPROC(call_rwsem_down_read_failed)
 
 ENTRY(call_rwsem_down_write_failed)
 	CFI_STARTPROC
+	FRAME_BEGIN
 	save_common_regs
 	movq %rax,%rdi
 	call rwsem_down_write_failed
 	restore_common_regs
+	FRAME_END
 	ret
 	CFI_ENDPROC
 ENDPROC(call_rwsem_down_write_failed)
 
 ENTRY(call_rwsem_wake)
 	CFI_STARTPROC
+	FRAME_BEGIN
 	/* do nothing if still outstanding active readers */
 	__ASM_HALF_SIZE(dec) %__ASM_HALF_REG(dx)
 	jnz 1f
@@ -117,12 +123,14 @@ ENTRY(call_rwsem_wake)
 	movq %rax,%rdi
 	call rwsem_wake
 	restore_common_regs
-1:	ret
+1:	FRAME_END
+	ret
 	CFI_ENDPROC
 ENDPROC(call_rwsem_wake)
 
 ENTRY(call_rwsem_downgrade_wake)
 	CFI_STARTPROC
+	FRAME_BEGIN
 	save_common_regs
 	__ASM_SIZE(push,_cfi) %__ASM_REG(dx)
 	CFI_REL_OFFSET __ASM_REG(dx), 0
@@ -131,6 +139,7 @@ ENTRY(call_rwsem_downgrade_wake)
 	__ASM_SIZE(pop,_cfi) %__ASM_REG(dx)
 	CFI_RESTORE __ASM_REG(dx)
 	restore_common_regs
+	FRAME_END
 	ret
 	CFI_ENDPROC
 ENDPROC(call_rwsem_downgrade_wake)

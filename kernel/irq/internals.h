@@ -76,6 +76,7 @@ extern void unmask_irq(struct irq_desc *desc);
 
 extern void init_kstat_irqs(struct irq_desc *desc, int node, int nr);
 
+irqreturn_t __handle_irq_event_percpu(struct irq_desc *desc, struct irqaction *action, unsigned int *flags);
 irqreturn_t handle_irq_event_percpu(struct irq_desc *desc, struct irqaction *action);
 irqreturn_t handle_irq_event(struct irq_desc *desc);
 
@@ -96,6 +97,8 @@ static inline void register_handler_proc(unsigned int irq,
 static inline void unregister_handler_proc(unsigned int irq,
 					   struct irqaction *action) { }
 #endif
+
+extern bool irq_can_set_affinity_usr(unsigned int irq);
 
 extern int irq_select_affinity_usr(unsigned int irq, struct cpumask *mask);
 
@@ -179,3 +182,5 @@ static inline bool irqd_has_set(struct irq_data *d, unsigned int mask)
 {
 	return d->state_use_accessors & mask;
 }
+
+extern bool irqaffinity_drivers;
