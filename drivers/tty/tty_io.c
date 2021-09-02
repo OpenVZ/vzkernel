@@ -1555,7 +1555,7 @@ void tty_free_termios(struct tty_struct *tty)
 	/* Stash the termios data */
 	tp = tty->driver->termios[idx];
 	if (tp == NULL) {
-		tp = kmalloc(sizeof(struct ktermios), GFP_KERNEL_ACCOUNT);
+		tp = kmalloc(sizeof(struct ktermios), GFP_KERNEL);
 		if (tp == NULL) {
 			pr_warn("tty: no memory to save termios state.\n");
 			return;
