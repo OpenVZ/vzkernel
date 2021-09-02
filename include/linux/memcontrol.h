@@ -639,19 +639,7 @@ memcg_kmem_newpage_charge(struct page *page, gfp_t gfp, int order)
 	if (!(gfp & __GFP_ACCOUNT))
 		return true;
 
-	/*
-	 * __GFP_NOFAIL allocations will move on even if charging is not
-	 * possible. Therefore we don't even try, and have this allocation
-	 * unaccounted. We could in theory charge it forcibly, but we hope
-	 * those allocations are rare, and won't be worth the trouble.
-	 */
-	if (gfp & __GFP_NOFAIL)
-		return true;
 	if (!in_task() || (!current->mm) || (current->flags & PF_KTHREAD))
-		return true;
-
-	/* If the test is dying, just let it go. */
-	if (unlikely(fatal_signal_pending(current)))
 		return true;
 
 	return __memcg_kmem_newpage_charge(page, gfp, order);
@@ -683,11 +671,8 @@ memcg_kmem_get_cache(struct kmem_cache *cachep, gfp_t gfp)
 {
 	if (!memcg_kmem_enabled())
 		return cachep;
-	if (gfp & __GFP_NOFAIL)
-		return cachep;
+
 	if (!in_task() || (!current->mm) || (current->flags & PF_KTHREAD))
-		return cachep;
-	if (unlikely(fatal_signal_pending(current)))
 		return cachep;
 
 	return __memcg_kmem_get_cache(cachep, gfp);
