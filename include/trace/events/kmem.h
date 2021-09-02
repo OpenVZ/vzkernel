@@ -305,6 +305,18 @@ TRACE_EVENT(mm_page_alloc_extfrag,
 		__entry->alloc_migratetype == __entry->fallback_migratetype)
 );
 
+TRACE_EVENT(hoad,
+	TP_PROTO(int order),
+	TP_ARGS(order),
+	TP_STRUCT__entry(
+		__field(int, order)
+	),
+	TP_fast_assign(
+		__entry->order = order;
+	),
+	TP_printk("order=%d", __entry->order)
+);
+
 #endif /* _TRACE_KMEM_H */
 
 /* This part must be outside protection */
