@@ -3533,6 +3533,270 @@ static __always_inline void warn_high_order(int order, gfp_t gfp_mask)
 	}
 }
 
+struct hoad_order_info {
+	unsigned long interval;
+	int max_allocs;
+	atomic_t counter;
+	unsigned long since_jiffies;
+	struct timer_list reset_counter_timer;
+};
+
+static struct hoad_order_info *hoad_table[MAX_ORDER];
+static DEFINE_MUTEX(hoad_mutex);
+static struct kobject *hoad_kobj;
+static int hoad_uevent_order;
+static unsigned long hoad_resume_jiffies;
+static int hoad_trace_min_order;
+
+#define MSEC_PER_MINUTE		(60 * MSEC_PER_SEC)
+#define MSEC_PER_HOUR		(60 * MSEC_PER_MINUTE)
+#define MSEC_PER_DAY		(24 * MSEC_PER_HOUR)
+
+static void hoad_reset_counter(struct timer_list *timer)
+{
+	struct hoad_order_info *hoi = container_of(timer,
+			struct hoad_order_info, reset_counter_timer);
+
+	atomic_set(&hoi->counter, 0);
+}
+
+static void hoad_send_uevent(struct work_struct *work)
+{
+	char order_string[16];
+	char *envp[] = { order_string, NULL };
+
+	sprintf(order_string, "ORDER=%d", hoad_uevent_order);
+	kobject_uevent_env(hoad_kobj, KOBJ_CHANGE, envp);
+}
+static DECLARE_WORK(hoad_send_uevent_work, hoad_send_uevent);
+
+static void hoad_resume(unsigned long unused)
+{
+	hoad_uevent_order = 0;
+}
+static DEFINE_TIMER(hoad_resume_timer, hoad_resume, 0, 0);
+
+static void hoad_notice_alloc(int order, gfp_t gfp)
+{
+	struct hoad_order_info *hoi;
+	int count;
+	bool hit = false;
+
+	if (gfp & (__GFP_NORETRY | __GFP_ORDER_NOWARN))
+		return;
+
+	if (order >= hoad_trace_min_order)
+		trace_hoad(order);
+
+	rcu_read_lock();
+	hoi = rcu_dereference(hoad_table[order]);
+	if (hoi) {
+		count = atomic_inc_return(&hoi->counter);
+		if (count == 1) {
+			hoi->since_jiffies = jiffies;
+			mod_timer(&hoi->reset_counter_timer,
+					hoi->since_jiffies + hoi->interval);
+		}
+		hit = (count == hoi->max_allocs);
+	}
+	rcu_read_unlock();
+
+	if (hit) {
+		if (cmpxchg(&hoad_uevent_order, 0, order) == 0)
+			schedule_work(&hoad_send_uevent_work);
+	}
+}
+
+static void hoad_install_order_info(int order, struct hoad_order_info *hoi)
+{
+	struct hoad_order_info *oldhoi;
+	int i;
+
+	mutex_lock(&hoad_mutex);
+	oldhoi = hoad_table[order];
+	rcu_assign_pointer(hoad_table[order], hoi);
+	for (i = 1; i < MAX_ORDER; i++) {
+		if (hoad_table[i])
+			break;
+	}
+	hoad_trace_min_order = i;
+	mutex_unlock(&hoad_mutex);
+
+	if (oldhoi) {
+		synchronize_rcu();
+		del_timer_sync(&oldhoi->reset_counter_timer);
+		kfree(oldhoi);
+	}
+}
+
+static int hoad_enable_for_order(int order, int max_allocs,
+		unsigned int interval_msecs)
+{
+	struct hoad_order_info *hoi;
+	unsigned long interval;
+
+	if (order < 1 || order >= MAX_ORDER)
+		return -EINVAL;
+	if (max_allocs < 1)
+		return -EINVAL;
+	interval = msecs_to_jiffies(interval_msecs);
+	if (interval < 1)
+		return -EINVAL;
+
+	hoi = kzalloc(sizeof(*hoi), GFP_KERNEL);
+	if (!hoi)
+		return -ENOMEM;
+	hoi->interval = interval;
+	hoi->max_allocs = max_allocs;
+	timer_setup(&hoi->reset_counter_timer, hoad_reset_counter, 0);
+
+	hoad_install_order_info(order, hoi);
+	return 0;
+}
+
+static int hoad_disable_for_order(int order)
+{
+	if (order < 1 || order >= MAX_ORDER)
+		return -EINVAL;
+
+	hoad_install_order_info(order, NULL);
+	return 0;
+}
+
+static ssize_t hoad_control_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	char *p = buf, *endp = &p[PAGE_SIZE - 1];
+	int order;
+	struct hoad_order_info *hoi;
+	int counter;
+	long d;
+	unsigned int msecs;
+
+	rcu_read_lock();
+	for (order = 1; order < MAX_ORDER; order++) {
+		hoi = rcu_dereference(hoad_table[order]);
+		if (hoi) {
+			counter = atomic_read(&hoi->counter);
+			msecs = counter ?
+				jiffies_to_msecs(jiffies - hoi->since_jiffies) :
+				0;
+			p += scnprintf(p, endp - p,
+					"order %u: %u/%u in %u/%u msecs\n",
+					order, counter, hoi->max_allocs,
+					msecs, jiffies_to_msecs(hoi->interval));
+		}
+	}
+	rcu_read_unlock();
+	if (hoad_uevent_order) {
+		p += scnprintf(p, endp - p, "event generation suspended");
+		d = (long)(hoad_resume_jiffies - jiffies);
+		if (d > 0) {
+			p += scnprintf(p, endp - p, ", resume in ");
+			msecs = jiffies_to_msecs(d);
+			if (msecs >= 2 * MSEC_PER_HOUR)
+				p += scnprintf(p, endp - p, "%lu hours",
+					(msecs + (MSEC_PER_HOUR / 2)) /
+						MSEC_PER_HOUR);
+			else if (msecs > 2 * MSEC_PER_MINUTE)
+				p += scnprintf(p, endp - p, "%lu minutes",
+					(msecs + (MSEC_PER_MINUTE) / 2) /
+						MSEC_PER_MINUTE);
+			else
+				p += scnprintf(p, endp - p, "%lu seconds",
+					(msecs + MSEC_PER_SEC - 1) /
+						MSEC_PER_SEC);
+		}
+		p += scnprintf(p, endp - p, "\n");
+	}
+
+	return p - buf;
+}
+
+static ssize_t hoad_control_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t len)
+{
+	char *p, *q;
+	int order, max_allocs, ret;
+	unsigned int msecs;
+	unsigned long d;
+	char c;
+
+	if (len == 0)
+		return 0;
+	p = kstrdup(buf, GFP_KERNEL);
+	if (!p)
+		return -ENOMEM;
+	q = strim(p);
+	if (*q == '\0') {
+		ret = 0;
+		goto out;
+	}
+
+	if (sscanf(q, "enable %u %u %u%c",
+				&order, &max_allocs, &msecs, &c) == 3)
+		ret = hoad_enable_for_order(order, max_allocs, msecs);
+	else if (sscanf(q, "disable %u%c", &order, &c) == 1)
+		ret = hoad_disable_for_order(order);
+	else if (sscanf(q, "resume %u%c", &msecs, &c) == 1) {
+		if (msecs > 5 * MSEC_PER_DAY)
+			ret = -EINVAL;
+		else {
+do_resume:
+			d = msecs_to_jiffies(msecs);
+			hoad_resume_jiffies = jiffies + d;
+			mod_timer(&hoad_resume_timer, hoad_resume_jiffies);
+			ret = 0;
+		}
+	} else if (!strcmp(q, "resume")) {
+		msecs = 0;
+		goto do_resume;
+	} else {
+		ret = -EINVAL;
+	}
+
+out:
+	kfree(p);
+	return ret ? ret : len;
+}
+
+static struct kobj_attribute hoad_control_attr = {
+	.attr.name = "control",
+	.attr.mode = S_IRUSR | S_IWUSR,
+	.show = hoad_control_show,
+	.store = hoad_control_store,
+};
+
+static int hoad_init(void)
+{
+	struct kset *kset;
+	int ret;
+
+	/* To be able to generate uevents, need a kobject with kset defined.
+	 *
+	 * To avoid extra depth inside sysfs, create a kset and use it's
+	 * internal kobject, by setting it's 'kset' field to itself.
+	 */
+	kset = kset_create_and_add("hoad", NULL, mm_kobj);
+	if (!kset)
+		return -ENOMEM;
+	hoad_kobj = &kset->kobj;
+	hoad_kobj->kset = kset;
+
+	ret = sysfs_create_file(hoad_kobj, &hoad_control_attr.attr);
+	if (ret) {
+		hoad_kobj->kset = NULL;
+		hoad_kobj = NULL;
+		kset_put(kset);
+		return ret;
+	}
+
+	hoad_trace_min_order = MAX_ORDER;
+	hoad_resume_jiffies = jiffies;
+	return 0;
+}
+late_initcall(hoad_init);
+
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
@@ -3557,6 +3821,8 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 		!(current->flags & PF_MEMALLOC));
 
 	warn_high_order(order, gfp_mask);
+	if (order > 0)
+		hoad_notice_alloc(order, gfp_mask);
 
 	if (should_fail_alloc_page(gfp_mask, order))
 		return NULL;
