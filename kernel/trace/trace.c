@@ -1588,6 +1588,15 @@ __buffer_unlock_commit(struct ring_buffer *buffer, struct ring_buffer_event *eve
 	ring_buffer_unlock_commit(buffer, event);
 }
 
+/*
+ * Skip 3:
+ *
+ *   __ftrace_trace_stack()
+ *   trace_buffer_unlock_commit()
+ *   ftrace_raw_event_xxx()
+ */
+#define STACK_SKIP 3
+
 static inline void
 __trace_buffer_unlock_commit(struct ring_buffer *buffer,
 			     struct ring_buffer_event *event,
@@ -1595,7 +1604,7 @@ __trace_buffer_unlock_commit(struct ring_buffer *buffer,
 {
 	__buffer_unlock_commit(buffer, event);
 
-	ftrace_trace_stack(buffer, flags, 6, pc);
+	ftrace_trace_stack(buffer, flags, STACK_SKIP, pc);
 	ftrace_trace_userstack(buffer, flags, pc);
 }
 
