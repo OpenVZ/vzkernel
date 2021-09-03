@@ -2676,16 +2676,16 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	case PR_GET_THP_DISABLE:
 		if (arg2 || arg3 || arg4 || arg5)
 			return -EINVAL;
-		error = !!(me->mm->def_flags & VM_NOHUGEPAGE);
+		error = !!test_bit(MMF_DISABLE_THP, &me->mm->flags);
 		break;
 	case PR_SET_THP_DISABLE:
 		if (arg3 || arg4 || arg5)
 			return -EINVAL;
 		down_write(&me->mm->mmap_sem);
 		if (arg2)
-			me->mm->def_flags |= VM_NOHUGEPAGE;
+			set_bit(MMF_DISABLE_THP, &me->mm->flags);
 		else
-			me->mm->def_flags &= ~VM_NOHUGEPAGE;
+			clear_bit(MMF_DISABLE_THP, &me->mm->flags);
 		up_write(&me->mm->mmap_sem);
 		break;
 	case PR_MPX_ENABLE_MANAGEMENT:
