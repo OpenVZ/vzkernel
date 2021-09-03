@@ -1,6 +1,8 @@
 #ifndef _LINUX_HUGE_MM_H
 #define _LINUX_HUGE_MM_H
 
+#include <linux/sched.h>
+
 #ifndef __GENKSYMS__
 #include <linux/fs.h> /* only for vma_is_dax() */
 #endif
@@ -90,7 +92,8 @@ extern unsigned long transparent_hugepage_flags;
 
 static inline bool transparent_hugepage_enabled(struct vm_area_struct *vma)
 {
-	if (vma->vm_flags & VM_NOHUGEPAGE)
+	if ((vma->vm_flags & VM_NOHUGEPAGE) ||
+	    test_bit(MMF_DISABLE_THP, &vma->vm_mm->flags))
 		return false;
 
 	if (is_vma_temporary_stack(vma))
