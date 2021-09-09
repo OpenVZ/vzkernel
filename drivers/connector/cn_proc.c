@@ -63,9 +63,15 @@ static inline void send_msg_ve(struct ve_struct *ve, struct cn_msg *msg)
 {
 	struct local_event *le_ptr;
 
-	le_ptr = this_cpu_ptr(ve->cn->local_event);
-	local_lock(&le_ptr->lock);
+	/*
+	 * The following hack with local_event->lock address works only
+	 * till the "lock" is the first field in the local_event struct,
+	 * so be of the safe side.
+	 */
+	BUILD_BUG_ON(offsetof(struct local_event, lock) != 0);
+	local_lock(&ve->cn->local_event->lock);
 
+	le_ptr = this_cpu_ptr(ve->cn->local_event);
 	msg->seq = le_ptr->count++;
 	((struct proc_event *)msg->data)->cpu = smp_processor_id();
 
@@ -77,7 +83,7 @@ static inline void send_msg_ve(struct ve_struct *ve, struct cn_msg *msg)
 	 */
 	cn_netlink_send_ve(ve, msg, 0, CN_IDX_PROC, GFP_NOWAIT);
 
-	local_unlock(&le_ptr->lock);
+	local_unlock(&ve->cn->local_event->lock);
 }
 
 static struct cn_msg *cn_msg_fill(__u8 *buffer, struct ve_struct *ve,
