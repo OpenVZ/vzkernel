@@ -33,8 +33,8 @@ struct push_backup {
 
 	bool alive;
 	bool suspended;
-	void *ppb_map;
-	u64 ppb_map_bits;
+	void *map;
+	u64 map_bits;
 
 	struct rb_root rb_root;
 	struct list_head pending;
@@ -227,7 +227,7 @@ static bool postpone_if_required_for_backup(struct push_backup *pb,
 
 	rcu_read_lock(); /* See push_backup_stop() */
 	spin_lock_irqsave(&pb->lock, flags);
-	if (likely(!pb->alive) || !test_bit(clu, pb->ppb_map))
+	if (likely(!pb->alive) || !test_bit(clu, pb->map))
 		goto unlock;
 
 	postpone = true;
@@ -329,8 +329,8 @@ static int setup_pb(struct push_backup *pb, void __user *mask, int timeout)
 	map_bits = bitmap_weight(map, clus);
 
 	spin_lock_irq(&pb->lock);
-	pb->ppb_map = map;
-	pb->ppb_map_bits = map_bits;
+	pb->map = map;
+	pb->map_bits = map_bits;
 	pb->alive = true;
 	spin_unlock_irq(&pb->lock);
 	return 0;
@@ -361,7 +361,7 @@ static int push_backup_stop(struct push_backup *pb,
 {
 	void *map = NULL;
 
-	if (!pb->ppb_map)
+	if (!pb->map)
 		return -EBADF;
 	cleanup_backup(pb);
 
@@ -371,7 +371,7 @@ static int push_backup_stop(struct push_backup *pb,
 	flush_workqueue(pb->wq);
 
 	spin_lock_irq(&pb->lock);
-	swap(pb->ppb_map, map);
+	swap(pb->map, map);
 	pb->timeout_in_jiffies = 0;
 	spin_unlock_irq(&pb->lock);
 	kvfree(map);
@@ -388,12 +388,12 @@ static int push_backup_read(struct push_backup *pb,
 
 	if (!pb)
 		return -EBADF;
-	if (!pb->ppb_map)
+	if (!pb->map)
 		return -ESTALE;
 again:
 	if (wait_event_interruptible(pb->waitq,
 				     !list_empty_careful(&pb->pending) ||
-				     !pb->alive || !pb->ppb_map_bits))
+				     !pb->alive || !pb->map_bits))
 		return -EINTR;
 
 	spin_lock_irq(&pb->lock);
@@ -401,7 +401,7 @@ again:
 	if (!pb->alive)
 		goto unlock;
 	ret = 0;
-	if (!pb->ppb_map_bits)
+	if (!pb->map_bits)
 		goto unlock;
 	orig_pbio = list_first_entry_or_null(&pb->pending, typeof(*pbio), list);
 	if (unlikely(!orig_pbio)) {
@@ -448,7 +448,7 @@ static int push_backup_write(struct push_backup *pb,
 		return -EBADF;
 	if (clu >= nr_clus || nr > nr_clus - clu)
 		return -E2BIG;
-	if (!pb->ppb_map)
+	if (!pb->map)
 		return -ESTALE;
 
 	spin_lock_irq(&pb->lock);
@@ -458,9 +458,9 @@ static int push_backup_write(struct push_backup *pb,
 	}
 
 	for (i = clu; i < clu + nr; i++)
-		clear_bit(i, pb->ppb_map);
-	pb->ppb_map_bits -= nr;
-	finished = (pb->ppb_map_bits == 0);
+		clear_bit(i, pb->map);
+	pb->map_bits -= nr;
+	finished = (pb->map_bits == 0);
 
 	for (i = 0; i < nr; i++) {
 		pbio = find_node_pbio_range(&pb->rb_root, clu,
@@ -500,10 +500,10 @@ static int push_backup_statistics(struct push_backup *pb, char *result,
 	if (pb->alive) {
 		if (pb->deadline_jiffies != S64_MAX)
 			expires = pb->deadline_jiffies - jiffies_64;
-	} else if (pb->ppb_map) {
+	} else if (pb->map) {
 		expires = pb->deadline_jiffies - jiffies_64;
 	}
-	DMEMIT("nr_remaining_clus=%llu\n", pb->ppb_map_bits);
+	DMEMIT("nr_remaining_clus=%llu\n", pb->map_bits);
 	DMEMIT("nr_delayed_bios=%d\n", pb->nr_delayed);
 	DMEMIT("expires_in=%lld\n", expires / HZ);
 	spin_unlock_irq(&pb->lock);
@@ -573,8 +573,8 @@ static void pb_destroy(struct push_backup *pb)
 	del_timer_sync(&pb->deadline_timer);
 	if (pb->wq)
 		destroy_workqueue(pb->wq);
-	if (pb->ppb_map) /* stop was not called */
-		kvfree(pb->ppb_map);
+	if (pb->map) /* stop was not called */
+		kvfree(pb->map);
 	if (pb->origin_dev)
 		dm_put_device(pb->ti, pb->origin_dev);
 	kfree(pb);
@@ -689,7 +689,7 @@ static void pb_status(struct dm_target *ti, status_type_t type,
 	spin_lock_irq(&pb->lock);
 	if (pb->alive)
 		status = "active";
-	else if (pb->ppb_map)
+	else if (pb->map)
 		status = "expired";
 	DMEMIT("%s %llu %llu %s", pb->origin_dev->name, to_sector(pb->clu_size),
 				  pb->timeout_in_jiffies / HZ, status);
