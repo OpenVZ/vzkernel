@@ -26,7 +26,9 @@ static inline struct hlist_head *pb_htable_slot(struct hlist_head head[], u32 cl
 
 struct pb_bio {
 	struct hlist_node hlist_node;
-	u64 clu;
+	u64 start_clu;
+	u64 end_clu;
+	u64 key_clu; /* Cluster, we are waiting at the moment */
 	struct list_head list;
 };
 
@@ -75,29 +77,66 @@ static inline void remap_to_origin(struct push_backup *pb, struct bio *bio)
 	bio_set_dev(bio, pb->origin_dev->bdev);
 }
 
-static int pb_bio_cluster(struct push_backup *pb, struct bio *bio, u64 *clu)
+static u64 pbio_first_required_for_backup_clu(struct push_backup *pb, struct pb_bio *pbio)
 {
-	loff_t off = to_bytes(bio->bi_iter.bi_sector);
-	u64 start_clu, end_clu;
+	u64 clu;
 
-	start_clu = off / pb->clu_size;
-	end_clu = (off + bio->bi_iter.bi_size - 1) / pb->clu_size;
+	for (clu = pbio->start_clu; clu <= pbio->end_clu; clu++)
+		if (test_bit(clu, pb->map))
+			return clu;
+	return U64_MAX;
+}
+static u64 pbio_last_required_for_backup_clu(struct push_backup *pb, struct pb_bio *pbio)
+{
+	u64 clu;
 
-	if (unlikely(start_clu != end_clu))
-		return -EIO;
-
-	*clu = start_clu;
-	return 0;
+	for (clu = pbio->end_clu; clu >= pbio->start_clu; clu--) {
+		if (test_bit(clu, pb->map))
+			return clu;
+		if (clu == 0)
+			break;
+	}
+	return U64_MAX;
 }
 
-static void link_pending_pbio(struct push_backup *pb, struct pb_bio *pbio, u64 clu)
+static void calc_bio_clusters(struct push_backup *pb, struct pb_bio *pbio)
 {
-	struct hlist_head *slot = pb_htable_slot(pb->pending_htable, clu);
+	struct bio *bio = pbio_to_bio(pbio);
+	loff_t off = to_bytes(bio->bi_iter.bi_sector);
+
+	pbio->start_clu = off / pb->clu_size;
+	pbio->end_clu = (off + bio->bi_iter.bi_size - 1) / pb->clu_size;
+}
+
+static bool setup_if_required_for_backup(struct push_backup *pb, struct pb_bio *pbio)
+{
+	u64 key;
+
+	calc_bio_clusters(pb, pbio);
+
+	key = pbio_last_required_for_backup_clu(pb, pbio);
+	if (key != U64_MAX) {
+		pbio->key_clu = key;
+		return true;
+	}
+	return false;
+}
+
+static void update_pending_map(struct push_backup *pb, struct pb_bio *pbio)
+{
+	u64 clu;
+
+	for (clu = pbio->start_clu; clu <= pbio->end_clu; clu++)
+		if (test_bit(clu, pb->map))
+			set_bit(clu, pb->pending_map);
+}
+
+static void link_pending_pbio(struct push_backup *pb, struct pb_bio *pbio)
+{
+	struct hlist_head *slot = pb_htable_slot(pb->pending_htable, pbio->key_clu);
 
 	hlist_add_head(&pbio->hlist_node, slot);
 	list_add_tail(&pbio->list, &pb->pending);
-
-	pbio->clu = clu;
 }
 
 static void unlink_pending_pbio(struct push_backup *pb, struct pb_bio *pbio)
@@ -106,13 +145,22 @@ static void unlink_pending_pbio(struct push_backup *pb, struct pb_bio *pbio)
 	list_del_init(&pbio->list);
 }
 
+static void relink_pending_pbio(struct push_backup *pb, struct pb_bio *pbio, u64 key)
+{
+	struct hlist_head *slot = pb_htable_slot(pb->pending_htable, key);
+
+	hlist_del_init(&pbio->hlist_node);
+	pbio->key_clu = key;
+	hlist_add_head(&pbio->hlist_node, slot);
+}
+
 static struct pb_bio *find_pending_pbio(struct push_backup *pb, u64 clu)
 {
 	struct hlist_head *slot = pb_htable_slot(pb->pending_htable, clu);
 	struct pb_bio *pbio;
 
 	hlist_for_each_entry(pbio, slot, hlist_node)
-		if (pbio->clu == clu)
+		if (pbio->key_clu == clu)
 			return pbio;
 
 	return NULL;
@@ -191,16 +239,19 @@ static void pb_timer_func(struct timer_list *timer)
 }
 
 static bool postpone_if_required_for_backup(struct push_backup *pb,
-					  struct bio *bio, u64 clu)
+					    struct bio *bio)
 {
 	bool queue_timer = false, postpone = false;
-	struct pb_bio *pbio;
+	struct pb_bio *pbio = bio_to_pbio(bio);
 	unsigned long flags;
 
 	rcu_read_lock(); /* See push_backup_stop() */
 	spin_lock_irqsave(&pb->lock, flags);
-	if (likely(!pb->alive) || !test_bit(clu, pb->map))
+	if (!pb->alive || !setup_if_required_for_backup(pb, pbio))
 		goto unlock;
+
+	update_pending_map(pb, pbio);
+	link_pending_pbio(pb, pbio);
 
 	postpone = true;
 	pb->nr_delayed += 1;
@@ -208,11 +259,6 @@ static bool postpone_if_required_for_backup(struct push_backup *pb,
 		pb->deadline_jiffies = get_jiffies_64() + pb->timeout_in_jiffies;
 		queue_timer = true;
 	}
-
-	pbio = bio_to_pbio(bio);
-
-	link_pending_pbio(pb, pbio, clu);
-	set_bit(clu, pb->pending_map);
 unlock:
 	spin_unlock_irqrestore(&pb->lock, flags);
 
@@ -231,22 +277,17 @@ static void init_pb_bio(struct bio *bio)
 	struct pb_bio *pbio = bio_to_pbio(bio);
 
 	INIT_HLIST_NODE(&pbio->hlist_node);
-	pbio->clu = UINT_MAX;
 	INIT_LIST_HEAD(&pbio->list);
 }
 
 static int pb_map(struct dm_target *ti, struct bio *bio)
 {
 	struct push_backup *pb = ti->private;
-	u64 clu;
 
 	init_pb_bio(bio);
 
 	if (bio_sectors(bio) && op_is_write(bio->bi_opf)) {
-		if (pb_bio_cluster(pb, bio, &clu))
-			return DM_MAPIO_KILL;
-
-		if (postpone_if_required_for_backup(pb, bio, clu))
+		if (postpone_if_required_for_backup(pb, bio))
 			return DM_MAPIO_SUBMITTED;
 	}
 
@@ -378,7 +419,11 @@ again:
 		goto again;
 	}
 
-	left = pbio->clu;
+	ret = -EBADMSG;
+	left = pbio_first_required_for_backup_clu(pb, pbio);
+	if (WARN_ON_ONCE(left == U64_MAX))
+		goto unlock;
+
 	right = find_next_zero_bit(pb->pending_map, pb->nr_clus, left + 1);
 	if (right < pb->nr_clus)
 		right -= 1;
@@ -396,8 +441,8 @@ static int push_backup_write(struct push_backup *pb,
 			     unsigned int clu, unsigned int nr)
 {
 	struct bio_list bio_list = BIO_EMPTY_LIST;
+	u64 i, key, nr_clus = pb->nr_clus;
 	bool finished, has_more = false;
-	u64 i, nr_clus = pb->nr_clus;
 	struct pb_bio *pbio;
 
 	if (!pb)
@@ -428,6 +473,22 @@ static int push_backup_write(struct push_backup *pb,
 			pbio = find_pending_pbio(pb, i);
 			if (!pbio)
 				break;
+			key = pbio_last_required_for_backup_clu(pb, pbio);
+			if (key != U64_MAX) {
+				/*
+				 * There is one or more clusters-to-backup
+				 * required for this bio. Wait for them.
+				 * Userspace possible backups clusters
+				 * from smallest to biggest, so we use
+				 * last clu as key.
+				 */
+				relink_pending_pbio(pb, pbio, key);
+				continue;
+			}
+			/*
+			 * All clusters of this bios were backuped or
+			 * they are not needed for backup.
+			 */
 			unlink_postponed_backup_pbio(pb, &bio_list, pbio);
 		}
 	}
@@ -586,15 +647,6 @@ static int pb_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	}
 	pb->clu_size = to_bytes(sectors);
 	pb->nr_clus = DIV_ROUND_UP(ti->len, sectors);
-	/*
-	 * TODO: we may avoid splitting bio by cluster size.
-	 * Tree search, read, write, etc should be changed.
-	 */
-	ret = dm_set_target_max_io_len(ti, sectors);
-	if (ret) {
-		ti->error = "could not set max_io_len";
-		goto err;
-	}
 
 	/*
 	 * We do not add FMODE_EXCL, because further open_table_device()
