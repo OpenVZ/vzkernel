@@ -21,6 +21,10 @@
 
 #define PB_HASH_TABLE_BITS 5
 #define PB_HASH_TABLE_SIZE (1 << PB_HASH_TABLE_BITS)
+#define PUSH_BACKUP_POOL_SIZE 128
+
+static struct kmem_cache *pbio_cache;
+
 static inline struct hlist_head *pb_htable_slot(struct hlist_head head[], u32 clu)
 {
         return &head[hash_32(clu, PB_HASH_TABLE_BITS)];
@@ -38,6 +42,7 @@ struct pb_bio {
 struct push_backup {
 	struct dm_target *ti;
 	struct dm_dev *origin_dev;
+	mempool_t *pbio_pool;
 	u64 clu_size;
 	u64 nr_clus;
 
@@ -106,20 +111,26 @@ static void calc_bio_clusters(struct push_backup *pb, struct request *rq,
 	*end_clu = (off + blk_rq_bytes(rq) - 1) / pb->clu_size;
 }
 
-static int setup_if_required_for_backup(struct push_backup *pb, struct request *rq,
-					struct pb_bio *pbio)
+static int setup_if_required_for_backup(struct push_backup *pb,
+					struct request *rq,
+					struct pb_bio **ret_pbio)
 {
 	u64 start_clu, end_clu, key;
+	struct pb_bio *pbio;
 
 	calc_bio_clusters(pb, rq, &start_clu, &end_clu);
 
 	key = last_required_for_backup_clu(pb, start_clu, end_clu);
 	if (key != U64_MAX) {
+		pbio = mempool_alloc(pb->pbio_pool, GFP_ATOMIC);
+		if (!pbio)
+			return -ENOMEM;
 		init_pb_bio(pbio);
 		pbio->rq = rq;
 		pbio->start_clu = start_clu;
 		pbio->end_clu = end_clu;
 		pbio->key_clu = key;
+		*ret_pbio = pbio;
 		return 1;
 	}
 	return 0;
@@ -188,6 +199,7 @@ static void resubmit_pbios(struct push_backup *pb, struct list_head *list)
 	while ((pbio = list_first_entry_or_null(list, struct pb_bio, list)) != NULL) {
 		list_del_init(&pbio->list);
 		dm_requeue_original_rq(pbio->rq);
+		mempool_free(pbio, pb->pbio_pool);
 	}
 }
 
@@ -239,10 +251,10 @@ static void pb_timer_func(struct timer_list *timer)
 }
 
 static int postpone_if_required_for_backup(struct push_backup *pb,
-					   struct request *rq,
-					   struct pb_bio *pbio)
+					   struct request *rq)
 {
 	bool queue_timer = false;
+	struct pb_bio *pbio;
 	unsigned long flags;
 	int ret = 0;
 
@@ -250,7 +262,7 @@ static int postpone_if_required_for_backup(struct push_backup *pb,
 	spin_lock_irqsave(&pb->lock, flags);
 	if (!pb->alive)
 		goto unlock;
-	ret = setup_if_required_for_backup(pb, rq, pbio);
+	ret = setup_if_required_for_backup(pb, rq, &pbio);
 	if (ret <= 0)
 		goto unlock;
 
@@ -276,17 +288,11 @@ unlock:
 	return ret;
 }
 
-static inline struct pb_bio *map_info_to_embedded_pbio(union map_info *info)
-{
-	return (void *)info->ptr;
-}
-
 static int pb_clone_and_map(struct dm_target *ti, struct request *rq,
 				   union map_info *map_context,
 				   struct request **__clone)
 
 {
-	struct pb_bio *pbio = map_info_to_embedded_pbio(map_context);
 	struct push_backup *pb = ti->private;
 	struct block_device *bdev = pb->origin_dev->bdev;
 	struct request_queue *q;
@@ -294,7 +300,7 @@ static int pb_clone_and_map(struct dm_target *ti, struct request *rq,
 	int ret;
 
 	if (blk_rq_bytes(rq) && op_is_write(req_op(rq))) {
-		ret = postpone_if_required_for_backup(pb, rq, pbio);
+		ret = postpone_if_required_for_backup(pb, rq);
 		if (ret < 0) /* ENOMEM */
 			return DM_MAPIO_REQUEUE;
 		if (ret > 0) /* Postponed */
@@ -628,6 +634,7 @@ static void pb_destroy(struct push_backup *pb)
 	kvfree(pb->map); /* Is's not zero if stop was not called */
 	kvfree(pb->pending_map);
 	kvfree(pb->pending_htable);
+	mempool_destroy(pb->pbio_pool);
 	if (pb->origin_dev)
 		dm_put_device(pb->ti, pb->origin_dev);
 	kfree(pb);
@@ -650,10 +657,12 @@ static int pb_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	if (!pb)
 		goto err;
 
+	pb->pbio_pool = mempool_create_slab_pool(PUSH_BACKUP_POOL_SIZE,
+						 pbio_cache);
         pb->pending_htable = kcalloc(PB_HASH_TABLE_SIZE,
 				     sizeof(struct hlist_head),
 				     GFP_KERNEL);
-	if (!pb->pending_htable)
+	if (!pb->pbio_pool || !pb->pending_htable)
 		goto err;
 
 	pb->suspended = true;
@@ -694,7 +703,6 @@ static int pb_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto err;
 	}
 
-	ti->per_io_data_size = sizeof(struct pb_bio);
 	ti->num_flush_bios = 1;
 	ti->flush_supported = true;
 	ti->num_discard_bios = 1;
@@ -765,7 +773,7 @@ static void pb_resume(struct dm_target *ti)
 static struct target_type pb_target = {
 	.name = "push_backup",
 	.version = {1, 0, 0},
-	.features = DM_TARGET_SINGLETON|DM_TARGET_IMMUTABLE,
+	.features = DM_TARGET_SINGLETON,
 	.module = THIS_MODULE,
 	.ctr = pb_ctr,
 	.dtr = pb_dtr,
@@ -780,18 +788,28 @@ static struct target_type pb_target = {
 
 static int __init dm_pb_init(void)
 {
-	int r = -ENOMEM;
+	int r;
+
+	pbio_cache = kmem_cache_create("pb_bio", sizeof(struct pb_bio), 0, 0, NULL);
+	if (!pbio_cache)
+		return -ENOMEM;
 
 	r = dm_register_target(&pb_target);
-	if (r)
+	if (r) {
 		DMERR("pb target registration failed: %d", r);
-
+		goto err;
+	}
+out:
 	return r;
+err:
+	kmem_cache_destroy(pbio_cache);
+	goto out;
 }
 
 static void __exit dm_pb_exit(void)
 {
 	dm_unregister_target(&pb_target);
+	kmem_cache_destroy(pbio_cache);
 }
 
 module_init(dm_pb_init);
