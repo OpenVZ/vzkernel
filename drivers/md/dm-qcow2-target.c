@@ -12,6 +12,8 @@ module_param(kernel_sets_dirty_bit, bool, 0444);
 MODULE_PARM_DESC(kernel_sets_dirty_bit,
 		"Dirty bit is set by kernel, not by userspace");
 
+static struct kmem_cache *qrq_cache;
+
 static void qcow2_set_service_operations(struct dm_target *ti, bool allowed)
 {
 	struct qcow2_target *tgt = to_qcow2_target(ti);
@@ -223,8 +225,10 @@ static void qcow2_tgt_destroy(struct qcow2_target *tgt)
 		flush_deferred_activity_all(tgt);
 		/* Now kill the queue */
 		destroy_workqueue(tgt->wq);
-		mempool_destroy(tgt->qio_pool);
 	}
+
+	mempool_destroy(tgt->qio_pool);
+	mempool_destroy(tgt->qrq_pool);
 
 	for (i = 0; i < 2; i++)
 		percpu_ref_exit(&tgt->inflight_ref[i]);
@@ -401,9 +405,11 @@ static struct qcow2_target *alloc_qcow2_target(struct dm_target *ti)
 	tgt = kzalloc(sizeof(*tgt), GFP_KERNEL);
 	if (!tgt)
 		return NULL;
+	tgt->qrq_pool = mempool_create_slab_pool(QCOW2_QRQ_POOL_SIZE,
+						 qrq_cache);
 	tgt->qio_pool = mempool_create_kmalloc_pool(MIN_QIOS,
 						    sizeof(struct qio));
-	if (!tgt->qio_pool) {
+	if (!tgt->qrq_pool || !tgt->qio_pool) {
 		ti->error = "Can't create mempool";
 		goto out_target;
 	}
@@ -439,6 +445,7 @@ out_wq:
 	destroy_workqueue(tgt->wq);
 out_pool:
 	mempool_destroy(tgt->qio_pool);
+	mempool_destroy(tgt->qrq_pool);
 out_target:
 	kfree(tgt);
 	return NULL;
@@ -721,7 +728,6 @@ static int qcow2_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	tgt = alloc_qcow2_target(ti);
 	if (!tgt)
 		return -ENOMEM;
-
 	/*
 	 * Userspace passes deltas in bottom, ..., top order,
 	 * but we attach it vise versa: from top to bottom.
@@ -915,9 +921,14 @@ static int __init dm_qcow2_init(void)
 {
 	int ret;
 
+	qrq_cache = kmem_cache_create("qcow2-qrq", sizeof(struct qcow2_rq) +
+				      sizeof(struct qio), 0, 0, NULL);
+	if (!qrq_cache)
+		return -ENOMEM;
+
 	ret = dm_register_target(&qcow2_target);
 	if (ret)
-		DMERR("qcow2 target registration failed: %d", ret);
+		kmem_cache_destroy(qrq_cache);
 
 	return ret;
 }
@@ -925,6 +936,7 @@ static int __init dm_qcow2_init(void)
 static void __exit dm_qcow2_exit(void)
 {
 	dm_unregister_target(&qcow2_target);
+	kmem_cache_destroy(qrq_cache);
 }
 
 module_init(dm_qcow2_init);
