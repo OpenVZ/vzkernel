@@ -117,28 +117,22 @@ static void unlink_node_pbio(struct rb_root *root, struct pb_bio *pbio)
 	RB_CLEAR_NODE(&pbio->node);
 }
 
-static struct pb_bio *find_node_pbio_range(struct rb_root *root,
-					   u64 left, u64 right)
+static struct pb_bio *find_node_pbio(struct rb_root *root, u64 clu)
 {
 	struct rb_node *node = root->rb_node;
 	struct pb_bio *h;
 
 	while (node) {
 		h = rb_entry(node, struct pb_bio, node);
-		if (right < h->clu)
+		if (clu < h->clu)
 			node = node->rb_left;
-		else if (left > h->clu)
+		else if (clu > h->clu)
 			node = node->rb_right;
 		else
 			return h;
 	}
 
 	return NULL;
-}
-
-static struct pb_bio *find_node_pbio(struct rb_root *root, u64 clu)
-{
-	return find_node_pbio_range(root, clu, clu);
 }
 
 static void unlink_postponed_backup_pbio(struct push_backup *pb,
@@ -475,12 +469,13 @@ static int push_backup_write(struct push_backup *pb,
 
 	finished = (pb->map_bits == 0);
 
-	for (i = 0; i < nr; i++) {
-		pbio = find_node_pbio_range(&pb->rb_root, clu,
-					    clu + nr - 1);
-		if (!pbio)
-			break;
-		unlink_postponed_backup_pbio(pb, &bio_list, pbio);
+	for (i = clu; i < clu + nr; i++) {
+		while (1) {
+			pbio = find_node_pbio(&pb->rb_root, i);
+			if (!pbio)
+				break;
+			unlink_postponed_backup_pbio(pb, &bio_list, pbio);
+		}
 	}
 
 	has_more = !RB_EMPTY_ROOT(&pb->rb_root);
