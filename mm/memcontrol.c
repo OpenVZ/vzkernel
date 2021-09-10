@@ -4727,7 +4727,9 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 		if (memcg1_stats[i] == NR_ANON_THPS)
 			nr *= HPAGE_PMD_NR;
 #endif
-		seq_printf(m, "%s %lu\n", memcg1_stat_names[i], nr * PAGE_SIZE);
+		if (!vmstat_item_in_bytes(memcg1_stats[i]))
+			nr *= PAGE_SIZE;
+		seq_printf(m, "%s %lu\n", memcg1_stat_names[i], nr);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(memcg1_events); i++)
@@ -4767,17 +4769,18 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 			   (u64)memsw * PAGE_SIZE);
 
 	for (i = 0; i < ARRAY_SIZE(memcg1_stats); i++) {
-		unsigned long nr;
+		u64 nr;
 
 		if (memcg1_stats[i] == MEMCG_SWAP && !do_memsw_account())
 			continue;
-		nr = memcg_page_state(memcg, memcg1_stats[i]);
+		nr = (u64)memcg_page_state(memcg, memcg1_stats[i]);
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 		if (memcg1_stats[i] == NR_ANON_THPS)
 			nr *= HPAGE_PMD_NR;
 #endif
-		seq_printf(m, "total_%s %llu\n", memcg1_stat_names[i],
-						(u64)nr * PAGE_SIZE);
+		if (!vmstat_item_in_bytes(memcg1_stats[i]))
+			nr *= PAGE_SIZE;
+		seq_printf(m, "total_%s %llu\n", memcg1_stat_names[i], nr);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(memcg1_events); i++)
