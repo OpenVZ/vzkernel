@@ -309,6 +309,7 @@ static int setup_pb(struct push_backup *pb, void __user *mask, int timeout)
 	pb->timeout_in_jiffies = timeout * HZ;
 
 	size = DIV_ROUND_UP(clus, 8);
+	size = ALIGN(size, sizeof(unsigned long));
 
 	map = kvzalloc(size, GFP_KERNEL);
 	if (!map)
