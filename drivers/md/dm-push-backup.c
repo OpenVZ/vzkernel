@@ -74,17 +74,21 @@ static u64 pbio_first_required_for_backup_clu(struct push_backup *pb, struct pb_
 			return clu;
 	return U64_MAX;
 }
-static u64 pbio_last_required_for_backup_clu(struct push_backup *pb, struct pb_bio *pbio)
+static u64 last_required_for_backup_clu(struct push_backup *pb, u64 start_clu, u64 end_clu)
 {
 	u64 clu;
 
-	for (clu = pbio->end_clu; clu >= pbio->start_clu; clu--) {
+	for (clu = end_clu; clu >= start_clu; clu--) {
 		if (test_bit(clu, pb->map))
 			return clu;
 		if (clu == 0)
 			break;
 	}
 	return U64_MAX;
+}
+static u64 pbio_last_required_for_backup_clu(struct push_backup *pb, struct pb_bio *pbio)
+{
+	return last_required_for_backup_clu(pb, pbio->start_clu, pbio->end_clu);
 }
 
 static void init_pb_bio(struct pb_bio *pbio)
@@ -94,25 +98,27 @@ static void init_pb_bio(struct pb_bio *pbio)
 }
 
 static void calc_bio_clusters(struct push_backup *pb, struct request *rq,
-			      struct pb_bio *pbio)
+			      u64 *start_clu, u64 *end_clu)
 {
 	loff_t off = to_bytes(blk_rq_pos(rq));
 
-	pbio->start_clu = off / pb->clu_size;
-	pbio->end_clu = (off + blk_rq_bytes(rq) - 1) / pb->clu_size;
+	*start_clu = off / pb->clu_size;
+	*end_clu = (off + blk_rq_bytes(rq) - 1) / pb->clu_size;
 }
 
 static int setup_if_required_for_backup(struct push_backup *pb, struct request *rq,
 					struct pb_bio *pbio)
 {
-	u64 key;
+	u64 start_clu, end_clu, key;
 
-	init_pb_bio(pbio);
-	calc_bio_clusters(pb, rq, pbio);
+	calc_bio_clusters(pb, rq, &start_clu, &end_clu);
 
-	key = pbio_last_required_for_backup_clu(pb, pbio);
+	key = last_required_for_backup_clu(pb, start_clu, end_clu);
 	if (key != U64_MAX) {
+		init_pb_bio(pbio);
 		pbio->rq = rq;
+		pbio->start_clu = start_clu;
+		pbio->end_clu = end_clu;
 		pbio->key_clu = key;
 		return 1;
 	}
