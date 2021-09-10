@@ -3409,7 +3409,7 @@ out:
 static void prepare_one_embedded_qio(struct qcow2 *qcow2, struct qio *qio,
 				     struct list_head *deferred_qios)
 {
-	struct qcow2_rq *qrq = embedded_qio_to_qrq(qio);
+	struct qcow2_rq *qrq = qio->endio_cb_data;
 	struct request *rq = qrq->rq;
 	struct bio_vec *bvec = NULL;
 	LIST_HEAD(list);
@@ -4001,6 +4001,7 @@ static void qrq_endio(struct qcow2_target *tgt, struct qio *unused,
 
 	if (qrq->bvec)
 		kfree(qrq->bvec);
+	kfree(qrq);
 	dm_complete_request(rq, bi_status);
 }
 
@@ -4012,7 +4013,7 @@ static void init_qrq(struct qcow2_rq *qrq, struct request *rq)
 
 void submit_embedded_qio(struct qcow2_target *tgt, struct qio *qio)
 {
-	struct qcow2_rq *qrq = embedded_qio_to_qrq(qio);
+	struct qcow2_rq *qrq = qio->endio_cb_data;
 	struct request *rq = qrq->rq;
 	u8 queue_list_id, ref_index;
 	struct work_struct *worker;
@@ -4063,10 +4064,12 @@ int qcow2_clone_and_map(struct dm_target *ti, struct request *rq,
 	struct qcow2_rq *qrq;
 	struct qio *qio;
 
-	qrq = map_info_to_embedded_qrq(info);
+	qrq = kmalloc(sizeof(*qrq) + sizeof(*qio), GFP_ATOMIC);
+	if (!qrq)
+		return DM_MAPIO_KILL;
 	init_qrq(qrq, rq);
 
-	qio = map_info_to_embedded_qio(info);
+	qio = (void *)qrq + sizeof(*qrq);
 	init_qio(qio, req_op(rq), NULL);
 	qio->endio_cb = qrq_endio;
 	qio->endio_cb_data = qrq;

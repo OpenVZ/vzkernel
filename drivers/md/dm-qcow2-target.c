@@ -758,7 +758,6 @@ static int qcow2_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->num_flush_bios = 1;
 	ti->discards_supported = true;
 	ti->num_discard_bios = 1;
-	ti->per_io_data_size = qcow2_per_io_data_size();
 	return 0;
 err:
 	qcow2_tgt_destroy(tgt);
@@ -897,7 +896,7 @@ static void qcow2_resume(struct dm_target *ti)
 static struct target_type qcow2_target = {
 	.name = "qcow2",
 	.version = {1, 0, 0},
-	.features = DM_TARGET_SINGLETON|DM_TARGET_IMMUTABLE,
+	.features = DM_TARGET_SINGLETON,
 	.module = THIS_MODULE,
 	.ctr = qcow2_ctr,
 	.dtr = qcow2_dtr,

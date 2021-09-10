@@ -299,23 +299,6 @@ int qcow2_inflight_ref_switch(struct qcow2_target *tgt);
 void flush_deferred_activity(struct qcow2_target *tgt, struct qcow2 *qcow2);
 int qcow2_truncate_safe(struct file *file, loff_t new_len);
 
-static inline ssize_t qcow2_per_io_data_size(void)
-{
-	return sizeof(struct qcow2_rq) + sizeof(struct qio);
-}
-static inline struct qcow2_rq *map_info_to_embedded_qrq(union map_info *info)
-{
-	return (void *)info->ptr;
-}
-static inline struct qio *map_info_to_embedded_qio(union map_info *info)
-{
-	return (void *)info->ptr + sizeof(struct qcow2_rq);
-}
-static inline struct qcow2_rq *embedded_qio_to_qrq(struct qio *qio)
-{
-	return (void *)qio - sizeof(struct qcow2_rq);
-}
-
 static inline struct qcow2_target *to_qcow2_target(struct dm_target *ti)
 {
 	return ti->private;
