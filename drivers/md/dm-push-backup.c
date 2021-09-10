@@ -35,6 +35,7 @@ struct push_backup {
 	bool suspended;
 	void *map;
 	u64 map_bits;
+	void *pending_map;
 
 	struct rb_root rb_root;
 	struct list_head pending;
@@ -248,6 +249,7 @@ static bool postpone_if_required_for_backup(struct push_backup *pb,
 	link_node_pbio(&pb->rb_root, pbio, clu);
 	first = list_empty(&pb->pending);
 	list_add_tail(&pbio->list, &pb->pending);
+	set_bit(clu, pb->pending_map);
 unlock:
 	spin_unlock_irqrestore(&pb->lock, flags);
 
@@ -302,8 +304,8 @@ static bool msg_wants_down_read(const char *cmd)
 static int setup_pb(struct push_backup *pb, void __user *mask, int timeout)
 {
 	u64 i, map_bits, clus = pb->nr_clus;
+	void *map, *pending_map;
 	size_t size;
-	void *map;
 
 	pb->deadline_jiffies = S64_MAX;
 	pb->timeout_in_jiffies = timeout * HZ;
@@ -312,8 +314,9 @@ static int setup_pb(struct push_backup *pb, void __user *mask, int timeout)
 	size = ALIGN(size, sizeof(unsigned long));
 
 	map = kvzalloc(size, GFP_KERNEL);
-	if (!map)
-		return -ENOMEM;
+	pending_map = kvzalloc(size, GFP_KERNEL);
+	if (!map || !pending_map)
+		goto err;
 
 	if (!mask) {
 		/* Full backup */
@@ -332,11 +335,13 @@ static int setup_pb(struct push_backup *pb, void __user *mask, int timeout)
 	spin_lock_irq(&pb->lock);
 	pb->map = map;
 	pb->map_bits = map_bits;
+	pb->pending_map = pending_map;
 	pb->alive = true;
 	spin_unlock_irq(&pb->lock);
 	return 0;
 err:
 	kvfree(map);
+	kvfree(pending_map);
 	return -EFAULT;
 }
 
@@ -360,7 +365,7 @@ static int push_backup_start(struct push_backup *pb, u64 timeout,
 static int push_backup_stop(struct push_backup *pb,
 			    char *result, unsigned int maxlen)
 {
-	void *map = NULL;
+	void *map = NULL, *pending_map = NULL;
 
 	if (!pb->map)
 		return -EBADF;
@@ -373,9 +378,11 @@ static int push_backup_stop(struct push_backup *pb,
 
 	spin_lock_irq(&pb->lock);
 	swap(pb->map, map);
+	swap(pb->pending_map, pending_map);
 	pb->timeout_in_jiffies = 0;
 	spin_unlock_irq(&pb->lock);
 	kvfree(map);
+	kvfree(pending_map);
 	return 0;
 }
 
@@ -458,9 +465,14 @@ static int push_backup_write(struct push_backup *pb,
 		return -ESTALE;
 	}
 
-	for (i = clu; i < clu + nr; i++)
-		clear_bit(i, pb->map);
-	pb->map_bits -= nr;
+	for (i = clu; i < clu + nr; i++) {
+		if (test_bit(i, pb->map)) {
+			clear_bit(i, pb->map);
+			clear_bit(i, pb->pending_map);
+			pb->map_bits--;
+		}
+	}
+
 	finished = (pb->map_bits == 0);
 
 	for (i = 0; i < nr; i++) {
@@ -574,8 +586,8 @@ static void pb_destroy(struct push_backup *pb)
 	del_timer_sync(&pb->deadline_timer);
 	if (pb->wq)
 		destroy_workqueue(pb->wq);
-	if (pb->map) /* stop was not called */
-		kvfree(pb->map);
+	kvfree(pb->map); /* Is's not zero if stop was not called */
+	kvfree(pb->pending_map);
 	if (pb->origin_dev)
 		dm_put_device(pb->ti, pb->origin_dev);
 	kfree(pb);
