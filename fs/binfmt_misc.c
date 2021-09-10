@@ -853,18 +853,28 @@ static int bm_fill_super(struct super_block *sb, struct fs_context *fc)
 	};
 
 	struct ve_struct *ve = get_exec_env();
-	struct binfmt_misc *bm_data = ve->binfmt_misc;
+	struct binfmt_misc *bm_data;
 
-	if (!bm_data) {
-		bm_data = kzalloc(sizeof(struct binfmt_misc), GFP_KERNEL);
-		if (!bm_data)
-			return -ENOMEM;
+	/*
+	 * bm_get_tree()
+	 *  get_tree_keyed(fc, bm_fill_super, get_ve(ve))
+	 *   fc->s_fs_info = current VE
+	 *   vfs_get_super(fc, vfs_get_keyed_super, bm_fill_super)
+	 *    sb = sget_fc(fc, test, set_anon_super_fc)
+	 *    if (!sb->s_root) {
+	 *		err = bm_fill_super(sb, fc);
+	 *
+	 * => we should never get here with initialized ve->binfmt_misc.
+	 */
+	if (WARN_ON_ONCE(ve->binfmt_misc))
+		return -EEXIST;
 
-		INIT_LIST_HEAD(&bm_data->entries);
-		rwlock_init(&bm_data->entries_lock);
+	bm_data = kzalloc(sizeof(struct binfmt_misc), GFP_KERNEL);
+	if (!bm_data)
+		return -ENOMEM;
 
-		ve->binfmt_misc = bm_data;
-	}
+	INIT_LIST_HEAD(&bm_data->entries);
+	rwlock_init(&bm_data->entries_lock);
 
 	err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
 	if (err) {
@@ -874,6 +884,7 @@ static int bm_fill_super(struct super_block *sb, struct fs_context *fc)
 
 	sb->s_op = &s_ops;
 
+	ve->binfmt_misc = bm_data;
 	bm_data->enabled = 1;
 
 	return 0;
