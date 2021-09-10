@@ -377,7 +377,6 @@ again:
 		spin_unlock_irq(&pb->lock);
 		goto again;
 	}
-	list_del_init(&pbio->list);
 
 	left = pbio->clu;
 	right = find_next_zero_bit(pb->pending_map, pb->nr_clus, left + 1);
