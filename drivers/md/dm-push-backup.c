@@ -234,7 +234,7 @@ static bool postpone_if_required_for_backup(struct push_backup *pb,
 		goto unlock;
 	}
 
-	if (RB_EMPTY_ROOT(&pb->rb_root)) {
+	if (pb->nr_delayed == 1) { /* We are the first */
 		pb->deadline_jiffies = get_jiffies_64() + pb->timeout_in_jiffies;
 		queue_timer = true;
 	}
