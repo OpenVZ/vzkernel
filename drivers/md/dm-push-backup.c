@@ -13,14 +13,19 @@
 #include <linux/vmalloc.h>
 #include <linux/ctype.h>
 #include <linux/dm-io.h>
-#include <linux/rbtree.h>
 
 
 #define DM_MSG_PREFIX "push-backup"
 
+#define PB_HASH_TABLE_BITS 5
+#define PB_HASH_TABLE_SIZE (1 << PB_HASH_TABLE_BITS)
+static inline struct hlist_head *pb_htable_slot(struct hlist_head head[], u32 clu)
+{
+        return &head[hash_32(clu, PB_HASH_TABLE_BITS)];
+}
+
 struct pb_bio {
-	struct rb_node node;
-	struct bio_list chain_bio_list;
+	struct hlist_node hlist_node;
 	u64 clu;
 	struct list_head list;
 };
@@ -36,8 +41,8 @@ struct push_backup {
 	void *map;
 	u64 map_bits;
 	void *pending_map;
+	struct hlist_head *pending_htable;
 
-	struct rb_root rb_root;
 	struct list_head pending;
 	s32 nr_delayed;
 
@@ -85,52 +90,30 @@ static int pb_bio_cluster(struct push_backup *pb, struct bio *bio, u64 *clu)
 	return 0;
 }
 
-static void link_node_pbio(struct rb_root *root, struct pb_bio *new, u64 clu)
+static void link_pending_pbio(struct push_backup *pb, struct pb_bio *pbio, u64 clu)
 {
-	struct rb_node *parent, **node = &root->rb_node;
+	struct hlist_head *slot = pb_htable_slot(pb->pending_htable, clu);
+
+	hlist_add_head(&pbio->hlist_node, slot);
+	list_add_tail(&pbio->list, &pb->pending);
+
+	pbio->clu = clu;
+}
+
+static void unlink_pending_pbio(struct push_backup *pb, struct pb_bio *pbio)
+{
+	hlist_del_init(&pbio->hlist_node);
+	list_del_init(&pbio->list);
+}
+
+static struct pb_bio *find_pending_pbio(struct push_backup *pb, u64 clu)
+{
+	struct hlist_head *slot = pb_htable_slot(pb->pending_htable, clu);
 	struct pb_bio *pbio;
 
-	BUG_ON(!RB_EMPTY_NODE(&new->node));
-	parent = NULL;
-
-	while (*node) {
-		pbio = rb_entry(*node, struct pb_bio, node);
-		parent = *node;
-		if (clu < pbio->clu)
-			node = &parent->rb_left;
-		else if (clu > pbio->clu)
-			node = &parent->rb_right;
-		else
-			BUG();
-	}
-
-	new->clu = clu;
-	rb_link_node(&new->node, parent, node);
-	rb_insert_color(&new->node, root);
-}
-
-static void unlink_node_pbio(struct rb_root *root, struct pb_bio *pbio)
-{
-	BUG_ON(RB_EMPTY_NODE(&pbio->node));
-
-	rb_erase(&pbio->node, root);
-	RB_CLEAR_NODE(&pbio->node);
-}
-
-static struct pb_bio *find_node_pbio(struct rb_root *root, u64 clu)
-{
-	struct rb_node *node = root->rb_node;
-	struct pb_bio *h;
-
-	while (node) {
-		h = rb_entry(node, struct pb_bio, node);
-		if (clu < h->clu)
-			node = node->rb_left;
-		else if (clu > h->clu)
-			node = node->rb_right;
-		else
-			return h;
-	}
+	hlist_for_each_entry(pbio, slot, hlist_node)
+		if (pbio->clu == clu)
+			return pbio;
 
 	return NULL;
 }
@@ -143,18 +126,11 @@ static void unlink_postponed_backup_pbio(struct push_backup *pb,
 
 	lockdep_assert_held(&pb->lock);
 
-	unlink_node_pbio(&pb->rb_root, pbio);
+	unlink_pending_pbio(pb, pbio);
+	pb->nr_delayed -= 1;
+
 	bio = pbio_to_bio(pbio);
 	bio_list_add(bio_list, bio);
-
-	pb->nr_delayed -= (1 + bio_list_size(&pbio->chain_bio_list));
-
-	/* Unlink chain from @pbio and link to bio_list */
-	bio_list_merge(bio_list, &pbio->chain_bio_list);
-	bio_list_init(&pbio->chain_bio_list);
-
-	/* Unlink from pb->pending */
-	list_del_init(&pbio->list);
 }
 
 static void resubmit_bios(struct push_backup *pb, struct bio_list *bl)
@@ -170,15 +146,16 @@ static void resubmit_bios(struct push_backup *pb, struct bio_list *bl)
 static void cleanup_backup(struct push_backup *pb)
 {
 	struct bio_list bio_list = BIO_EMPTY_LIST;
-	struct rb_node *node;
+	struct hlist_node *tmp;
 	struct pb_bio *pbio;
+	int i;
 
 	spin_lock_irq(&pb->lock);
 	pb->alive = false;
 
-	while ((node = pb->rb_root.rb_node) != NULL) {
-		pbio = rb_entry(node, struct pb_bio, node);
-		unlink_postponed_backup_pbio(pb, &bio_list, pbio);
+	for (i = 0; i < PB_HASH_TABLE_SIZE && pb->nr_delayed; i++) {
+		hlist_for_each_entry_safe(pbio, tmp, &pb->pending_htable[i], hlist_node)
+			unlink_postponed_backup_pbio(pb, &bio_list, pbio);
 	}
 
 	WARN_ON_ONCE(pb->nr_delayed);
@@ -216,7 +193,7 @@ static void pb_timer_func(struct timer_list *timer)
 static bool postpone_if_required_for_backup(struct push_backup *pb,
 					  struct bio *bio, u64 clu)
 {
-	bool first = false, queue_timer = false, postpone = false;
+	bool queue_timer = false, postpone = false;
 	struct pb_bio *pbio;
 	unsigned long flags;
 
@@ -227,22 +204,14 @@ static bool postpone_if_required_for_backup(struct push_backup *pb,
 
 	postpone = true;
 	pb->nr_delayed += 1;
-
-	pbio = find_node_pbio(&pb->rb_root, clu);
-	if (pbio) {
-		bio_list_add(&pbio->chain_bio_list, bio);
-		goto unlock;
-	}
-
-	if (pb->nr_delayed == 1) { /* We are the first */
+	if (pb->nr_delayed == 1) {
 		pb->deadline_jiffies = get_jiffies_64() + pb->timeout_in_jiffies;
 		queue_timer = true;
 	}
 
 	pbio = bio_to_pbio(bio);
-	link_node_pbio(&pb->rb_root, pbio, clu);
-	first = list_empty(&pb->pending);
-	list_add_tail(&pbio->list, &pb->pending);
+
+	link_pending_pbio(pb, pbio, clu);
 	set_bit(clu, pb->pending_map);
 unlock:
 	spin_unlock_irqrestore(&pb->lock, flags);
@@ -251,7 +220,7 @@ unlock:
 		mod_timer(&pb->deadline_timer, pb->timeout_in_jiffies + 1);
 	rcu_read_unlock();
 
-	if (first)
+	if (queue_timer)
 		wake_up_interruptible(&pb->waitq);
 
 	return postpone;
@@ -261,10 +230,9 @@ static void init_pb_bio(struct bio *bio)
 {
 	struct pb_bio *pbio = bio_to_pbio(bio);
 
-	bio_list_init(&pbio->chain_bio_list);
+	INIT_HLIST_NODE(&pbio->hlist_node);
 	pbio->clu = UINT_MAX;
 	INIT_LIST_HEAD(&pbio->list);
-	RB_CLEAR_NODE(&pbio->node);
 }
 
 static int pb_map(struct dm_target *ti, struct bio *bio)
@@ -384,8 +352,7 @@ static int push_backup_read(struct push_backup *pb,
 			    char *result, unsigned int maxlen)
 {
 	unsigned int left, right, sz = 0;
-	struct pb_bio *pbio, *orig_pbio;
-	struct rb_node *node;
+	struct pb_bio *pbio;
 	int ret;
 
 	if (!pb)
@@ -405,31 +372,19 @@ again:
 	ret = 0;
 	if (!pb->map_bits)
 		goto unlock;
-	orig_pbio = list_first_entry_or_null(&pb->pending, typeof(*pbio), list);
-	if (unlikely(!orig_pbio)) {
+	pbio = list_first_entry_or_null(&pb->pending, typeof(*pbio), list);
+	if (unlikely(!pbio)) {
 		spin_unlock_irq(&pb->lock);
 		goto again;
 	}
-	list_del_init(&orig_pbio->list);
+	list_del_init(&pbio->list);
 
-	left = right = orig_pbio->clu;
-	pbio = orig_pbio;
-	while ((node = rb_prev(&pbio->node)) != NULL) {
-		pbio = rb_entry(node, struct pb_bio, node);
-		if (pbio->clu + 1 != left || list_empty(&pbio->list))
-			break;
-		list_del_init(&pbio->list);
-		left = pbio->clu;
-	}
-
-	pbio = orig_pbio;
-	while ((node = rb_next(&pbio->node)) != NULL) {
-		pbio = rb_entry(node, struct pb_bio, node);
-		if (pbio->clu - 1 != right || list_empty(&pbio->list))
-			break;
-		list_del_init(&pbio->list);
-		right = pbio->clu;
-	}
+	left = pbio->clu;
+	right = find_next_zero_bit(pb->pending_map, pb->nr_clus, left + 1);
+	if (right < pb->nr_clus)
+		right -= 1;
+	else
+		right = pb->nr_clus - 1;
 
 	DMEMIT("%u:%u", left, right - left + 1);
 	ret = 1;
@@ -471,14 +426,14 @@ static int push_backup_write(struct push_backup *pb,
 
 	for (i = clu; i < clu + nr; i++) {
 		while (1) {
-			pbio = find_node_pbio(&pb->rb_root, i);
+			pbio = find_pending_pbio(pb, i);
 			if (!pbio)
 				break;
 			unlink_postponed_backup_pbio(pb, &bio_list, pbio);
 		}
 	}
 
-	has_more = !RB_EMPTY_ROOT(&pb->rb_root);
+	has_more = (pb->nr_delayed != 0);
 	if (has_more)
 		pb->deadline_jiffies = get_jiffies_64() + pb->timeout_in_jiffies;
 	else
@@ -576,13 +531,14 @@ out:
 }
 static void pb_destroy(struct push_backup *pb)
 {
-	WARN_ON_ONCE(pb->rb_root.rb_node != NULL);
+	WARN_ON_ONCE(pb->nr_delayed);
 
 	del_timer_sync(&pb->deadline_timer);
 	if (pb->wq)
 		destroy_workqueue(pb->wq);
 	kvfree(pb->map); /* Is's not zero if stop was not called */
 	kvfree(pb->pending_map);
+	kvfree(pb->pending_htable);
 	if (pb->origin_dev)
 		dm_put_device(pb->ti, pb->origin_dev);
 	kfree(pb);
@@ -600,17 +556,21 @@ static int pb_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	if (argc < 2 || ti->begin != 0)
 		return -EINVAL;
 
+	ret = -ENOMEM;
 	pb = kzalloc(sizeof(*pb), GFP_KERNEL);
-	if (!pb) {
-		ti->error = "Error allocating pb structure";
-		return -ENOMEM;
-	}
+	if (!pb)
+		goto err;
+
+        pb->pending_htable = kcalloc(PB_HASH_TABLE_SIZE,
+				     sizeof(struct hlist_head),
+				     GFP_KERNEL);
+	if (!pb->pending_htable)
+		goto err;
 
 	pb->suspended = true;
 	spin_lock_init(&pb->lock);
 	init_rwsem(&pb->ctl_rwsem);
 	bio_list_init(&pb->deferred_bios);
-	pb->rb_root = RB_ROOT;
 	INIT_LIST_HEAD(&pb->pending);
 	timer_setup(&pb->deadline_timer, pb_timer_func, 0);
 
@@ -661,7 +621,8 @@ static int pb_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->discards_supported = true;
 	return 0;
 err:
-	pb_destroy(pb);
+	if (pb)
+		pb_destroy(pb);
 	return ret;
 }
 
