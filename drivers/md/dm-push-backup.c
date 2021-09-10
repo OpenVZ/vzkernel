@@ -102,8 +102,8 @@ static void calc_bio_clusters(struct push_backup *pb, struct request *rq,
 	pbio->end_clu = (off + blk_rq_bytes(rq) - 1) / pb->clu_size;
 }
 
-static bool setup_if_required_for_backup(struct push_backup *pb, struct request *rq,
-					 struct pb_bio *pbio)
+static int setup_if_required_for_backup(struct push_backup *pb, struct request *rq,
+					struct pb_bio *pbio)
 {
 	u64 key;
 
@@ -114,9 +114,9 @@ static bool setup_if_required_for_backup(struct push_backup *pb, struct request 
 	if (key != U64_MAX) {
 		pbio->rq = rq;
 		pbio->key_clu = key;
-		return true;
+		return 1;
 	}
-	return false;
+	return 0;
 }
 
 static void update_pending_map(struct push_backup *pb, struct pb_bio *pbio)
@@ -232,22 +232,26 @@ static void pb_timer_func(struct timer_list *timer)
 		queue_work(pb->wq, &pb->worker);
 }
 
-static bool postpone_if_required_for_backup(struct push_backup *pb,
-					    struct request *rq,
-					    struct pb_bio *pbio)
+static int postpone_if_required_for_backup(struct push_backup *pb,
+					   struct request *rq,
+					   struct pb_bio *pbio)
 {
-	bool queue_timer = false, postpone = false;
+	bool queue_timer = false;
 	unsigned long flags;
+	int ret = 0;
 
 	rcu_read_lock(); /* See push_backup_stop() */
 	spin_lock_irqsave(&pb->lock, flags);
-	if (!pb->alive || !setup_if_required_for_backup(pb, rq, pbio))
+	if (!pb->alive)
+		goto unlock;
+	ret = setup_if_required_for_backup(pb, rq, pbio);
+	if (ret <= 0)
 		goto unlock;
 
 	update_pending_map(pb, pbio);
 	link_pending_pbio(pb, pbio);
 
-	postpone = true;
+	ret = 1;
 	pb->nr_delayed += 1;
 	if (pb->nr_delayed == 1) {
 		pb->deadline_jiffies = get_jiffies_64() + pb->timeout_in_jiffies;
@@ -263,7 +267,7 @@ unlock:
 	if (queue_timer)
 		wake_up_interruptible(&pb->waitq);
 
-	return postpone;
+	return ret;
 }
 
 static inline struct pb_bio *map_info_to_embedded_pbio(union map_info *info)
@@ -281,9 +285,13 @@ static int pb_clone_and_map(struct dm_target *ti, struct request *rq,
 	struct block_device *bdev = pb->origin_dev->bdev;
 	struct request_queue *q;
 	struct request *clone;
+	int ret;
 
 	if (blk_rq_bytes(rq) && op_is_write(req_op(rq))) {
-		if (postpone_if_required_for_backup(pb, rq, pbio))
+		ret = postpone_if_required_for_backup(pb, rq, pbio);
+		if (ret < 0) /* ENOMEM */
+			return DM_MAPIO_REQUEUE;
+		if (ret > 0) /* Postponed */
 			return DM_MAPIO_SUBMITTED;
 	}
 
