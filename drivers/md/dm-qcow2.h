@@ -104,6 +104,8 @@ struct md_page {
 
 struct qcow2_target {
 	struct dm_target *ti;
+#define QCOW2_QRQ_POOL_SIZE 512 /* Twice nr_requests from blk_mq_init_sched() */
+	mempool_t *qrq_pool;
 	mempool_t *qio_pool;
 	/*
 	 * start_processing_qrq() is the only place during IO handling,

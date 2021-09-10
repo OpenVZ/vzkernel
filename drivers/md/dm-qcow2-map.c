@@ -4001,7 +4001,7 @@ static void qrq_endio(struct qcow2_target *tgt, struct qio *unused,
 
 	if (qrq->bvec)
 		kfree(qrq->bvec);
-	kfree(qrq);
+	mempool_free(qrq, tgt->qrq_pool);
 	dm_complete_request(rq, bi_status);
 }
 
@@ -4064,7 +4064,7 @@ int qcow2_clone_and_map(struct dm_target *ti, struct request *rq,
 	struct qcow2_rq *qrq;
 	struct qio *qio;
 
-	qrq = kmalloc(sizeof(*qrq) + sizeof(*qio), GFP_ATOMIC);
+	qrq = mempool_alloc(tgt->qrq_pool, GFP_ATOMIC);
 	if (!qrq)
 		return DM_MAPIO_KILL;
 	init_qrq(qrq, rq);
