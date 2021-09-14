@@ -144,6 +144,9 @@ static int bc_proc_nodeinfo_show(struct seq_file *f, void *v)
 	unsigned long pages[NR_LRU_LISTS];
 
 	css = ub_get_mem_css(seq_beancounter(f));
+	if (!css)
+		return 0;
+
 	for_each_node_state(nid, N_HIGH_MEMORY) {
 		memset(pages, 0, sizeof(pages));
 		mem_cgroup_get_nr_pages(mem_cgroup_from_cont(css->cgroup),
