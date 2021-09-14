@@ -163,6 +163,10 @@ retry:
 	css = ACCESS_ONCE(ub->ub_bound_css[idx]);
 	if (likely(css && css_tryget(css))) {
 		rcu_read_unlock();
+		if ((ub != &ub0) && (css == ub0.ub_bound_css[idx])) {
+			css_put(css);
+			css = NULL;
+		}
 		return css;
 	}
 
@@ -183,7 +187,11 @@ retry:
 	if (css)
 		css_put(css);
 
-	css_get(root_css);
+	if (ub == &ub0)
+		css_get(root_css);
+	else
+		root_css = NULL;
+
 	return root_css;
 }
 

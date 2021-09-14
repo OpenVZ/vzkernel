@@ -127,7 +127,7 @@ int ub_enough_memory(struct mm_struct *mm, long pages)
 	struct user_beancounter *ub;
 	struct cgroup_subsys_state *css;
 	unsigned long flags;
-	int ret;
+	int ret = -ENOMEM;
 
 	if (!mm)
 		return 0;
@@ -135,15 +135,16 @@ int ub_enough_memory(struct mm_struct *mm, long pages)
 	ub = mm->mm_ub;
 
 	if (ub->ub_parms[UB_PRIVVMPAGES].held >
-	    ub->ub_parms[UB_PRIVVMPAGES].barrier) {
-		ret = -ENOMEM;
+	    ub->ub_parms[UB_PRIVVMPAGES].barrier)
 		goto out;
-	}
 
 	if (ub == get_ub0() || ub_overcommit_memory)
 		return 0;
 
 	css = ub_get_mem_css(ub);
+	if (!css)
+		goto out;
+
 	ret = mem_cgroup_enough_memory(mem_cgroup_from_cont(css->cgroup), pages);
 	css_put(css);
 out:
@@ -166,6 +167,9 @@ static int bc_fill_sysinfo(struct user_beancounter *ub,
 		return NOTIFY_DONE | NOTIFY_STOP_MASK;
 
 	css = ub_get_mem_css(ub);
+	if (!css)
+		return NOTIFY_BAD;
+
 	mem_cgroup_fill_sysinfo(mem_cgroup_from_cont(css->cgroup), si);
 	css_put(css);
 
@@ -185,6 +189,9 @@ static int bc_fill_meminfo(struct user_beancounter *ub,
 		goto out;
 
 	css = ub_get_mem_css(ub);
+	if (!css)
+		return NOTIFY_BAD;
+
 	mem_cgroup_fill_meminfo(mem_cgroup_from_cont(css->cgroup), mi);
 	css_put(css);
 
@@ -213,6 +220,9 @@ static int bc_fill_vmstat(struct user_beancounter *ub, unsigned long *stat)
 		return NOTIFY_OK;
 
 	css = ub_get_mem_css(ub);
+	if (!css)
+		return NOTIFY_BAD;
+
 	mem_cgroup_fill_vmstat(mem_cgroup_from_cont(css->cgroup), stat);
 	css_put(css);
 	return NOTIFY_OK;
