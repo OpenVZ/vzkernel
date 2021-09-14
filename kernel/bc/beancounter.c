@@ -117,34 +117,54 @@ int ub_attach_task(struct user_beancounter *ub, struct task_struct *tsk)
 {
 	int ret = 0;
 	struct user_beancounter *old_ub = tsk->task_bc.exec_ub;
-	struct cgroup_subsys_state *css;
+	struct cgroup_subsys_state *css, *com, *cob;
 
 	if (ub == old_ub)
 		goto out;
+
+	ret = -ENODEV;
+	com = ub_get_mem_css(old_ub);
+	if (!com)
+		goto out;
+
+	cob = ub_get_blkio_css(old_ub);
+	if (!cob)
+		goto fail_om;
+
 	css = ub_get_mem_css(ub);
+	if (!css)
+		goto fail_ob;
+
 	ret = cgroup_kernel_attach(css->cgroup, tsk);
 	css_put(css);
 	if (ret)
-		goto out;
+		goto fail_ob;
+
+	ret = -ENODEV;
 	css = ub_get_blkio_css(ub);
+	if (!css)
+		goto fail_blkio;
+
 	ret = cgroup_kernel_attach(css->cgroup, tsk);
 	css_put(css);
 	if (ret)
 		goto fail_blkio;
+
 	ret = cgroup_kernel_attach(ub->css.cgroup, tsk);
 	if (ret)
 		goto fail_ub;
+
+fail_ob:
+	css_put(cob);
+fail_om:
+	css_put(com);
 out:
 	return ret;
 fail_ub:
-	css = ub_get_blkio_css(old_ub);
-	cgroup_kernel_attach(css->cgroup, tsk);
-	css_put(css);
+	cgroup_kernel_attach(cob->cgroup, tsk);
 fail_blkio:
-	css = ub_get_mem_css(old_ub);
-	cgroup_kernel_attach(css->cgroup, tsk);
-	css_put(css);
-	goto out;
+	cgroup_kernel_attach(com->cgroup, tsk);
+	goto fail_ob;
 }
 
 extern void mem_cgroup_sync_beancounter(struct mem_cgroup *memcg,
@@ -167,6 +187,9 @@ int ub_update_memcg(struct user_beancounter *ub)
 	int ret;
 
 	css = ub_get_mem_css(ub);
+	if (!css)
+		return -ENODEV;
+
 	ret = mem_cgroup_apply_beancounter(mem_cgroup_from_cont(css->cgroup),
 					   ub);
 	css_put(css);
@@ -181,8 +204,10 @@ void ub_sync_pids(struct user_beancounter *ub)
 	struct cgroup_subsys_state *css;
 
 	css = ub_get_pids_css(ub);
-	pids_cgroup_sync_beancounter(pids_cgroup_from_cont(css->cgroup), ub);
-	css_put(css);
+	if (css) {
+		pids_cgroup_sync_beancounter(pids_cgroup_from_cont(css->cgroup), ub);
+		css_put(css);
+	}
 }
 
 /*
@@ -193,18 +218,22 @@ void ub_sync_memcg(struct user_beancounter *ub)
 	struct cgroup_subsys_state *css;
 
 	css = ub_get_mem_css(ub);
-	mem_cgroup_sync_beancounter(mem_cgroup_from_cont(css->cgroup), ub);
-	css_put(css);
+	if (css) {
+		mem_cgroup_sync_beancounter(mem_cgroup_from_cont(css->cgroup), ub);
+		css_put(css);
+	}
 }
 
 unsigned long ub_total_pages(struct user_beancounter *ub, bool swap)
 {
 	struct cgroup_subsys_state *css;
-	unsigned long ret;
+	unsigned long ret = 0;
 
 	css = ub_get_mem_css(ub);
-	ret = mem_cgroup_total_pages(mem_cgroup_from_cont(css->cgroup), swap);
-	css_put(css);
+	if (css) {
+		ret = mem_cgroup_total_pages(mem_cgroup_from_cont(css->cgroup), swap);
+		css_put(css);
+	}
 	return ret;
 }
 
@@ -576,11 +605,12 @@ static ssize_t ub_cgroup_read(struct cgroup *cg, struct cftype *cft,
 	struct cgroup_subsys_state *bound_css;
 	char *path;
 	int len;
-	ssize_t ret;
+	ssize_t ret = -ENOMEM;
 
 	bound_css = __ub_get_css(ub, cft->private);
+	if (!bound_css)
+		goto fail;
 
-	ret = -ENOMEM;
 	path = kmalloc(PATH_MAX + 1, GFP_KERNEL);
 	if (!path)
 		goto out;
@@ -594,6 +624,7 @@ static ssize_t ub_cgroup_read(struct cgroup *cg, struct cftype *cft,
 	kfree(path);
 out:
 	css_put(bound_css);
+fail:
 	return ret;
 }
 

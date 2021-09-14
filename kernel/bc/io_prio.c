@@ -35,8 +35,12 @@ int ub_set_ioprio(int id, int ioprio)
 		goto out;
 
 	css = ub_get_blkio_css(ub);
+	if (!css)
+		goto put;
+
 	ret = blkcg_set_weight(css->cgroup, ioprio_weight[ioprio]);
 	css_put(css);
+put:
 	put_beancounter(ub);
 out:
 	return ret;
@@ -59,8 +63,10 @@ static int bc_iostat(struct seq_file *f, struct user_beancounter *bc)
 			__ub_percpu_sum(bc, fuse_bytes) >> 9);
 
 	css = ub_get_blkio_css(bc);
-	blkcg_show_ub_iostat(css->cgroup, f);
-	css_put(css);
+	if (css) {
+		blkcg_show_ub_iostat(css->cgroup, f);
+		css_put(css);
+	}
 	return 0;
 }
 
@@ -146,6 +152,9 @@ static int bc_ioprio_show(struct seq_file *f, void *v)
 	bc = seq_beancounter(f);
 
 	css = ub_get_blkio_css(bc);
+	if (!css)
+		return 0;
+
 	weight = blkcg_get_weight(css->cgroup);
 	css_put(css);
 
