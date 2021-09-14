@@ -3340,17 +3340,6 @@ retry:
 	}
 
 	/*
-	 * Unlike in global OOM situations, memcg is not in a physical
-	 * memory shortage.  Allow dying and OOM-killed tasks to
-	 * bypass the last charges so that they can exit quickly and
-	 * free their memory.
-	 */
-	if (unlikely(test_thread_flag(TIF_MEMDIE) ||
-		     fatal_signal_pending(current) ||
-		     current->flags & PF_EXITING))
-		goto bypass;
-
-	/*
 	 * Prevent unbounded recursion when reclaim operations need to
 	 * allocate memory. This might exceed the limits temporarily,
 	 * but we prefer facilitating memory reclaim and getting back
@@ -3402,9 +3391,6 @@ retry:
 		goto retry;
 
 	if (gfp_mask & __GFP_NOFAIL)
-		goto bypass;
-
-	if (fatal_signal_pending(current))
 		goto bypass;
 
 	mem_cgroup_oom(mem_over_limit, gfp_mask, get_order(batch * PAGE_SIZE));
