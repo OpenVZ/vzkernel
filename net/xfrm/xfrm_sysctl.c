@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/sysctl.h>
 #include <linux/slab.h>
+#include <linux/ve.h>
 #include <net/net_namespace.h>
 #include <net/xfrm.h>
 
@@ -55,8 +56,8 @@ int __net_init xfrm_sysctl_init(struct net *net)
 	table[2].data = &net->xfrm.sysctl_larval_drop;
 	table[3].data = &net->xfrm.sysctl_acq_expires;
 
-	/* Don't export sysctls to unprivileged users */
-	if (net->user_ns != &init_user_ns)
+	/* Export sysctls only to root userns of the host or the container */
+	if (ve_net_hide_sysctl(net))
 		table[0].procname = NULL;
 
 	net->xfrm.sysctl_hdr = register_net_sysctl(net, "net/core", table);
