@@ -66,7 +66,7 @@ int do_truncate(struct user_namespace *mnt_userns, struct dentry *dentry,
 	return ret;
 }
 
-long vfs_truncate(const struct path *path, loff_t length)
+long vfs_truncate2(const struct path *path, loff_t length, struct file *file)
 {
 	struct user_namespace *mnt_userns;
 	struct inode *inode;
@@ -107,7 +107,7 @@ long vfs_truncate(const struct path *path, loff_t length)
 
 	error = security_path_truncate(path);
 	if (!error)
-		error = do_truncate(mnt_userns, path->dentry, length, 0, NULL);
+		error = do_truncate(mnt_userns, path->dentry, length, 0, file);
 
 put_write_and_out:
 	put_write_access(inode);
@@ -116,7 +116,7 @@ mnt_drop_write_and_out:
 out:
 	return error;
 }
-EXPORT_SYMBOL_GPL(vfs_truncate);
+EXPORT_SYMBOL_GPL(vfs_truncate2);
 
 long do_sys_truncate(const char __user *pathname, loff_t length)
 {
