@@ -1928,7 +1928,7 @@ static void loop_process_work(struct loop_worker *worker,
 	int orig_flags = current->flags;
 	struct loop_cmd *cmd;
 
-	current->flags |= PF_LOCAL_THROTTLE | PF_MEMALLOC_NOIO;
+	current->flags |= PF_LOCAL_THROTTLE | PF_MEMALLOC_NOIO | PF_IO_THREAD;
 	spin_lock_irq(&lo->lo_work_lock);
 	while (!list_empty(cmd_list)) {
 		cmd = container_of(
