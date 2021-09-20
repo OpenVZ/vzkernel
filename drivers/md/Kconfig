@@ -653,4 +653,11 @@ config DM_AUDIT
 	  Enables audit logging of several security relevant events in the
 	  particular device-mapper targets, especially the integrity target.
 
+config DM_PLOOP
+	tristate "Ploop target support"
+	depends on BLK_DEV_DM
+	help
+	  This is ploop1 format interpreter on device-mapper rails.
+
+
 endif # MD
