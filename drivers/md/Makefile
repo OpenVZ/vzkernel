@@ -33,6 +33,9 @@ linear-y	+= md-linear.o
 multipath-y	+= md-multipath.o
 faulty-y	+= md-faulty.o
 
+ploop-y		+= dm-ploop-target.o dm-ploop-map.o dm-ploop-cmd.o \
+		   dm-ploop-bat.o
+
 # Note: link order is important.  All raid personalities
 # and must come before md.o, as they each initialise 
 # themselves, and md.o may use the personalities when it 
@@ -112,3 +115,5 @@ endif
 ifeq ($(CONFIG_DM_AUDIT),y)
 dm-mod-objs			+= dm-audit.o
 endif
+
+obj-$(CONFIG_DM_PLOOP)		+= ploop.o
