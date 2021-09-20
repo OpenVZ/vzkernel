@@ -642,4 +642,12 @@ config DM_ZONED
 
 	  If unsure, say N.
 
+config DM_PLOOP
+	tristate "Ploop target support"
+	depends on BLK_DEV_DM
+	help
+	  This is ploop1 format interpreter on device-mapper rails.
+
+
+
 endif # MD
