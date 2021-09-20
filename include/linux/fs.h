@@ -2746,7 +2746,11 @@ static inline bool is_idmapped_mnt(const struct vfsmount *mnt)
 	return mnt_user_ns(mnt) != mnt->mnt_sb->s_user_ns;
 }
 
-extern long vfs_truncate(const struct path *, loff_t);
+extern long vfs_truncate2(const struct path *, loff_t, struct file *);
+static inline long vfs_truncate(const struct path *path, loff_t off)
+{
+	return vfs_truncate2(path, off, NULL);
+}
 int do_truncate(struct user_namespace *, struct dentry *, loff_t start,
 		unsigned int time_attrs, struct file *filp);
 extern int vfs_fallocate(struct file *file, int mode, loff_t offset,

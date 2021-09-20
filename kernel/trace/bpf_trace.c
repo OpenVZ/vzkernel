@@ -938,7 +938,7 @@ BTF_ID(func, security_file_open)
 #ifdef CONFIG_SECURITY_PATH
 BTF_ID(func, security_path_truncate)
 #endif
-BTF_ID(func, vfs_truncate)
+BTF_ID(func, vfs_truncate2)
 BTF_ID(func, vfs_fallocate)
 BTF_ID(func, dentry_open)
 BTF_ID(func, vfs_getattr)
