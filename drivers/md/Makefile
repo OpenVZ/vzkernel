@@ -118,3 +118,4 @@ endif
 
 obj-$(CONFIG_DM_PLOOP)		+= ploop.o
 obj-$(CONFIG_DM_PUSH_BACKUP)	+= push-backup.o
+obj-$(CONFIG_DM_TRACKING)	+= dm-tracking.o
