@@ -201,6 +201,14 @@ static void dm_requeue_original_request(struct dm_rq_target_io *tio, bool delay_
 	rq_completed(md);
 }
 
+void dm_requeue_original_rq(struct request *rq)
+{
+	struct dm_rq_target_io *tio = tio_from_request(rq);
+
+	dm_requeue_original_request(tio, false);
+}
+EXPORT_SYMBOL(dm_requeue_original_rq);
+
 static void dm_done(struct request *clone, blk_status_t error, bool mapped)
 {
 	int r = DM_ENDIO_DONE;
