@@ -1283,6 +1283,10 @@ SYSCALL_DEFINE4(ptrace, long, request, long, pid, unsigned long, addr,
 		goto out;
 	}
 
+	/* ptracing of init from inside CT is dangerous */
+	if (pid == 1 && !capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
 	child = find_get_task_by_vpid(pid);
 	if (!child) {
 		ret = -ESRCH;
@@ -1421,6 +1425,10 @@ COMPAT_SYSCALL_DEFINE4(ptrace, compat_long_t, request, compat_long_t, pid,
 		ret = ptrace_traceme();
 		goto out;
 	}
+
+	/* ptracing of init from inside CT is dangerous */
+	if (pid == 1 && !capable(CAP_SYS_ADMIN))
+		return -EPERM;
 
 	child = find_get_task_by_vpid(pid);
 	if (!child) {
