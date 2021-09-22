@@ -16,6 +16,7 @@
 #include <linux/hash.h>
 
 #include "kernfs-internal.h"
+#include "kernfs-ve.h"
 
 static DEFINE_SPINLOCK(kernfs_rename_lock);	/* kn->parent and ->name */
 static char kernfs_pr_cont_buf[PATH_MAX];	/* protected by rename_lock */
@@ -548,6 +549,7 @@ void kernfs_put(struct kernfs_node *kn)
 		simple_xattrs_free(&kn->iattr->xattrs);
 		kmem_cache_free(kernfs_iattrs_cache, kn->iattr);
 	}
+	kernfs_put_ve_perms(kn);
 	spin_lock(&kernfs_idr_lock);
 	idr_remove(&root->ino_idr, (u32)kernfs_ino(kn));
 	spin_unlock(&kernfs_idr_lock);
@@ -764,6 +766,7 @@ int kernfs_add_one(struct kernfs_node *kn)
 		ktime_get_real_ts64(&ps_iattr->ia_ctime);
 		ps_iattr->ia_mtime = ps_iattr->ia_ctime;
 	}
+	kernfs_get_ve_perms(kn);
 
 	up_write(&root->kernfs_rwsem);
 
