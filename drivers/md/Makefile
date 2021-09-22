@@ -36,6 +36,7 @@ faulty-y	+= md-faulty.o
 ploop-y		+= dm-ploop-target.o dm-ploop-map.o dm-ploop-cmd.o \
 		   dm-ploop-bat.o
 push-backup-y	+= dm-push-backup.o
+dm-qcow2-y	+= dm-qcow2-target.o dm-qcow2-map.o dm-qcow2-cmd.o
 
 # Note: link order is important.  All raid personalities
 # and must come before md.o, as they each initialise 
@@ -120,3 +121,4 @@ endif
 obj-$(CONFIG_DM_PLOOP)		+= ploop.o
 obj-$(CONFIG_DM_PUSH_BACKUP)	+= push-backup.o
 obj-$(CONFIG_DM_TRACKING)	+= dm-tracking.o
+obj-$(CONFIG_DM_QCOW2)		+= dm-qcow2.o
