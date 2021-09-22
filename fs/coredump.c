@@ -546,6 +546,9 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 	if (!__get_dumpable(cprm.mm_flags))
 		goto fail;
 
+	/* Avoid dumping sensitive tasks */
+	if (mm->vps_dumpable != VD_PTRACE_COREDUMP)
+		goto fail;
 	cred = prepare_creds();
 	if (!cred)
 		goto fail;
