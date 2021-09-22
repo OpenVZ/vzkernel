@@ -671,4 +671,21 @@ config DM_TRACKING
 	help
           Virtuozzo migration tracking driver.
 
+config DM_QCOW2
+	tristate "QCOW2 target support"
+	depends on BLK_DEV_DM
+	depends on ZLIB_INFLATE
+	help
+	  Driver for attaching QCOW2 files as block devices. It cares
+	  about performance-critical actions like actual IO and
+	  snapshot COW and merge, while complex and fast metadata-related
+	  service actions (e.g., snapshot creation and resize)
+	  are delegated to userspace.
+
+	  Suspend/resume is a barrier between the driver and userspace.
+	  On suspend the driver brings QCOW2 images in consistent state,
+	  while on resume it re-reads metadata from QCOW2 images. Thus,
+	  userspace proceeds metadata-related service actions, while
+	  device is suspended.
+
 endif # MD
