@@ -47,6 +47,9 @@ struct kernfs_root {
 
 	wait_queue_head_t	deactivate_waitq;
 	struct rw_semaphore	kernfs_rwsem;
+#ifdef CONFIG_VE
+	struct kmapset_set	*ve_perms_set;
+#endif
 };
 
 /* +1 to avoid triggering overflow warning when negating it */
@@ -90,6 +93,10 @@ struct kernfs_super_info {
 
 	/* anchored at kernfs_root->supers, protected by kernfs_rwsem */
 	struct list_head	node;
+#ifdef CONFIG_VE
+	struct ve_struct	*ve;
+	off_t			ve_perms_off;
+#endif
 };
 #define kernfs_info(SB) ((struct kernfs_super_info *)(SB->s_fs_info))
 
