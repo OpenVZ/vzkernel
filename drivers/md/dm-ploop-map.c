@@ -1791,9 +1791,9 @@ void do_ploop_work(struct work_struct *ws)
 	LIST_HEAD(discard_pios);
 	LIST_HEAD(cow_pios);
 	LIST_HEAD(resubmit_pios);
-	unsigned int pf_io_thread = (current->flags & PF_IO_THREAD);
+	unsigned int old_flags = current->flags;
 
-	current->flags |= PF_IO_THREAD;
+	current->flags |= PF_IO_THREAD|PF_LOCAL_THROTTLE|PF_MEMALLOC_NOIO;
 
 	spin_lock_irq(&ploop->deferred_lock);
 	list_splice_init(&ploop->pios[PLOOP_LIST_PREPARE], &embedded_pios);
@@ -1812,7 +1812,7 @@ void do_ploop_work(struct work_struct *ws)
 
 	submit_metadata_writeback(ploop);
 
-	current->flags = (current->flags & ~PF_IO_THREAD) | pf_io_thread;
+	current->flags = old_flags;
 }
 
 void do_ploop_fsync_work(struct work_struct *ws)
