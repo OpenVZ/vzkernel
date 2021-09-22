@@ -947,11 +947,8 @@ verify_rq_based:
 		return 0;
 	}
 
-	ti = dm_table_get_immutable_target(t);
-	if (!ti) {
-		DMERR("table load rejected: immutable target is required");
-		return -EINVAL;
-	} else if (ti->max_io_len) {
+	ti = dm_table_get_target(t, 0);
+	if (ti->max_io_len) {
 		DMERR("table load rejected: immutable target that splits IO is not supported");
 		return -EINVAL;
 	}
