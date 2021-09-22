@@ -659,5 +659,10 @@ config DM_PLOOP
 	help
 	  This is ploop1 format interpreter on device-mapper rails.
 
+config DM_PUSH_BACKUP
+	tristate "Push backup target support"
+	depends on BLK_DEV_DM
+	help
+          Virtuozzo push backup driver.
 
 endif # MD
