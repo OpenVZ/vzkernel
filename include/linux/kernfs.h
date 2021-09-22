@@ -16,6 +16,7 @@
 #include <linux/atomic.h>
 #include <linux/uidgid.h>
 #include <linux/wait.h>
+#include <linux/ioctl.h>
 
 struct file;
 struct dentry;
@@ -605,5 +606,9 @@ static inline int kernfs_rename(struct kernfs_node *kn,
 {
 	return kernfs_rename_ns(kn, new_parent, new_name, NULL);
 }
+
+#define KERNIO 0xb8
+
+#define KERNFS_GET_NS _IO(KERNIO, 0x1)
 
 #endif	/* __LINUX_KERNFS_H */
