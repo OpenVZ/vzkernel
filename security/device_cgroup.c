@@ -632,8 +632,13 @@ static int devcgroup_update_access(struct dev_cgroup *devcgroup,
 			if (css_has_online_children(&devcgroup->css))
 				return -EINVAL;
 
-			if (!may_allow_all(parent))
-				return -EPERM;
+			if (!may_allow_all(parent)) {
+				if (ve_is_super(get_exec_env()))
+					return -EPERM;
+				else
+					/* Fooling docker in CT - silently exit */
+					return 0;
+			}
 			if (!parent) {
 				devcgroup->behavior = DEVCG_DEFAULT_ALLOW;
 				dev_exception_clean(devcgroup);
