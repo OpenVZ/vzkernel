@@ -685,6 +685,7 @@ struct mm_struct {
 
 		unsigned long flags; /* Must use atomic bitops to access */
 
+		unsigned int vps_dumpable:2;
 #ifdef CONFIG_AIO
 		spinlock_t			ioctx_lock;
 		struct kioctx_table __rcu	*ioctx_table;
@@ -786,6 +787,12 @@ struct mm_struct {
 };
 
 extern struct mm_struct init_mm;
+
+#define VD_VE_ENTER_TASK	0/* tasks entered to VE from host, no ptrace,
+				  * or coredump or licdata access allowed */
+#define VD_PTRACE_COREDUMP	1/* tasks with ptrace and coredump allowed */
+#define VD_LICDATA_ACCESS	2/* tasks accessed containers license data,
+				  * no ptrace and no coredump allowed */
 
 /* Pointer magic because the dynamic array size confuses some compilers. */
 static inline void mm_init_cpumask(struct mm_struct *mm)
