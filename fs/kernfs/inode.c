@@ -16,6 +16,7 @@
 #include <linux/security.h>
 
 #include "kernfs-internal.h"
+#include "kernfs-ve.h"
 
 static const struct inode_operations kernfs_iops = {
 	.permission	= kernfs_iop_permission,
@@ -115,6 +116,9 @@ int kernfs_iop_setattr(struct user_namespace *mnt_userns, struct dentry *dentry,
 
 	if (!kn)
 		return -EINVAL;
+
+	if (!kernfs_ve_allowed(kn))
+		return -EPERM;
 
 	mutex_lock(&kernfs_mutex);
 	error = setattr_prepare(&init_user_ns, dentry, iattr);
@@ -272,6 +276,7 @@ int kernfs_iop_permission(struct user_namespace *mnt_userns,
 			  struct inode *inode, int mask)
 {
 	struct kernfs_node *kn;
+	int ret;
 
 	if (mask & MAY_NOT_BLOCK)
 		return -ECHILD;
@@ -279,10 +284,11 @@ int kernfs_iop_permission(struct user_namespace *mnt_userns,
 	kn = inode->i_private;
 
 	mutex_lock(&kernfs_mutex);
+	ret = kernfs_ve_permission(kn, kernfs_info(inode->i_sb), mask);
 	kernfs_refresh_inode(kn, inode);
 	mutex_unlock(&kernfs_mutex);
 
-	return generic_permission(&init_user_ns, inode, mask);
+	return ret ? ret : generic_permission(&init_user_ns, inode, mask);
 }
 
 int kernfs_xattr_get(struct kernfs_node *kn, const char *name,
