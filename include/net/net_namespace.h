@@ -204,6 +204,7 @@ void net_ns_get_ownership(const struct net *net, kuid_t *uid, kgid_t *gid);
 void net_ns_barrier(void);
 
 struct ns_common *get_net_ns(struct ns_common *ns);
+struct ns_common *maybe_get_net_ns(struct ns_common *ns);
 struct net *get_net_ns_by_fd(int fd);
 #else /* CONFIG_NET_NS */
 #include <linux/sched.h>

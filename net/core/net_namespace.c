@@ -673,6 +673,18 @@ struct ns_common *get_net_ns(struct ns_common *ns)
 }
 EXPORT_SYMBOL_GPL(get_net_ns);
 
+struct ns_common *maybe_get_net_ns(struct ns_common *ns)
+{
+	struct net *net;
+
+	net = maybe_get_net(container_of(ns, struct net, ns));
+	if (!net)
+		return ERR_PTR(-ENXIO);
+
+	return &net->ns;
+}
+EXPORT_SYMBOL_GPL(maybe_get_net_ns);
+
 struct net *get_net_ns_by_fd(int fd)
 {
 	struct file *file;

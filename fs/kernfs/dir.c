@@ -1849,4 +1849,5 @@ const struct file_operations kernfs_dir_fops = {
 	.iterate_shared	= kernfs_fop_readdir,
 	.release	= kernfs_dir_fop_release,
 	.llseek		= generic_file_llseek,
+	.unlocked_ioctl = kernfs_ioctl,
 };
