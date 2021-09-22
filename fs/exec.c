@@ -1010,6 +1010,7 @@ static int exec_mmap(struct mm_struct *mm)
 		}
 	}
 
+	mm->vps_dumpable = VD_PTRACE_COREDUMP;
 	task_lock(tsk);
 	membarrier_exec_mmap(mm);
 
