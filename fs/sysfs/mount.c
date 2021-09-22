@@ -32,8 +32,10 @@ static int sysfs_get_tree(struct fs_context *fc)
 	if (ret)
 		return ret;
 
-	if (kfc->new_sb_created)
+	if (kfc->new_sb_created) {
 		fc->root->d_sb->s_iflags |= SB_I_USERNS_VISIBLE;
+		sysfs_set_ve_perms(fc->root);
+	}
 	return 0;
 }
 
@@ -104,6 +106,12 @@ int __init sysfs_init(void)
 		return PTR_ERR(sysfs_root);
 
 	sysfs_root_kn = kernfs_root_to_node(sysfs_root);
+
+	err = sysfs_init_ve_perms(sysfs_root);
+	if (err) {
+		kernfs_destroy_root(sysfs_root);
+		return err;
+	}
 
 	err = register_filesystem(&sysfs_fs_type);
 	if (err) {

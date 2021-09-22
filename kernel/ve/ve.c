@@ -18,9 +18,12 @@
 #include <linux/rcupdate.h>
 #include <linux/init_task.h>
 #include <linux/mutex.h>
+#include <linux/kmapset.h>
 #include <uapi/linux/vzcalluser.h>
 
 #include "../cgroup/cgroup-internal.h" /* For cgroup_task_count() */
+
+extern struct kmapset_set sysfs_ve_perms_set;
 
 static struct kmem_cache *ve_cachep;
 
@@ -312,6 +315,7 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
+	kmapset_init_key(&ve->sysfs_perms_key);
 	return &ve->css;
 
 err_ve:
@@ -352,6 +356,7 @@ static void ve_destroy(struct cgroup_subsys_state *css)
 {
 	struct ve_struct *ve = css_to_ve(css);
 
+	kmapset_unlink(&ve->sysfs_perms_key, &sysfs_ve_perms_set);
 	kmem_cache_free(ve_cachep, ve);
 }
 
