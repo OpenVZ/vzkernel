@@ -15,6 +15,7 @@
 #include <linux/slab.h>
 #include <linux/rcupdate.h>
 #include <linux/mutex.h>
+#include <linux/ve.h>
 
 #ifdef CONFIG_CGROUP_DEVICE
 
@@ -848,8 +849,24 @@ static int devcgroup_legacy_check_permission(short type, u32 major, u32 minor,
 				     minor, access);
 	rcu_read_unlock();
 
+#ifdef CONFIG_VE
+	/*
+	 * When restoring container allow everything in
+	 * pseudosuper state. We need this for early
+	 * mounting of second ploop device. Still, don't
+	 * change behaviour on the ve0.
+	 */
+	if (!rc) {
+		struct ve_struct *ve = get_exec_env();
+
+		if (!ve_is_super(ve) && ve->is_pseudosuper)
+			return 0;
+		return -EPERM;
+	}
+#else
 	if (!rc)
 		return -EPERM;
+#endif
 
 	return 0;
 }
