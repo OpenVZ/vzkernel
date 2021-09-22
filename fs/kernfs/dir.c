@@ -1131,6 +1131,9 @@ static int kernfs_dop_revalidate(struct dentry *dentry, unsigned int flags)
 	    kernfs_info(dentry->d_sb)->ns != kn->ns)
 		goto out_bad;
 
+	if (!kernfs_d_visible(kn, kernfs_info(dentry->d_sb)))
+		goto out_bad;
+
 	up_read(&root->kernfs_rwsem);
 	return 1;
 out_bad:
@@ -1158,6 +1161,7 @@ static struct dentry *kernfs_iop_lookup(struct inode *dir,
 		ns = kernfs_info(dir->i_sb)->ns;
 
 	kn = kernfs_find_ns(parent, dentry->d_name.name, ns);
+
 	/* attach dentry and inode */
 	if (kn) {
 		/* Inactive nodes are invisible to the VFS so don't
@@ -1167,6 +1171,12 @@ static struct dentry *kernfs_iop_lookup(struct inode *dir,
 			up_read(&root->kernfs_rwsem);
 			return NULL;
 		}
+
+		if (!kernfs_d_visible(kn, kernfs_info(dentry->d_sb))) {
+			up_read(&root->kernfs_rwsem);
+			return NULL;
+		}
+
 		inode = kernfs_get_inode(dir->i_sb, kn);
 		if (!inode)
 			inode = ERR_PTR(-ENOMEM);
@@ -1819,6 +1829,9 @@ static int kernfs_fop_readdir(struct file *file, struct dir_context *ctx)
 		ctx->pos = pos->hash;
 		file->private_data = pos;
 		kernfs_get(pos);
+
+		if (!kernfs_d_visible(pos, kernfs_info(dentry->d_sb)))
+			continue;
 
 		up_read(&root->kernfs_rwsem);
 		if (!dir_emit(ctx, name, len, ino, type))
