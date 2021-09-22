@@ -18,6 +18,7 @@
 #include <linux/exportfs.h>
 
 #include "kernfs-internal.h"
+#include "kernfs-ve.h"
 
 struct kmem_cache *kernfs_node_cache, *kernfs_iattrs_cache;
 
