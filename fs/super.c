@@ -37,6 +37,7 @@
 #include <linux/lockdep.h>
 #include <linux/user_namespace.h>
 #include <linux/fs_context.h>
+#include <linux/ve.h>
 #include <uapi/linux/mount.h>
 #include "internal.h"
 
@@ -240,7 +241,7 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags,
 	init_waitqueue_head(&s->s_writers.wait_unfrozen);
 	s->s_bdi = &noop_backing_dev_info;
 	s->s_flags = flags;
-	if (s->s_user_ns != &init_user_ns)
+	if (!current_user_ns_initial())
 		s->s_iflags |= SB_I_NODEV;
 	INIT_HLIST_NODE(&s->s_instances);
 	INIT_HLIST_BL_HEAD(&s->s_roots);
