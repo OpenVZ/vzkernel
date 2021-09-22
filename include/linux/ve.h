@@ -48,9 +48,14 @@ struct ve_struct {
 	__u64			features;
 
 	struct kmapset_key	sysfs_perms_key;
+
+	atomic_t		netns_avail_nr;
+	int			netns_max_nr;
 };
 
 extern int nr_ve;
+
+#define NETNS_MAX_NR_DEFAULT	256	/* number of net-namespaces per-VE */
 
 #define capable_setveid() \
 	(ve_is_super(get_exec_env()) && capable(CAP_SYS_ADMIN))
