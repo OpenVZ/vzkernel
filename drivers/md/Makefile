@@ -35,6 +35,7 @@ faulty-y	+= md-faulty.o
 
 ploop-y		+= dm-ploop-target.o dm-ploop-map.o dm-ploop-cmd.o \
 		   dm-ploop-bat.o
+push-backup-y	+= dm-push-backup.o
 
 # Note: link order is important.  All raid personalities
 # and must come before md.o, as they each initialise 
@@ -117,3 +118,4 @@ dm-mod-objs			+= dm-audit.o
 endif
 
 obj-$(CONFIG_DM_PLOOP)		+= ploop.o
+obj-$(CONFIG_DM_PUSH_BACKUP)	+= push-backup.o
