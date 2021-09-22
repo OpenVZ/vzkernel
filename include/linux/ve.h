@@ -42,9 +42,14 @@ struct ve_struct {
 	__u64			features;
 
 	struct kmapset_key	sysfs_perms_key;
+
+	atomic_t		netns_avail_nr;
+	int			netns_max_nr;
 };
 
 extern int nr_ve;
+
+#define NETNS_MAX_NR_DEFAULT	256	/* number of net-namespaces per-VE */
 
 #ifdef CONFIG_VE
 extern struct ve_struct *get_ve(struct ve_struct *ve);
