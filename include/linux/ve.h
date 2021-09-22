@@ -13,6 +13,7 @@
 #include <linux/types.h>
 #include <linux/ve_proto.h>
 #include <linux/cgroup.h>
+#include <linux/kmapset.h>
 
 struct nsproxy;
 
@@ -39,6 +40,8 @@ struct ve_struct {
 
 	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
 	__u64			features;
+
+	struct kmapset_key	sysfs_perms_key;
 };
 
 extern int nr_ve;
