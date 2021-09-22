@@ -665,4 +665,10 @@ config DM_PUSH_BACKUP
 	help
           Virtuozzo push backup driver.
 
+config DM_TRACKING
+	tristate "Tracking target support"
+	depends on BLK_DEV_DM
+	help
+          Virtuozzo migration tracking driver.
+
 endif # MD
