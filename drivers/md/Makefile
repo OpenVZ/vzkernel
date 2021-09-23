@@ -71,6 +71,7 @@ obj-$(CONFIG_DM_CACHE_SMQ)	+= dm-cache-smq.o
 obj-$(CONFIG_DM_ERA)		+= dm-era.o
 obj-$(CONFIG_DM_PLOOP)		+= ploop.o
 obj-$(CONFIG_DM_PUSH_BACKUP)	+= push-backup.o
+obj-$(CONFIG_DM_TRACKING)	+= dm-tracking.o
 obj-$(CONFIG_DM_QCOW2)		+= dm-qcow2.o
 obj-$(CONFIG_DM_LOG_WRITES)	+= dm-log-writes.o
 obj-$(CONFIG_DM_INTEGRITY)	+= dm-integrity.o
