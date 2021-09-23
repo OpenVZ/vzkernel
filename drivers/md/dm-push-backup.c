@@ -47,7 +47,6 @@ struct push_backup {
 	u64 nr_clus;
 
 	bool alive;
-	bool suspended;
 	void *map;
 	u64 map_bits;
 	void *pending_map;
@@ -390,13 +389,6 @@ static int push_backup_start(struct push_backup *pb, u64 timeout,
 		return -EEXIST;
 	if (timeout == 0 || timeout >= 60UL * 60 * 5)
 		return -EINVAL;
-	/*
-	 * There is no a problem in case of not suspended for the device.
-	 * But this means userspace collects wrong backup. Warn it here.
-	 * Since the device is suspended, we do not care about inflight bios.
-	 */
-	if (!pb->suspended)
-		return -EBUSY;
 	return setup_pb(pb, mask, timeout);
 }
 
@@ -665,7 +657,6 @@ static int pb_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	if (!pb->pbio_pool || !pb->pending_htable)
 		goto err;
 
-	pb->suspended = true;
 	spin_lock_init(&pb->lock);
 	init_rwsem(&pb->ctl_rwsem);
 	bio_list_init(&pb->deferred_bios);
@@ -753,23 +744,6 @@ static void pb_status(struct dm_target *ti, status_type_t type,
 	spin_unlock_irq(&pb->lock);
 }
 
-static void pb_set_suspended(struct dm_target *ti, bool suspended)
-{
-	struct push_backup *pb = ti->private;
-
-	down_write(&pb->ctl_rwsem);
-	pb->suspended = suspended;
-	up_write(&pb->ctl_rwsem);
-}
-static void pb_postsuspend(struct dm_target *ti)
-{
-	pb_set_suspended(ti, true);
-}
-static void pb_resume(struct dm_target *ti)
-{
-	pb_set_suspended(ti, false);
-}
-
 static struct target_type pb_target = {
 	.name = "push_backup",
 	.version = {1, 0, 0},
@@ -781,8 +755,6 @@ static struct target_type pb_target = {
 	.release_clone_rq = pb_release_clone,
 	.message = pb_message,
 	.iterate_devices = pb_iterate_devices,
-	.postsuspend = pb_postsuspend,
-	.resume = pb_resume,
 	.status = pb_status,
 };
 
