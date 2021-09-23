@@ -982,6 +982,7 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	part = disk_map_sector_rcu(plo->disk, bio->bi_sector);
 	part_stat_inc(cpu, part, ios[rw]);
 	part_stat_add(cpu, part, sectors[rw], bio_sectors(bio));
+	hd_struct_put(part);
 	part_stat_unlock();
 
 	if (blk_queue_standby(plo->queue)) {
