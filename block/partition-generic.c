@@ -253,6 +253,7 @@ void __delete_partition(struct hd_struct *part)
 
 	call_rcu(&part->rcu_head, delete_partition_rcu_cb);
 }
+EXPORT_SYMBOL(__delete_partition);
 
 void delete_partition(struct gendisk *disk, int partno)
 {
