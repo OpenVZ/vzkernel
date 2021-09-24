@@ -429,6 +429,15 @@ struct task_group {
 
 	RH_KABI_RESERVE(1)
 	RH_KABI_RESERVE(2)
+
+#ifdef CONFIG_CFS_CPULIMIT
+#define MAX_CPU_RATE 1024
+	unsigned long cpu_rate;
+	unsigned int nr_cpus;
+	atomic_t nr_cpus_active;
+	struct task_group *topmost_limited_ancestor; /* self if none of the
+							ancestors is limited */
+#endif
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -582,6 +591,9 @@ struct cfs_rq {
 #endif
 
 	struct rb_root_cached	tasks_timeline;
+#ifdef CONFIG_CFS_CPULIMIT
+	struct list_head tasks;
+#endif
 
 	/*
 	 * 'curr' points to currently running entity on this cfs_rq.
@@ -665,6 +677,10 @@ struct cfs_rq {
 	struct list_head	throttled_csd_list;
 #endif
 #endif /* CONFIG_CFS_BANDWIDTH */
+#ifdef CONFIG_CFS_CPULIMIT
+	int active;
+	struct hrtimer active_timer;
+#endif /* CONFIG_CFS_CPULIMIT */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
 	RH_KABI_RESERVE(1)
@@ -2188,6 +2204,7 @@ extern const u32		sched_prio_to_wmult[40];
 #define DEQUEUE_SAVE		0x02 /* Matches ENQUEUE_RESTORE */
 #define DEQUEUE_MOVE		0x04 /* Matches ENQUEUE_MOVE */
 #define DEQUEUE_NOCLOCK		0x08 /* Matches ENQUEUE_NOCLOCK */
+#define DEQUEUE_TASK_SLEEP	0x10
 
 #define ENQUEUE_WAKEUP		0x01
 #define ENQUEUE_RESTORE		0x02
