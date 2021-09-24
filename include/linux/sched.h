@@ -532,6 +532,9 @@ struct sched_statistics {
 	u64				nr_migrations_cold;
 	u64				nr_failed_migrations_affine;
 	u64				nr_failed_migrations_running;
+#ifdef CONFIG_CFS_CPULIMIT
+	u64				nr_failed_migrations_cpulimit;
+#endif
 	u64				nr_failed_migrations_hot;
 	u64				nr_forced_migrations;
 
@@ -556,6 +559,9 @@ struct sched_entity {
 	struct load_weight		load;
 	struct rb_node			run_node;
 	struct list_head		group_node;
+#ifdef CONFIG_CFS_CPULIMIT
+	struct list_head		cfs_rq_node;
+#endif
 	unsigned int			on_rq;
 
 	u64				exec_start;
@@ -2353,6 +2359,29 @@ static inline bool vcpu_is_preempted(int cpu)
 	return false;
 }
 #endif
+
+#ifdef CONFIG_CFS_CPULIMIT
+extern unsigned int task_nr_cpus(struct task_struct *p);
+extern unsigned int task_vcpu_id(struct task_struct *p);
+extern unsigned int sched_cpulimit_scale_cpufreq(unsigned int freq);
+#else
+static inline unsigned int task_nr_cpus(struct task_struct *p)
+{
+	return num_online_cpus();
+}
+
+static inline unsigned int task_vcpu_id(struct task_struct *p)
+{
+	return task_cpu(p);
+}
+
+static inline unsigned int sched_cpulimit_scale_cpufreq(unsigned int freq)
+{
+	return freq;
+}
+#endif
+
+#define num_online_vcpus() task_nr_cpus(current)
 
 extern long sched_setaffinity(pid_t pid, const struct cpumask *new_mask);
 extern long sched_getaffinity(pid_t pid, struct cpumask *mask);

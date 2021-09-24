@@ -457,6 +457,48 @@ sched_core_dequeue(struct rq *rq, struct task_struct *p, int flags) { }
 
 #endif /* CONFIG_SCHED_CORE */
 
+#ifdef CONFIG_CFS_CPULIMIT
+unsigned int task_nr_cpus(struct task_struct *p)
+{
+	unsigned int nr_cpus = 0;
+	unsigned int max_nr_cpus = num_online_cpus();
+
+	rcu_read_lock();
+	nr_cpus = task_group(p)->nr_cpus;
+	rcu_read_unlock();
+
+	if (!nr_cpus || nr_cpus > max_nr_cpus)
+		nr_cpus = max_nr_cpus;
+
+	return nr_cpus;
+}
+
+unsigned int task_vcpu_id(struct task_struct *p)
+{
+	return task_cpu(p) % task_nr_cpus(p);
+}
+
+unsigned int sysctl_sched_cpulimit_scale_cpufreq = 1;
+
+unsigned int sched_cpulimit_scale_cpufreq(unsigned int freq)
+{
+	unsigned long rate, max_rate;
+
+	if (!sysctl_sched_cpulimit_scale_cpufreq)
+		return freq;
+
+	rcu_read_lock();
+	rate = task_group(current)->cpu_rate;
+	rcu_read_unlock();
+
+	max_rate = num_online_vcpus() * MAX_CPU_RATE;
+	if (!rate || rate >= max_rate)
+		return freq;
+
+	return div_u64((u64)freq * rate, max_rate); /* avoid 32bit overflow */
+}
+#endif
+
 /*
  * Serialization rules:
  *
@@ -10137,6 +10179,9 @@ void __init sched_init(void)
 	INIT_LIST_HEAD(&root_task_group.children);
 	INIT_LIST_HEAD(&root_task_group.siblings);
 	autogroup_init(&init_task);
+#ifdef CONFIG_CFS_CPULIMIT
+	root_task_group.topmost_limited_ancestor = &root_task_group;
+#endif
 #endif /* CONFIG_CGROUP_SCHED */
 
 	for_each_possible_cpu(i) {

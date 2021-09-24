@@ -178,6 +178,10 @@ int __weak arch_asym_cpu_priority(int cpu)
 static unsigned int sysctl_sched_cfs_bandwidth_slice		= 5000UL;
 #endif
 
+#ifdef CONFIG_CFS_CPULIMIT
+unsigned int sysctl_sched_vcpu_hotslice = 5000000UL;
+#endif
+
 #ifdef CONFIG_SYSCTL
 static struct ctl_table sched_fair_sysctls[] = {
 	{
@@ -554,6 +558,88 @@ static int se_is_idle(struct sched_entity *se)
 }
 
 #endif	/* CONFIG_FAIR_GROUP_SCHED */
+
+#ifdef CONFIG_CFS_CPULIMIT
+static int cfs_rq_active(struct cfs_rq *cfs_rq)
+{
+	return cfs_rq->active;
+}
+
+static void inc_nr_active_cfs_rqs(struct cfs_rq *cfs_rq)
+{
+	/* if we canceled delayed dec, there is no need to do inc */
+	if (hrtimer_try_to_cancel(&cfs_rq->active_timer) != 1)
+		atomic_inc(&cfs_rq->tg->nr_cpus_active);
+	cfs_rq->active = 1;
+}
+
+static void dec_nr_active_cfs_rqs(struct cfs_rq *cfs_rq, int postpone)
+{
+	if (!cfs_rq->runtime_enabled || !sysctl_sched_vcpu_hotslice)
+		postpone = 0;
+
+	if (!postpone) {
+		cfs_rq->active = 0;
+		atomic_dec(&cfs_rq->tg->nr_cpus_active);
+	} else {
+		hrtimer_start_range_ns(&cfs_rq->active_timer,
+				ns_to_ktime(sysctl_sched_vcpu_hotslice), 0,
+				HRTIMER_MODE_REL_PINNED);
+	}
+}
+
+static enum hrtimer_restart sched_cfs_active_timer(struct hrtimer *timer)
+{
+	struct cfs_rq *cfs_rq =
+		container_of(timer, struct cfs_rq, active_timer);
+	struct rq *rq = rq_of(cfs_rq);
+	unsigned long flags;
+
+	raw_spin_rq_lock_irqsave(rq, flags);
+	cfs_rq->active = !list_empty(&cfs_rq->tasks);
+	raw_spin_rq_unlock_irqrestore(rq, flags);
+
+	atomic_dec(&cfs_rq->tg->nr_cpus_active);
+
+	return HRTIMER_NORESTART;
+}
+
+static int check_cpulimit_spread(struct task_group *tg, int target_cpu)
+{
+	int nr_cpus_active = atomic_read(&tg->nr_cpus_active);
+	int nr_cpus_limit = DIV_ROUND_UP(tg->cpu_rate, MAX_CPU_RATE);
+
+	nr_cpus_limit = nr_cpus_limit && tg->nr_cpus ?
+		min_t(int, nr_cpus_limit, tg->nr_cpus) :
+		max_t(int, nr_cpus_limit, tg->nr_cpus);
+
+	if (!nr_cpus_limit || nr_cpus_active < nr_cpus_limit)
+		return 1;
+
+	if (nr_cpus_active > nr_cpus_limit)
+		return -1;
+
+	return cfs_rq_active(tg->cfs_rq[target_cpu]) ? 0 : -1;
+}
+#else /* !CONFIG_CFS_CPULIMIT */
+static inline void inc_nr_active_cfs_rqs(struct cfs_rq *cfs_rq)
+{
+}
+
+static inline void dec_nr_active_cfs_rqs(struct cfs_rq *cfs_rq, int postpone)
+{
+}
+
+static inline enum hrtimer_restart sched_cfs_active_timer(struct hrtimer *timer)
+{
+	return 0;
+}
+
+static inline int check_cpulimit_spread(struct task_group *tg, int target_cpu)
+{
+	return 1;
+}
+#endif /* CONFIG_CFS_CPULIMIT */
 
 static __always_inline
 void account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec);
@@ -3194,6 +3280,9 @@ account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 		account_numa_enqueue(rq, task_of(se));
 		list_add(&se->group_node, &rq->cfs_tasks);
+#ifdef CONFIG_CFS_CPULIMIT
+		list_add(&se->cfs_rq_node, &cfs_rq->tasks);
+#endif
 	}
 #endif
 	cfs_rq->nr_running++;
@@ -3209,6 +3298,9 @@ account_entity_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	if (entity_is_task(se)) {
 		account_numa_dequeue(rq_of(cfs_rq), task_of(se));
 		list_del_init(&se->group_node);
+#ifdef CONFIG_CFS_CPULIMIT
+		list_del(&se->cfs_rq_node);
+#endif
 	}
 #endif
 	cfs_rq->nr_running--;
@@ -4726,6 +4818,8 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	bool renorm = !(flags & ENQUEUE_WAKEUP) || (flags & ENQUEUE_MIGRATED);
 	bool curr = cfs_rq->curr == se;
 
+	if (!cfs_rq->load.weight)
+		inc_nr_active_cfs_rqs(cfs_rq);
 	/*
 	 * If we're the current task, we must renormalise before calling
 	 * update_curr().
@@ -4891,6 +4985,9 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
 	if (cfs_rq->nr_running == 0)
 		update_idle_cfs_rq_clock_pelt(cfs_rq);
+
+	if (!cfs_rq->load.weight)
+		dec_nr_active_cfs_rqs(cfs_rq, flags & DEQUEUE_TASK_SLEEP);
 }
 
 /*
@@ -5948,6 +6045,10 @@ static void init_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_SMP
 	INIT_LIST_HEAD(&cfs_rq->throttled_csd_list);
 #endif
+#ifdef CONFIG_CFS_CPULIMIT
+	hrtimer_init(&cfs_rq->active_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	cfs_rq->active_timer.function = sched_cfs_active_timer;
+#endif
 }
 
 void start_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
@@ -6433,6 +6534,9 @@ dequeue_throttle:
 static DEFINE_PER_CPU(cpumask_var_t, load_balance_mask);
 static DEFINE_PER_CPU(cpumask_var_t, select_rq_mask);
 static DEFINE_PER_CPU(cpumask_var_t, should_we_balance_tmpmask);
+#ifdef CONFIG_CFS_CPULIMIT
+static DEFINE_PER_CPU(struct balance_callback, cpulimit_cb_head);
+#endif
 
 #ifdef CONFIG_NO_HZ_COMMON
 
@@ -7668,6 +7772,38 @@ unlock:
 	return target;
 }
 
+static bool select_runnable_cpu(struct task_struct *p, int *new_cpu)
+{
+#ifdef CONFIG_CFS_CPULIMIT
+	struct task_group *tg;
+	struct sched_domain *sd;
+	int prev_cpu = task_cpu(p);
+	int cpu;
+
+	tg = cfs_rq_of(&p->se)->tg->topmost_limited_ancestor;
+	if (check_cpulimit_spread(tg, *new_cpu) > 0)
+		return false;
+
+	if (cfs_rq_active(tg->cfs_rq[*new_cpu]))
+		return true;
+
+	if (cfs_rq_active(tg->cfs_rq[prev_cpu])) {
+		*new_cpu = prev_cpu;
+		return true;
+	}
+
+	for_each_domain(*new_cpu, sd) {
+		for_each_cpu_and(cpu, sched_domain_span(sd), p->cpus_ptr) {
+			if (cfs_rq_active(tg->cfs_rq[cpu])) {
+				*new_cpu = cpu;
+				return true;
+			}
+		}
+	}
+#endif
+	return false;
+}
+
 /*
  * select_task_rq_fair: Select target runqueue for the waking task in domains
  * that have the relevant SD flag set. In practice, this is SD_BALANCE_WAKE,
@@ -7732,6 +7868,9 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 			break;
 	}
 
+	if (select_runnable_cpu(p, &new_cpu))
+		goto unlock;
+
 	if (unlikely(sd)) {
 		/* Slow path */
 		new_cpu = find_idlest_cpu(sd, p, cpu, prev_cpu, sd_flag);
@@ -7739,6 +7878,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 		/* Fast path */
 		new_cpu = select_idle_sibling(p, prev_cpu, new_cpu);
 	}
+unlock:
 	rcu_read_unlock();
 
 	return new_cpu;
@@ -8012,6 +8152,51 @@ again:
 }
 #endif
 
+#if defined(CONFIG_SMP) && defined(CONFIG_CFS_CPULIMIT)
+static int cpulimit_balance_cpu_stop(void *data);
+
+static void trigger_cpulimit_balance(struct rq *this_rq)
+{
+	struct task_struct *p = this_rq->curr;
+	struct task_group *tg;
+	int this_cpu, cpu, target_cpu = -1;
+	struct sched_domain *sd;
+
+	this_cpu = cpu_of(this_rq);
+
+	if (!p->se.on_rq || this_rq->active_balance)
+		return;
+
+	tg = cfs_rq_of(&p->se)->tg->topmost_limited_ancestor;
+	if (check_cpulimit_spread(tg, this_cpu) >= 0)
+		return;
+
+	rcu_read_lock();
+	for_each_domain(this_cpu, sd) {
+		for_each_cpu_and(cpu, sched_domain_span(sd),
+				 p->cpus_ptr) {
+			if (cpu != this_cpu &&
+			    cfs_rq_active(tg->cfs_rq[cpu])) {
+				target_cpu = cpu;
+				goto unlock;
+			}
+		}
+	}
+unlock:
+	rcu_read_unlock();
+
+	if (target_cpu >= 0) {
+		this_rq->active_balance = 1;
+		this_rq->push_cpu = target_cpu;
+		raw_spin_rq_unlock(this_rq);
+		stop_one_cpu_nowait(this_rq->cpu,
+				    cpulimit_balance_cpu_stop, this_rq,
+				    &this_rq->active_balance_work);
+		raw_spin_rq_lock(this_rq);
+	}
+}
+#endif
+
 struct task_struct *
 pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
@@ -8099,6 +8284,9 @@ again:
 		set_next_entity(cfs_rq, se);
 	}
 
+#ifdef CONFIG_CFS_CPULIMIT
+	queue_balance_callback(rq, &per_cpu(cpulimit_cb_head, rq->cpu), trigger_cpulimit_balance);
+#endif
 	goto done;
 simple:
 #endif
@@ -8129,6 +8317,9 @@ done: __maybe_unused;
 	update_misfit_status(p, rq);
 	sched_fair_update_stop_tick(rq, p);
 
+#ifdef CONFIG_CFS_CPULIMIT
+	queue_balance_callback(rq, &per_cpu(cpulimit_cb_head, rq->cpu), trigger_cpulimit_balance);
+#endif
 	return p;
 
 idle:
@@ -8539,6 +8730,37 @@ static inline int migrate_degrades_locality(struct task_struct *p,
 }
 #endif
 
+static int can_migrate_task_cpulimit(struct task_struct *p, struct lb_env *env)
+{
+#ifdef CONFIG_CFS_CPULIMIT
+	struct task_group *tg = cfs_rq_of(&p->se)->tg->topmost_limited_ancestor;
+
+	if (check_cpulimit_spread(tg, env->dst_cpu) < 0) {
+		int cpu;
+
+		schedstat_inc(p->stats.nr_failed_migrations_cpulimit);
+
+		env->flags |= LBF_SOME_PINNED;
+
+		if (check_cpulimit_spread(tg, env->src_cpu) != 0)
+			return 0;
+
+		if (!env->dst_grpmask || (env->flags & LBF_DST_PINNED))
+			return 0;
+
+		for_each_cpu_and(cpu, env->dst_grpmask, env->cpus) {
+			if (cfs_rq_active(tg->cfs_rq[cpu])) {
+				env->flags |= LBF_DST_PINNED;
+				env->new_dst_cpu = cpu;
+				break;
+			}
+		}
+		return 0;
+	}
+#endif
+	return 1;
+}
+
 /*
  * can_migrate_task - may task p from runqueue rq be migrated to this_cpu?
  */
@@ -8549,6 +8771,8 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 
 	lockdep_assert_rq_held(env->src_rq);
 
+        if (!can_migrate_task_cpulimit(p, env))
+                return 0;
 	/*
 	 * We do not migrate tasks that are:
 	 * 1) throttled_lb_pair, or
@@ -8911,6 +9135,161 @@ static inline bool others_have_blocked(struct rq *rq) { return false; }
 static inline void update_blocked_load_tick(struct rq *rq) {}
 static inline void update_blocked_load_status(struct rq *rq, bool has_blocked) {}
 #endif
+
+#ifdef CONFIG_CFS_CPULIMIT
+static unsigned long entity_h_load(struct sched_entity *se);
+
+static int can_migrate_task_group(struct cfs_rq *cfs_rq, struct lb_env *env)
+{
+	struct sched_entity *se;
+	struct task_struct *p;
+
+	list_for_each_entry(se, &cfs_rq->tasks, cfs_rq_node) {
+		p = task_of(se);
+		if (task_curr(p) ||
+		    !cpumask_test_cpu(env->dst_cpu, p->cpus_ptr))
+			return 0;
+	}
+	env->flags &= ~LBF_ALL_PINNED;
+	return 1;
+}
+
+static int move_task_group(struct cfs_rq *cfs_rq, struct lb_env *env)
+{
+	struct sched_entity *se, *tmp;
+	int moved = 0;
+
+	list_for_each_entry_safe(se, tmp, &cfs_rq->tasks, cfs_rq_node) {
+		struct task_struct *p = task_of(se);
+		detach_task(p, env);
+		attach_task(env->dst_rq, p);
+		moved++;
+	}
+	return moved;
+}
+
+static int move_task_groups(struct lb_env *env)
+{
+	struct cfs_rq *cfs_rq, *pos;
+	struct task_group *tg;
+	unsigned long load;
+	int cur_pulled, pulled = 0;
+
+	if (env->imbalance <= 0)
+		return 0;
+
+	for_each_leaf_cfs_rq_safe(env->src_rq, cfs_rq, pos) {
+		if (cfs_rq->tg == &root_task_group)
+			continue;
+		/*
+		 * A child always goes before its parent in a leaf_cfs_rq_list.
+		 * Therefore, if we encounter a cfs_rq that has a child cfs_rq,
+		 * we could not migrate the child and therefore we should not
+		 * even try to migrate the parent.
+		 */
+		if (cfs_rq->nr_running != cfs_rq->h_nr_running)
+			continue;
+
+		tg = cfs_rq->tg->topmost_limited_ancestor;
+
+		if (check_cpulimit_spread(tg, env->src_cpu) != 0 ||
+		    cfs_rq_active(tg->cfs_rq[env->dst_cpu]))
+			continue;
+
+		load = entity_h_load(tg->se[env->src_cpu]);
+		if ((load / 2) > env->imbalance)
+			continue;
+
+		if (!can_migrate_task_group(cfs_rq, env))
+			continue;
+
+		cur_pulled = move_task_group(cfs_rq, env);
+		pulled += cur_pulled;
+		env->imbalance -= load;
+
+		env->loop += cur_pulled;
+		if (env->loop > env->loop_max)
+			break;
+
+		if (env->imbalance <= 0)
+			break;
+	}
+	return pulled;
+}
+
+static int do_cpulimit_balance(struct lb_env *env)
+{
+	struct cfs_rq *cfs_rq, *pos;
+	struct task_group *tg;
+	int pushed = 0;
+
+	for_each_leaf_cfs_rq_safe(env->src_rq, cfs_rq, pos) {
+		if (cfs_rq->tg == &root_task_group)
+			continue;
+		/* see move_task_groups for why we skip such groups */
+		if (cfs_rq->nr_running != cfs_rq->h_nr_running)
+			continue;
+		tg = cfs_rq->tg->topmost_limited_ancestor;
+		if (check_cpulimit_spread(tg, env->src_cpu) < 0 &&
+		    cfs_rq_active(tg->cfs_rq[env->dst_cpu]) &&
+		    can_migrate_task_group(cfs_rq, env))
+			pushed += move_task_group(cfs_rq, env);
+	}
+	return pushed;
+}
+
+static int cpulimit_balance_cpu_stop(void *data)
+{
+	struct rq *rq = data;
+	int cpu = cpu_of(rq);
+	int target_cpu = rq->push_cpu;
+	struct rq *target_rq = cpu_rq(target_cpu);
+	struct sched_domain *sd;
+
+	raw_spin_rq_lock_irq(rq);
+
+	if (unlikely(cpu != smp_processor_id() || !rq->active_balance ||
+		     !cpu_online(target_cpu)))
+		goto out_unlock;
+
+	if (unlikely(!rq->nr_running))
+		goto out_unlock;
+
+	BUG_ON(rq == target_rq);
+
+	double_lock_balance(rq, target_rq);
+	rcu_read_lock();
+	for_each_domain(target_cpu, sd) {
+		if (cpumask_test_cpu(cpu, sched_domain_span(sd)))
+				break;
+	}
+	if (likely(sd)) {
+		struct lb_env env = {
+			.sd		= sd,
+			.dst_cpu	= target_cpu,
+			.dst_rq		= target_rq,
+			.src_cpu	= cpu,
+			.src_rq		= rq,
+		};
+
+		schedstat_inc(sd->clb_count);
+
+		update_rq_clock(rq);
+		update_rq_clock(target_rq);
+		if (do_cpulimit_balance(&env))
+			schedstat_inc(sd->clb_pushed);
+		else
+			schedstat_inc(sd->clb_failed);
+	}
+	rcu_read_unlock();
+	double_unlock_balance(rq, target_rq);
+
+out_unlock:
+	rq->active_balance = 0;
+	raw_spin_rq_unlock_irq(rq);
+	return 0;
+}
+#endif /* CONFIG_CFS_CPULIMIT */
 
 static bool __update_blocked_others(struct rq *rq, bool *done)
 {
@@ -10999,6 +11378,19 @@ more_balance:
 
 		local_irq_restore(rf.flags);
 
+#ifdef CONFIG_CFS_CPULIMIT
+		if (!ld_moved && (env.flags & LBF_ALL_PINNED)) {
+			env.loop = 0;
+			local_irq_save(rf.flags);
+			double_rq_lock(env.dst_rq, busiest);
+			rq_repin_lock(env.src_rq, &rf);
+			update_rq_clock(env.dst_rq);
+			cur_ld_moved = ld_moved = move_task_groups(&env);
+			double_rq_unlock(env.dst_rq, busiest);
+			local_irq_restore(rf.flags);
+                }
+#endif
+
 		if (env.flags & LBF_NEED_BREAK) {
 			env.flags &= ~LBF_NEED_BREAK;
 			/* Stop if we tried all running tasks */
@@ -12500,6 +12892,9 @@ static void set_next_task_fair(struct rq *rq, struct task_struct *p, bool first)
 void init_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	cfs_rq->tasks_timeline = RB_ROOT_CACHED;
+#ifdef CONFIG_CFS_CPULIMIT
+	INIT_LIST_HEAD(&cfs_rq->tasks);
+#endif
 	u64_u32_store(cfs_rq->min_vruntime, (u64)(-(1LL << 20)));
 #ifdef CONFIG_SMP
 	raw_spin_lock_init(&cfs_rq->removed.lock);

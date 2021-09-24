@@ -35,4 +35,9 @@ extern unsigned int sysctl_numa_balancing_promote_rate_limit;
 int sysctl_numa_balancing(struct ctl_table *table, int write, void *buffer,
 		size_t *lenp, loff_t *ppos);
 
+#ifdef CONFIG_CFS_CPULIMIT
+extern unsigned int sysctl_sched_vcpu_hotslice;
+extern unsigned int sysctl_sched_cpulimit_scale_cpufreq;
+#endif
+
 #endif /* _LINUX_SCHED_SYSCTL_H */
