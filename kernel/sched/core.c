@@ -5431,21 +5431,28 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	return finish_task_switch(prev);
 }
 
+#define DECLARE_NR_ONLINE(varname)			\
+	unsigned int varname(void)			\
+	{						\
+		unsigned int i, sum = 0;		\
+		for_each_online_cpu(i)			\
+			sum += cpu_rq(i)->varname;	\
+		if (unlikely((int)sum < 0))		\
+			return 0;			\
+		return sum;				\
+	}						\
+	EXPORT_SYMBOL(varname);				\
+
 /*
  * nr_running and nr_context_switches:
  *
  * externally visible scheduler statistics: current number of runnable
  * threads, total number of context switches performed since bootup.
  */
-unsigned int nr_running(void)
-{
-	unsigned int i, sum = 0;
 
-	for_each_online_cpu(i)
-		sum += cpu_rq(i)->nr_running;
-
-	return sum;
-}
+DECLARE_NR_ONLINE(nr_running);
+DECLARE_NR_ONLINE(nr_sleeping);
+DECLARE_NR_ONLINE(nr_uninterruptible);
 
 /*
  * Check if only the current task is running on the CPU.
