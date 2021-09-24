@@ -71,6 +71,12 @@
 #include <asm/unistd.h>
 #include <asm/mmu_context.h>
 
+unsigned long nr_zombie = 0;   /* protected by tasklist_lock */
+EXPORT_SYMBOL(nr_zombie);
+
+atomic_t nr_dead = ATOMIC_INIT(0);
+EXPORT_SYMBOL(nr_dead);
+
 static void __unhash_process(struct task_struct *p, bool group_dead)
 {
 	nr_threads--;
@@ -201,6 +207,8 @@ repeat:
 	ptrace_release_task(p);
 	thread_pid = get_pid(p->thread_pid);
 	__exit_signal(p);
+	nr_zombie--;
+	atomic_inc(&nr_dead);
 
 	/*
 	 * If we are the last non-leader member of the thread
@@ -698,6 +706,12 @@ static void exit_notify(struct task_struct *tsk, int group_dead)
 		tsk->exit_state = EXIT_DEAD;
 		list_add(&tsk->ptrace_entry, &dead);
 	}
+
+	/*
+	 * Increment nr_zombie even in case of EXIT_DEAD as
+	 * release_task() below expects that.
+	 */
+	nr_zombie++;
 
 	/* mt-exec, de_thread() is waiting for group leader */
 	if (unlikely(tsk->signal->notify_count < 0))
