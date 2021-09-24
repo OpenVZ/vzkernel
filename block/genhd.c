@@ -26,6 +26,7 @@
 #include <linux/badblocks.h>
 #include <linux/part_stat.h>
 #include <linux/blktrace_api.h>
+#include <linux/device_cgroup.h>
 
 #include "blk-throttle.h"
 #include "blk.h"
@@ -178,9 +179,13 @@ void blkdev_show(struct seq_file *seqf, off_t offset)
 	struct blk_major_name *dp;
 
 	spin_lock(&major_names_spinlock);
-	for (dp = major_names[major_to_index(offset)]; dp; dp = dp->next)
+	for (dp = major_names[major_to_index(offset)]; dp; dp = dp->next) {
+		if (!devcgroup_device_visible(S_IFBLK, dp->major,
+					0, INT_MAX))
+			continue;
 		if (dp->major == offset)
 			seq_printf(seqf, "%3d %s\n", dp->major, dp->name);
+	}
 	spin_unlock(&major_names_spinlock);
 }
 #endif /* CONFIG_PROC_FS */
@@ -852,10 +857,17 @@ static int show_partition(struct seq_file *seqf, void *v)
 
 	rcu_read_lock();
 	xa_for_each(&sgp->part_tbl, idx, part) {
+		unsigned int major = MAJOR(part->bd_dev);
+		unsigned int minor = MINOR(part->bd_dev);
+
 		if (!bdev_nr_sectors(part))
 			continue;
+
+		if (!devcgroup_device_visible(S_IFBLK, major, minor, 1))
+			continue;
+
 		seq_printf(seqf, "%4d  %7d %10llu %pg\n",
-			   MAJOR(part->bd_dev), MINOR(part->bd_dev),
+			   major, minor,
 			   bdev_nr_sectors(part) >> 1, part);
 	}
 	rcu_read_unlock();
@@ -1299,7 +1311,7 @@ static const struct seq_operations diskstats_op = {
 static int __init proc_genhd_init(void)
 {
 	proc_create_seq("diskstats", 0, NULL, &diskstats_op);
-	proc_create_seq("partitions", 0, NULL, &partitions_op);
+	proc_create_seq("partitions", S_ISVTX, NULL, &partitions_op);
 	return 0;
 }
 module_init(proc_genhd_init);

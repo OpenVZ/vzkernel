@@ -1256,7 +1256,7 @@ int get_tree_bdev(struct fs_context *fc,
 	if (!fc->source)
 		return invalf(fc, "No source specified");
 
-	bdev = blkdev_get_by_path(fc->source, sb_open_mode(fc->sb_flags),
+	bdev = blkdev_get_by_path(fc->source, sb_open_mode(fc->sb_flags) | BLK_OPEN_MOUNT,
 				  fc->fs_type, &fs_holder_ops);
 	if (IS_ERR(bdev)) {
 		errorf(fc, "%s: Can't open blockdev", fc->source);
@@ -1337,8 +1337,8 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 	struct super_block *s;
 	int error = 0;
 
-	bdev = blkdev_get_by_path(dev_name, sb_open_mode(flags), fs_type,
-				  &fs_holder_ops);
+	bdev = blkdev_get_by_path(dev_name, sb_open_mode(flags) | BLK_OPEN_MOUNT,
+				  fs_type, &fs_holder_ops);
 	if (IS_ERR(bdev))
 		return ERR_CAST(bdev);
 

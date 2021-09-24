@@ -246,7 +246,7 @@ static void devcgroup_css_free(struct cgroup_subsys_state *css)
 #define DEVCG_LIST 3
 
 #define MAJMINLEN 13
-#define ACCLEN 4
+#define ACCLEN 5
 
 static void set_access(char *acc, short access)
 {
@@ -258,6 +258,8 @@ static void set_access(char *acc, short access)
 		acc[idx++] = 'w';
 	if (access & DEVCG_ACC_MKNOD)
 		acc[idx++] = 'm';
+	if (access & DEVCG_ACC_MOUNT)
+		acc[idx++] = 'M';
 }
 
 static char type_to_char(short type)
@@ -331,6 +333,9 @@ static bool match_exception(struct list_head *exceptions, short type,
 	struct dev_exception_item *ex;
 
 	list_for_each_entry_rcu(ex, exceptions, list) {
+		short mismatched_bits;
+		bool allowed_mount;
+
 		if ((type & DEVCG_DEV_BLOCK) && !(ex->type & DEVCG_DEV_BLOCK))
 			continue;
 		if ((type & DEVCG_DEV_CHAR) && !(ex->type & DEVCG_DEV_CHAR))
@@ -340,7 +345,12 @@ static bool match_exception(struct list_head *exceptions, short type,
 		if (ex->minor != ~0 && ex->minor != minor)
 			continue;
 		/* provided access cannot have more than the exception rule */
-		if (access & (~ex->access))
+		mismatched_bits = access & (~ex->access) & ~DEVCG_ACC_MOUNT;
+		allowed_mount = !(mismatched_bits & ~DEVCG_ACC_WRITE) &&
+				(ex->access & DEVCG_ACC_MOUNT) &&
+				(access & DEVCG_ACC_MOUNT);
+
+		if (mismatched_bits && !allowed_mount)
 			continue;
 		return true;
 	}
@@ -618,7 +628,7 @@ static int devcgroup_update_access(struct dev_cgroup *devcgroup,
 	struct dev_cgroup *parent = css_to_devcgroup(devcgroup->css.parent);
 	struct dev_cgroup tmp_devcgrp;
 
-	if (!capable(CAP_SYS_ADMIN))
+	if (!ve_capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	memset(&ex, 0, sizeof(ex));
@@ -726,7 +736,7 @@ static int devcgroup_update_access(struct dev_cgroup *devcgroup,
 	}
 	if (!isspace(*b))
 		return -EINVAL;
-	for (b++, count = 0; count < 3; count++, b++) {
+	for (b++, count = 0; count < ACCLEN - 1; count++, b++) {
 		switch (*b) {
 		case 'r':
 			ex.access |= DEVCG_ACC_READ;
@@ -737,9 +747,12 @@ static int devcgroup_update_access(struct dev_cgroup *devcgroup,
 		case 'm':
 			ex.access |= DEVCG_ACC_MKNOD;
 			break;
+		case 'M':
+			ex.access |= DEVCG_ACC_MOUNT;
+			break;
 		case '\n':
 		case '\0':
-			count = 3;
+			count = ACCLEN - 1;
 			break;
 		default:
 			return -EINVAL;
@@ -896,4 +909,107 @@ int devcgroup_check_permission(short type, u32 major, u32 minor, short access)
 	#endif /* CONFIG_CGROUP_DEVICE */
 }
 EXPORT_SYMBOL(devcgroup_check_permission);
+
+int devcgroup_device_permission(umode_t mode, dev_t dev, int mask)
+{
+	short type, access = 0;
+
+	if (S_ISBLK(mode))
+		type = DEVCG_DEV_BLOCK;
+	if (S_ISCHR(mode))
+		type = DEVCG_DEV_CHAR;
+	if (mask & MAY_WRITE)
+		access |= DEVCG_ACC_WRITE;
+	if (mask & MAY_READ)
+		access |= DEVCG_ACC_READ;
+
+	return devcgroup_legacy_check_permission(type, MAJOR(dev), MINOR(dev), access);
+}
+
+int devcgroup_device_visible(umode_t mode, int major, int start_minor, int nr_minors)
+{
+	struct dev_cgroup *dev_cgroup;
+	struct dev_exception_item *ex;
+	short access = DEVCG_ACC_READ | DEVCG_ACC_WRITE;
+	bool match = false;
+
+	rcu_read_lock();
+	dev_cgroup = task_devcgroup(current);
+
+	if (dev_cgroup->behavior == DEVCG_DEFAULT_ALLOW) {
+		match = true;
+		goto out;
+	}
+
+	list_for_each_entry_rcu(ex, &dev_cgroup->exceptions, list) {
+		if ((ex->type & DEVCG_DEV_BLOCK) && !S_ISBLK(mode))
+			continue;
+		if ((ex->type & DEVCG_DEV_CHAR) && !S_ISCHR(mode))
+			continue;
+		if (ex->major != ~0 && ex->major != major)
+			continue;
+		if (ex->minor != ~0 && (ex->minor < start_minor ||
+					ex->minor >= start_minor + nr_minors))
+			continue;
+		if (!(access & ex->access))
+			continue;
+		match = true;
+		break;
+	}
+out:
+	rcu_read_unlock();
+	return match;
+}
+
+#ifdef CONFIG_VE
+
+static unsigned encode_ve_perms(unsigned mask)
+{
+	unsigned perm = 0;
+
+	if (mask & DEVCG_ACC_READ)
+		perm |= S_IROTH;
+	if (mask & DEVCG_ACC_WRITE)
+		perm |= S_IWOTH;
+	if (mask & DEVCG_ACC_MOUNT)
+		perm |= S_IXUSR;
+
+	return perm;
+}
+
+int devcgroup_seq_show_ve(struct ve_struct *ve, struct seq_file *m)
+{
+	struct dev_exception_item *wh;
+	struct dev_cgroup *devcgroup;
+	struct cgroup_subsys_state *css;
+
+	css = ve_get_init_css(ve, devices_cgrp_id);
+	devcgroup = css_to_devcgroup(css);
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(wh, &devcgroup->exceptions, list) {
+		char maj[MAJMINLEN], min[MAJMINLEN];
+		unsigned perm;
+
+		set_majmin(maj, wh->major);
+		set_majmin(min, wh->minor);
+
+		perm = encode_ve_perms(wh->access);
+		if (perm & (S_IROTH | S_IWOTH))
+			perm |= S_IXOTH;
+
+		seq_printf(m, "%10u %c %03o %s:%s\n",
+				ve->veid,
+				type_to_char(wh->type),
+				perm, maj, min);
+	}
+	rcu_read_unlock();
+
+	css_put(css);
+	return 0;
+}
+EXPORT_SYMBOL(devcgroup_seq_show_ve);
+
+#endif /* CONFIG_VE */
+
 #endif /* defined(CONFIG_CGROUP_DEVICE) || defined(CONFIG_CGROUP_BPF) */

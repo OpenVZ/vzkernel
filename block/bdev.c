@@ -860,7 +860,8 @@ struct block_device *blkdev_get_by_dev(dev_t dev, blk_mode_t mode, void *holder,
 	ret = devcgroup_check_permission(DEVCG_DEV_BLOCK,
 			MAJOR(dev), MINOR(dev),
 			((mode & BLK_OPEN_READ) ? DEVCG_ACC_READ : 0) |
-			((mode & BLK_OPEN_WRITE) ? DEVCG_ACC_WRITE : 0));
+			((mode & BLK_OPEN_WRITE) ? DEVCG_ACC_WRITE : 0) |
+			((mode & BLK_OPEN_MOUNT) ? DEVCG_ACC_MOUNT : 0));
 	if (ret)
 		return ERR_PTR(ret);
 

@@ -102,6 +102,8 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 /* called from RCU mode, don't block */
 #define MAY_NOT_BLOCK		0x00000080
 
+#define MAY_MOUNT		0x00020000
+
 /*
  * flags in file.f_mode.  Note that FMODE_READ and FMODE_WRITE must correspond
  * to O_WRONLY and O_RDWR via the strange trick in do_dentry_open()
