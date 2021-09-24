@@ -29,6 +29,8 @@ extern struct kmapset_set sysfs_ve_perms_set;
 
 static struct kmem_cache *ve_cachep;
 
+static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
+
 struct ve_struct ve0 = {
 	.ve_name		= "0",
 	.start_jiffies		= INITIAL_JIFFIES,
@@ -40,6 +42,7 @@ struct ve_struct ve0 = {
 
 	.init_cred		= &init_cred,
 	.features		= -1,
+	.sched_lat_ve.cur	= &ve0_lat_stats,
 	.netns_avail_nr		= ATOMIC_INIT(INT_MAX),
 	.netns_max_nr		= INT_MAX,
 	._randomize_va_space	=
@@ -401,6 +404,10 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	if (!ve)
 		goto err_ve;
 
+	ve->sched_lat_ve.cur = alloc_percpu(struct kstat_lat_pcpu_snap_struct);
+	if (!ve->sched_lat_ve.cur)
+		goto err_lat;
+
 	ve->features = VE_FEATURES_DEF;
 	ve->_randomize_va_space = ve0._randomize_va_space;
 
@@ -412,6 +419,8 @@ do_init:
 	kmapset_init_key(&ve->sysfs_perms_key);
 	return &ve->css;
 
+err_lat:
+	kmem_cache_free(ve_cachep, ve);
 err_ve:
 	return ERR_PTR(err);
 }
@@ -451,6 +460,7 @@ static void ve_destroy(struct cgroup_subsys_state *css)
 	struct ve_struct *ve = css_to_ve(css);
 
 	kmapset_unlink(&ve->sysfs_perms_key, &sysfs_ve_perms_set);
+	free_percpu(ve->sched_lat_ve.cur);
 	kmem_cache_free(ve_cachep, ve);
 }
 
