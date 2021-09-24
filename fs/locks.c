@@ -1865,7 +1865,7 @@ int generic_setlease(struct file *filp, long arg, struct file_lock **flp,
 	kuid_t kuid = i_uid_into_mnt(file_mnt_user_ns(filp), inode);
 	int error;
 
-	if ((!uid_eq(kuid, current_fsuid())) && !capable(CAP_LEASE))
+	if ((!uid_eq(kuid, current_fsuid())) && !ve_capable(CAP_LEASE))
 		return -EACCES;
 	if (!S_ISREG(inode->i_mode))
 		return -EINVAL;
