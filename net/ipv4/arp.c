@@ -1431,7 +1431,7 @@ static const struct seq_operations arp_seq_ops = {
 
 static int __net_init arp_net_init(struct net *net)
 {
-	if (!proc_create_net("arp", 0444, net->proc_net, &arp_seq_ops,
+	if (!proc_ve_create_net("arp", 0444, net->proc_net, &arp_seq_ops,
 			sizeof(struct neigh_seq_state)))
 		return -ENOMEM;
 	return 0;

@@ -3092,10 +3092,10 @@ static int __net_init igmp6_proc_init(struct net *net)
 	int err;
 
 	err = -ENOMEM;
-	if (!proc_create_net("igmp6", 0444, net->proc_net, &igmp6_mc_seq_ops,
+	if (!proc_ve_create_net("igmp6", 0444, net->proc_net, &igmp6_mc_seq_ops,
 			sizeof(struct igmp6_mc_iter_state)))
 		goto out;
-	if (!proc_create_net("mcfilter6", 0444, net->proc_net,
+	if (!proc_ve_create_net("mcfilter6", 0444, net->proc_net,
 			&igmp6_mcf_seq_ops,
 			sizeof(struct igmp6_mcf_iter_state)))
 		goto out_proc_net_igmp6;

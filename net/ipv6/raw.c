@@ -1246,7 +1246,7 @@ static const struct seq_operations raw6_seq_ops = {
 
 static int __net_init raw6_init_net(struct net *net)
 {
-	if (!proc_create_net_data("raw6", 0444, net->proc_net, &raw6_seq_ops,
+	if (!proc_ve_create_net_data("raw6", 0444, net->proc_net, &raw6_seq_ops,
 			sizeof(struct raw_iter_state), &raw_v6_hashinfo))
 		return -ENOMEM;
 

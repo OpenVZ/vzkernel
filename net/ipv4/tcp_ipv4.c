@@ -2983,7 +2983,7 @@ static struct tcp_seq_afinfo tcp4_seq_afinfo = {
 
 static int __net_init tcp4_proc_init_net(struct net *net)
 {
-	if (!proc_create_net_data("tcp", 0444, net->proc_net, &tcp4_seq_ops,
+	if (!proc_ve_create_net_data("tcp", 0444, net->proc_net, &tcp4_seq_ops,
 			sizeof(struct tcp_iter_state), &tcp4_seq_afinfo))
 		return -ENOMEM;
 	return 0;

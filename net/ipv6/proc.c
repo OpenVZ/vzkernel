@@ -255,7 +255,7 @@ int snmp6_register_dev(struct inet6_dev *idev)
 	if (!net->mib.proc_net_devsnmp6)
 		return -ENOENT;
 
-	p = proc_create_single_data(idev->dev->name, 0444,
+	p = proc_ve_create_single_data(idev->dev->name, 0444,
 			net->mib.proc_net_devsnmp6, snmp6_dev_seq_show, idev);
 	if (!p)
 		return -ENOMEM;
@@ -278,15 +278,15 @@ int snmp6_unregister_dev(struct inet6_dev *idev)
 
 static int __net_init ipv6_proc_init_net(struct net *net)
 {
-	if (!proc_create_net_single("sockstat6", 0444, net->proc_net,
+	if (!proc_ve_create_net_single("sockstat6", 0444, net->proc_net,
 			sockstat6_seq_show, NULL))
 		return -ENOMEM;
 
-	if (!proc_create_net_single("snmp6", 0444, net->proc_net,
+	if (!proc_ve_create_net_single("snmp6", 0444, net->proc_net,
 			snmp6_seq_show, NULL))
 		goto proc_snmp6_fail;
 
-	net->mib.proc_net_devsnmp6 = proc_mkdir("dev_snmp6", net->proc_net);
+	net->mib.proc_net_devsnmp6 = proc_net_mkdir(net, "dev_snmp6", net->proc_net);
 	if (!net->mib.proc_net_devsnmp6)
 		goto proc_dev_snmp6_fail;
 	return 0;

@@ -3989,7 +3989,7 @@ static const struct seq_operations proto_seq_ops = {
 
 static __net_init int proto_init_net(struct net *net)
 {
-	if (!proc_create_net("protocols", 0444, net->proc_net, &proto_seq_ops,
+	if (!proc_ve_create_net("protocols", 0444, net->proc_net, &proto_seq_ops,
 			sizeof(struct seq_net_private)))
 		return -ENOMEM;
 
