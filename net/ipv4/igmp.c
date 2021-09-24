@@ -3025,11 +3025,11 @@ static int __net_init igmp_net_init(struct net *net)
 	struct proc_dir_entry *pde;
 	int err;
 
-	pde = proc_create_net("igmp", 0444, net->proc_net, &igmp_mc_seq_ops,
+	pde = proc_ve_create_net("igmp", 0444, net->proc_net, &igmp_mc_seq_ops,
 			sizeof(struct igmp_mc_iter_state));
 	if (!pde)
 		goto out_igmp;
-	pde = proc_create_net("mcfilter", 0444, net->proc_net,
+	pde = proc_ve_create_net("mcfilter", 0444, net->proc_net,
 			&igmp_mcf_seq_ops, sizeof(struct igmp_mcf_iter_state));
 	if (!pde)
 		goto out_mcfilter;

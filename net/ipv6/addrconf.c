@@ -4383,7 +4383,7 @@ static const struct seq_operations if6_seq_ops = {
 
 static int __net_init if6_proc_net_init(struct net *net)
 {
-	if (!proc_create_net("if_inet6", 0444, net->proc_net, &if6_seq_ops,
+	if (!proc_ve_create_net("if_inet6", 0444, net->proc_net, &if6_seq_ops,
 			sizeof(struct if6_iter_state)))
 		return -ENOMEM;
 	return 0;

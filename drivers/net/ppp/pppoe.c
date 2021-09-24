@@ -1177,7 +1177,7 @@ static __net_init int pppoe_init_net(struct net *net)
 
 	rwlock_init(&pn->hash_lock);
 
-	pde = proc_create_net("pppoe", 0444, net->proc_net,
+	pde = proc_ve_create_net("pppoe", 0444, net->proc_net,
 			&pppoe_seq_ops, sizeof(struct seq_net_private));
 #ifdef CONFIG_PROC_FS
 	if (!pde)

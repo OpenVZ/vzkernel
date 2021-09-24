@@ -4182,13 +4182,13 @@ int __net_init ip_vs_control_net_init(struct netns_ipvs *ipvs)
 	spin_lock_init(&ipvs->tot_stats.lock);
 
 #ifdef CONFIG_PROC_FS
-	if (!proc_create_net("ip_vs", 0, ipvs->net->proc_net,
+	if (!proc_ve_create_net("ip_vs", 0, ipvs->net->proc_net,
 			     &ip_vs_info_seq_ops, sizeof(struct ip_vs_iter)))
 		goto err_vs;
-	if (!proc_create_net_single("ip_vs_stats", 0, ipvs->net->proc_net,
+	if (!proc_ve_create_net_single("ip_vs_stats", 0, ipvs->net->proc_net,
 				    ip_vs_stats_show, NULL))
 		goto err_stats;
-	if (!proc_create_net_single("ip_vs_stats_percpu", 0,
+	if (!proc_ve_create_net_single("ip_vs_stats_percpu", 0,
 				    ipvs->net->proc_net,
 				    ip_vs_stats_percpu_show, NULL))
 		goto err_percpu;

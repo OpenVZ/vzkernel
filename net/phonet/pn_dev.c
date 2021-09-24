@@ -304,7 +304,7 @@ static int __net_init phonet_init_net(struct net *net)
 {
 	struct phonet_net *pnn = phonet_pernet(net);
 
-	if (!proc_create_net("phonet", 0, net->proc_net, &pn_sock_seq_ops,
+	if (!proc_ve_create_net("phonet", 0, net->proc_net, &pn_sock_seq_ops,
 			sizeof(struct seq_net_private)))
 		return -ENOMEM;
 

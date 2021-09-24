@@ -129,7 +129,7 @@ static const struct seq_operations wireless_seq_ops = {
 int __net_init wext_proc_init(struct net *net)
 {
 	/* Create /proc/net/wireless entry */
-	if (!proc_create_net("wireless", 0444, net->proc_net,
+	if (!proc_ve_create_net("wireless", 0444, net->proc_net,
 			&wireless_seq_ops, sizeof(struct seq_net_private)))
 		return -ENOMEM;
 

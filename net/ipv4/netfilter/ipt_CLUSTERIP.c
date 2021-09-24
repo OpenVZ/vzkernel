@@ -828,7 +828,7 @@ static int clusterip_net_init(struct net *net)
 		return ret;
 
 #ifdef CONFIG_PROC_FS
-	cn->procdir = proc_mkdir("ipt_CLUSTERIP", net->proc_net);
+	cn->procdir = proc_net_mkdir(net, "ipt_CLUSTERIP", net->proc_net);
 	if (!cn->procdir) {
 		nf_unregister_net_hook(net, &cip_arp_ops);
 		pr_err("Unable to proc dir entry\n");

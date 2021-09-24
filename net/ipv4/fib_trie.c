@@ -3030,15 +3030,15 @@ static const struct seq_operations fib_route_seq_ops = {
 
 int __net_init fib_proc_init(struct net *net)
 {
-	if (!proc_create_net("fib_trie", 0444, net->proc_net, &fib_trie_seq_ops,
+	if (!proc_ve_create_net("fib_trie", 0444, net->proc_net, &fib_trie_seq_ops,
 			sizeof(struct fib_trie_iter)))
 		goto out1;
 
-	if (!proc_create_net_single("fib_triestat", 0444, net->proc_net,
+	if (!proc_ve_create_net_single("fib_triestat", 0444, net->proc_net,
 			fib_triestat_seq_show, NULL))
 		goto out2;
 
-	if (!proc_create_net("route", 0444, net->proc_net, &fib_route_seq_ops,
+	if (!proc_ve_create_net("route", 0444, net->proc_net, &fib_route_seq_ops,
 			sizeof(struct fib_route_iter)))
 		goto out3;
 
