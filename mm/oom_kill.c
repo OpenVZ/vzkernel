@@ -55,7 +55,7 @@
 
 static int sysctl_panic_on_oom;
 static int sysctl_oom_kill_allocating_task;
-static int sysctl_oom_dump_tasks = 1;
+static int sysctl_oom_dump_tasks;
 
 /*
  * Serializes oom killer invocations (out_of_memory()) from all contexts to
