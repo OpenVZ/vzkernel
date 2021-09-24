@@ -1076,7 +1076,7 @@ static int __set_oom_adj(struct file *file, int oom_adj, bool legacy)
 	mutex_lock(&oom_adj_mutex);
 	if (legacy) {
 		if (oom_adj < task->signal->oom_score_adj &&
-				!capable(CAP_SYS_RESOURCE)) {
+				!ve_capable(CAP_SYS_RESOURCE)) {
 			err = -EACCES;
 			goto err_unlock;
 		}
