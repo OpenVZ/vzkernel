@@ -795,7 +795,7 @@ static int fileattr_set_prepare(struct inode *inode,
 	 * the relevant capability.
 	 */
 	if ((fa->flags ^ old_ma->flags) & (FS_APPEND_FL | FS_IMMUTABLE_FL) &&
-	    !capable(CAP_LINUX_IMMUTABLE))
+	    !ve_capable(CAP_LINUX_IMMUTABLE))
 		return -EPERM;
 
 	err = fscrypt_prepare_setflags(inode, old_ma->flags, fa->flags);
