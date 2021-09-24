@@ -600,7 +600,7 @@ int __net_init ip_vs_app_net_init(struct netns_ipvs *ipvs)
 {
 	INIT_LIST_HEAD(&ipvs->app_list);
 #ifdef CONFIG_PROC_FS
-	if (!proc_create_net("ip_vs_app", 0, ipvs->net->proc_net,
+	if (!proc_ve_create_net("ip_vs_app", 0, ipvs->net->proc_net,
 			     &ip_vs_app_seq_ops,
 			     sizeof(struct seq_net_private)))
 		return -ENOMEM;

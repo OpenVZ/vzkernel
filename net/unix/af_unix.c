@@ -3389,7 +3389,7 @@ static int __net_init unix_net_init(struct net *net)
 		goto out;
 
 #ifdef CONFIG_PROC_FS
-	if (!proc_create_net("unix", 0, net->proc_net, &unix_seq_ops,
+	if (!proc_ve_create_net("unix", 0, net->proc_net, &unix_seq_ops,
 			sizeof(struct seq_net_private))) {
 		unix_sysctl_unregister(net);
 		goto out;

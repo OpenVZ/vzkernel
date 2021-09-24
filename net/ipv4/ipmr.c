@@ -3070,10 +3070,10 @@ static int __net_init ipmr_net_init(struct net *net)
 
 #ifdef CONFIG_PROC_FS
 	err = -ENOMEM;
-	if (!proc_create_net("ip_mr_vif", 0, net->proc_net, &ipmr_vif_seq_ops,
+	if (!proc_ve_create_net("ip_mr_vif", 0, net->proc_net, &ipmr_vif_seq_ops,
 			sizeof(struct mr_vif_iter)))
 		goto proc_vif_fail;
-	if (!proc_create_net("ip_mr_cache", 0, net->proc_net, &ipmr_mfc_seq_ops,
+	if (!proc_ve_create_net("ip_mr_cache", 0, net->proc_net, &ipmr_mfc_seq_ops,
 			sizeof(struct mr_mfc_iter)))
 		goto proc_cache_fail;
 #endif

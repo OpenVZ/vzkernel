@@ -3184,7 +3184,7 @@ static struct udp_seq_afinfo udp4_seq_afinfo = {
 
 static int __net_init udp4_proc_init_net(struct net *net)
 {
-	if (!proc_create_net_data("udp", 0444, net->proc_net, &udp_seq_ops,
+	if (!proc_ve_create_net_data("udp", 0444, net->proc_net, &udp_seq_ops,
 			sizeof(struct udp_iter_state), &udp4_seq_afinfo))
 		return -ENOMEM;
 	return 0;

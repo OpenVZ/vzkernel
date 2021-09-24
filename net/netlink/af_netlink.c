@@ -2835,7 +2835,7 @@ static const struct net_proto_family netlink_family_ops = {
 static int __net_init netlink_net_init(struct net *net)
 {
 #ifdef CONFIG_PROC_FS
-	if (!proc_create_net("netlink", 0, net->proc_net, &netlink_seq_ops,
+	if (!proc_ve_create_net("netlink", 0, net->proc_net, &netlink_seq_ops,
 			sizeof(struct nl_seq_iter)))
 		return -ENOMEM;
 #endif
