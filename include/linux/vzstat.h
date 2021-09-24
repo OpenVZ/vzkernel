@@ -48,4 +48,32 @@ extern struct kernel_stat_glob kstat_glob ____cacheline_aligned;
 extern spinlock_t kstat_glb_lock;
 
 extern void kstat_init(void);
+
+#ifdef CONFIG_VE
+extern void KSTAT_PERF_ADD(struct kstat_perf_pcpu_struct *ptr, u64 real_time,
+			   u64 cpu_time);
+
+#define KSTAT_PERF_ENTER(name)				\
+	u64 start, sleep_time;				\
+							\
+	start = ktime_to_ns(ktime_get());		\
+	sleep_time = current->se.statistics->sum_sleep_runtime; \
+
+#define KSTAT_PERF_LEAVE(name)				\
+	start = ktime_to_ns(ktime_get()) - start;	\
+	sleep_time = current->se.statistics->sum_sleep_runtime - sleep_time; \
+	KSTAT_PERF_ADD(&kstat_glob.name, start, start - sleep_time);
+
+extern void KSTAT_LAT_PCPU_ADD(struct kstat_lat_pcpu_struct *p, u64 dur);
+extern void KSTAT_LAT_PCPU_UPDATE(struct kstat_lat_pcpu_struct *p);
+
+#else /* !CONFIG_VE */
+#define KSTAT_PERF_ADD(ptr, real_time, cpu_time)
+#define KSTAT_PERF_ENTER(name)
+#define KSTAT_PERF_LEAVE(name)
+#define KSTAT_LAT_PCPU_ADD(p, dur)
+#define KSTAT_LAT_PCPU_UPDATE(p)
+#endif /* CONFIG_VE */
+
+
 #endif /* __VZSTAT_H__ */
