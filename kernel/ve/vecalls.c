@@ -29,6 +29,7 @@
 #include <linux/ve.h>
 #include <linux/vzctl.h>
 #include <linux/veowner.h>
+#include <linux/device_cgroup.h>
 #include <uapi/linux/vzcalluser.h>
 
 /**********************************************************************
@@ -67,6 +68,42 @@ static void ve_seq_stop(struct seq_file *m, void *v)
 {
 	mutex_unlock(&ve_list_lock);
 }
+
+static int devperms_seq_show(struct seq_file *m, void *v)
+{
+	struct ve_struct *ve = list_entry(v, struct ve_struct, ve_list);
+
+	if (m->private == (void *)0) {
+		seq_printf(m, "Version: 2.7\n");
+		m->private = (void *)-1;
+	}
+
+	if (ve_is_super(ve))
+		seq_printf(m, "%10u b 016 *:*\n%10u c 006 *:*\n", 0, 0);
+	else
+		devcgroup_seq_show_ve(ve, m);
+
+	return 0;
+}
+
+static struct seq_operations devperms_seq_op = {
+	.start	= ve_seq_start,
+	.next	= ve_seq_next,
+	.stop	= ve_seq_stop,
+	.show	= devperms_seq_show,
+};
+
+static int devperms_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &devperms_seq_op);
+}
+
+static struct proc_ops proc_devperms_ops = {
+	.proc_open		= devperms_open,
+	.proc_read		= seq_read,
+	.proc_lseek		= seq_lseek,
+	.proc_release		= seq_release,
+};
 
 static int vz_version_show(struct seq_file *file, void* v)
 {
@@ -123,6 +160,11 @@ static int __init init_vecalls_proc(void)
 {
 	struct proc_dir_entry *de;
 
+	de = proc_create("devperms", S_IFREG | S_IRUSR, proc_vz_dir,
+			&proc_devperms_ops);
+	if (!de)
+		printk(KERN_WARNING "VZMON: can't make devperms proc entry\n");
+
 	de = proc_create("version", S_IFREG | S_IRUGO, proc_vz_dir,
 			&proc_vz_version_operations);
 	if (!de)
@@ -138,6 +180,7 @@ static int __init init_vecalls_proc(void)
 
 static void __exit fini_vecalls_proc(void)
 {
+	remove_proc_entry("devperms", proc_vz_dir);
 	remove_proc_entry("version", proc_vz_dir);
 	remove_proc_entry("veinfo", proc_vz_dir);
 }
