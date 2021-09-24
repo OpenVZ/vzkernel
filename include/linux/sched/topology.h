@@ -127,6 +127,11 @@ struct sched_domain {
 	unsigned int alb_failed;
 	unsigned int alb_pushed;
 
+	/* cpulimit balancing */
+	unsigned int clb_count;
+	unsigned int clb_failed;
+	unsigned int clb_pushed;
+
 	/* SD_BALANCE_EXEC stats */
 	unsigned int sbe_count;
 	unsigned int sbe_balanced;
