@@ -10514,6 +10514,8 @@ err:
 	return ERR_PTR(-ENOMEM);
 }
 
+static void tg_update_topmost_limited_ancestor(struct task_group *tg);
+
 void sched_online_group(struct task_group *tg, struct task_group *parent)
 {
 	unsigned long flags;
@@ -10527,6 +10529,9 @@ void sched_online_group(struct task_group *tg, struct task_group *parent)
 	tg->parent = parent;
 	INIT_LIST_HEAD(&tg->children);
 	list_add_rcu(&tg->siblings, &parent->children);
+#ifdef CONFIG_CFS_BANDWIDTH
+	tg_update_topmost_limited_ancestor(tg);
+#endif
 	spin_unlock_irqrestore(&task_group_lock, flags);
 
 	online_fair_sched_group(tg);
@@ -10941,6 +10946,7 @@ static const u64 min_cfs_quota_period = 1 * NSEC_PER_MSEC; /* 1ms */
 static const u64 max_cfs_runtime = MAX_BW * NSEC_PER_USEC;
 
 static int __cfs_schedulable(struct task_group *tg, u64 period, u64 runtime);
+static void tg_limit_toggled(struct task_group *tg);
 
 static int __tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota,
 				u64 burst)
@@ -11019,12 +11025,16 @@ static int __tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota,
 			unthrottle_cfs_rq(cfs_rq);
 		rq_unlock_irq(rq, &rf);
 	}
+	if (runtime_enabled != runtime_was_enabled)
+		tg_limit_toggled(tg);
 	if (runtime_was_enabled && !runtime_enabled)
 		cfs_bandwidth_usage_dec();
 out:
 
 	return ret;
 }
+
+static void tg_update_cpu_limit(struct task_group *tg);
 
 static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota,
 				u64 burst)
@@ -11034,6 +11044,7 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota,
 	cpus_read_lock();
 	mutex_lock(&cfs_constraints_mutex);
 	ret = __tg_set_cfs_bandwidth(tg, period, quota, burst);
+	tg_update_cpu_limit(tg);
 	mutex_unlock(&cfs_constraints_mutex);
 	cpus_read_unlock();
 
@@ -11268,6 +11279,136 @@ static int cpu_cfs_stat_show(struct seq_file *sf, void *v)
 
 	return 0;
 }
+
+#ifdef CONFIG_CFS_CPULIMIT
+static int __tg_update_topmost_limited_ancestor(struct task_group *tg, void *unused)
+{
+	struct task_group *parent = tg->parent;
+
+	/*
+	 * Parent and none of its uncestors is limited? The task group should
+	 * become a topmost limited uncestor then, provided it has a limit set.
+	 * Otherwise inherit topmost limited ancestor from the parent.
+	 */
+	if (parent->topmost_limited_ancestor == parent &&
+	    parent->cfs_bandwidth.quota == RUNTIME_INF)
+		tg->topmost_limited_ancestor = tg;
+	else
+		tg->topmost_limited_ancestor = parent->topmost_limited_ancestor;
+	return 0;
+}
+
+static void tg_update_topmost_limited_ancestor(struct task_group *tg)
+{
+	__tg_update_topmost_limited_ancestor(tg, NULL);
+}
+
+static void tg_limit_toggled(struct task_group *tg)
+{
+	if (tg->topmost_limited_ancestor != tg) {
+		/*
+		 * This task group is not a topmost limited ancestor, so both
+		 * it and all its children must already point to their topmost
+		 * limited ancestor, and we have nothing to do.
+		 */
+		return;
+	}
+
+	/*
+	 * This task group is a topmost limited ancestor. Walk over all its
+	 * children and update their pointers to the topmost limited ancestor.
+	 */
+
+	spin_lock_irq(&task_group_lock);
+	walk_tg_tree_from(tg, __tg_update_topmost_limited_ancestor, tg_nop, NULL);
+	spin_unlock_irq(&task_group_lock);
+}
+
+static void tg_update_cpu_limit(struct task_group *tg)
+{
+	long quota, period;
+	unsigned long rate = 0;
+
+	quota = tg_get_cfs_quota(tg);
+	period = tg_get_cfs_period(tg);
+
+	if (quota > 0 && period > 0) {
+		rate = quota * MAX_CPU_RATE / period;
+		rate = max(rate, 1UL);
+	}
+
+	tg->cpu_rate = rate;
+	tg->nr_cpus = 0;
+}
+
+static int tg_set_cpu_limit(struct task_group *tg,
+			    unsigned long cpu_rate, unsigned int nr_cpus)
+{
+	int ret;
+	unsigned long rate;
+	u64 quota = RUNTIME_INF;
+	u64 burst = tg_get_cfs_burst(tg);
+	u64 period = default_cfs_period();
+
+	rate = (cpu_rate && nr_cpus) ?
+		min_t(unsigned long, cpu_rate, nr_cpus * MAX_CPU_RATE) :
+		max_t(unsigned long, cpu_rate, nr_cpus * MAX_CPU_RATE);
+	if (rate) {
+		quota = div_u64(period * rate, MAX_CPU_RATE);
+		quota = max(quota, min_cfs_quota_period);
+	}
+
+	mutex_lock(&cfs_constraints_mutex);
+	ret = __tg_set_cfs_bandwidth(tg, period, quota, burst);
+	if (!ret) {
+		tg->cpu_rate = cpu_rate;
+		tg->nr_cpus = nr_cpus;
+	}
+	mutex_unlock(&cfs_constraints_mutex);
+
+	return ret;
+}
+
+static u64 cpu_rate_read_u64(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return css_tg(css)->cpu_rate;
+}
+
+static int cpu_rate_write_u64(struct cgroup_subsys_state *css,
+			      struct cftype *cftype, u64 rate)
+{
+	struct task_group *tg = css_tg(css);
+
+	if (rate > num_online_cpus() * MAX_CPU_RATE)
+		rate = num_online_cpus() * MAX_CPU_RATE;
+	return tg_set_cpu_limit(tg, rate, tg->nr_cpus);
+}
+
+static u64 nr_cpus_read_u64(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return css_tg(css)->nr_cpus;
+}
+
+static int nr_cpus_write_u64(struct cgroup_subsys_state *css,
+			     struct cftype *cftype, u64 nr_cpus)
+{
+	struct task_group *tg = css_tg(css);
+
+	if (nr_cpus > num_online_cpus())
+		nr_cpus = num_online_cpus();
+	return tg_set_cpu_limit(tg, tg->cpu_rate, nr_cpus);
+}
+#else
+static void tg_update_topmost_limited_ancestor(struct task_group *tg)
+{
+}
+static void tg_limit_toggled(struct task_group *tg)
+{
+}
+static void tg_update_cpu_limit(struct task_group *tg)
+{
+}
+#endif /* CONFIG_CFS_CPULIMIT */
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
@@ -11343,6 +11484,18 @@ static struct cftype cpu_legacy_files[] = {
 	{
 		.name = "stat",
 		.seq_show = cpu_cfs_stat_show,
+	},
+#endif
+#ifdef CONFIG_CFS_CPULIMIT
+	{
+		.name = "rate",
+		.read_u64 = cpu_rate_read_u64,
+		.write_u64 = cpu_rate_write_u64,
+	},
+	{
+		.name = "nr_cpus",
+		.read_u64 = nr_cpus_read_u64,
+		.write_u64 = nr_cpus_write_u64,
 	},
 #endif
 #ifdef CONFIG_RT_GROUP_SCHED
