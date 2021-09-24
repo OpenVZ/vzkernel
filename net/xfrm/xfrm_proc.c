@@ -63,7 +63,7 @@ static int xfrm_statistics_seq_show(struct seq_file *seq, void *v)
 
 int __net_init xfrm_proc_init(struct net *net)
 {
-	if (!proc_create_net_single("xfrm_stat", 0444, net->proc_net,
+	if (!proc_ve_create_net_single("xfrm_stat", 0444, net->proc_net,
 			 xfrm_statistics_seq_show, NULL))
 		return -ENOMEM;
 	return 0;

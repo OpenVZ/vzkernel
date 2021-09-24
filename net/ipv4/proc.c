@@ -521,13 +521,13 @@ static int netstat_seq_show(struct seq_file *seq, void *v)
 
 static __net_init int ip_proc_init_net(struct net *net)
 {
-	if (!proc_create_net_single("sockstat", 0444, net->proc_net,
+	if (!proc_ve_create_net_single("sockstat", 0444, net->proc_net,
 			sockstat_seq_show, NULL))
 		goto out_sockstat;
-	if (!proc_create_net_single("netstat", 0444, net->proc_net,
+	if (!proc_ve_create_net_single("netstat", 0444, net->proc_net,
 			netstat_seq_show, NULL))
 		goto out_netstat;
-	if (!proc_create_net_single("snmp", 0444, net->proc_net, snmp_seq_show,
+	if (!proc_ve_create_net_single("snmp", 0444, net->proc_net, snmp_seq_show,
 			NULL))
 		goto out_snmp;
 

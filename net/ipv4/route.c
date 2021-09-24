@@ -343,18 +343,18 @@ static int __net_init ip_rt_do_proc_init(struct net *net)
 {
 	struct proc_dir_entry *pde;
 
-	pde = proc_create_seq("rt_cache", 0444, net->proc_net,
+	pde = proc_ve_create_seq("rt_cache", 0444, net->proc_net,
 			      &rt_cache_seq_ops);
 	if (!pde)
 		goto err1;
 
-	pde = proc_create_seq("rt_cache", 0444, net->proc_net_stat,
+	pde = proc_ve_create_seq("rt_cache", 0444, net->proc_net_stat,
 			      &rt_cpu_seq_ops);
 	if (!pde)
 		goto err2;
 
 #ifdef CONFIG_IP_ROUTE_CLASSID
-	pde = proc_create_single("rt_acct", 0, net->proc_net,
+	pde = proc_ve_create_single("rt_acct", 0, net->proc_net,
 			rt_acct_proc_show);
 	if (!pde)
 		goto err3;

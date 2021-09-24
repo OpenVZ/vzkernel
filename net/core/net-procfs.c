@@ -316,13 +316,13 @@ static int __net_init dev_proc_net_init(struct net *net)
 {
 	int rc = -ENOMEM;
 
-	if (!proc_create_net("dev", 0444, net->proc_net, &dev_seq_ops,
+	if (!proc_ve_create_net("dev", 0444, net->proc_net, &dev_seq_ops,
 			sizeof(struct seq_net_private)))
 		goto out;
-	if (!proc_create_seq("softnet_stat", 0444, net->proc_net,
+	if (!proc_ve_create_seq("softnet_stat", 0444, net->proc_net,
 			 &softnet_seq_ops))
 		goto out_dev;
-	if (!proc_create_net("ptype", 0444, net->proc_net, &ptype_seq_ops,
+	if (!proc_ve_create_net("ptype", 0444, net->proc_net, &ptype_seq_ops,
 			sizeof(struct seq_net_private)))
 		goto out_softnet;
 
@@ -382,7 +382,7 @@ static const struct seq_operations dev_mc_seq_ops = {
 
 static int __net_init dev_mc_net_init(struct net *net)
 {
-	if (!proc_create_net("dev_mcast", 0, net->proc_net, &dev_mc_seq_ops,
+	if (!proc_ve_create_net("dev_mcast", 0, net->proc_net, &dev_mc_seq_ops,
 			sizeof(struct seq_net_private)))
 		return -ENOMEM;
 	return 0;
