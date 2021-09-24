@@ -2527,6 +2527,7 @@ struct file_system_type {
 #define FS_USERNS_MOUNT		8	/* Can be mounted by userns root */
 #define FS_DISALLOW_NOTIFY_PERM	16	/* Disable fanotify permission events */
 #define FS_ALLOW_IDMAP		32	/* FS has been updated to handle vfs idmappings. */
+#define FS_VIRTUALIZED		64	/* Can mount this fstype inside ve */
 #define FS_VE_MOUNT		128	/* Can be mounted in VE init userns */
 #define FS_RENAME_DOES_D_MOVE	32768	/* FS will handle d_move() during rename() internally. */
 	int (*init_fs_context)(struct fs_context *);
