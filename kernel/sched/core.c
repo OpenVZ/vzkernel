@@ -61,6 +61,7 @@
 #include <linux/vtime.h>
 #include <linux/wait_api.h>
 #include <linux/workqueue_api.h>
+#include <linux/ve.h>
 
 #ifdef CONFIG_PREEMPT_DYNAMIC
 # ifdef CONFIG_GENERIC_ENTRY
@@ -8726,11 +8727,10 @@ void sched_show_task(struct task_struct *p)
 	rcu_read_lock();
 	if (pid_alive(p))
 		ppid = task_pid_nr(rcu_dereference(p->real_parent));
-	rcu_read_unlock();
-	pr_cont(" stack:%5lu pid:%5d ppid:%6d flags:0x%08lx\n",
-		free, task_pid_nr(p), ppid,
+	pr_cont(" stack:%5lu pid:%5d ppid:%6d veid:%4s flags:0x%08lx\n",
+		free, task_pid_nr(p), ppid, task_ve_name(p),
 		(unsigned long)task_thread_info(p)->flags);
-
+	rcu_read_unlock();
 	print_worker_info(KERN_INFO, p);
 	print_stop_info(KERN_INFO, p);
 	show_stack(p, NULL, KERN_INFO);
