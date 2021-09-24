@@ -39,6 +39,7 @@
 #include <linux/fs_context.h>
 #include <linux/ve.h>
 #include <uapi/linux/mount.h>
+#include <linux/ve.h>
 #include "internal.h"
 
 static int thaw_super_locked(struct super_block *sb);
@@ -490,7 +491,10 @@ EXPORT_SYMBOL(generic_shutdown_super);
 bool mount_capable(struct fs_context *fc)
 {
 	if (!(fc->fs_type->fs_flags & FS_USERNS_MOUNT))
-		return capable(CAP_SYS_ADMIN);
+		/* FS_VE_MOUNT allows mount in container init userns */
+		return capable(CAP_SYS_ADMIN) ||
+		       ((fc->fs_type->fs_flags & FS_VE_MOUNT) &&
+			ve_capable(CAP_SYS_ADMIN));
 	else
 		return ns_capable(fc->user_ns, CAP_SYS_ADMIN);
 }
