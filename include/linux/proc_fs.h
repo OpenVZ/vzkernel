@@ -220,16 +220,16 @@ static inline struct proc_dir_entry *proc_net_mkdir(
 
 static inline struct proc_dir_entry *proc_ve_create_data(const char *name,
 				umode_t mode, struct proc_dir_entry *parent,
-				const struct file_operations *fops, void *data)
+				const struct proc_ops *proc_ops, void *data)
 {
-	return proc_create_data(name, S_ISVTX | mode, parent, fops, data);
+	return proc_create_data(name, S_ISVTX | mode, parent, proc_ops, data);
 }
 
 static inline struct proc_dir_entry *proc_ve_create(const char *name,
 				umode_t mode, struct proc_dir_entry *parent,
-				const struct file_operations *fops)
+				const struct proc_ops *proc_ops)
 {
-	return proc_ve_create_data(name, mode, parent, fops, NULL);
+	return proc_ve_create_data(name, mode, parent, proc_ops, NULL);
 }
 
 static inline struct proc_dir_entry *proc_ve_create_seq_private(

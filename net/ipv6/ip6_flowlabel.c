@@ -865,7 +865,7 @@ static const struct seq_operations ip6fl_seq_ops = {
 
 static int __net_init ip6_flowlabel_proc_init(struct net *net)
 {
-	if (!proc_create_net("ip6_flowlabel", 0444, net->proc_net,
+	if (!proc_ve_create_net("ip6_flowlabel", 0444, net->proc_net,
 			&ip6fl_seq_ops, sizeof(struct ip6fl_iter_state)))
 		return -ENOMEM;
 	return 0;
