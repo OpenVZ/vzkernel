@@ -9348,8 +9348,16 @@ void show_state_filter(unsigned int state_filter)
 	}
 
 #ifdef CONFIG_SCHED_DEBUG
+#ifndef CONFIG_VE
+	/*
+	 * This results in soft lockups, because it writes too much data to
+	 * console. At the same time information it shows is only useful for
+	 * sched debugging and can be obtained via /proc/sched_debug anyway.
+	 * So disable it.
+	 */
 	if (!state_filter)
 		sysrq_sched_debug_show();
+#endif
 #endif
 	rcu_read_unlock();
 	/*
