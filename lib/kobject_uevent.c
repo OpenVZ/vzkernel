@@ -29,6 +29,7 @@
 #include <net/netlink.h>
 #include <net/net_namespace.h>
 
+#include <linux/ve.h>
 
 u64 uevent_seqnum;
 #ifdef CONFIG_UEVENT_HELPER
@@ -317,8 +318,13 @@ static int uevent_net_broadcast_untagged(struct kobj_uevent_env *env,
 	/* send netlink message */
 	list_for_each_entry(ue_sk, &uevent_sock_list, list) {
 		struct sock *uevent_sock = ue_sk->sk;
+		struct ve_struct *owner_ve;
 
 		if (!netlink_has_listeners(uevent_sock, 1))
+			continue;
+
+		owner_ve = sock_net(uevent_sock)->owner_ve;
+		if (!ve_is_super(owner_ve) && owner_ve != get_exec_env())
 			continue;
 
 		if (!skb) {
@@ -347,6 +353,11 @@ static int uevent_net_broadcast_tagged(struct sock *usk,
 	struct user_namespace *owning_user_ns = sock_net(usk)->user_ns;
 	struct sk_buff *skb = NULL;
 	int ret = 0;
+	struct ve_struct *owner_ve;
+
+	owner_ve = sock_net(usk)->owner_ve;
+	if (!ve_is_super(owner_ve) && owner_ve != get_exec_env())
+		return -EINVAL;
 
 	skb = alloc_uevent_skb(env, action_string, devpath);
 	if (!skb)
