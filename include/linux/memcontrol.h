@@ -954,6 +954,17 @@ unsigned long mem_cgroup_get_zone_lru_size(struct lruvec *lruvec,
 	return READ_ONCE(mz->lru_zone_size[zone_idx][lru]);
 }
 
+static inline unsigned long mem_cgroup_total_pages(struct mem_cgroup *memcg)
+{
+	unsigned long ram, ram_swap;
+	extern long total_swap_pages;
+
+	ram = min_t(unsigned long, totalram_pages(), memcg->memory.max);
+	ram_swap = min_t(unsigned long, memcg->memsw.max, ram + total_swap_pages);
+
+	return ram_swap;
+}
+
 void mem_cgroup_handle_over_high(void);
 
 unsigned long mem_cgroup_get_max(struct mem_cgroup *memcg);
