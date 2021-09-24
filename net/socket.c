@@ -87,6 +87,7 @@
 #include <linux/xattr.h>
 #include <linux/nospec.h>
 #include <linux/indirect_call_wrapper.h>
+#include <linux/ve.h>
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
@@ -1420,6 +1421,11 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 			     current->comm);
 		family = PF_PACKET;
 	}
+
+	/* VZ compatibility layer */
+	err = vz_security_family_check(net, family, 0);
+	if (err < 0)
+		return err;
 
 	err = security_socket_create(family, type, protocol, kern);
 	if (err)
