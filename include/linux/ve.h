@@ -47,6 +47,8 @@ struct ve_struct {
 	atomic_t		netns_avail_nr;
 	int			netns_max_nr;
 
+	u64			_uevent_seqnum;
+
 	int			_randomize_va_space;
 };
 
@@ -76,6 +78,8 @@ struct user_namespace *ve_init_user_ns(void);
 
 extern struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp);
 
+#define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
+
 #else	/* CONFIG_VE */
 #include <linux/init_task.h>
 #define get_ve(ve)	((void)(ve), NULL)
@@ -100,6 +104,8 @@ static inline struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
 {
 	return NULL;
 }
+#define ve_uevent_seqnum uevent_seqnum
+
 #endif	/* CONFIG_VE */
 
 #endif /* _LINUX_VE_H */
