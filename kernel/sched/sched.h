@@ -559,6 +559,8 @@ struct cfs_rq {
 	unsigned int		idle_nr_running;   /* SCHED_IDLE */
 	unsigned int		idle_h_nr_running; /* SCHED_IDLE */
 
+	unsigned int nr_unint;
+
 	u64			exec_clock;
 	u64			min_vruntime;
 #ifdef CONFIG_SCHED_CORE
@@ -1033,6 +1035,7 @@ struct rq {
 	 * it on another CPU. Always updated under the runqueue lock:
 	 */
 	unsigned int		nr_uninterruptible;
+	unsigned int		nr_sleeping;
 
 	struct task_struct __rcu	*curr;
 	struct task_struct	*idle;

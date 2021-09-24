@@ -1371,6 +1371,18 @@ static void set_load_weight(struct task_struct *p, bool update_load)
 	}
 }
 
+static inline void check_inc_sleeping(struct rq *rq, struct task_struct *t)
+{
+	if (READ_ONCE(t->__state) == TASK_INTERRUPTIBLE)
+		rq->nr_sleeping++;
+}
+
+static inline void check_dec_sleeping(struct rq *rq, struct task_struct *t)
+{
+	if (READ_ONCE(t->__state) == TASK_INTERRUPTIBLE)
+		rq->nr_sleeping--;
+}
+
 #ifdef CONFIG_UCLAMP_TASK
 /*
  * Serializes updates of utilization clamp values
@@ -1383,6 +1395,7 @@ static void set_load_weight(struct task_struct *p, bool update_load)
  * updates or API abuses.
  */
 static DEFINE_MUTEX(uclamp_mutex);
+
 
 /* Max allowed minimum utilization */
 static unsigned int __maybe_unused sysctl_sched_uclamp_util_min = SCHED_CAPACITY_SCALE;
@@ -2180,6 +2193,7 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 
 void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
 {
+	check_inc_sleeping(rq, p);
 	p->on_rq = (flags & DEQUEUE_SLEEP) ? 0 : TASK_ON_RQ_MIGRATING;
 
 	dequeue_task(rq, p, flags);
@@ -3825,8 +3839,10 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
 
 	lockdep_assert_rq_held(rq);
 
-	if (p->sched_contributes_to_load)
+	if (p->sched_contributes_to_load) {
 		rq->nr_uninterruptible--;
+		task_cfs_rq(p)->nr_unint--;
+	}
 
 #ifdef CONFIG_SMP
 	if (wake_flags & WF_MIGRATED)
@@ -3837,6 +3853,9 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
 		delayacct_blkio_end(p);
 		atomic_dec(&task_rq(p)->nr_iowait);
 	}
+
+	if (p->sched_interruptible_sleep)
+		rq->nr_sleeping--;
 
 	activate_task(rq, p, en_flags);
 	check_preempt_curr(rq, p, wake_flags);
@@ -6673,9 +6692,13 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 				(prev_state & TASK_UNINTERRUPTIBLE) &&
 				!(prev_state & TASK_NOLOAD) &&
 				!(prev->flags & PF_FROZEN);
+			prev->sched_interruptible_sleep =
+				(prev_state == TASK_INTERRUPTIBLE);
 
-			if (prev->sched_contributes_to_load)
+			if (prev->sched_contributes_to_load) {
 				rq->nr_uninterruptible++;
+				task_cfs_rq(prev)->nr_unint++;
+			}
 
 			/*
 			 * __schedule()			ttwu()
@@ -10647,6 +10670,13 @@ void sched_move_task(struct task_struct *tsk)
 
 	if (queued)
 		dequeue_task(rq, tsk, queue_flags);
+	else {
+		if (tsk->sched_contributes_to_load)
+			task_cfs_rq(tsk)->nr_unint--;
+
+		check_dec_sleeping(rq, tsk);
+	}
+
 	if (running)
 		put_prev_task(rq, tsk);
 
@@ -10654,6 +10684,13 @@ void sched_move_task(struct task_struct *tsk)
 
 	if (queued)
 		enqueue_task(rq, tsk, queue_flags);
+	else {
+		if (tsk->sched_contributes_to_load)
+			task_cfs_rq(tsk)->nr_unint++;
+
+		check_inc_sleeping(rq, tsk);
+	}
+
 	if (running) {
 		set_next_task(rq, tsk);
 		/*
