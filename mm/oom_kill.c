@@ -202,10 +202,14 @@ static bool should_dump_unreclaim_slab(void)
  * predictable as possible.  The goal is to return the highest value for the
  * task consuming the most memory to avoid subsequent oom failures.
  */
-long oom_badness(struct task_struct *p, unsigned long totalpages)
+long oom_badness(struct task_struct *p, unsigned long totalpages,
+			  unsigned long *overdraft)
 {
 	long points;
 	long adj;
+
+	if (overdraft)
+		*overdraft = 0;
 
 	if (oom_unkillable_task(p))
 		return LONG_MIN;
@@ -213,6 +217,9 @@ long oom_badness(struct task_struct *p, unsigned long totalpages)
 	p = find_lock_task_mm(p);
 	if (!p)
 		return LONG_MIN;
+
+	if (overdraft)
+		*overdraft = mm_overdraft(p->mm);
 
 	/*
 	 * Do not even consider tasks which are explicitly marked oom
@@ -312,6 +319,7 @@ static enum oom_constraint constrained_alloc(struct oom_control *oc)
 static int oom_evaluate_task(struct task_struct *task, void *arg)
 {
 	struct oom_control *oc = arg;
+	unsigned long overdraft;
 	long points;
 
 	if (oom_unkillable_task(task))
@@ -339,13 +347,16 @@ static int oom_evaluate_task(struct task_struct *task, void *arg)
 	 */
 	if (oom_task_origin(task)) {
 		points = LONG_MAX;
+		oc->max_overdraft = ULONG_MAX;
 		goto select;
 	}
 
-	points = oom_badness(task, oc->totalpages);
+	points = oom_badness(task, oc->totalpages, &overdraft);
 	if (points == LONG_MIN || points < oc->chosen_points)
 		goto next;
 
+	if (!oom_worse(points, overdraft, &oc->chosen_points, &oc->max_overdraft))
+		goto next;
 select:
 	if (oc->chosen)
 		put_task_struct(oc->chosen);
