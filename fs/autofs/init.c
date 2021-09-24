@@ -18,6 +18,7 @@ struct file_system_type autofs_fs_type = {
 	.name		= "autofs",
 	.mount		= autofs_mount,
 	.kill_sb	= autofs_kill_sb,
+	.fs_flags	= FS_VIRTUALIZED | FS_VE_MOUNT,
 };
 MODULE_ALIAS_FS("autofs");
 MODULE_ALIAS("autofs");
