@@ -1108,7 +1108,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 	pr_debug("%s: flags=%x event_f_flags=%x\n",
 		 __func__, flags, event_f_flags);
 
-	if (!capable(CAP_SYS_ADMIN)) {
+	if (!ve_capable(CAP_SYS_ADMIN)) {
 		/*
 		 * An unprivileged user can setup an fanotify group with
 		 * limited functionality - an unprivileged group is limited to
@@ -1213,7 +1213,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 
 	if (flags & FAN_UNLIMITED_QUEUE) {
 		fd = -EPERM;
-		if (!capable(CAP_SYS_ADMIN))
+		if (!ve_capable(CAP_SYS_ADMIN))
 			goto out_destroy_group;
 		group->max_events = UINT_MAX;
 	} else {
@@ -1222,7 +1222,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 
 	if (flags & FAN_UNLIMITED_MARKS) {
 		fd = -EPERM;
-		if (!capable(CAP_SYS_ADMIN))
+		if (!ve_capable(CAP_SYS_ADMIN))
 			goto out_destroy_group;
 	}
 
@@ -1381,7 +1381,7 @@ static int do_fanotify_mark(int fanotify_fd, unsigned int flags, __u64 mask,
 	 * was initialized by an unprivileged user.
 	 */
 	ret = -EPERM;
-	if ((!capable(CAP_SYS_ADMIN) ||
+	if ((!ve_capable(CAP_SYS_ADMIN) ||
 	     FAN_GROUP_FLAG(group, FANOTIFY_UNPRIV)) &&
 	    mark_type != FAN_MARK_INODE)
 		goto fput_and_out;
