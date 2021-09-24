@@ -35,6 +35,7 @@ void __update_stats_wait_end(struct rq *rq, struct task_struct *p,
 		}
 
 		trace_sched_stat_wait(p, delta);
+		update_sched_lat(p, delta);
 	}
 
 	__schedstat_set(stats->wait_max,
