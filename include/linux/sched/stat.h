@@ -19,6 +19,8 @@ DECLARE_PER_CPU(unsigned long, process_counts);
 extern int nr_processes(void);
 extern unsigned int nr_running(void);
 extern bool single_task_running(void);
+extern unsigned int nr_sleeping(void);
+extern unsigned int nr_uninterruptible(void);
 extern unsigned int nr_iowait(void);
 extern unsigned int nr_iowait_cpu(int cpu);
 
