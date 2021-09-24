@@ -744,6 +744,7 @@ void __put_task_struct(struct task_struct *tsk)
 	put_signal_struct(tsk->signal);
 	sched_core_free(tsk);
 
+	atomic_dec(&nr_dead);
 	if (!profile_handoff_task(tsk))
 		free_task(tsk);
 }
