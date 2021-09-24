@@ -21,6 +21,8 @@
  *  Copyright (C) 2007 Red Hat, Inc., Peter Zijlstra
  */
 #include "sched.h"
+#include <linux/ve.h>
+#include <linux/vzstat.h>
 
 /*
  * Targeted preemption latency for CPU-bound tasks:
@@ -988,6 +990,14 @@ update_stats_wait_start_fair(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		p = task_of(se);
 
 	__update_stats_wait_start(rq_of(cfs_rq), p, stats);
+}
+
+static inline void update_sched_lat(struct task_struct *t, u64 delta)
+{
+#ifdef CONFIG_VE
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat, delta);
+	KSTAT_LAT_PCPU_ADD(&t->task_ve->sched_lat_ve, delta);
+#endif
 }
 
 static inline void
