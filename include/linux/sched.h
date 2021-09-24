@@ -817,7 +817,7 @@ struct task_struct {
 #ifdef CONFIG_PSI
 	unsigned			sched_psi_wake_requeue:1;
 #endif
-
+	unsigned			sched_interruptible_sleep:1;
 	/* Force alignment to the next boundary: */
 	unsigned			:0;
 
