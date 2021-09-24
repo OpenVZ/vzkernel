@@ -515,8 +515,6 @@ static void exit_mm(void)
 	mmap_read_unlock(mm);
 	mm_update_next_owner(mm);
 	mmput(mm);
-	if (test_thread_flag(TIF_MEMDIE))
-		exit_oom_victim();
 }
 
 static struct task_struct *find_alive_thread(struct task_struct *p)
@@ -807,6 +805,8 @@ void __noreturn do_exit(long code)
 	exit_task_namespaces(tsk);
 	exit_task_work(tsk);
 	exit_thread(tsk);
+	if (test_thread_flag(TIF_MEMDIE))
+		exit_oom_victim();
 
 	/*
 	 * Flush inherited counters to the parent - before the parent
