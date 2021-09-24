@@ -22,6 +22,10 @@ enum oom_constraint {
 	CONSTRAINT_MEMCG,
 };
 
+
+#define OOM_BASE_RAGE	-10
+#define OOM_MAX_RAGE	20
+
 /*
  * Details of the page allocation that triggered the oom killer that are used to
  * determine what should be killed.
@@ -51,6 +55,7 @@ struct oom_control {
 	unsigned long totalpages;
 	struct task_struct *chosen;
 	long chosen_points;
+	unsigned long overdraft;
 
 	/* Used to print the constraint info. */
 	enum oom_constraint constraint;
