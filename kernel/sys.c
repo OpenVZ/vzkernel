@@ -62,6 +62,7 @@
 #include <linux/rcupdate.h>
 #include <linux/uidgid.h>
 #include <linux/cred.h>
+#include <linux/ve.h>
 
 #include <linux/nospec.h>
 
@@ -1458,7 +1459,7 @@ static int do_prlimit(struct task_struct *tsk, unsigned int resource,
 		 * contain all limits.
 		 */
 		if (new_rlim->rlim_max > rlim->rlim_max &&
-				!capable(CAP_SYS_RESOURCE))
+				!ve_capable(CAP_SYS_RESOURCE))
 			retval = -EPERM;
 		if (!retval)
 			retval = security_task_setrlimit(tsk, resource, new_rlim);
