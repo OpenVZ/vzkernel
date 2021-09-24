@@ -42,6 +42,7 @@
 
 #include <linux/inet.h>
 #include <linux/netdevice.h>
+#include <linux/ve.h>
 #include <net/ip.h>
 #include <net/protocol.h>
 #include <net/arp.h>
@@ -3948,6 +3949,7 @@ static int rtnl_dump_all(struct sk_buff *skb, struct netlink_callback *cb)
 	int s_idx = cb->family;
 	int type = cb->nlh->nlmsg_type - RTM_BASE;
 	int ret = 0;
+	struct net *net = sock_net(skb->sk);
 
 	if (s_idx == 0)
 		s_idx = 1;
@@ -3973,6 +3975,9 @@ static int rtnl_dump_all(struct sk_buff *skb, struct netlink_callback *cb)
 
 		dumpit = link->dumpit;
 		if (!dumpit)
+			continue;
+
+		if (vz_security_family_check(net, idx, cb->nlh->nlmsg_type))
 			continue;
 
 		if (idx > s_idx) {
@@ -6323,8 +6328,10 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
 		return 0;
 
 	family = ((struct rtgenmsg *)nlmsg_data(nlh))->rtgen_family;
-	kind = rtnl_msgtype_kind(type);
+	if (vz_security_family_check(net, family, nlh->nlmsg_type))
+		return -EAFNOSUPPORT;
 
+	kind = rtnl_msgtype_kind(type);
 	if (kind != RTNL_KIND_GET && !netlink_net_capable(skb, CAP_NET_ADMIN))
 		return -EPERM;
 
