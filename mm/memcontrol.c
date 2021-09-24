@@ -52,6 +52,7 @@
 #include <linux/sort.h>
 #include <linux/fs.h>
 #include <linux/seq_file.h>
+#include <linux/ve_proto.h>
 #include <linux/vmpressure.h>
 #include <linux/memremap.h>
 #include <linux/mm_inline.h>
@@ -4602,6 +4603,9 @@ static int mem_cgroup_oom_control_write(struct cgroup_subsys_state *css,
 	/* cannot set to root cgroup and only 0 and 1 are allowed */
 	if (mem_cgroup_is_root(memcg) || !((val == 0) || (val == 1)))
 		return -EINVAL;
+
+	if (!ve_is_super(get_exec_env()) && val != 0)
+		return -EACCES;
 
 	memcg->oom_kill_disable = val;
 	if (!val)
