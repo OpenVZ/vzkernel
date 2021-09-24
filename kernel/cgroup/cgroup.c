@@ -2328,7 +2328,7 @@ struct file_system_type cgroup_fs_type = {
 	.init_fs_context	= cgroup_init_fs_context,
 	.parameters		= cgroup1_fs_parameters,
 	.kill_sb		= cgroup_kill_sb,
-	.fs_flags		= FS_USERNS_MOUNT,
+	.fs_flags		= FS_USERNS_MOUNT | FS_VIRTUALIZED,
 };
 
 static struct file_system_type cgroup2_fs_type = {
