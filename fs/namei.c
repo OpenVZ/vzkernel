@@ -3932,7 +3932,7 @@ int vfs_mknod(struct user_namespace *mnt_userns, struct inode *dir,
 		return error;
 
 	if ((S_ISCHR(mode) || S_ISBLK(mode)) && !is_whiteout &&
-	    !capable(CAP_MKNOD))
+	    !ve_capable(CAP_MKNOD))
 		return -EPERM;
 
 	if (!dir->i_op->mknod)
