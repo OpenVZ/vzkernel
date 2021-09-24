@@ -61,12 +61,8 @@ static bool enable_vma_readahead __read_mostly = true;
 #define INC_CACHE_INFO(x)	data_race(swap_cache_info.x++)
 #define ADD_CACHE_INFO(x, nr)	data_race(swap_cache_info.x += (nr))
 
-static struct {
-	unsigned long add_total;
-	unsigned long del_total;
-	unsigned long find_success;
-	unsigned long find_total;
-} swap_cache_info;
+struct swap_cache_info swap_cache_info;
+EXPORT_SYMBOL_GPL(swap_cache_info);
 
 static atomic_t swapin_readahead_hits = ATOMIC_INIT(4);
 
