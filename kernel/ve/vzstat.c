@@ -100,6 +100,56 @@ void kernel_text_csum_check(void)
  * Latency update and show functions
  * ------------------------------------------------------------------------
  */
+static inline u64 get_task_lat(struct task_struct *t, u64 now)
+{
+	u64 wstamp;
+
+	wstamp = t->stats.wait_start;
+	if (wstamp && now > wstamp && now - wstamp < (1ULL << 63))
+		return now - wstamp;
+	return 0;
+}
+
+static void update_max_sched_latency_snap(void)
+{
+	struct task_struct *t, *g;
+	u64 now, max, tmp;
+	struct kstat_lat_pcpu_struct *st;
+
+	max = 0;
+	read_lock(&tasklist_lock);
+	now = ktime_to_ns(ktime_get());
+	for_each_process_thread(g, t) {
+		if (likely(t->__state != TASK_RUNNING))
+			continue;
+
+		tmp = get_task_lat(t, now);
+		if (max < tmp)
+			max = tmp;
+		st = &t->task_ve->sched_lat_ve;
+		if (st->max_snap < tmp)
+			st->max_snap = tmp;
+	}
+	read_unlock(&tasklist_lock);
+	kstat_glob.sched_lat.max_snap = max;
+}
+
+static void update_schedule_latency(void)
+{
+	/*
+	 * global scheduling latency is updated in schedule() and
+	 * update_max_sched_latency_snap(). The latter function guarantees
+	 * that tasks which do not recieve CPU time are still accounted in
+	 * scheduling latency
+	 */
+	update_max_sched_latency_snap();
+
+	spin_lock_irq(&kstat_glb_lock);
+	KSTAT_LAT_PCPU_UPDATE(&kstat_glob.sched_lat);
+	spin_unlock_irq(&kstat_glb_lock);
+	/* Note: per-VE latency is updated in update_venum() */
+}
+
 static void update_alloc_latency(void)
 {
 	int i;
@@ -256,6 +306,19 @@ static void mem_avg_show(struct seq_file *m, void *v)
 			zone_avg->free_pages_avg[1],
 			zone_avg->free_pages_avg[2]);
 	}
+}
+
+static void update_venum(void)
+{
+	struct ve_struct *ve;
+
+	mutex_lock(&ve_list_lock);
+	spin_lock_irq(&kstat_glb_lock);
+	for_each_ve(ve)
+		/* max_snap is already set in update_schedule_latency */
+		KSTAT_LAT_PCPU_UPDATE(&ve->sched_lat_ve);
+	spin_unlock_irq(&kstat_glb_lock);
+	mutex_unlock(&ve_list_lock);
 }
 
 static void task_counts_seq_show(struct seq_file *m, void *v)
@@ -519,7 +582,9 @@ static int vzstat_mon_loop(void* data)
 		kernel_text_csum_check();
 #endif
 		update_alloc_latency();
+		update_schedule_latency();
 		update_memory();
+		update_venum();
 		update_mmperf();
 
 		set_current_state(TASK_INTERRUPTIBLE);
