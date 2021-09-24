@@ -4604,7 +4604,7 @@ int do_linkat(int olddfd, struct filename *old, int newdfd,
 	 * This ensures that not everyone will be able to create
 	 * handlink using the passed filedescriptor.
 	 */
-	if (flags & AT_EMPTY_PATH && !capable(CAP_DAC_READ_SEARCH)) {
+	if (flags & AT_EMPTY_PATH && !ve_capable(CAP_DAC_READ_SEARCH)) {
 		error = -ENOENT;
 		goto out_putnames;
 	}

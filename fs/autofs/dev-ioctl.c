@@ -613,7 +613,7 @@ static int _autofs_dev_ioctl(unsigned int command,
 	 */
 	if (cmd != AUTOFS_DEV_IOCTL_VERSION_CMD &&
 	    cmd != AUTOFS_DEV_IOCTL_ISMOUNTPOINT_CMD &&
-	    !capable(CAP_SYS_ADMIN))
+	    !ve_capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	/* Copy the parameters into kernel space. */
