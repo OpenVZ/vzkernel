@@ -559,6 +559,7 @@ struct cfs_rq {
 	unsigned int		idle_nr_running;   /* SCHED_IDLE */
 	unsigned int		idle_h_nr_running; /* SCHED_IDLE */
 
+	unsigned int nr_iowait;
 	unsigned int nr_unint;
 
 	u64			exec_clock;
@@ -2309,6 +2310,8 @@ struct sched_class {
 #ifdef CONFIG_SCHED_CORE
 	int (*task_is_throttled)(struct task_struct *p, int cpu);
 #endif
+	void (*nr_iowait_inc) (struct task_struct *p);
+	void (*nr_iowait_dec) (struct task_struct *p);
 };
 
 static inline void put_prev_task(struct rq *rq, struct task_struct *prev)
