@@ -44,7 +44,7 @@ int ioprio_check_cap(int ioprio)
 			 * CAP_SYS_ADMIN first to avoid a denial/avc for
 			 * possibly missing CAP_SYS_NICE permission.
 			 */
-			if (!capable(CAP_SYS_ADMIN) && !capable(CAP_SYS_NICE))
+			if (!ve_capable(CAP_SYS_ADMIN) && !ve_capable(CAP_SYS_NICE))
 				return -EPERM;
 			fallthrough;
 			/* rt has prio field too */
