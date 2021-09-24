@@ -36,6 +36,8 @@ struct oom_control {
 	/* Memory cgroup in which oom is invoked, or NULL for global oom */
 	struct mem_cgroup *memcg;
 
+	unsigned long max_overdraft;
+
 	/* Used to determine cpuset and node locality requirement */
 	const gfp_t gfp_mask;
 
@@ -97,8 +99,23 @@ static inline vm_fault_t check_stable_address_space(struct mm_struct *mm)
 	return 0;
 }
 
+static inline bool oom_worse(long points, unsigned long overdraft,
+		long *chosen_points, unsigned long *max_overdraft)
+{
+	if (overdraft > *max_overdraft) {
+		*max_overdraft = overdraft;
+		*chosen_points = points;
+		return true;
+	}
+	if (overdraft == *max_overdraft && points > *chosen_points) {
+		*chosen_points = points;
+		return true;
+	}
+	return false;
+}
+
 long oom_badness(struct task_struct *p,
-		unsigned long totalpages);
+		unsigned long totalpages, unsigned long *overdraft);
 
 extern bool out_of_memory(struct oom_control *oc);
 

@@ -1301,6 +1301,17 @@ int mem_cgroup_scan_tasks(struct mem_cgroup *memcg,
 	for_each_mem_cgroup_tree(iter, memcg) {
 		struct css_task_iter it;
 		struct task_struct *task;
+		struct mem_cgroup *parent;
+
+		/*
+		 * Update overdraft of each cgroup under us. This
+		 * information will be used in oom_badness.
+		 */
+		iter->overdraft = mem_cgroup_overdraft(iter);
+		parent = parent_mem_cgroup(iter);
+		if (parent && iter != memcg)
+			iter->overdraft = max(iter->overdraft,
+					parent->overdraft);
 
 		css_task_iter_start(&iter->css, CSS_TASK_ITER_PROCS, &it);
 		while (!ret && (task = css_task_iter_next(&it)))
@@ -1461,6 +1472,18 @@ bool mem_cgroup_cleancache_disabled(struct page *page)
 	return memcg && memcg->cleancache_disabled;
 }
 #endif
+
+unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
+{
+	unsigned long long guarantee, usage;
+
+	if (mem_cgroup_is_root(memcg))
+		return 0;
+
+	guarantee = READ_ONCE(memcg->oom_guarantee);
+	usage = page_counter_read(&memcg->memsw);
+	return usage > guarantee ? (usage - guarantee) : 0;
+}
 
 /**
  * mem_cgroup_margin - calculate chargeable space of a memory cgroup
@@ -4521,6 +4544,28 @@ static void memsw_cgroup_usage_unregister_event(struct mem_cgroup *memcg,
 	return __mem_cgroup_usage_unregister_event(memcg, eventfd, _MEMSWAP);
 }
 
+static u64 mem_cgroup_oom_guarantee_read(struct cgroup_subsys_state *css,
+		struct cftype *cft)
+{
+	return mem_cgroup_from_css(css)->oom_guarantee << PAGE_SHIFT;
+}
+
+static ssize_t mem_cgroup_oom_guarantee_write(struct kernfs_open_file *kops,
+					char *buffer, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(kops));
+	unsigned long nr_pages;
+	int ret;
+
+	buffer = strstrip(buffer);
+	ret = page_counter_memparse(buffer, "-1", &nr_pages);
+	if (ret)
+		return ret;
+
+	memcg->oom_guarantee = nr_pages;
+	return nbytes;
+}
+
 #ifdef CONFIG_CLEANCACHE
 static u64 mem_cgroup_disable_cleancache_read(struct cgroup_subsys_state *css,
 					      struct cftype *cft)
@@ -5144,6 +5189,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.name = "oom_control",
 		.seq_show = mem_cgroup_oom_control_read,
 		.write_u64 = mem_cgroup_oom_control_write,
+	},
+	{
+		.name = "oom_guarantee",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write = mem_cgroup_oom_guarantee_write,
+		.read_u64 = mem_cgroup_oom_guarantee_read,
 	},
 	{
 		.name = "pressure_level",
