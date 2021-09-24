@@ -14,6 +14,7 @@
 #include <linux/ve_proto.h>
 #include <linux/cgroup.h>
 #include <linux/kmapset.h>
+#include <linux/vzstat.h>
 
 struct nsproxy;
 struct user_namespace;
@@ -41,6 +42,8 @@ struct ve_struct {
 
 	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
 	__u64			features;
+
+	struct kstat_lat_pcpu_struct    sched_lat_ve;
 
 	struct kmapset_key	sysfs_perms_key;
 
