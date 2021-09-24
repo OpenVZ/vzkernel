@@ -113,7 +113,7 @@ int ocfs2_fileattr_set(struct user_namespace *mnt_userns,
 	/* Check already done by VFS, but repeat with ocfs lock */
 	status = -EPERM;
 	if ((flags ^ oldflags) & (FS_APPEND_FL | FS_IMMUTABLE_FL) &&
-	    !capable(CAP_LINUX_IMMUTABLE))
+	    !ve_capable(CAP_LINUX_IMMUTABLE))
 		goto bail_unlock;
 
 	handle = ocfs2_start_trans(osb, OCFS2_INODE_UPDATE_CREDITS);

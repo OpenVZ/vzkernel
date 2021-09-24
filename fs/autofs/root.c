@@ -872,7 +872,7 @@ static int autofs_root_ioctl_unlocked(struct inode *inode, struct file *filp,
 	     _IOC_NR(cmd) - _IOC_NR(AUTOFS_IOC_FIRST) >= AUTOFS_IOC_COUNT)
 		return -ENOTTY;
 
-	if (!autofs_oz_mode(sbi) && !capable(CAP_SYS_ADMIN))
+	if (!autofs_oz_mode(sbi) && !ve_capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	switch (cmd) {
