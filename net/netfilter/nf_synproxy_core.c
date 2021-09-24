@@ -305,7 +305,7 @@ static const struct seq_operations synproxy_cpu_seq_ops = {
 
 static int __net_init synproxy_proc_init(struct net *net)
 {
-	if (!proc_create_net("synproxy", 0444, net->proc_net_stat,
+	if (!proc_ve_create_net("synproxy", 0444, net->proc_net_stat,
 			&synproxy_cpu_seq_ops, sizeof(struct seq_net_private)))
 		return -ENOMEM;
 	return 0;

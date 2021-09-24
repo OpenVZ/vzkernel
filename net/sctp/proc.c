@@ -378,16 +378,16 @@ int __net_init sctp_proc_init(struct net *net)
 	net->sctp.proc_net_sctp = proc_net_mkdir(net, "sctp", net->proc_net);
 	if (!net->sctp.proc_net_sctp)
 		return -ENOMEM;
-	if (!proc_create_net_single("snmp", 0444, net->sctp.proc_net_sctp,
+	if (!proc_ve_create_net_single("snmp", 0444, net->sctp.proc_net_sctp,
 			 sctp_snmp_seq_show, NULL))
 		goto cleanup;
-	if (!proc_create_net("eps", 0444, net->sctp.proc_net_sctp,
+	if (!proc_ve_create_net("eps", 0444, net->sctp.proc_net_sctp,
 			&sctp_eps_ops, sizeof(struct seq_net_private)))
 		goto cleanup;
-	if (!proc_create_net("assocs", 0444, net->sctp.proc_net_sctp,
+	if (!proc_ve_create_net("assocs", 0444, net->sctp.proc_net_sctp,
 			&sctp_assoc_ops, sizeof(struct sctp_ht_iter)))
 		goto cleanup;
-	if (!proc_create_net("remaddr", 0444, net->sctp.proc_net_sctp,
+	if (!proc_ve_create_net("remaddr", 0444, net->sctp.proc_net_sctp,
 			&sctp_remaddr_ops, sizeof(struct sctp_ht_iter)))
 		goto cleanup;
 	return 0;
