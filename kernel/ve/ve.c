@@ -20,6 +20,9 @@
 #include <linux/mutex.h>
 #include <linux/kmapset.h>
 #include <linux/mm.h>
+#include <linux/kthread.h>
+#include <linux/nsproxy.h>
+#include <linux/fs_struct.h>
 #include <uapi/linux/vzcalluser.h>
 #include <net/rtnetlink.h>
 
@@ -279,6 +282,87 @@ static void ve_drop_context(struct ve_struct *ve)
 	ve->init_cred = NULL;
 }
 
+static void ve_stop_kthreadd(struct ve_struct *ve)
+{
+	kthread_destroy_worker(ve->kthreadd_worker);
+	ve->kthreadd_worker = NULL;
+}
+
+struct kthread_attach_work {
+	struct kthread_work work;
+	struct completion done;
+	struct task_struct *target;
+	int result;
+};
+
+static void kthread_attach_fn(struct kthread_work *w)
+{
+	struct kthread_attach_work *work = container_of(w,
+			struct kthread_attach_work, work);
+	struct task_struct *target = work->target;
+	struct cred *cred;
+	int err;
+
+	get_nsproxy(target->nsproxy);
+	switch_task_namespaces(current, target->nsproxy);
+
+	err = unshare_fs_struct();
+	if (err)
+		goto out;
+	set_fs_root(current->fs, &target->fs->root);
+	set_fs_pwd(current->fs, &target->fs->root);
+
+	err = -ENOMEM;
+	cred = prepare_kernel_cred(target);
+	if (!cred)
+		goto out;
+	err = commit_creds(cred);
+	if (err)
+		goto out;
+
+	err = cgroup_attach_task_all(target, current);
+	if (err)
+		goto out;
+out:
+	work->result = err;
+	complete(&work->done);
+}
+
+static struct kthread_worker *ve_create_kworker(struct ve_struct *ve)
+{
+	struct kthread_worker *w;
+	struct kthread_attach_work attach = {
+		KTHREAD_WORK_INIT(attach.work, kthread_attach_fn),
+		COMPLETION_INITIALIZER_ONSTACK(attach.done),
+		.target = current,
+	};
+
+	w = kthread_create_worker(0, "worker/%s", ve_name(ve));
+	if (IS_ERR(w))
+		return w;
+
+	kthread_queue_work(w, &attach.work);
+	wait_for_completion(&attach.done);
+	if (attach.result) {
+		kthread_destroy_worker(w);
+		return ERR_PTR(attach.result);
+	}
+
+	return w;
+}
+
+static int ve_start_kthreadd(struct ve_struct *ve)
+{
+	struct kthread_worker *w;
+
+	w = ve_create_kworker(ve);
+	if (IS_ERR(w))
+		return PTR_ERR(w);
+
+	ve->kthreadd_worker = w;
+	return 0;
+}
+
 /* under ve->op_sem write-lock */
 static int ve_start_container(struct ve_struct *ve)
 {
@@ -324,6 +408,10 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_list;
 
+	err = ve_start_kthreadd(ve);
+	if (err)
+		goto err_kthreadd;
+
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -339,6 +427,8 @@ static int ve_start_container(struct ve_struct *ve)
 	return 0;
 
 err_iterate:
+	ve_stop_kthreadd(ve);
+err_kthreadd:
 	ve_list_del(ve);
 err_list:
 	ve_drop_context(ve);
@@ -369,6 +459,10 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	 * anymore, setup it again if needed.
 	 */
 	ve->is_pseudosuper = 0;
+	/*
+	 * Stop kthreads, or zap_pid_ns_processes() will wait them forever.
+	 */
+	ve_stop_kthreadd(ve);
 unlock:
 	up_write(&ve->op_sem);
 }

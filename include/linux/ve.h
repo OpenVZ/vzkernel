@@ -58,6 +58,8 @@ struct ve_struct {
 	int			_randomize_va_space;
 
 	unsigned long		meminfo_val;
+
+	struct kthread_worker	*kthreadd_worker;
 };
 
 #define VE_MEMINFO_DEFAULT	1	/* default behaviour */
