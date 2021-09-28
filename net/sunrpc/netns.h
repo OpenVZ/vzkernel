@@ -33,6 +33,9 @@ struct sunrpc_net {
 	int pipe_version;
 	atomic_t pipe_users;
 	struct proc_dir_entry *use_gssp_proc;
+
+	bool kill_tasks;
+	struct proc_dir_entry *kill_tasks_proc;
 };
 
 extern unsigned int sunrpc_net_id;
