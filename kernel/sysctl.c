@@ -107,7 +107,6 @@ static const int six_hundred_forty_kb = 640 * 1024;
 static const int ngroups_max = NGROUPS_MAX;
 static const int cap_last_cap = CAP_LAST_CAP;
 
-
 #ifdef CONFIG_PROC_SYSCTL
 
 /**
@@ -1488,6 +1487,50 @@ int proc_do_large_bitmap(struct ctl_table *table, int write,
 
 	bitmap_free(tmp_bitmap);
 	return err;
+}
+
+bool virtual_ptr(void **ptr, void *base, size_t size, void *cur)
+{
+	unsigned long addr = (unsigned long)*ptr;
+	unsigned long base_addr = (unsigned long)base;
+
+	if (addr >= base_addr && addr < base_addr + size) {
+		*ptr = (char *)cur + (addr - base_addr);
+		return true;
+	}
+	return false;
+}
+
+sysctl_virtual(proc_dointvec);
+sysctl_virtual(proc_doulongvec_minmax);
+
+static inline bool sysctl_in_container(void)
+{
+	return !ve_is_super(get_exec_env());
+}
+
+int proc_dointvec_immutable(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	if (write && sysctl_in_container())
+		return 0;
+	return proc_dointvec(table, write, buffer, lenp, ppos);
+}
+
+int proc_dostring_immutable(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	if (write && sysctl_in_container())
+		return 0;
+	return proc_dostring(table, write, buffer, lenp, ppos);
+}
+
+int proc_dointvec_minmax_immutable(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	if (write && sysctl_in_container())
+		return 0;
+	return proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 }
 
 #else /* CONFIG_PROC_SYSCTL */
