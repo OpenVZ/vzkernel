@@ -60,6 +60,7 @@ struct ve_struct {
 	unsigned long		meminfo_val;
 
 	struct kthread_worker	*kthreadd_worker;
+	struct task_struct	*kthreadd_task;
 };
 
 #define VE_MEMINFO_DEFAULT	1	/* default behaviour */
