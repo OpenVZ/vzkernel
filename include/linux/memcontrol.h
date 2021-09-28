@@ -21,6 +21,7 @@
 #include <linux/vmstat.h>
 #include <linux/writeback.h>
 #include <linux/page-flags.h>
+#include <linux/virtinfo.h>
 
 struct mem_cgroup;
 struct obj_cgroup;
@@ -1201,6 +1202,8 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 						gfp_t gfp_mask,
 						unsigned long *total_scanned);
 
+void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi);
+
 #else /* CONFIG_MEMCG */
 
 #define MEM_CGROUP_ID_SHIFT	0
@@ -1635,6 +1638,11 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 {
 	return 0;
 }
+
+static void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
+{
+}
+
 #endif /* CONFIG_MEMCG */
 
 static inline void __inc_lruvec_kmem_state(void *p, enum node_stat_item idx)
