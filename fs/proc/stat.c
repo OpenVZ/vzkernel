@@ -236,7 +236,7 @@ static const struct proc_ops stat_proc_ops = {
 
 static int __init proc_stat_init(void)
 {
-	proc_create("stat", 0, NULL, &stat_proc_ops);
+	proc_create("stat", S_ISVTX, NULL, &stat_proc_ops);
 	return 0;
 }
 fs_initcall(proc_stat_init);
