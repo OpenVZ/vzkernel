@@ -332,7 +332,8 @@ static void pb_release_clone(struct request *clone,
 static bool msg_wants_down_read(const char *cmd)
 {
 	if (!strcmp(cmd, "push_backup_read") ||
-	    !strcmp(cmd, "push_backup_write"))
+	    !strcmp(cmd, "push_backup_write") ||
+	    !strcmp(cmd, "push_backup_statistics"))
 		return true;
 
 	return false;
