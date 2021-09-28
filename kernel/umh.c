@@ -157,11 +157,8 @@ static void call_usermodehelper_exec_sync(struct subprocess_info *sub_info)
  * to perform the usermodehelper request.
  *
  */
-static void call_usermodehelper_exec_work(struct work_struct *work)
+static void __call_usermodehelper_exec_work(struct subprocess_info *sub_info)
 {
-	struct subprocess_info *sub_info =
-		container_of(work, struct subprocess_info, work);
-
 	if (sub_info->wait & UMH_WAIT_PROC) {
 		call_usermodehelper_exec_sync(sub_info);
 	} else {
@@ -178,6 +175,14 @@ static void call_usermodehelper_exec_work(struct work_struct *work)
 			umh_complete(sub_info);
 		}
 	}
+}
+
+static void call_usermodehelper_exec_work(struct work_struct *work)
+{
+	struct subprocess_info *sub_info =
+		container_of(work, struct subprocess_info, work);
+
+	__call_usermodehelper_exec_work(sub_info);
 }
 
 /*
@@ -373,8 +378,6 @@ static struct subprocess_info *__call_usermodehelper_setup(const char *path,
 	if (!sub_info)
 		goto out;
 
-	INIT_WORK(&sub_info->work, call_usermodehelper_exec_work);
-
 #ifdef CONFIG_STATIC_USERMODEHELPER
 	sub_info->path = CONFIG_STATIC_USERMODEHELPER_PATH;
 #else
@@ -397,10 +400,15 @@ struct subprocess_info *call_usermodehelper_setup(const char *path, char **argv,
 		void (*cleanup)(struct subprocess_info *info),
 		void *data)
 {
-	return __call_usermodehelper_setup(path, argv, envp, gfp_mask,
+	struct subprocess_info *info;
+
+	info = __call_usermodehelper_setup(path, argv, envp, gfp_mask,
 					   init, cleanup,
 					   call_usermodehelper_queue,
 					   data);
+	if (info)
+		INIT_WORK(&info->work, call_usermodehelper_exec_work);
+	return info;
 }
 EXPORT_SYMBOL(call_usermodehelper_setup);
 
