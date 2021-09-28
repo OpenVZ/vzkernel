@@ -14,6 +14,7 @@
 #include <linux/ve_proto.h>
 #include <linux/cgroup.h>
 #include <linux/kmapset.h>
+#include <linux/kthread.h>
 #include <linux/vzstat.h>
 
 struct nsproxy;
@@ -67,6 +68,9 @@ struct ve_struct {
 
 	struct kthread_worker	*kthreadd_worker;
 	struct task_struct	*kthreadd_task;
+
+	struct kthread_worker	umh_worker;
+	struct task_struct	*umh_task;
 };
 
 #define VE_MEMINFO_DEFAULT	1	/* default behaviour */
