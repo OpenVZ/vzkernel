@@ -141,6 +141,8 @@ static inline unsigned long vmalloc_nr_pages(void) { return 0; }
 
 extern void *vmalloc(unsigned long size) __alloc_size(1);
 extern void *vzalloc(unsigned long size) __alloc_size(1);
+extern void *vmalloc_account(unsigned long size) __alloc_size(1);
+extern void *vzalloc_account(unsigned long size) __alloc_size(1);
 extern void *vmalloc_user(unsigned long size) __alloc_size(1);
 extern void *vmalloc_node(unsigned long size, int node) __alloc_size(1);
 extern void *vzalloc_node(unsigned long size, int node) __alloc_size(1);
