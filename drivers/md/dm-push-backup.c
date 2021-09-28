@@ -578,9 +578,11 @@ static int pb_message(struct dm_target *ti, unsigned int argc, char **argv,
 
 	read = msg_wants_down_read(argv[0]);
 	if (read)
-		down_read(&pb->ctl_rwsem);
+		ret = down_read_killable(&pb->ctl_rwsem);
 	else
-		down_write(&pb->ctl_rwsem);
+		ret = down_write_killable(&pb->ctl_rwsem);
+	if (unlikely(ret))
+		goto out;
 
 	if (!strcmp(argv[0], "push_backup_start")) {
 		if (argc < 2 || argc > 3)
