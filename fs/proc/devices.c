@@ -54,7 +54,7 @@ static const struct seq_operations devinfo_ops = {
 
 static int __init proc_devices_init(void)
 {
-	proc_create_seq("devices", 0, NULL, &devinfo_ops);
+	proc_ve_create_seq("devices", 0, NULL, &devinfo_ops);
 	return 0;
 }
 fs_initcall(proc_devices_init);

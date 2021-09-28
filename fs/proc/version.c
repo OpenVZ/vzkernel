@@ -17,7 +17,7 @@ static int version_proc_show(struct seq_file *m, void *v)
 
 static int __init proc_version_init(void)
 {
-	proc_create_single("version", 0, NULL, version_proc_show);
+	proc_ve_create_single("version", 0, NULL, version_proc_show);
 	return 0;
 }
 fs_initcall(proc_version_init);
