@@ -92,6 +92,7 @@
 #include <linux/string_helpers.h>
 #include <linux/user_namespace.h>
 #include <linux/fs_struct.h>
+#include <linux/ve.h>
 
 #include <asm/processor.h>
 #include "internal.h"
@@ -479,6 +480,7 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	unsigned long rsslim = 0;
 	unsigned long flags;
 	int exit_code = task->exit_code;
+	int is_super = ve_is_super(get_exec_env());
 
 	state = *get_task_state(task);
 	vsize = eip = esp = 0;
@@ -625,7 +627,7 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	seq_put_decimal_ull(m, " ", 0);
 	seq_put_decimal_ull(m, " ", 0);
 	seq_put_decimal_ll(m, " ", task->exit_signal);
-	seq_put_decimal_ll(m, " ", task_cpu(task));
+	seq_put_decimal_ll(m, " ", is_super ? task_cpu(task) : task_vcpu_id(task));
 	seq_put_decimal_ull(m, " ", task->rt_priority);
 	seq_put_decimal_ull(m, " ", task->policy);
 	seq_put_decimal_ull(m, " ", delayacct_blkio_ticks(task));
