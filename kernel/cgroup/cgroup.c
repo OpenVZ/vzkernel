@@ -6140,7 +6140,8 @@ int __init cgroup_init(void)
 	WARN_ON(sysfs_create_mount_point(fs_kobj, "cgroup"));
 	WARN_ON(register_filesystem(&cgroup_fs_type));
 	WARN_ON(register_filesystem(&cgroup2_fs_type));
-	WARN_ON(!proc_create_single("cgroups", 0, NULL, proc_cgroupstats_show));
+	WARN_ON(!proc_ve_create_single("cgroups", 0, NULL,
+					proc_cgroupstats_show));
 #ifdef CONFIG_CPUSETS
 	WARN_ON(register_filesystem(&cpuset_fs_type));
 #endif

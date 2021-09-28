@@ -267,7 +267,7 @@ static int filesystems_proc_show(struct seq_file *m, void *v)
 
 static int __init proc_filesystems_init(void)
 {
-	proc_create_single("filesystems", 0, NULL, filesystems_proc_show);
+	proc_create_single("filesystems", S_ISVTX, NULL, filesystems_proc_show);
 	return 0;
 }
 module_init(proc_filesystems_init);

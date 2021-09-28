@@ -27,7 +27,7 @@ static int loadavg_proc_show(struct seq_file *m, void *v)
 
 static int __init proc_loadavg_init(void)
 {
-	proc_create_single("loadavg", 0, NULL, loadavg_proc_show);
+	proc_ve_create_single("loadavg", 0, NULL, loadavg_proc_show);
 	return 0;
 }
 fs_initcall(proc_loadavg_init);
