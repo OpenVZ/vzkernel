@@ -30,6 +30,7 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/mutex.h>
+#include <linux/ve.h>
 
 #include <net/net_namespace.h>
 #include <linux/nsproxy.h>
@@ -4047,7 +4048,7 @@ static int __net_init ip_vs_control_net_init_sysctl(struct netns_ipvs *ipvs)
 			return -ENOMEM;
 
 		/* Don't export sysctls to unprivileged users */
-		if (net->user_ns != &init_user_ns)
+		if (ve_net_hide_sysctl(net))
 			tbl[0].procname = NULL;
 	} else
 		tbl = vs_vars;
