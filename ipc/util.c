@@ -150,7 +150,7 @@ void __init ipc_init_proc_interface(const char *path, const char *header,
 	iface->show	= show;
 
 	pde = proc_create_data(path,
-			       S_IRUGO,        /* world readable */
+			       S_ISVTX | S_IRUGO,        /* world readable */
 			       NULL,           /* parent dir */
 			       &sysvipc_proc_ops,
 			       iface);
