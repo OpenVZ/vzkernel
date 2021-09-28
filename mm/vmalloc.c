@@ -3355,6 +3355,20 @@ void *vzalloc(unsigned long size)
 }
 EXPORT_SYMBOL(vzalloc);
 
+void *vmalloc_account(unsigned long size)
+{
+	return __vmalloc_node(size, 1, GFP_KERNEL_ACCOUNT | __GFP_HIGHMEM,
+			      NUMA_NO_NODE, __builtin_return_address(0));
+}
+EXPORT_SYMBOL(vmalloc_account);
+
+void *vzalloc_account(unsigned long size)
+{
+	return __vmalloc_node(size, 1, GFP_KERNEL_ACCOUNT | __GFP_HIGHMEM | __GFP_ZERO,
+			      NUMA_NO_NODE, __builtin_return_address(0));
+}
+EXPORT_SYMBOL(vzalloc_account);
+
 /**
  * vmalloc_user - allocate zeroed virtually contiguous memory for userspace
  * @size: allocation size
