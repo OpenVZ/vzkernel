@@ -2212,7 +2212,7 @@ static struct ctl_table kern_table[] = {
 		.procname	= "hotplug",
 		.data		= &uevent_helper,
 		.maxlen		= UEVENT_HELPER_PATH_LEN,
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_dostring,
 	},
 #endif
@@ -2342,7 +2342,7 @@ static struct ctl_table kern_table[] = {
 		.procname	= "printk",
 		.data		= &console_loglevel,
 		.maxlen		= 4*sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_dointvec,
 	},
 	{
@@ -3167,7 +3167,7 @@ static struct ctl_table vm_table[] = {
 		.procname	= "mmap_min_addr",
 		.data		= &dac_mmap_min_addr,
 		.maxlen		= sizeof(unsigned long),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= mmap_min_addr_handler,
 	},
 #endif
