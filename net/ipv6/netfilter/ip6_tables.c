@@ -813,7 +813,7 @@ static struct xt_counters *alloc_counters(const struct xt_table *table)
 	   (other than comefrom, which userspace doesn't care
 	   about). */
 	countersize = sizeof(struct xt_counters) * private->number;
-	counters = vzalloc(countersize);
+	counters = vzalloc_account(countersize);
 
 	if (counters == NULL)
 		return ERR_PTR(-ENOMEM);
