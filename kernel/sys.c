@@ -959,7 +959,7 @@ SYSCALL_DEFINE0(getppid)
 	int pid;
 
 	rcu_read_lock();
-	pid = task_tgid_vnr(rcu_dereference(current->real_parent));
+	pid = ve_task_ppid_nr_ns(current, task_active_pid_ns(current));
 	rcu_read_unlock();
 
 	return pid;
