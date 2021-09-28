@@ -21,6 +21,7 @@
 #include <linux/vmstat.h>
 #include <linux/writeback.h>
 #include <linux/page-flags.h>
+#include <linux/virtinfo.h>
 
 struct mem_cgroup;
 struct obj_cgroup;
@@ -1002,6 +1003,17 @@ static inline void mod_memcg_state(struct mem_cgroup *memcg,
 	local_irq_restore(flags);
 }
 
+/* idx can be of type enum memcg_stat_item or node_stat_item. */
+static inline unsigned long memcg_page_state(struct mem_cgroup *memcg, int idx)
+{
+        long x = READ_ONCE(memcg->vmstats.state[idx]);
+#ifdef CONFIG_SMP
+        if (x < 0)
+                x = 0;
+#endif
+        return x;
+}
+
 static inline unsigned long lruvec_page_state(struct lruvec *lruvec,
 					      enum node_stat_item idx)
 {
@@ -1147,6 +1159,8 @@ void split_page_memcg(struct page *head, unsigned int nr);
 unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 						gfp_t gfp_mask,
 						unsigned long *total_scanned);
+
+void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi);
 
 #else /* CONFIG_MEMCG */
 
@@ -1459,6 +1473,11 @@ static inline void mod_memcg_state(struct mem_cgroup *memcg,
 {
 }
 
+static inline unsigned long memcg_page_state(struct mem_cgroup *memcg, int idx)
+{
+	return 0;
+}
+
 static inline unsigned long lruvec_page_state(struct lruvec *lruvec,
 					      enum node_stat_item idx)
 {
@@ -1525,6 +1544,11 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 {
 	return 0;
 }
+
+static void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
+{
+}
+
 #endif /* CONFIG_MEMCG */
 
 static inline void __inc_lruvec_kmem_state(void *p, enum node_stat_item idx)
