@@ -332,6 +332,11 @@ static void helper_unlock(void)
 		wake_up(&running_helpers_waitq);
 }
 
+static void call_usermodehelper_queue(struct subprocess_info *info)
+{
+	queue_work(system_unbound_wq, &info->work);
+}
+
 /**
  * call_usermodehelper_setup - prepare to call a usermode helper
  * @path: path to usermode executable
@@ -355,10 +360,12 @@ static void helper_unlock(void)
  * Function must be runnable in either a process context or the
  * context in which call_usermodehelper_exec is called.
  */
-struct subprocess_info *call_usermodehelper_setup(const char *path, char **argv,
+static struct subprocess_info *__call_usermodehelper_setup(const char *path,
+		char **argv,
 		char **envp, gfp_t gfp_mask,
 		int (*init)(struct subprocess_info *info, struct cred *new),
 		void (*cleanup)(struct subprocess_info *info),
+		void (*queue)(struct subprocess_info *info),
 		void *data)
 {
 	struct subprocess_info *sub_info;
@@ -378,9 +385,22 @@ struct subprocess_info *call_usermodehelper_setup(const char *path, char **argv,
 
 	sub_info->cleanup = cleanup;
 	sub_info->init = init;
+	sub_info->queue = queue;
 	sub_info->data = data;
   out:
 	return sub_info;
+}
+
+struct subprocess_info *call_usermodehelper_setup(const char *path, char **argv,
+		char **envp, gfp_t gfp_mask,
+		int (*init)(struct subprocess_info *info, struct cred *new),
+		void (*cleanup)(struct subprocess_info *info),
+		void *data)
+{
+	return __call_usermodehelper_setup(path, argv, envp, gfp_mask,
+					   init, cleanup,
+					   call_usermodehelper_queue,
+					   data);
 }
 EXPORT_SYMBOL(call_usermodehelper_setup);
 
@@ -436,7 +456,7 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 	sub_info->complete = (wait == UMH_NO_WAIT) ? NULL : &done;
 	sub_info->wait = wait;
 
-	queue_work(system_unbound_wq, &sub_info->work);
+	sub_info->queue(sub_info);
 	if (wait == UMH_NO_WAIT)	/* task has freed sub_info */
 		goto unlock;
 
