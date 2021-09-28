@@ -421,12 +421,32 @@ static void call_usermodehelper_queue_ve(struct subprocess_info *info)
 	kthread_queue_work(&ve->umh_worker, &info->ve_work);
 }
 
+static int call_usermodehelper_exec_sync_cb(void *data)
+{
+	call_usermodehelper_exec_sync(data);
+	do_exit(0);
+}
+
 static void call_usermodehelper_exec_work_ve(struct kthread_work *work)
 {
 	struct subprocess_info *sub_info =
 		container_of(work, struct subprocess_info, ve_work);
+	pid_t pid;
+	int (*umh_worker)(void *data);
 
-	__call_usermodehelper_exec_work(sub_info);
+	/* Execute work asynchroniously if caller waits for it to avoid
+	 * deadlock (we have only one kworker).
+	 * Otherwise it's Ok to execute binary sinchroniously. */
+	if (sub_info->wait & UMH_WAIT_PROC)
+		umh_worker = call_usermodehelper_exec_sync_cb;
+	else
+		umh_worker = call_usermodehelper_exec_async;
+
+	pid = kernel_thread(umh_worker, sub_info, CLONE_PARENT | SIGCHLD);
+	if (pid < 0) {
+		sub_info->retval = pid;
+		umh_complete(sub_info);
+	}
 }
 
 int call_usermodehelper_exec_ve(struct ve_struct *ve,
