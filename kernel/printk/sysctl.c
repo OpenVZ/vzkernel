@@ -7,6 +7,7 @@
 #include <linux/printk.h>
 #include <linux/capability.h>
 #include <linux/ratelimit.h>
+#include <linux/stat.h>
 #include "internal.h"
 
 static const int ten_thousand = 10000;
@@ -25,7 +26,7 @@ static struct ctl_table printk_sysctls[] = {
 		.procname	= "printk",
 		.data		= &console_loglevel,
 		.maxlen		= 4*sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_dointvec,
 	},
 	{
