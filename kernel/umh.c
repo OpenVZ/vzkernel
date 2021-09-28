@@ -28,6 +28,7 @@
 #include <linux/async.h>
 #include <linux/uaccess.h>
 #include <linux/initrd.h>
+#include <linux/ve.h>
 
 #include <trace/events/module.h>
 
@@ -411,6 +412,55 @@ struct subprocess_info *call_usermodehelper_setup(const char *path, char **argv,
 	return info;
 }
 EXPORT_SYMBOL(call_usermodehelper_setup);
+
+#ifdef CONFIG_VE
+static void call_usermodehelper_queue_ve(struct subprocess_info *info)
+{
+	struct ve_struct *ve = info->ve;
+
+	kthread_queue_work(&ve->umh_worker, &info->ve_work);
+}
+
+static void call_usermodehelper_exec_work_ve(struct kthread_work *work)
+{
+	struct subprocess_info *sub_info =
+		container_of(work, struct subprocess_info, ve_work);
+
+	__call_usermodehelper_exec_work(sub_info);
+}
+
+int call_usermodehelper_exec_ve(struct ve_struct *ve,
+				struct subprocess_info *sub_info, int wait)
+{
+	if (!ve_is_super(ve)) {
+		sub_info->ve = ve;
+		sub_info->queue = call_usermodehelper_queue_ve;
+		kthread_init_work(&sub_info->ve_work,
+				  call_usermodehelper_exec_work_ve);
+	} else {
+		sub_info->queue = call_usermodehelper_queue;
+		INIT_WORK(&sub_info->work, call_usermodehelper_exec_work);
+	}
+
+	return call_usermodehelper_exec(sub_info, wait);
+}
+EXPORT_SYMBOL(call_usermodehelper_exec_ve);
+
+int call_usermodehelper_ve(struct ve_struct *ve, const char *path,
+			   char **argv, char **envp, int wait)
+{
+	struct subprocess_info *info;
+	gfp_t gfp_mask = (wait == UMH_NO_WAIT) ? GFP_ATOMIC : GFP_KERNEL;
+
+	info = call_usermodehelper_setup(path, argv, envp, gfp_mask,
+					    NULL, NULL, NULL);
+	if (info == NULL)
+		return -ENOMEM;
+
+	return call_usermodehelper_exec_ve(ve, info, wait);
+}
+EXPORT_SYMBOL(call_usermodehelper_ve);
+#endif
 
 /**
  * call_usermodehelper_exec - start a usermode application
