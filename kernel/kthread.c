@@ -28,6 +28,7 @@
 #include <linux/uaccess.h>
 #include <linux/numa.h>
 #include <linux/sched/isolation.h>
+#include <linux/ve.h>
 #include <trace/events/sched.h>
 
 
@@ -331,7 +332,8 @@ int tsk_fork_get_node(struct task_struct *tsk)
 	return NUMA_NO_NODE;
 }
 
-static void create_kthread(struct kthread_create_info *create)
+static void create_kthread_flags(struct kthread_create_info *create,
+				 unsigned long flags)
 {
 	int pid;
 
@@ -339,7 +341,8 @@ static void create_kthread(struct kthread_create_info *create)
 	current->pref_node_fork = create->node;
 #endif
 	/* We want our own signal handler (we take no signals by default). */
-	pid = kernel_thread(kthread, create, CLONE_FS | CLONE_FILES | SIGCHLD);
+	pid = kernel_thread(kthread, create,
+			    flags | CLONE_FS | CLONE_FILES | SIGCHLD);
 	if (pid < 0) {
 		/* If user was SIGKILLed, I release the structure. */
 		struct completion *done = xchg(&create->done, NULL);
@@ -353,13 +356,48 @@ static void create_kthread(struct kthread_create_info *create)
 	}
 }
 
-static __printf(4, 0)
-struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
-						    void *data, int node,
-						    const char namefmt[],
-						    va_list args)
+static void create_kthread(struct kthread_create_info *create)
+{
+	return create_kthread_flags(create, 0);
+}
+
+#ifdef CONFIG_VE
+struct kthread_create_work {
+	struct kthread_work work;
+	struct kthread_create_info *info;
+	unsigned long flags;
+};
+
+static void kthread_create_fn(struct kthread_work *w)
+{
+	struct kthread_create_work *work = container_of(w,
+			struct kthread_create_work, work);
+
+	create_kthread_flags(work->info, work->flags);
+}
+
+#endif
+static void kthread_create_add(struct kthread_create_info *create)
+{
+	spin_lock(&kthread_create_lock);
+	list_add_tail(&create->list, &kthread_create_list);
+	spin_unlock(&kthread_create_lock);
+
+	wake_up_process(kthreadd_task);
+}
+
+static __printf(6, 0)
+struct task_struct *__kthread_create_on_node_ve(struct ve_struct *ve,
+						unsigned long flags,
+						int (*threadfn)(void *data),
+						void *data, int node,
+						const char namefmt[],
+						va_list args)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
+	struct kthread_create_work work = {
+		KTHREAD_WORK_INIT(work.work, kthread_create_fn),
+	};
 	struct task_struct *task;
 	struct kthread_create_info *create = kmalloc(sizeof(*create),
 						     GFP_KERNEL);
@@ -371,11 +409,15 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 	create->node = node;
 	create->done = &done;
 
-	spin_lock(&kthread_create_lock);
-	list_add_tail(&create->list, &kthread_create_list);
-	spin_unlock(&kthread_create_lock);
-
-	wake_up_process(kthreadd_task);
+#ifdef CONFIG_VE
+	if (!ve_is_super(ve))
+	{
+		work.info = create;
+		work.flags = flags;
+		kthread_queue_work(ve->kthreadd_worker, &work.work);
+	} else
+#endif
+		kthread_create_add(create);
 	/*
 	 * Wait for completion in killable state, for I might be chosen by
 	 * the OOM killer while kthreadd is trying to allocate memory for
@@ -418,6 +460,16 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 	return task;
 }
 
+static __printf(4, 0)
+struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
+						    void *data, int node,
+						    const char namefmt[],
+						    va_list args)
+{
+	return __kthread_create_on_node_ve(get_ve0(), 0,
+					   threadfn, data, node, namefmt, args);
+}
+
 /**
  * kthread_create_on_node - create a kthread.
  * @threadfn: the function to run until signal_pending(current).
@@ -456,6 +508,27 @@ struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
 	return task;
 }
 EXPORT_SYMBOL(kthread_create_on_node);
+
+#ifdef CONFIG_VE
+struct task_struct *kthread_create_on_node_ve_flags(struct ve_struct *ve,
+						    unsigned long flags,
+						    int (*threadfn)(void *data),
+						    void *data, int node,
+						    const char namefmt[],
+						    ...)
+{
+	struct task_struct *task;
+	va_list args;
+
+	va_start(args, namefmt);
+	task = __kthread_create_on_node_ve(ve, flags,
+					   threadfn, data, node, namefmt, args);
+	va_end(args);
+
+	return task;
+}
+EXPORT_SYMBOL(kthread_create_on_node_ve_flags);
+#endif
 
 static void __kthread_bind_mask(struct task_struct *p, const struct cpumask *mask, unsigned int state)
 {
