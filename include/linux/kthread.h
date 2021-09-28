@@ -81,6 +81,16 @@ kthread_run_on_cpu(int (*threadfn)(void *data), void *data,
 	return p;
 }
 
+#ifdef CONFIG_VE
+
+__printf(6, 7)
+struct task_struct *kthread_create_on_node_ve_flags(struct ve_struct *ve,
+						    unsigned long flags,
+						    int (*threadfn)(void *data),
+						    void *data, int node,
+						    const char namefmt[],
+						    ...);
+#endif
 void free_kthread_struct(struct task_struct *k);
 void kthread_bind(struct task_struct *k, unsigned int cpu);
 void kthread_bind_mask(struct task_struct *k, const struct cpumask *mask);
