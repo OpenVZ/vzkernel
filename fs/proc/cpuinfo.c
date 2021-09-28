@@ -26,7 +26,7 @@ static const struct proc_ops cpuinfo_proc_ops = {
 
 static int __init proc_cpuinfo_init(void)
 {
-	proc_create("cpuinfo", 0, NULL, &cpuinfo_proc_ops);
+	proc_create("cpuinfo", S_ISVTX, NULL, &cpuinfo_proc_ops);
 	return 0;
 }
 fs_initcall(proc_cpuinfo_init);
