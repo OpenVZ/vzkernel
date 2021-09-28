@@ -329,11 +329,10 @@ static void pb_release_clone(struct request *clone,
 	blk_put_request(clone);
 }
 
-static bool msg_wants_down_read(const char *cmd)
+static bool msg_wants_down_write(const char *cmd)
 {
-	if (!strcmp(cmd, "push_backup_read") ||
-	    !strcmp(cmd, "push_backup_write") ||
-	    !strcmp(cmd, "push_backup_statistics"))
+	if (!strcmp(cmd, "push_backup_start") ||
+	    !strcmp(cmd, "push_backup_stop"))
 		return true;
 
 	return false;
@@ -567,7 +566,7 @@ static int pb_message(struct dm_target *ti, unsigned int argc, char **argv,
 	struct push_backup *pb = ti->private;
 	int ret = -EPERM;
 	u64 val, val2;
-	bool read;
+	bool write;
 
 	if (!capable(CAP_SYS_ADMIN))
 		goto out;
@@ -576,11 +575,11 @@ static int pb_message(struct dm_target *ti, unsigned int argc, char **argv,
 	if (argc < 1)
 		goto out;
 
-	read = msg_wants_down_read(argv[0]);
-	if (read)
-		ret = down_read_killable(&pb->ctl_rwsem);
-	else
+	write = msg_wants_down_write(argv[0]);
+	if (write)
 		ret = down_write_killable(&pb->ctl_rwsem);
+	else
+		ret = down_read_killable(&pb->ctl_rwsem);
 	if (unlikely(ret))
 		goto out;
 
@@ -612,10 +611,10 @@ static int pb_message(struct dm_target *ti, unsigned int argc, char **argv,
 	}
 
 unlock:
-	if (read)
-		up_read(&pb->ctl_rwsem);
-	else
+	if (write)
 		up_write(&pb->ctl_rwsem);
+	else
+		up_read(&pb->ctl_rwsem);
 out:
 	return ret;
 }
