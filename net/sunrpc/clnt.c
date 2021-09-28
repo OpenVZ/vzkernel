@@ -3391,11 +3391,23 @@ rpc_clnt_swap_deactivate(struct rpc_clnt *clnt)
 EXPORT_SYMBOL_GPL(rpc_clnt_swap_deactivate);
 #endif /* CONFIG_SUNRPC_SWAP */
 
+static void rpc_kill_tasks(struct net *net)
+{
+	struct rpc_clnt *clnt;
+	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
+
+	spin_lock(&sn->rpc_client_lock);
+	list_for_each_entry(clnt, &sn->all_clients, cl_clients)
+		rpc_killall_tasks(clnt);
+	spin_unlock(&sn->rpc_client_lock);
+}
+
 static ssize_t write_kill_tasks(struct file *file, const char __user *buf,
 			 size_t count, loff_t *ppos)
 {
 	struct net *net = pde_data(file->f_path.dentry->d_inode);
 	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
+	bool prev_kill_tasks = sn->kill_tasks;
 	char tbuf[20];
 	unsigned long kill_tasks;
 	int res;
@@ -3411,6 +3423,11 @@ static ssize_t write_kill_tasks(struct file *file, const char __user *buf,
 		return res;
 
 	sn->kill_tasks = !!kill_tasks;
+
+	/* Kill pending tasks */
+	if (sn->kill_tasks && !prev_kill_tasks)
+		rpc_kill_tasks(net);
+
 	return count;
 }
 
