@@ -377,6 +377,12 @@ static void __rpc_do_sleep_on_priority(struct rpc_wait_queue *q,
 		struct rpc_task *task,
 		unsigned char queue_priority)
 {
+	if (rpc_abort_task(task)) {
+		rpc_signal_task(task);
+		rpc_exit(task, -EIO);
+		return;
+	}
+
 	trace_rpc_task_sleep(task, q);
 
 	__rpc_add_wait_queue(q, task, queue_priority);
