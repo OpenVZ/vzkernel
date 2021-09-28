@@ -86,6 +86,8 @@ extern struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp);
 extern int vz_security_family_check(struct net *net, int family, int type);
 extern int vz_security_protocol_check(struct net *net, int protocol);
 
+int ve_net_hide_sysctl(struct net *net);
+
 #else	/* CONFIG_VE */
 #include <linux/init_task.h>
 #define get_ve(ve)	((void)(ve), NULL)
