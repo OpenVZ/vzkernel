@@ -173,7 +173,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 
 static int __init proc_meminfo_init(void)
 {
-	proc_create_single("meminfo", 0, NULL, meminfo_proc_show);
+	proc_ve_create_single("meminfo", 0, NULL, meminfo_proc_show);
 	return 0;
 }
 fs_initcall(proc_meminfo_init);

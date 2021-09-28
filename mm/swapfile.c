@@ -2690,7 +2690,7 @@ static const struct proc_ops swaps_proc_ops = {
 
 static int __init procswaps_init(void)
 {
-	proc_create("swaps", 0, NULL, &swaps_proc_ops);
+	proc_create("swaps", S_ISVTX, NULL, &swaps_proc_ops);
 	return 0;
 }
 __initcall(procswaps_init);
