@@ -889,6 +889,11 @@ static void __rpc_execute(struct rpc_task *task)
 	if (RPC_IS_QUEUED(task))
 		return;
 
+	if (rpc_abort_task(task)) {
+		rpc_signal_task(task);
+		rpc_exit(task, -EIO);
+	}
+
 	for (;;) {
 		void (*do_action)(struct rpc_task *);
 
