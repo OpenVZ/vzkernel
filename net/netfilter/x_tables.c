@@ -951,8 +951,7 @@ unsigned int *xt_alloc_entry_offsets(unsigned int size)
 	if (size > XT_MAX_TABLE_SIZE / sizeof(unsigned int))
 		return NULL;
 
-	return kvcalloc(size, sizeof(unsigned int), GFP_KERNEL);
-
+	return kvcalloc(size, sizeof(unsigned int), GFP_KERNEL_ACCOUNT);
 }
 EXPORT_SYMBOL(xt_alloc_entry_offsets);
 
