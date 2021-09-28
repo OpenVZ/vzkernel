@@ -251,6 +251,9 @@ void		rpc_clnt_probe_trunked_xprts(struct rpc_clnt *,
 
 const char *rpc_proc_name(const struct rpc_task *task);
 
+int rpc_task_kill_proc_init(struct net *net);
+void rpc_task_kill_proc_fini(struct net *net);
+
 void rpc_clnt_xprt_switch_put(struct rpc_clnt *);
 void rpc_clnt_xprt_switch_add_xprt(struct rpc_clnt *, struct rpc_xprt *);
 void rpc_clnt_xprt_switch_remove_xprt(struct rpc_clnt *, struct rpc_xprt *);
