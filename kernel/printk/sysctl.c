@@ -27,7 +27,7 @@ static struct ctl_table printk_sysctls[] = {
 		.data		= &console_loglevel,
 		.maxlen		= 4*sizeof(int),
 		.mode		= 0644 | S_ISVTX,
-		.proc_handler	= proc_dointvec,
+		.proc_handler	= proc_dointvec_immutable,
 	},
 	{
 		.procname	= "printk_ratelimit",
