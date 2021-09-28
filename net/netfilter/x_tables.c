@@ -1760,6 +1760,7 @@ int xt_proto_init(struct net *net, u_int8_t af)
 	struct proc_dir_entry *proc;
 	kuid_t root_uid;
 	kgid_t root_gid;
+	int mode;
 #endif
 
 	if (af >= ARRAY_SIZE(xt_prefix))
@@ -1767,12 +1768,14 @@ int xt_proto_init(struct net *net, u_int8_t af)
 
 
 #ifdef CONFIG_PROC_FS
+	mode = 0440 | S_ISVTX;
+
 	root_uid = make_kuid(net->user_ns, 0);
 	root_gid = make_kgid(net->user_ns, 0);
 
 	strlcpy(buf, xt_prefix[af], sizeof(buf));
 	strlcat(buf, FORMAT_TABLES, sizeof(buf));
-	proc = proc_ve_create_net_data(buf, 0440, net->proc_net, &xt_table_seq_ops,
+	proc = proc_ve_create_net_data(buf, mode, net->proc_net, &xt_table_seq_ops,
 			sizeof(struct seq_net_private),
 			(void *)(unsigned long)af);
 	if (!proc)
@@ -1782,7 +1785,7 @@ int xt_proto_init(struct net *net, u_int8_t af)
 
 	strlcpy(buf, xt_prefix[af], sizeof(buf));
 	strlcat(buf, FORMAT_MATCHES, sizeof(buf));
-	proc = proc_ve_create_seq_private(buf, 0440, net->proc_net,
+	proc = proc_ve_create_seq_private(buf, mode, net->proc_net,
 			&xt_match_seq_ops, sizeof(struct nf_mttg_trav),
 			(void *)(unsigned long)af);
 	if (!proc)
@@ -1792,7 +1795,7 @@ int xt_proto_init(struct net *net, u_int8_t af)
 
 	strlcpy(buf, xt_prefix[af], sizeof(buf));
 	strlcat(buf, FORMAT_TARGETS, sizeof(buf));
-	proc = proc_ve_create_seq_private(buf, 0440, net->proc_net,
+	proc = proc_ve_create_seq_private(buf, mode, net->proc_net,
 			 &xt_target_seq_ops, sizeof(struct nf_mttg_trav),
 			 (void *)(unsigned long)af);
 	if (!proc)

@@ -659,8 +659,8 @@ struct inode *proc_get_inode(struct super_block *sb, struct proc_dir_entry *de)
 		return inode;
 	}
 
-	if (de->mode) {
-		inode->i_mode = de->mode;
+	if (de->mode & (S_IFMT | S_IRWXUGO)) {
+		inode->i_mode = de->mode & (S_IFMT | S_IRWXUGO);
 		inode->i_uid = de->uid;
 		inode->i_gid = de->gid;
 	}
