@@ -18,6 +18,8 @@
 #include <linux/nfs_fs.h>
 #include <linux/nfs_mount.h>
 #include <linux/nfs4_mount.h>
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
 
 #include <net/handshake.h>
 
@@ -1576,6 +1578,9 @@ static int nfs_init_fs_context(struct fs_context *fc)
 {
 	struct nfs_fs_context *ctx;
 
+	if (!(get_exec_env()->features & VE_FEATURE_NFS))
+		return -ENODEV;
+
 	ctx = kzalloc(sizeof(struct nfs_fs_context), GFP_KERNEL);
 	if (unlikely(!ctx))
 		return -ENOMEM;
@@ -1650,7 +1655,8 @@ struct file_system_type nfs_fs_type = {
 	.init_fs_context	= nfs_init_fs_context,
 	.parameters		= nfs_fs_parameters,
 	.kill_sb		= nfs_kill_super,
-	.fs_flags		= FS_RENAME_DOES_D_MOVE|FS_BINARY_MOUNTDATA,
+	.fs_flags		= FS_RENAME_DOES_D_MOVE|FS_BINARY_MOUNTDATA|
+				  FS_VIRTUALIZED|FS_VE_MOUNT,
 };
 MODULE_ALIAS_FS("nfs");
 EXPORT_SYMBOL_GPL(nfs_fs_type);
@@ -1662,7 +1668,8 @@ struct file_system_type nfs4_fs_type = {
 	.init_fs_context	= nfs_init_fs_context,
 	.parameters		= nfs_fs_parameters,
 	.kill_sb		= nfs_kill_super,
-	.fs_flags		= FS_RENAME_DOES_D_MOVE|FS_BINARY_MOUNTDATA,
+	.fs_flags		= FS_RENAME_DOES_D_MOVE|FS_BINARY_MOUNTDATA|
+				  FS_VIRTUALIZED|FS_VE_MOUNT,
 };
 MODULE_ALIAS_FS("nfs4");
 MODULE_ALIAS("nfs4");
