@@ -85,6 +85,28 @@ int proc_do_large_bitmap(struct ctl_table *, int, void *, size_t *, loff_t *);
 int proc_do_static_key(struct ctl_table *table, int write, void *buffer,
 		size_t *lenp, loff_t *ppos);
 
+bool virtual_ptr(void **ptr, void *base, size_t size, void *cur);
+#define sysctl_virtual(sysctl)							\
+int sysctl ## _virtual(struct ctl_table *table, int write,			\
+		        void __user *buffer, size_t *lenp, loff_t *ppos)	\
+{										\
+	struct ctl_table tmp = *table;						\
+	if (virtual_ptr(&tmp.data, &ve0, sizeof(ve0), get_exec_env()))		\
+		return sysctl(&tmp, write, buffer, lenp, ppos);			\
+	return -EINVAL;								\
+}
+
+extern int proc_dointvec_virtual(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
+extern int proc_doulongvec_minmax_virtual(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
+extern int proc_dointvec_immutable(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
+extern int proc_dostring_immutable(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
+extern int proc_dointvec_minmax_immutable(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
+
 /*
  * Register a set of sysctl names by calling register_sysctl_table
  * with an initialised array of struct ctl_table's.  An entry with 
