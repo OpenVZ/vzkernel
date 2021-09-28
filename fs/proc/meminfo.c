@@ -13,6 +13,9 @@
 #include <linux/vmstat.h>
 #include <linux/atomic.h>
 #include <linux/vmalloc.h>
+#include <linux/virtinfo.h>
+#include <linux/memcontrol.h>
+#include <linux/ve.h>
 #ifdef CONFIG_CMA
 #include <linux/cma.h>
 #endif
@@ -35,9 +38,93 @@ extern unsigned long get_nr_tcache_pages(void);
 static inline unsigned long get_nr_tcache_pages(void) { return 0; }
 #endif
 
-static int meminfo_proc_show(struct seq_file *m, void *v)
+static int meminfo_proc_show_mi(struct seq_file *m, struct meminfo *mi)
+{
+	unsigned long *pages;
+
+	pages = mi->pages;
+
+	show_val_kb(m, "MemTotal:       ", mi->si->totalram);
+	show_val_kb(m, "MemFree:        ", mi->si->freeram);
+	show_val_kb(m, "Buffers:        ", 0);
+	show_val_kb(m, "Cached:         ", mi->cached);
+
+	show_val_kb(m, "Active:         ", pages[LRU_ACTIVE_ANON] +
+					   pages[LRU_ACTIVE_FILE]);
+	show_val_kb(m, "Inactive:       ", pages[LRU_INACTIVE_ANON] +
+					   pages[LRU_INACTIVE_FILE]);
+	show_val_kb(m, "Active(anon):   ", pages[LRU_ACTIVE_ANON]);
+	show_val_kb(m, "Inactive(anon): ", pages[LRU_INACTIVE_ANON]);
+	show_val_kb(m, "Active(file):   ", pages[LRU_ACTIVE_FILE]);
+	show_val_kb(m, "Inactive(file): ", pages[LRU_INACTIVE_FILE]);
+	show_val_kb(m, "Unevictable:    ", pages[LRU_UNEVICTABLE]);
+	show_val_kb(m, "Mlocked:        ", 0);
+
+	show_val_kb(m, "SwapTotal:      ", mi->si->totalswap);
+	show_val_kb(m, "SwapFree:       ", mi->si->freeswap);
+	show_val_kb(m, "Dirty:          ", mi->dirty_pages);
+	show_val_kb(m, "Writeback:      ", mi->writeback_pages);
+
+	show_val_kb(m, "AnonPages:      ", pages[LRU_ACTIVE_ANON] +
+					   pages[LRU_INACTIVE_ANON]);
+	show_val_kb(m, "Shmem:          ", mi->si->sharedram);
+	show_val_kb(m, "Slab:           ", mi->slab_reclaimable +
+					   mi->slab_unreclaimable);
+	show_val_kb(m, "SReclaimable:   ", mi->slab_reclaimable);
+	show_val_kb(m, "SUnreclaim:     ", mi->slab_unreclaimable);
+
+       return 0;
+}
+
+void si_meminfo_ve(struct sysinfo *si, struct ve_struct *ve)
+{
+	unsigned long memtotal, memused, swaptotal, swapused;
+	struct mem_cgroup *memcg;
+	struct cgroup_subsys_state *css;
+
+	memset(si, 0, sizeof(*si));
+
+	css = ve_get_init_css(ve, memory_cgrp_id);
+	memcg = mem_cgroup_from_css(css);
+
+	memtotal = READ_ONCE(memcg->memory.max);
+	memused = page_counter_read(&memcg->memory);
+	si->totalram = memtotal;
+	si->freeram = (memtotal > memused ? memtotal - memused : 0);
+
+	si->sharedram = memcg_page_state(memcg, NR_SHMEM);
+
+	swaptotal = READ_ONCE(memcg->memsw.max) - memtotal;
+	swapused = page_counter_read(&memcg->memsw) - memused;
+	si->totalswap = swaptotal;
+	/* Due to global reclaim, memory.memsw.usage can be greater than
+	 * (memory.memsw.max - memory.max). */
+	si->freeswap = (swaptotal > swapused ? swaptotal - swapused : 0);
+
+	si->mem_unit = PAGE_SIZE;
+
+	css_put(css);
+
+	/* bufferram, totalhigh and freehigh left 0 */
+}
+
+static void fill_meminfo_ve(struct meminfo *mi, struct ve_struct *ve)
+{
+	struct cgroup_subsys_state *css;
+
+	si_meminfo_ve(mi->si, ve);
+
+	css = ve_get_init_css(ve, memory_cgrp_id);
+	mem_cgroup_fill_meminfo(mem_cgroup_from_css(css), mi);
+	css_put(css);
+
+}
+
+static int meminfo_proc_show_ve(struct seq_file *m, void *v,
+				struct ve_struct *ve)
 {
 	struct sysinfo i;
+	struct meminfo mi;
 	unsigned long committed;
 	long cached;
 	long available;
@@ -47,6 +134,17 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 
 	si_meminfo(&i);
 	si_swapinfo(&i);
+
+        memset(&mi, 0, sizeof(mi));
+        mi.si = &i;
+        mi.ve = ve;
+
+	if (!ve_is_super(ve) && ve->meminfo_val == VE_MEMINFO_DEFAULT) {
+		fill_meminfo_ve(&mi, ve);
+
+		return meminfo_proc_show_mi(m, &mi);
+	}
+
 	committed = vm_memory_committed();
 
 	cached = global_node_page_state(NR_FILE_PAGES) -
@@ -169,6 +267,11 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	arch_report_meminfo(m);
 
 	return 0;
+}
+
+static int meminfo_proc_show(struct seq_file *m, void *v)
+{
+	return meminfo_proc_show_ve(m, v, get_exec_env());
 }
 
 static int __init proc_meminfo_init(void)

@@ -53,7 +53,12 @@ struct ve_struct {
 	u64			_uevent_seqnum;
 
 	int			_randomize_va_space;
+
+	unsigned long		meminfo_val;
 };
+
+#define VE_MEMINFO_DEFAULT	1	/* default behaviour */
+#define VE_MEMINFO_SYSTEM	0	/* disable meminfo virtualization */
 
 extern int nr_ve;
 
