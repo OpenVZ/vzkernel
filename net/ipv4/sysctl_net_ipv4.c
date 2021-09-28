@@ -847,7 +847,7 @@ static struct ctl_table ipv4_net_table[] = {
 		.procname	= "tcp_syncookies",
 		.data		= &init_net.ipv4.sysctl_tcp_syncookies,
 		.maxlen		= sizeof(int),
-		.mode		= 0644 | S_ISVTX,
+		.mode		= 0644,
 		.proc_handler	= proc_dointvec_immutable,
 	},
 #endif
