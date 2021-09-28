@@ -504,6 +504,18 @@ pid_t __task_pid_nr_ns(struct task_struct *task, enum pid_type type,
 }
 EXPORT_SYMBOL(__task_pid_nr_ns);
 
+pid_t ve_task_ppid_nr_ns(struct task_struct *tsk, struct pid_namespace *ns)
+{
+	pid_t ppid;
+	rcu_read_lock();
+	ppid = task_tgid_nr_ns(rcu_dereference(tsk->real_parent), ns);
+	rcu_read_unlock();
+	/* It's dirty hack. Some old utils don't work if ppid is zero*/
+	if (ppid == 0 && ns->child_reaper != tsk)
+		ppid = 1;
+	return ppid;
+}
+
 struct pid_namespace *task_active_pid_ns(struct task_struct *tsk)
 {
 	return ns_of_pid(task_pid(tsk));
