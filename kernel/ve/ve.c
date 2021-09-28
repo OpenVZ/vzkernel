@@ -51,6 +51,7 @@ struct ve_struct ve0 = {
 #else
 					2,
 #endif
+	.meminfo_val		= VE_MEMINFO_SYSTEM,
 };
 EXPORT_SYMBOL(ve0);
 
@@ -426,6 +427,8 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 
 	ve->features = VE_FEATURES_DEF;
 	ve->_randomize_va_space = ve0._randomize_va_space;
+
+	ve->meminfo_val = VE_MEMINFO_DEFAULT;
 
 	atomic_set(&ve->netns_avail_nr, NETNS_MAX_NR_DEFAULT);
 	ve->netns_max_nr = NETNS_MAX_NR_DEFAULT;
