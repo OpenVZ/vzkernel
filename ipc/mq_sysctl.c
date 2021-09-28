@@ -8,6 +8,7 @@
 #include <linux/nsproxy.h>
 #include <linux/ipc_namespace.h>
 #include <linux/sysctl.h>
+#include <linux/stat.h>
 
 #ifdef CONFIG_PROC_SYSCTL
 static void *get_mq(struct ctl_table *table)
@@ -54,14 +55,14 @@ static struct ctl_table mq_sysctls[] = {
 		.procname	= "queues_max",
 		.data		= &init_ipc_ns.mq_queues_max,
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_mq_dointvec,
 	},
 	{
 		.procname	= "msg_max",
 		.data		= &init_ipc_ns.mq_msg_max,
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_mq_dointvec_minmax,
 		.extra1		= &msg_max_limit_min,
 		.extra2		= &msg_max_limit_max,
@@ -70,7 +71,7 @@ static struct ctl_table mq_sysctls[] = {
 		.procname	= "msgsize_max",
 		.data		= &init_ipc_ns.mq_msgsize_max,
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_mq_dointvec_minmax,
 		.extra1		= &msg_maxsize_limit_min,
 		.extra2		= &msg_maxsize_limit_max,
@@ -79,7 +80,7 @@ static struct ctl_table mq_sysctls[] = {
 		.procname	= "msg_default",
 		.data		= &init_ipc_ns.mq_msg_default,
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_mq_dointvec_minmax,
 		.extra1		= &msg_max_limit_min,
 		.extra2		= &msg_max_limit_max,
@@ -88,7 +89,7 @@ static struct ctl_table mq_sysctls[] = {
 		.procname	= "msgsize_default",
 		.data		= &init_ipc_ns.mq_msgsize_default,
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
+		.mode		= 0644 | S_ISVTX,
 		.proc_handler	= proc_mq_dointvec_minmax,
 		.extra1		= &msg_maxsize_limit_min,
 		.extra2		= &msg_maxsize_limit_max,
