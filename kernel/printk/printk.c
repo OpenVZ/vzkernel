@@ -2537,6 +2537,37 @@ int vprintk_default(const char *fmt, va_list args)
 }
 EXPORT_SYMBOL_GPL(vprintk_default);
 
+asmlinkage int ve_vprintk(int dst, const char *fmt, va_list args)
+{
+	va_list args2;
+	int r = 0;
+
+	va_copy(args2, args);
+	if (ve_is_super(get_exec_env()) || (dst & VE0_LOG))
+		r = vprintk(fmt, args);
+	if (!ve_is_super(get_exec_env()) && (dst & VE_LOG))
+		r = __vprintk(fmt, args2);
+
+	return r;
+}
+
+/*
+ * Do not use it from scheduler code - can lead to deadlocks.
+ */
+
+asmlinkage int ve_printk(int dst, const char *fmt, ...)
+{
+	va_list args;
+	int r;
+
+	va_start(args, fmt);
+	r = ve_vprintk(dst, fmt, args);
+	va_end(args);
+
+	return r;
+}
+EXPORT_SYMBOL(ve_printk);
+
 asmlinkage __visible int _printk(const char *fmt, ...)
 {
 	va_list args;
