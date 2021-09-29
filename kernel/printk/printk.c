@@ -45,6 +45,7 @@
 #include <linux/ctype.h>
 #include <linux/uio.h>
 #include <linux/clocksource.h>
+#include <linux/ve.h>
 #include <linux/sched/clock.h>
 #include <linux/sched/debug.h>
 #include <linux/sched/task_stack.h>
@@ -542,8 +543,6 @@ static struct latched_seq clear_seq = {
 #define __LOG_BUF_LEN (1 << CONFIG_LOG_BUF_SHIFT)
 #define LOG_BUF_LEN_MAX (u32)(1 << 31)
 static char __log_buf[__LOG_BUF_LEN] __aligned(LOG_ALIGN);
-static char *log_buf = __log_buf;
-static u32 log_buf_len = __LOG_BUF_LEN;
 
 /*
  * Define the average message size. This only affects the number of
@@ -561,6 +560,41 @@ _DEFINE_PRINTKRB(printk_rb_static, CONFIG_LOG_BUF_SHIFT - PRB_AVGBITS,
 static struct printk_ringbuffer printk_rb_dynamic;
 
 static struct printk_ringbuffer *prb = &printk_rb_static;
+static struct log_state {
+	char *buf;
+	u32 buf_len;
+} init_log_state = {
+	.buf = __log_buf,
+	.buf_len = __LOG_BUF_LEN,
+};
+
+/* kdump relies on some log_* symbols, let's make it happy */
+#define DEFINE_STRUCT_MEMBER_ALIAS(name, inst, memb)			\
+static void ____ ## name ## _definition(void) __attribute__((used));	\
+static void ____ ## name ## _definition(void)				\
+{									\
+	asm (".globl " #name "\n\t.set " #name ", " #inst "+%c0"	\
+	     : : "g" (offsetof(typeof(inst), memb)));			\
+}									\
+extern typeof(inst.memb) name;
+/*
+ * See dump_log(int msg_flags) function.
+ *
+ * https://github.com/crash-utility/crash/blob/7.3.0/kernel.c#L5040
+ */
+DEFINE_STRUCT_MEMBER_ALIAS(log_buf, init_log_state, buf);
+DEFINE_STRUCT_MEMBER_ALIAS(log_buf_len, init_log_state, buf_len);
+#undef DEFINE_STRUCT_MEMBER_ALIAS
+
+static inline struct log_state *ve_log_state(void)
+{
+	struct log_state *log = &init_log_state;
+#ifdef CONFIG_VE
+	if (get_exec_env()->log_state)
+		log = get_exec_env()->log_state;
+#endif
+	return log;
+}
 
 /*
  * We cannot access per-CPU data (e.g. per-CPU flush irq_work) before
@@ -602,13 +636,13 @@ static u64 latched_seq_read_nolock(struct latched_seq *ls)
 /* Return log buffer address */
 char *log_buf_addr_get(void)
 {
-	return log_buf;
+	return init_log_state.buf;
 }
 
 /* Return log buffer size */
 u32 log_buf_len_get(void)
 {
-	return log_buf_len;
+	return init_log_state.buf_len;
 }
 
 /*
@@ -619,13 +653,14 @@ u32 log_buf_len_get(void)
 #define MAX_LOG_TAKE_PART 4
 static const char trunc_msg[] = "<truncated>";
 
-static void truncate_msg(u16 *text_len, u16 *trunc_msg_len)
+static void truncate_msg(struct log_state *log,
+			 u16 *text_len, u16 *trunc_msg_len)
 {
 	/*
 	 * The message should not take the whole buffer. Otherwise, it might
 	 * get removed too soon.
 	 */
-	u32 max_text_len = log_buf_len / MAX_LOG_TAKE_PART;
+	u32 max_text_len = log->buf_len / MAX_LOG_TAKE_PART;
 
 	if (*text_len > max_text_len)
 		*text_len = max_text_len;
@@ -776,14 +811,20 @@ struct devkmsg_user {
 	struct printk_record record;
 };
 
-static __printf(3, 4) __cold
-int devkmsg_emit(int facility, int level, const char *fmt, ...)
+asmlinkage int vprintk_emit_log(struct log_state *log,
+				int facility, int level,
+				const struct dev_printk_info *dev_info,
+				const char *fmt, va_list args);
+
+static __printf(4, 5) __cold
+int devkmsg_emit_log(struct log_state *log, int facility, int level,
+		     const char *fmt, ...)
 {
 	va_list args;
 	int r;
 
 	va_start(args, fmt);
-	r = vprintk_emit(facility, level, NULL, fmt, args);
+	r = vprintk_emit_log(log, facility, level, NULL, fmt, args);
 	va_end(args);
 
 	return r;
@@ -791,6 +832,7 @@ int devkmsg_emit(int facility, int level, const char *fmt, ...)
 
 static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 {
+	struct log_state *log = ve_log_state();
 	char *buf, *line;
 	int level = default_message_loglevel;
 	int facility = 1;	/* LOG_USER */
@@ -846,7 +888,7 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 		}
 	}
 
-	devkmsg_emit(facility, level, "%s", line);
+	devkmsg_emit_log(log, facility, level, "%s", line);
 	kfree(buf);
 	return ret;
 }
@@ -1120,11 +1162,11 @@ static void __init log_buf_len_update(u64 size)
 
 	if (size)
 		size = roundup_pow_of_two(size);
-	if (size > log_buf_len)
+	if (size > init_log_state.buf_len)
 		new_log_buf_len = (unsigned long)size;
 }
 
-/* save requested log_buf_len since it's too early to process it */
+/* save requested log->buf_len since it's too early to process it */
 static int __init log_buf_len_setup(char *str)
 {
 	u64 size;
@@ -1207,6 +1249,7 @@ static char setup_text_buf[LOG_LINE_MAX] __initdata;
 
 void __init setup_log_buf(int early)
 {
+	struct log_state *log = &init_log_state;
 	struct printk_info *new_infos;
 	unsigned int new_descs_count;
 	struct prb_desc *new_descs;
@@ -1228,7 +1271,7 @@ void __init setup_log_buf(int early)
 	if (!early)
 		set_percpu_data_ready();
 
-	if (log_buf != __log_buf)
+	if (log->buf != __log_buf)
 		return;
 
 	if (!early && !new_log_buf_len)
@@ -1275,8 +1318,8 @@ void __init setup_log_buf(int early)
 
 	local_irq_save(flags);
 
-	log_buf_len = new_log_buf_len;
-	log_buf = new_log_buf;
+	log->buf_len = new_log_buf_len;
+	log->buf = new_log_buf;
 	new_log_buf_len = 0;
 
 	free = __LOG_BUF_LEN;
@@ -1310,7 +1353,7 @@ void __init setup_log_buf(int early)
 		       prb_next_seq(&printk_rb_static) - seq);
 	}
 
-	pr_info("log_buf_len: %u bytes\n", log_buf_len);
+	pr_info("log_buf_len: %u bytes\n", log->buf_len);
 	pr_info("early log buf free: %u(%u%%)\n",
 		free, (free * 100) / __LOG_BUF_LEN);
 	return;
@@ -1792,6 +1835,7 @@ static void syslog_clear(void)
 
 int do_syslog(int type, char __user *buf, int len, int source)
 {
+	struct log_state *log = ve_log_state();
 	struct printk_info info;
 	bool clear = false;
 	static int saved_console_loglevel = LOGLEVEL_DEFAULT;
@@ -1893,7 +1937,7 @@ int do_syslog(int type, char __user *buf, int len, int source)
 		break;
 	/* Size of the log buffer */
 	case SYSLOG_ACTION_SIZE_BUFFER:
-		error = log_buf_len;
+		error = log->buf_len;
 		break;
 	default:
 		error = -EINVAL;
@@ -2258,8 +2302,8 @@ static u16 printk_sprint(char *text, u16 size, int facility,
 	return text_len;
 }
 
-__printf(4, 0)
-int vprintk_store(int facility, int level,
+__printf(5, 0)
+int vprintk_store_log(struct log_state *log, int facility, int level,
 		  const struct dev_printk_info *dev_info,
 		  const char *fmt, va_list args)
 {
@@ -2340,7 +2384,7 @@ int vprintk_store(int facility, int level,
 	prb_rec_init_wr(&r, reserve_size);
 	if (!prb_reserve(&e, prb, &r)) {
 		/* truncate the message if it is too long for empty buffer */
-		truncate_msg(&reserve_size, &trunc_msg_len);
+		truncate_msg(log, &reserve_size, &trunc_msg_len);
 
 		prb_rec_init_wr(&r, reserve_size + trunc_msg_len);
 		if (!prb_reserve(&e, prb, &r))
@@ -2372,9 +2416,18 @@ out:
 	return ret;
 }
 
-asmlinkage int vprintk_emit(int facility, int level,
-			    const struct dev_printk_info *dev_info,
-			    const char *fmt, va_list args)
+int vprintk_store(int facility, int level,
+		  const struct dev_printk_info *dev_info,
+		  const char *fmt, va_list args)
+{
+	return vprintk_store_log(&init_log_state, facility, level,
+				 dev_info, fmt, args);
+}
+
+asmlinkage int vprintk_emit_log(struct log_state *log,
+				int facility, int level,
+				const struct dev_printk_info *dev_info,
+				const char *fmt, va_list args)
 {
 	int printed_len;
 	bool in_sched = false;
@@ -2394,7 +2447,7 @@ asmlinkage int vprintk_emit(int facility, int level,
 
 	printk_delay(level);
 
-	printed_len = vprintk_store(facility, level, dev_info, fmt, args);
+	printed_len = vprintk_store_log(log, facility, level, dev_info, fmt, args);
 
 	/* If called from the scheduler, we can not call up(). */
 	if (!in_sched && allow_direct_printing()) {
@@ -2433,7 +2486,22 @@ asmlinkage int vprintk_emit(int facility, int level,
 	wake_up_klogd();
 	return printed_len;
 }
+
+asmlinkage int vprintk_emit(int facility, int level,
+			    const struct dev_printk_info *dev_info,
+			    const char *fmt, va_list args)
+{
+	return vprintk_emit_log(&init_log_state,
+				facility, level, dev_info,
+				fmt, args);
+}
 EXPORT_SYMBOL(vprintk_emit);
+
+static int __vprintk(const char *fmt, va_list args)
+{
+	return vprintk_emit_log(ve_log_state(), 0, LOGLEVEL_DEFAULT,
+			        NULL, fmt, args);
+}
 
 int vprintk_default(const char *fmt, va_list args)
 {
@@ -4563,7 +4631,61 @@ void kmsg_dump_rewind(struct kmsg_dump_iter *iter)
 }
 EXPORT_SYMBOL_GPL(kmsg_dump_rewind);
 
-#endif
+#ifdef CONFIG_VE
+int setup_log_buf_ve(struct log_state *log, struct ve_struct *ve, int early)
+{
+	unsigned long local_log_buf_len;
+	int ret = -EINVAL;
+
+	char *new_log_buf;
+
+	local_log_buf_len = VE_LOG_BUF_LEN;
+
+	ret = -ENOMEM;
+	new_log_buf = kmalloc(local_log_buf_len, GFP_KERNEL);
+	if (unlikely(!new_log_buf)) {
+		pr_err("log_buf_len: %lu text bytes not available\n",
+		       local_log_buf_len);
+		goto out;
+	}
+
+	log->buf_len = local_log_buf_len;
+	log->buf = new_log_buf;
+
+	return 0;
+out:
+	return ret;
+}
+
+int ve_log_init(struct ve_struct *ve)
+{
+	struct log_state *log;
+	int ret;
+
+	log = kzalloc(sizeof(*log), GFP_KERNEL);
+	if (!log)
+		return -ENOMEM;
+
+	ret = setup_log_buf_ve(log, ve, 0);
+	if (ret) {
+		kfree(log);
+		return ret;
+	}
+
+	ve->log_state = log;
+	return 0;
+}
+
+void ve_log_destroy(struct ve_struct *ve)
+{
+	struct log_state *log = ve->log_state;
+
+	kfree(log->buf);
+	kfree(log);
+}
+#endif /* CONFIG_VE */
+
+#endif /* CONFIG_PRINTK */
 
 #ifdef CONFIG_SMP
 static atomic_t printk_cpu_sync_owner = ATOMIC_INIT(-1);

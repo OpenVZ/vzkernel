@@ -432,12 +432,19 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 
 	atomic_set(&ve->netns_avail_nr, NETNS_MAX_NR_DEFAULT);
 	ve->netns_max_nr = NETNS_MAX_NR_DEFAULT;
+
+	err = ve_log_init(ve);
+	if (err)
+		goto err_log;
+
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
 	kmapset_init_key(&ve->sysfs_perms_key);
 	return &ve->css;
 
+err_log:
+	free_percpu(ve->sched_lat_ve.cur);
 err_lat:
 	kmem_cache_free(ve_cachep, ve);
 err_ve:
@@ -479,6 +486,7 @@ static void ve_destroy(struct cgroup_subsys_state *css)
 	struct ve_struct *ve = css_to_ve(css);
 
 	kmapset_unlink(&ve->sysfs_perms_key, &sysfs_ve_perms_set);
+	ve_log_destroy(ve);
 	free_percpu(ve->sched_lat_ve.cur);
 	kmem_cache_free(ve_cachep, ve);
 }
