@@ -69,6 +69,10 @@ extern int console_printk[];
 #define minimum_console_loglevel (console_printk[2])
 #define default_console_loglevel (console_printk[3])
 
+#define VE0_LOG		1
+#define VE_LOG		2
+#define VE_LOG_BOTH	(VE0_LOG | VE_LOG)
+
 static inline void console_silent(void)
 {
 	console_loglevel = CONSOLE_LOGLEVEL_SILENT;
@@ -159,6 +163,12 @@ int vprintk(const char *fmt, va_list args);
 asmlinkage __printf(1, 2) __cold
 int _printk(const char *fmt, ...);
 
+asmlinkage __printf(2, 0)
+int ve_vprintk(int dst, const char *fmt, va_list args);
+
+asmlinkage __printf(2, 3) __cold
+int ve_printk(int dst, const char *fmt, ...);
+
 struct ve_struct;
 int ve_log_init(struct ve_struct *ve);
 void ve_log_destroy(struct ve_struct *ve);
@@ -217,6 +227,16 @@ int vprintk(const char *s, va_list args)
 }
 static inline __printf(1, 2) __cold
 int _printk(const char *s, ...)
+{
+	return 0;
+}
+static inline __printf(2, 0)
+int ve_vprintk(int dst, const char *s, va_list args)
+{
+	return 0;
+}
+static inline __printf(2, 3) __cold
+int ve_printk(int dst, const char *s, ...)
 {
 	return 0;
 }
