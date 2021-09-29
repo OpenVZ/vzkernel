@@ -43,6 +43,9 @@ struct ve_struct {
 	/* see vzcalluser.h for VE_FEATURE_XXX definitions */
 	__u64			features;
 
+	void			*log_state;
+#define VE_LOG_BUF_LEN		4096
+
 	struct kstat_lat_pcpu_struct    sched_lat_ve;
 
 	struct kmapset_key	sysfs_perms_key;
