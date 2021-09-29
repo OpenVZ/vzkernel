@@ -378,17 +378,6 @@ struct latched_seq {
 	u64			val[2];
 };
 
-/*
- * The next printk record to read after the last 'clear' command. There are
- * two copies (updated with seqcount_latch) so that reads can locklessly
- * access a valid value. Writers are synchronized by @syslog_lock.
- */
-static struct latched_seq clear_seq = {
-	.latch		= SEQCNT_LATCH_ZERO(clear_seq.latch),
-	.val[0]		= 0,
-	.val[1]		= 0,
-};
-
 #ifdef CONFIG_PRINTK_CALLER
 #define PREFIX_MAX		48
 #else
@@ -425,13 +414,26 @@ _DEFINE_PRINTKRB(printk_rb_static, CONFIG_LOG_BUF_SHIFT - PRB_AVGBITS,
 
 static struct printk_ringbuffer printk_rb_dynamic;
 
-static struct printk_ringbuffer *prb = &printk_rb_static;
 static struct log_state {
 	char *buf;
 	u32 buf_len;
+
+	/*
+	 * The next printk record to read after the last 'clear' command. There are
+	 * two copies (updated with seqcount_latch) so that reads can locklessly
+	 * access a valid value. Writers are synchronized by @syslog_lock.
+	 */
+	struct latched_seq clear_seq;
+	struct printk_ringbuffer *prb;
 } init_log_state = {
 	.buf = __log_buf,
 	.buf_len = __LOG_BUF_LEN,
+	.clear_seq = {
+		.latch	= SEQCNT_LATCH_ZERO(init_log_state.clear_seq.latch),
+		.val[0]	= 0,
+		.val[1]	= 0,
+	},
+	.prb = &printk_rb_static,
 };
 
 /* kdump relies on some log_* symbols, let's make it happy */
@@ -450,6 +452,8 @@ extern typeof(inst.memb) name;
  */
 DEFINE_STRUCT_MEMBER_ALIAS(log_buf, init_log_state, buf);
 DEFINE_STRUCT_MEMBER_ALIAS(log_buf_len, init_log_state, buf_len);
+DEFINE_STRUCT_MEMBER_ALIAS(clear_seq, init_log_state, clear_seq);
+DEFINE_STRUCT_MEMBER_ALIAS(prb, init_log_state, prb);
 #undef DEFINE_STRUCT_MEMBER_ALIAS
 
 static inline struct log_state *ve_log_state(void)
@@ -762,6 +766,7 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 static ssize_t devkmsg_read(struct file *file, char __user *buf,
 			    size_t count, loff_t *ppos)
 {
+	struct log_state *log = ve_log_state();
 	struct devkmsg_user *user = file->private_data;
 	struct printk_record *r = &user->record;
 	size_t len;
@@ -774,14 +779,14 @@ static ssize_t devkmsg_read(struct file *file, char __user *buf,
 	if (ret)
 		return ret;
 
-	if (!prb_read_valid(prb, atomic64_read(&user->seq), r)) {
+	if (!prb_read_valid(log->prb, atomic64_read(&user->seq), r)) {
 		if (file->f_flags & O_NONBLOCK) {
 			ret = -EAGAIN;
 			goto out;
 		}
 
 		ret = wait_event_interruptible(log_wait,
-				prb_read_valid(prb, atomic64_read(&user->seq), r));
+				prb_read_valid(log->prb, atomic64_read(&user->seq), r));
 		if (ret)
 			goto out;
 	}
@@ -825,6 +830,7 @@ out:
  */
 static loff_t devkmsg_llseek(struct file *file, loff_t offset, int whence)
 {
+	struct log_state *log = ve_log_state();
 	struct devkmsg_user *user = file->private_data;
 	loff_t ret = 0;
 
@@ -836,7 +842,7 @@ static loff_t devkmsg_llseek(struct file *file, loff_t offset, int whence)
 	switch (whence) {
 	case SEEK_SET:
 		/* the first record */
-		atomic64_set(&user->seq, prb_first_valid_seq(prb));
+		atomic64_set(&user->seq, prb_first_valid_seq(log->prb));
 		break;
 	case SEEK_DATA:
 		/*
@@ -844,11 +850,11 @@ static loff_t devkmsg_llseek(struct file *file, loff_t offset, int whence)
 		 * like issued by 'dmesg -c'. Reading /dev/kmsg itself
 		 * changes no global state, and does not clear anything.
 		 */
-		atomic64_set(&user->seq, latched_seq_read_nolock(&clear_seq));
+		atomic64_set(&user->seq, latched_seq_read_nolock(&log->clear_seq));
 		break;
 	case SEEK_END:
 		/* after the last record */
-		atomic64_set(&user->seq, prb_next_seq(prb));
+		atomic64_set(&user->seq, prb_next_seq(log->prb));
 		break;
 	default:
 		ret = -EINVAL;
@@ -858,6 +864,7 @@ static loff_t devkmsg_llseek(struct file *file, loff_t offset, int whence)
 
 static __poll_t devkmsg_poll(struct file *file, poll_table *wait)
 {
+	struct log_state *log = ve_log_state();
 	struct devkmsg_user *user = file->private_data;
 	struct printk_info info;
 	__poll_t ret = 0;
@@ -867,7 +874,7 @@ static __poll_t devkmsg_poll(struct file *file, poll_table *wait)
 
 	poll_wait(file, &log_wait, wait);
 
-	if (prb_read_valid_info(prb, atomic64_read(&user->seq), &info, NULL)) {
+	if (prb_read_valid_info(log->prb, atomic64_read(&user->seq), &info, NULL)) {
 		/* return error when data has vanished underneath us */
 		if (info.seq != atomic64_read(&user->seq))
 			ret = EPOLLIN|EPOLLRDNORM|EPOLLERR|EPOLLPRI;
@@ -880,6 +887,7 @@ static __poll_t devkmsg_poll(struct file *file, poll_table *wait)
 
 static int devkmsg_open(struct inode *inode, struct file *file)
 {
+	struct log_state *log = ve_log_state();
 	struct devkmsg_user *user;
 	int err;
 
@@ -906,7 +914,7 @@ static int devkmsg_open(struct inode *inode, struct file *file)
 	prb_rec_init_rd(&user->record, &user->info,
 			&user->text_buf[0], sizeof(user->text_buf));
 
-	atomic64_set(&user->seq, prb_first_valid_seq(prb));
+	atomic64_set(&user->seq, prb_first_valid_seq(log->prb));
 
 	file->private_data = user;
 	return 0;
@@ -1186,7 +1194,7 @@ void __init setup_log_buf(int early)
 			free -= text_size;
 	}
 
-	prb = &printk_rb_dynamic;
+	log->prb = &printk_rb_dynamic;
 
 	local_irq_restore(flags);
 
@@ -1486,7 +1494,8 @@ static size_t get_record_print_text_size(struct printk_info *info,
  * @max_seq is simply an upper bound and does not need to exist. If the caller
  * does not require an upper bound, -1 can be used for @max_seq.
  */
-static u64 find_first_fitting_seq(u64 start_seq, u64 max_seq, size_t size,
+static u64 find_first_fitting_seq(struct log_state *log,
+				  u64 start_seq, u64 max_seq, size_t size,
 				  bool syslog, bool time)
 {
 	struct printk_info info;
@@ -1495,7 +1504,7 @@ static u64 find_first_fitting_seq(u64 start_seq, u64 max_seq, size_t size,
 	u64 seq;
 
 	/* Determine the size of the records up to @max_seq. */
-	prb_for_each_info(start_seq, prb, seq, &info, &line_count) {
+	prb_for_each_info(start_seq, log->prb, seq, &info, &line_count) {
 		if (info.seq >= max_seq)
 			break;
 		len += get_record_print_text_size(&info, line_count, syslog, time);
@@ -1514,7 +1523,7 @@ static u64 find_first_fitting_seq(u64 start_seq, u64 max_seq, size_t size,
 	 * might appear and get lost in the meantime. This is a best effort
 	 * that prevents an infinite loop that could occur with a retry.
 	 */
-	prb_for_each_info(start_seq, prb, seq, &info, &line_count) {
+	prb_for_each_info(start_seq, log->prb, seq, &info, &line_count) {
 		if (len <= size || info.seq >= max_seq)
 			break;
 		len -= get_record_print_text_size(&info, line_count, syslog, time);
@@ -1524,7 +1533,8 @@ static u64 find_first_fitting_seq(u64 start_seq, u64 max_seq, size_t size,
 }
 
 /* The caller is responsible for making sure @size is greater than 0. */
-static int syslog_print(char __user *buf, int size)
+static int syslog_print(struct log_state *log,
+			char __user *buf, int size)
 {
 	struct printk_info info;
 	struct printk_record r;
@@ -1548,7 +1558,8 @@ static int syslog_print(char __user *buf, int size)
 		seq = syslog_seq;
 
 		mutex_unlock(&syslog_lock);
-		len = wait_event_interruptible(log_wait, prb_read_valid(prb, seq, NULL));
+		len = wait_event_interruptible(log_wait,
+				prb_read_valid(log->prb, seq, NULL));
 		mutex_lock(&syslog_lock);
 
 		if (len)
@@ -1564,7 +1575,7 @@ static int syslog_print(char __user *buf, int size)
 		size_t skip;
 		int err;
 
-		if (!prb_read_valid(prb, syslog_seq, &r))
+		if (!prb_read_valid(log->prb, syslog_seq, &r))
 			break;
 
 		if (r.info->seq != syslog_seq) {
@@ -1617,7 +1628,8 @@ out:
 	return len;
 }
 
-static int syslog_print_all(char __user *buf, int size, bool clear)
+static int syslog_print_all(struct log_state *log,
+			    char __user *buf, int size, bool clear)
 {
 	struct printk_info info;
 	struct printk_record r;
@@ -1635,13 +1647,14 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 	 * Find first record that fits, including all following records,
 	 * into the user-provided buffer for this dump.
 	 */
-	seq = find_first_fitting_seq(latched_seq_read_nolock(&clear_seq), -1,
-				     size, true, time);
+	seq = find_first_fitting_seq(log,
+				     latched_seq_read_nolock(&log->clear_seq),
+				     -1, size, true, time);
 
 	prb_rec_init_rd(&r, &info, text, CONSOLE_LOG_MAX);
 
 	len = 0;
-	prb_for_each_record(seq, prb, seq, &r) {
+	prb_for_each_record(seq, log->prb, seq, &r) {
 		int textlen;
 
 		textlen = record_print_text(&r, true, time);
@@ -1662,7 +1675,7 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 
 	if (clear) {
 		mutex_lock(&syslog_lock);
-		latched_seq_write(&clear_seq, seq);
+		latched_seq_write(&log->clear_seq, seq);
 		mutex_unlock(&syslog_lock);
 	}
 
@@ -1670,10 +1683,10 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 	return len;
 }
 
-static void syslog_clear(void)
+static void syslog_clear(struct log_state *log)
 {
 	mutex_lock(&syslog_lock);
-	latched_seq_write(&clear_seq, prb_next_seq(prb));
+	latched_seq_write(&log->clear_seq, prb_next_seq(log->prb));
 	mutex_unlock(&syslog_lock);
 }
 
@@ -1715,11 +1728,11 @@ int do_syslog(int type, char __user *buf, int len, int source)
 			return 0;
 		if (!access_ok(buf, len))
 			return -EFAULT;
-		error = syslog_print_all(buf, len, clear);
+		error = syslog_print_all(log, buf, len, clear);
 		break;
 	/* Clear ring buffer */
 	case SYSLOG_ACTION_CLEAR:
-		syslog_clear();
+		syslog_clear(log);
 		break;
 	/* Disable logging to console */
 	case SYSLOG_ACTION_CONSOLE_OFF:
@@ -1747,7 +1760,7 @@ int do_syslog(int type, char __user *buf, int len, int source)
 	/* Number of chars in the log buffer */
 	case SYSLOG_ACTION_SIZE_UNREAD:
 		mutex_lock(&syslog_lock);
-		if (!prb_read_valid_info(prb, syslog_seq, &info, NULL)) {
+		if (!prb_read_valid_info(log->prb, syslog_seq, &info, NULL)) {
 			/* No unread messages. */
 			mutex_unlock(&syslog_lock);
 			return 0;
@@ -1763,13 +1776,13 @@ int do_syslog(int type, char __user *buf, int len, int source)
 			 * for pending data, not the size; return the count of
 			 * records, not the length.
 			 */
-			error = prb_next_seq(prb) - syslog_seq;
+			error = prb_next_seq(log->prb) - syslog_seq;
 		} else {
 			bool time = syslog_partial ? syslog_time : printk_time;
 			unsigned int line_count;
 			u64 seq;
 
-			prb_for_each_info(syslog_seq, prb, seq, &info,
+			prb_for_each_info(syslog_seq, log->prb, seq, &info,
 					  &line_count) {
 				error += get_record_print_text_size(&info, line_count,
 								    true, time);
@@ -2196,7 +2209,7 @@ int vprintk_store_log(struct log_state *log, int facility, int level,
 
 	if (lflags & LOG_CONT) {
 		prb_rec_init_wr(&r, reserve_size);
-		if (prb_reserve_in_last(&e, prb, &r, caller_id, LOG_LINE_MAX)) {
+		if (prb_reserve_in_last(&e, log->prb, &r, caller_id, LOG_LINE_MAX)) {
 			text_len = printk_sprint(&r.text_buf[r.info->text_len], reserve_size,
 						 facility, &lflags, fmt, args);
 			r.info->text_len += text_len;
@@ -2219,12 +2232,12 @@ int vprintk_store_log(struct log_state *log, int facility, int level,
 	 * structure when they fail.
 	 */
 	prb_rec_init_wr(&r, reserve_size);
-	if (!prb_reserve(&e, prb, &r)) {
+	if (!prb_reserve(&e, log->prb, &r)) {
 		/* truncate the message if it is too long for empty buffer */
 		truncate_msg(log, &reserve_size, &trunc_msg_len);
 
 		prb_rec_init_wr(&r, reserve_size + trunc_msg_len);
-		if (!prb_reserve(&e, prb, &r))
+		if (!prb_reserve(&e, log->prb, &r))
 			goto out;
 	}
 
@@ -2680,6 +2693,7 @@ static inline int can_use_console(void)
  */
 void console_unlock(void)
 {
+	struct log_state *log = &init_log_state;
 	static char ext_text[CONSOLE_EXT_LOG_MAX];
 	static char text[CONSOLE_LOG_MAX];
 	unsigned long flags;
@@ -2729,7 +2743,7 @@ again:
 		size_t len;
 
 skip:
-		if (!prb_read_valid(prb, console_seq, &r))
+		if (!prb_read_valid(log->prb, console_seq, &r))
 			break;
 
 		if (console_seq != r.info->seq) {
@@ -2808,7 +2822,7 @@ skip:
 	 * there's a new owner and the console_unlock() from them will do the
 	 * flush, no worries.
 	 */
-	retry = prb_read_valid(prb, console_seq, NULL);
+	retry = prb_read_valid(log->prb, console_seq, NULL);
 	if (retry && console_trylock())
 		goto again;
 }
@@ -2860,6 +2874,8 @@ void console_unblank(void)
  */
 void console_flush_on_panic(enum con_flush_mode mode)
 {
+	struct log_state *log = &init_log_state;
+
 	/*
 	 * If someone else is holding the console lock, trylock will fail
 	 * and may_schedule may be set.  Ignore and proceed to unlock so
@@ -2871,7 +2887,7 @@ void console_flush_on_panic(enum con_flush_mode mode)
 	console_may_schedule = 0;
 
 	if (mode == CONSOLE_REPLAY_ALL)
-		console_seq = prb_first_valid_seq(prb);
+		console_seq = prb_first_valid_seq(log->prb);
 	console_unlock();
 }
 
@@ -3523,7 +3539,8 @@ void kmsg_dump(enum kmsg_dump_reason reason)
 bool kmsg_dump_get_line(struct kmsg_dump_iter *iter, bool syslog,
 			char *line, size_t size, size_t *len)
 {
-	u64 min_seq = latched_seq_read_nolock(&clear_seq);
+	struct log_state *log = &init_log_state;
+	u64 min_seq = latched_seq_read_nolock(&log->clear_seq);
 	struct printk_info info;
 	unsigned int line_count;
 	struct printk_record r;
@@ -3537,11 +3554,11 @@ bool kmsg_dump_get_line(struct kmsg_dump_iter *iter, bool syslog,
 
 	/* Read text or count text lines? */
 	if (line) {
-		if (!prb_read_valid(prb, iter->cur_seq, &r))
+		if (!prb_read_valid(log->prb, iter->cur_seq, &r))
 			goto out;
 		l = record_print_text(&r, syslog, printk_time);
 	} else {
-		if (!prb_read_valid_info(prb, iter->cur_seq,
+		if (!prb_read_valid_info(log->prb, iter->cur_seq,
 					 &info, &line_count)) {
 			goto out;
 		}
@@ -3581,7 +3598,8 @@ EXPORT_SYMBOL_GPL(kmsg_dump_get_line);
 bool kmsg_dump_get_buffer(struct kmsg_dump_iter *iter, bool syslog,
 			  char *buf, size_t size, size_t *len_out)
 {
-	u64 min_seq = latched_seq_read_nolock(&clear_seq);
+	struct log_state *log = &init_log_state;
+	u64 min_seq = latched_seq_read_nolock(&log->clear_seq);
 	struct printk_info info;
 	struct printk_record r;
 	u64 seq;
@@ -3596,7 +3614,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dump_iter *iter, bool syslog,
 	if (iter->cur_seq < min_seq)
 		iter->cur_seq = min_seq;
 
-	if (prb_read_valid_info(prb, iter->cur_seq, &info, NULL)) {
+	if (prb_read_valid_info(log->prb, iter->cur_seq, &info, NULL)) {
 		if (info.seq != iter->cur_seq) {
 			/* messages are gone, move to first available one */
 			iter->cur_seq = info.seq;
@@ -3613,7 +3631,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dump_iter *iter, bool syslog,
 	 * because this function (by way of record_print_text()) will
 	 * not write more than size-1 bytes of text into @buf.
 	 */
-	seq = find_first_fitting_seq(iter->cur_seq, iter->next_seq,
+	seq = find_first_fitting_seq(log, iter->cur_seq, iter->next_seq,
 				     size - 1, syslog, time);
 
 	/*
@@ -3625,7 +3643,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dump_iter *iter, bool syslog,
 	prb_rec_init_rd(&r, &info, buf, size);
 
 	len = 0;
-	prb_for_each_record(seq, prb, seq, &r) {
+	prb_for_each_record(seq, log->prb, seq, &r) {
 		if (r.info->seq >= iter->next_seq)
 			break;
 
@@ -3654,8 +3672,10 @@ EXPORT_SYMBOL_GPL(kmsg_dump_get_buffer);
  */
 void kmsg_dump_rewind(struct kmsg_dump_iter *iter)
 {
-	iter->cur_seq = latched_seq_read_nolock(&clear_seq);
-	iter->next_seq = prb_next_seq(prb);
+	struct log_state *log = &init_log_state;
+
+	iter->cur_seq = latched_seq_read_nolock(&log->clear_seq);
+	iter->next_seq = prb_next_seq(log->prb);
 }
 EXPORT_SYMBOL_GPL(kmsg_dump_rewind);
 
@@ -3663,11 +3683,20 @@ EXPORT_SYMBOL_GPL(kmsg_dump_rewind);
 int setup_log_buf_ve(struct log_state *log, struct ve_struct *ve, int early)
 {
 	unsigned long local_log_buf_len;
+	struct printk_ringbuffer *local_prb;
 	int ret = -EINVAL;
 
+	struct printk_info *new_infos;
+	unsigned int new_descs_count;
+	struct prb_desc *new_descs;
+	size_t new_descs_size;
+	size_t new_infos_size;
 	char *new_log_buf;
 
 	local_log_buf_len = VE_LOG_BUF_LEN;
+
+	BUILD_BUG_ON((VE_LOG_BUF_LEN >> PRB_AVGBITS) == 0);
+	new_descs_count = local_log_buf_len >> PRB_AVGBITS;
 
 	ret = -ENOMEM;
 	new_log_buf = kmalloc(local_log_buf_len, GFP_KERNEL);
@@ -3677,10 +3706,47 @@ int setup_log_buf_ve(struct log_state *log, struct ve_struct *ve, int early)
 		goto out;
 	}
 
+	new_descs_size = new_descs_count * sizeof(struct prb_desc);
+	new_descs = kmalloc(new_descs_size, GFP_KERNEL);
+	if (unlikely(!new_descs)) {
+		pr_err("log_buf_len: %zu desc bytes not available\n",
+		       new_descs_size);
+		goto err_free_log_buf;
+	}
+
+	new_infos_size = new_descs_count * sizeof(struct printk_info);
+	new_infos = kmalloc(new_infos_size, GFP_KERNEL);
+	if (unlikely(!new_infos)) {
+		pr_err("log_buf_len: %zu info bytes not available\n",
+		       new_infos_size);
+		goto err_free_descs;
+	}
+
+	local_prb = kmalloc(sizeof(struct printk_ringbuffer), GFP_KERNEL);
+	if (unlikely(!local_prb)) {
+		pr_err("log_buf_len: %lu info bytes not available\n",
+		       sizeof(struct printk_ringbuffer));
+		goto err_free_infos;
+	}
+
+	prb_init(local_prb,
+		 new_log_buf, ilog2(local_log_buf_len),
+		 new_descs, ilog2(new_descs_count),
+		 new_infos);
+
 	log->buf_len = local_log_buf_len;
 	log->buf = new_log_buf;
 
+	log->prb = local_prb;
+
 	return 0;
+
+err_free_infos:
+	kfree(new_infos);
+err_free_descs:
+	kfree(new_descs);
+err_free_log_buf:
+	kfree(new_log_buf);
 out:
 	return ret;
 }
@@ -3700,6 +3766,8 @@ int ve_log_init(struct ve_struct *ve)
 		return ret;
 	}
 
+	seqcount_latch_init(&log->clear_seq.latch);
+
 	ve->log_state = log;
 	return 0;
 }
@@ -3707,7 +3775,11 @@ int ve_log_init(struct ve_struct *ve)
 void ve_log_destroy(struct ve_struct *ve)
 {
 	struct log_state *log = ve->log_state;
+	struct printk_ringbuffer *rb = log->prb;
 
+	kfree(rb->desc_ring.infos);
+	kfree(rb->desc_ring.descs);
+	kfree(log->prb);
 	kfree(log->buf);
 	kfree(log);
 }
