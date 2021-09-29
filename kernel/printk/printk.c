@@ -361,11 +361,6 @@ static DEFINE_RAW_SPINLOCK(syslog_lock);
 
 #ifdef CONFIG_PRINTK
 DECLARE_WAIT_QUEUE_HEAD(log_wait);
-/* All 3 protected by @console_sem. */
-/* the next printk record to write to the console */
-static u64 console_seq;
-static u64 exclusive_console_stop_seq;
-static unsigned long console_dropped;
 
 struct latched_seq {
 	seqcount_latch_t	latch;
@@ -417,6 +412,12 @@ static struct log_state {
 	u64 syslog_seq;
 	size_t syslog_partial;
 	bool syslog_time;
+
+	/* All 3 protected by @console_sem. */
+	/* the next printk record to write to the console */
+	u64 console_seq;
+	u64 exclusive_console_stop_seq;
+	unsigned long console_dropped;
 
 	/*
 	 * The next printk record to read after the last 'clear' command. There are
@@ -1961,6 +1962,7 @@ static int console_trylock_spinning(void)
 static void call_console_drivers(const char *ext_text, size_t ext_len,
 				 const char *text, size_t len)
 {
+	struct log_state *log = &init_log_state;
 	static char dropped_text[64];
 	size_t dropped_len = 0;
 	struct console *con;
@@ -1970,11 +1972,11 @@ static void call_console_drivers(const char *ext_text, size_t ext_len,
 	if (!console_drivers)
 		return;
 
-	if (console_dropped) {
+	if (log->console_dropped) {
 		dropped_len = snprintf(dropped_text, sizeof(dropped_text),
 				       "** %lu printk messages dropped **\n",
-				       console_dropped);
-		console_dropped = 0;
+				       log->console_dropped);
+		log->console_dropped = 0;
 	}
 
 	for_each_console(con) {
@@ -2308,10 +2310,6 @@ EXPORT_SYMBOL(printk);
 
 #define prb_read_valid(rb, seq, r)	false
 #define prb_first_valid_seq(rb)		0
-
-static u64 console_seq;
-static u64 exclusive_console_stop_seq;
-static unsigned long console_dropped;
 
 static size_t record_print_text(const struct printk_record *r,
 				bool syslog, bool time)
@@ -2669,12 +2667,12 @@ again:
 
 		printk_safe_enter_irqsave(flags);
 skip:
-		if (!prb_read_valid(log->prb, console_seq, &r))
+		if (!prb_read_valid(log->prb, log->console_seq, &r))
 			break;
 
-		if (console_seq != r.info->seq) {
-			console_dropped += r.info->seq - console_seq;
-			console_seq = r.info->seq;
+		if (log->console_seq != r.info->seq) {
+			log->console_dropped += r.info->seq - log->console_seq;
+			log->console_seq = r.info->seq;
 		}
 
 		if (suppress_message_printing(r.info->level)) {
@@ -2683,13 +2681,14 @@ skip:
 			 * directly to the console when we received it, and
 			 * record that has level above the console loglevel.
 			 */
-			console_seq++;
+			log->console_seq++;
 			goto skip;
 		}
 
 		/* Output to all consoles once old messages replayed. */
 		if (unlikely(exclusive_console &&
-			     console_seq >= exclusive_console_stop_seq)) {
+			     log->console_seq >=
+				log->exclusive_console_stop_seq)) {
 			exclusive_console = NULL;
 		}
 
@@ -2710,7 +2709,7 @@ skip:
 		len = record_print_text(&r,
 				console_msg_format & MSG_FORMAT_SYSLOG,
 				printk_time);
-		console_seq++;
+		log->console_seq++;
 
 		/*
 		 * While actively printing out messages, if another printk()
@@ -2745,7 +2744,7 @@ skip:
 	 * there's a new owner and the console_unlock() from them will do the
 	 * flush, no worries.
 	 */
-	retry = prb_read_valid(log->prb, console_seq, NULL);
+	retry = prb_read_valid(log->prb, log->console_seq, NULL);
 	printk_safe_exit_irqrestore(flags);
 
 	if (retry && console_trylock())
@@ -2815,7 +2814,7 @@ void console_flush_on_panic(enum con_flush_mode mode)
 		unsigned long flags;
 
 		printk_safe_enter_irqsave(flags);
-		console_seq = prb_first_valid_seq(log->prb);
+		log->console_seq = prb_first_valid_seq(log->prb);
 		printk_safe_exit_irqrestore(flags);
 	}
 	console_unlock();
@@ -3055,11 +3054,11 @@ void register_console(struct console *newcon)
 		 * ignores console_lock.
 		 */
 		exclusive_console = newcon;
-		exclusive_console_stop_seq = console_seq;
+		log->exclusive_console_stop_seq = log->console_seq;
 
 		/* Get a consistent copy of @syslog_seq. */
 		raw_spin_lock_irqsave(&syslog_lock, flags);
-		console_seq = log->syslog_seq;
+		log->console_seq = log->syslog_seq;
 		raw_spin_unlock_irqrestore(&syslog_lock, flags);
 	}
 	console_unlock();
