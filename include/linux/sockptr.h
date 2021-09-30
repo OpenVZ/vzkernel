@@ -10,6 +10,7 @@
 
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/mm.h>
 
 typedef struct {
 	union {
@@ -77,6 +78,19 @@ static inline void *memdup_sockptr(sockptr_t src, size_t len)
 		return ERR_PTR(-ENOMEM);
 	if (copy_from_sockptr(p, src, len)) {
 		kfree(p);
+		return ERR_PTR(-EFAULT);
+	}
+	return p;
+}
+
+static inline void *vmemdup_sockptr(sockptr_t src, size_t len)
+{
+	void *p = kvmalloc(len, GFP_USER);
+
+	if (!p)
+		return ERR_PTR(-ENOMEM);
+	if (copy_from_sockptr(p, src, len)) {
+		kvfree(p);
 		return ERR_PTR(-EFAULT);
 	}
 	return p;
