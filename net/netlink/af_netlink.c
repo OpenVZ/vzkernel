@@ -2509,7 +2509,7 @@ void netlink_ack(struct sk_buff *in_skb, struct nlmsghdr *nlh, int err,
 	if (tlvlen)
 		flags |= NLM_F_ACK_TLVS;
 
-	skb = nlmsg_new(payload + tlvlen, GFP_KERNEL);
+	skb = nlmsg_new(payload + tlvlen, GFP_KERNEL|__GFP_ORDER_NOWARN);
 	if (!skb) {
 		NETLINK_CB(in_skb).sk->sk_err = ENOBUFS;
 		sk_error_report(NETLINK_CB(in_skb).sk);
