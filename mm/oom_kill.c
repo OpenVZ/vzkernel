@@ -1138,6 +1138,8 @@ static void oom_berserker(struct oom_control *oc)
 	pr_err("OOM killer in rage %d: %d tasks killed\n", rage, killed);
 }
 
+atomic_t global_oom = ATOMIC_INIT(0);
+
 static void oom_kill_process(struct oom_control *oc, const char *message)
 {
 	struct task_struct *victim = oc->chosen;
@@ -1160,6 +1162,9 @@ static void oom_kill_process(struct oom_control *oc, const char *message)
 		return;
 	}
 	task_unlock(victim);
+
+	if (!is_memcg_oom(oc))
+		atomic_inc(&global_oom);
 
 	if (__ratelimit(&oom_rs))
 		dump_header(oc, victim);
