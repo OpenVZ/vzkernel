@@ -486,6 +486,11 @@ out:
 	return rc;
 }
 
+static void ib_device_reclaim(struct rcu_head *head)
+{
+	kvfree(container_of(head, struct ib_device, rcu_head));
+}
+
 static void ib_device_release(struct device *device)
 {
 	struct ib_device *dev = container_of(device, struct ib_device, dev);
@@ -508,7 +513,7 @@ static void ib_device_release(struct device *device)
 
 	xa_destroy(&dev->compat_devs);
 	xa_destroy(&dev->client_data);
-	kfree_rcu(dev, rcu_head);
+	call_rcu(&dev->rcu_head, ib_device_reclaim);
 }
 
 static int ib_device_uevent(const struct device *device,
@@ -578,12 +583,12 @@ struct ib_device *_ib_alloc_device(size_t size)
 	if (WARN_ON(size < sizeof(struct ib_device)))
 		return NULL;
 
-	device = kzalloc(size, GFP_KERNEL);
+	device = kvzalloc(size, GFP_KERNEL);
 	if (!device)
 		return NULL;
 
 	if (rdma_restrack_init(device)) {
-		kfree(device);
+		kvfree(device);
 		return NULL;
 	}
 
