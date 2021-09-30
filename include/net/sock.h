@@ -1906,6 +1906,11 @@ int sock_getsockopt(struct socket *sock, int level, int op,
 		    char __user *optval, int __user *optlen);
 int sock_gettstamp(struct socket *sock, void __user *userstamp,
 		   bool timeval, bool time32);
+struct sk_buff *sock_alloc_send_skb_flags(struct sock *sk,
+					  unsigned long size,
+					  int noblock,
+					  int *errcode,
+					  gfp_t extra_flags);
 struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				     unsigned long data_len, int noblock,
 				     int *errcode, int max_page_order);

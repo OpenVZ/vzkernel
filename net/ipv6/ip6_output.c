@@ -1699,8 +1699,9 @@ alloc_new_skb:
 				goto error;
 			}
 			if (transhdrlen) {
-				skb = sock_alloc_send_skb(sk, alloclen,
-						(flags & MSG_DONTWAIT), &err);
+				skb = sock_alloc_send_skb_flags(sk, alloclen,
+						(flags & MSG_DONTWAIT), &err,
+						__GFP_ORDER_NOWARN);
 			} else {
 				skb = NULL;
 				if (refcount_read(&sk->sk_wmem_alloc) + wmem_alloc_delta <=
