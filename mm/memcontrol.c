@@ -66,6 +66,7 @@
 #include <linux/seq_buf.h>
 #include <linux/sched/isolation.h>
 #include <linux/virtinfo.h>
+#include <linux/migrate.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -4220,6 +4221,311 @@ static int memcg_numa_stat_show(struct seq_file *m, void *v)
 
 	return 0;
 }
+
+/*
+ * memcg_numa_migrate_new_page() private argument. @target_nodes specifies the
+ * set of nodes to allocate pages from. @current_node is the current preferable
+ * node, it gets rotated after each allocation.
+ */
+struct memcg_numa_migrate_struct {
+	nodemask_t *target_nodes;
+	int current_node;
+};
+
+/*
+ * Used as an argument for migrate_pages(). Allocated pages are spread evenly
+ * among destination nodes.
+ */
+static struct page *memcg_numa_migrate_new_page(struct page *page,
+				unsigned long private)
+{
+	struct memcg_numa_migrate_struct *ms = (void *)private;
+	gfp_t gfp_mask = GFP_HIGHUSER_MOVABLE | __GFP_NORETRY | __GFP_NOWARN;
+
+	ms->current_node = next_node(ms->current_node, *ms->target_nodes);
+	if (ms->current_node >= MAX_NUMNODES) {
+		ms->current_node = first_node(*ms->target_nodes);
+		VM_BUG_ON(ms->current_node >= MAX_NUMNODES);
+	}
+	if (thp_migration_supported() && PageTransHuge(page)) {
+		struct page *thp;
+
+		thp = __alloc_pages(GFP_TRANSHUGE_LIGHT | __GFP_THISNODE,
+					HPAGE_PMD_ORDER, ms->current_node,
+					ms->target_nodes);
+		if (!thp)
+			return NULL;
+		prep_transhuge_page(thp);
+		return thp;
+	}
+
+	return __alloc_pages(gfp_mask, 0, ms->current_node, ms->target_nodes);
+}
+
+/*
+ * Update LRU sizes after isolating pages. The LRU size updates must
+ * be complete before mem_cgroup_update_lru_size due to a santity check.
+ */
+static __always_inline void update_lru_sizes(struct lruvec *lruvec,
+			enum lru_list lru, unsigned long *nr_zone_taken)
+{
+	int zid;
+
+	for (zid = 0; zid < MAX_NR_ZONES; zid++) {
+		if (!nr_zone_taken[zid])
+			continue;
+
+		update_lru_size(lruvec, lru, zid, -nr_zone_taken[zid]);
+	}
+
+}
+
+/*
+ * Isolate at most @nr_to_scan pages from @lruvec for further migration and
+ * store them in @dst. Returns the number of pages scanned. Return value of 0
+ * means that @lruvec is empty.
+ */
+static long memcg_numa_isolate_pages(struct lruvec *lruvec, enum lru_list lru,
+				     long nr_to_scan, struct list_head *dst)
+{
+	struct list_head *src = &lruvec->lists[lru];
+	struct pglist_data *pgdat = lruvec_pgdat(lruvec);
+	unsigned long nr_zone_taken[MAX_NR_ZONES] = { 0 };
+	struct page *page;
+	long scanned = 0, taken = 0;
+
+	spin_lock_irq(&lruvec->lru_lock);
+	while (!list_empty(src) && scanned < nr_to_scan && taken < nr_to_scan) {
+		int nr_pages;
+		struct list_head *move_to = src;
+		page = list_last_entry(src, struct page, lru);
+
+		scanned++;
+
+		/*
+		 * Previously here we had a call to
+		 * __isolate_lru_page_prepare(page, ISOLATE_ASYNC_MIGRATE)
+		 * => need to get same parts from __isolate_lru_page_prepare()
+		 * like it's done in isolate_migratepages_block() in commit
+		 * 89f6c88a6ab4 ("mm: __isolate_lru_page_prepare() in
+		 * isolate_migratepages_block()")
+		 */
+
+		/* Only take pages on LRU: a check now makes later tests safe */
+		if (!PageLRU(page))
+			goto move;
+
+		/* Compaction might skip unevictable pages but CMA takes them */
+		if (PageUnevictable(page))
+			goto move;
+
+		/*
+		 * To minimise LRU disruption, the caller can indicate with
+		 * ISOLATE_ASYNC_MIGRATE that it only wants to isolate pages
+		 * it will be able to migrate without blocking - clean pages
+		 * for the most part.  PageWriteback would require blocking.
+		 */
+		if (PageWriteback(page))
+			goto move;
+
+		if (PageDirty(page)) {
+			struct address_space *mapping;
+			bool migrate_dirty;
+
+			/*
+			 * Only pages without mappings or that have a
+			 * ->migrate_folio() callback are possible to migrate
+			 * without blocking. However, we can be racing with
+			 * truncation so it's necessary to lock the page
+			 * to stabilise the mapping as truncation holds
+			 * the page lock until after the page is removed
+			 * from the page cache.
+			 */
+			if (!trylock_page(page))
+				goto move;
+
+			mapping = page_mapping(page);
+			migrate_dirty = !mapping || mapping->a_ops->migrate_folio;
+			unlock_page(page);
+			if (!migrate_dirty)
+				goto move;
+		}
+
+		/*
+		 * Be careful not to clear PageLRU until after we're
+		 * sure the page is not being freed elsewhere -- the
+		 * page release code relies on it.
+		 */
+		if (unlikely(!get_page_unless_zero(page)))
+			goto move;
+
+		if (!TestClearPageLRU(page)) {
+			/* Another thread is already isolating this page */
+			put_page(page);
+			goto move;
+		}
+
+		nr_pages = thp_nr_pages(page);
+		taken += nr_pages;
+		nr_zone_taken[page_zonenum(page)] += nr_pages;
+		move_to = dst;
+move:
+		list_move(&page->lru, move_to);
+	}
+	__mod_node_page_state(pgdat, NR_LRU_BASE + lru, -taken);
+	__mod_node_page_state(pgdat, NR_ISOLATED_ANON + is_file_lru(lru), taken);
+	update_lru_sizes(lruvec, lru, nr_zone_taken);
+	spin_unlock_irq(&lruvec->lru_lock);
+
+	return scanned;
+}
+
+static long __memcg_numa_migrate_pages(struct lruvec *lruvec, enum lru_list lru,
+				       nodemask_t *target_nodes, long nr_to_scan)
+{
+	struct memcg_numa_migrate_struct ms = {
+		.target_nodes = target_nodes,
+		.current_node = -1,
+	};
+	LIST_HEAD(pages);
+	long total_scanned = 0;
+
+	/*
+	 * If no limit on the maximal number of migrated pages is specified,
+	 * assume the caller wants to migrate them all.
+	 */
+	if (nr_to_scan < 0)
+		nr_to_scan = lruvec_page_state_local(lruvec, NR_LRU_BASE + lru);
+
+	while (total_scanned < nr_to_scan) {
+		int ret;
+		long scanned;
+
+		scanned = memcg_numa_isolate_pages(lruvec, lru,
+						   SWAP_CLUSTER_MAX, &pages);
+		if (!scanned)
+			break;
+
+		ret = migrate_pages(&pages, memcg_numa_migrate_new_page,
+				    NULL, (unsigned long)&ms, MIGRATE_ASYNC,
+				    MR_SYSCALL, NULL);
+		putback_movable_pages(&pages);
+		if (ret < 0)
+			return ret;
+
+		if (signal_pending(current))
+			return -EINTR;
+
+		total_scanned += scanned;
+	}
+
+	return total_scanned;
+}
+
+/*
+ * Migrate at most @nr_to_scan pages accounted to @memcg to @target_nodes.
+ * Pages are spreaded evenly among destination nodes. If @nr_to_scan is <= 0,
+ * then the function will attempt to migrate all pages accounted to @memcg.
+ */
+static int memcg_numa_migrate_pages(struct mem_cgroup *memcg,
+				    nodemask_t *target_nodes, long nr_to_scan)
+{
+	struct mem_cgroup *iter;
+	long total_scanned = 0, scanned;
+
+again:
+	scanned = 0;
+	for_each_mem_cgroup_tree(iter, memcg) {
+		unsigned int nid;
+
+		for_each_online_node(nid) {
+			struct lruvec *lruvec;
+			enum lru_list lru;
+
+			if (node_isset(nid, *target_nodes))
+				continue;
+
+			lruvec = mem_cgroup_lruvec(iter, NODE_DATA(nid));
+			/*
+			 * For the sake of simplicity, do not attempt to migrate
+			 * unevictable pages. It should be fine as long as there
+			 * aren't too many of them, which is usually true.
+			 */
+			for_each_evictable_lru(lru) {
+				long ret = __memcg_numa_migrate_pages(lruvec,
+						lru, target_nodes,
+						nr_to_scan > 0 ?
+						SWAP_CLUSTER_MAX : -1);
+				if (ret < 0) {
+					mem_cgroup_iter_break(memcg, iter);
+					return ret;
+				}
+				scanned += ret;
+			}
+		}
+	}
+
+	total_scanned += scanned;
+
+	/*
+	 * Retry only if we made progress in the previous iteration.
+	 */
+	if (nr_to_scan > 0 && scanned > 0 && total_scanned < nr_to_scan)
+		goto again;
+
+	return 0;
+}
+
+/*
+ * The format of memory.numa_migrate is
+ *
+ *   NODELIST[ MAX_SCAN]
+ *
+ * where NODELIST is a comma-separated list of ranges N1-N2 specifying the set
+ * of nodes to migrate pages of this cgroup to, and the optional MAX_SCAN
+ * imposes a limit on the number of pages that can be migrated in one go.
+ *
+ * The call may be interrupted by a signal, in which case -EINTR is returned.
+ */
+static ssize_t memcg_numa_migrate_write(struct kernfs_open_file *of, char *buf,
+				size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	NODEMASK_ALLOC(nodemask_t, target_nodes, GFP_KERNEL);
+	const char *nodes_str = buf, *nr_str;
+	long nr_to_scan = -1;
+	int ret = -ENOMEM;
+
+	if (!target_nodes)
+		goto out;
+
+	nr_str = strchr(buf, ' ');
+	if (nr_str) {
+		nodes_str = kstrndup(buf, nr_str - buf, GFP_KERNEL);
+		if (!nodes_str)
+			goto out;
+		nr_str += 1;
+	}
+
+	ret = nodelist_parse(nodes_str, *target_nodes);
+	if (ret)
+		goto out;
+
+	ret = -EINVAL;
+	if (!nodes_subset(*target_nodes, node_states[N_MEMORY]))
+		goto out;
+
+	if (nr_str && (kstrtol(nr_str, 10, &nr_to_scan) || nr_to_scan <= 0))
+		goto out;
+
+	ret = memcg_numa_migrate_pages(memcg, target_nodes, nr_to_scan);
+out:
+	if (nodes_str != buf)
+		kfree(nodes_str);
+	NODEMASK_FREE(target_nodes);
+	return ret ?: nbytes;
+}
+
 #endif /* CONFIG_NUMA */
 
 static const unsigned int memcg1_stats[] = {
@@ -5372,6 +5678,11 @@ static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "numa_stat",
 		.seq_show = memcg_numa_stat_show,
+	},
+	{
+		.name = "numa_migrate",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write = memcg_numa_migrate_write,
 	},
 #endif
 #ifdef CONFIG_CLEANCACHE
