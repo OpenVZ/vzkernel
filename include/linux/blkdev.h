@@ -358,6 +358,9 @@ struct request_queue {
 	/* Throttle data */
 	struct throtl_data *td;
 #endif
+#ifdef CONFIG_BLK_DEV_CBT
+	struct cbt_info *cbt;
+#endif
 	struct rcu_head		rcu_head;
 	wait_queue_head_t	mq_freeze_wq;
 	/*
@@ -1209,6 +1212,27 @@ static inline void blk_crypto_unregister(struct request_queue *q) { }
 
 #endif /* CONFIG_BLK_INLINE_ENCRYPTION */
 
+#if defined (CONFIG_BLK_DEV_CBT)
+extern void blk_cbt_update_size(struct block_device *bdev);
+extern void blk_cbt_release(struct request_queue *q);
+extern void blk_cbt_bio_queue(struct request_queue *q, struct bio *bio);
+extern int blk_cbt_ioctl(struct block_device *bdev, unsigned cmd, char __user *arg);
+#else /* CONFIG_BLK_DEV_CBT */
+static inline void blk_cbt_update_size(struct block_device *bdev)
+{
+}
+static inline void blk_cbt_release(struct request_queue *q)
+{
+}
+static inline void blk_cbt_bio_queue(struct request_queue *q, struct bio *bio)
+{
+}
+static inline int blk_cbt_ioctl(struct block_device *bdev, unsigned cmd,
+				char __user *arg)
+{
+	return 0;
+}
+#endif /* CONFIG_BLK_DEV_CBT */
 
 struct block_device_operations {
 	void (*submit_bio)(struct bio *bio);
@@ -1311,6 +1335,7 @@ void blkdev_put_no_open(struct block_device *bdev);
 struct block_device *bdev_alloc(struct gendisk *disk, u8 partno);
 void bdev_add(struct block_device *bdev, dev_t dev);
 struct block_device *I_BDEV(struct inode *inode);
+extern void bd_write_size(struct block_device *, sector_t sectors);
 int truncate_bdev_range(struct block_device *bdev, fmode_t mode, loff_t lstart,
 		loff_t lend);
 

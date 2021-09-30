@@ -121,6 +121,59 @@ struct fsxattr {
 	unsigned char	fsx_pad[8];
 };
 
+struct blk_user_cbt_extent {
+	__u64 ce_physical; /* physical offset in bytes for the start
+			    * of the extent from the beginning of the disk */
+	__u64 ce_length;   /* length in bytes for this extent */
+	__u64 ce_reserved64[1];
+};
+
+struct blk_user_cbt_info {
+	__u8  ci_uuid[16];	/* Bitmap UUID */
+	__u64 ci_start;		/* start phisical range of mapping which
+				   userspace wants (in) */
+	__u64 ci_length;	/* phisical length of mapping which
+				 * userspace wants (in) */
+	__u32 ci_blksize;	/* cbt logical block size */
+	__u32 ci_flags;		/* CI_FLAG_* flags for request (in/out) */
+	__u32 ci_mapped_extents;/* number of extents that were mapped (out) */
+	__u32 ci_extent_count;	/* size of fm_extents array (in) */
+	__u32 ci_reserved;
+	struct blk_user_cbt_extent ci_extents[0]; /* array of mapped extents (out) */
+};
+
+enum CI_FLAGS
+{
+	CI_FLAG_ONCE = 1, /* BLKCBTGET will clear bits */
+	CI_FLAG_NEW_UUID = 2 /* BLKCBTSET update uuid */
+};
+
+/* Extension of cbt ioctls:  */
+struct blk_user_cbt_misc_info {
+	__u8 uuid[16]; /* Bitmap UUID */
+/* Allocate and move pending map to CBT snapshot */
+#define CBT_SNAP_CREATE		0
+/* Drop CBT snapshot */
+#define CBT_SNAP_DROP		1
+/* Merge CBT snapshot bits back and drop CBT snapshot */
+#define CBT_SNAP_MERGE_BACK	2
+	__u64 action;
+	__u8 data[0];
+};
+
+struct blk_user_cbt_snap_create {
+	struct blk_user_cbt_misc_info cmi;
+	__u64 addr;
+	__u64 size;
+};
+
+#define BLKCBTSTART _IOR(0x12,200, struct blk_user_cbt_info)
+#define BLKCBTSTOP _IO(0x12,201)
+#define BLKCBTGET _IOWR(0x12,202,struct blk_user_cbt_info)
+#define BLKCBTSET _IOR(0x12,203,struct blk_user_cbt_info)
+#define BLKCBTCLR _IOR(0x12,204,struct blk_user_cbt_info)
+#define BLKCBTMISC _IOWR(0x12,205,struct blk_user_cbt_misc_info)
+
 /*
  * Flags for the fsx_xflags field
  */
