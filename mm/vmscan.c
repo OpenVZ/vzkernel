@@ -986,7 +986,7 @@ static unsigned long shrink_slab_memcg(gfp_t gfp_mask, int nid,
  */
 static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 				 struct mem_cgroup *memcg,
-				 int priority)
+				 int priority, bool for_drop_caches)
 {
 	unsigned long ret, freed = 0;
 	struct shrinker *shrinker;
@@ -1009,6 +1009,7 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 			.gfp_mask = gfp_mask,
 			.nid = nid,
 			.memcg = memcg,
+			.for_drop_caches = for_drop_caches,
 		};
 
 		ret = do_shrink_slab(&sc, shrinker, priority);
@@ -1046,7 +1047,7 @@ static void drop_slab_node(int nid)
 		freed = 0;
 		memcg = mem_cgroup_iter(NULL, NULL, NULL);
 		do {
-			freed += shrink_slab(GFP_KERNEL, nid, memcg, 0);
+			freed += shrink_slab(GFP_KERNEL, nid, memcg, 0, true);
 		} while ((memcg = mem_cgroup_iter(NULL, memcg, NULL)) != NULL);
 	} while ((freed >> shift++) > 1);
 }
@@ -5338,7 +5339,7 @@ static int shrink_one(struct lruvec *lruvec, struct scan_control *sc)
 
 	success = try_to_shrink_lruvec(lruvec, sc);
 
-	shrink_slab(sc->gfp_mask, pgdat->node_id, memcg, sc->priority);
+	shrink_slab(sc->gfp_mask, pgdat->node_id, memcg, sc->priority, false);
 
 	if (!sc->proactive)
 		vmpressure(sc->gfp_mask, memcg, false, sc->nr_scanned - scanned,
@@ -6435,7 +6436,7 @@ static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)
 		shrink_lruvec(lruvec, sc);
 
 		shrink_slab(sc->gfp_mask, pgdat->node_id, memcg,
-			    sc->priority);
+			    sc->priority, false);
 
 		/* Record the group's reclaim efficiency */
 		if (!sc->proactive)

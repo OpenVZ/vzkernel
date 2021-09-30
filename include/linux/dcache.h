@@ -498,6 +498,7 @@ static inline bool d_is_fallthru(const struct dentry *dentry)
 
 
 extern int sysctl_vfs_cache_pressure;
+extern int sysctl_vfs_cache_min_ratio;
 
 static inline unsigned long vfs_pressure_ratio(unsigned long val)
 {
