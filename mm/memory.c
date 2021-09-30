@@ -568,6 +568,8 @@ static void print_bad_pte(struct vm_area_struct *vma, unsigned long addr,
 		 mapping ? mapping->a_ops->read_folio : NULL);
 	dump_stack();
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
+	if (panic_on_warn)
+		panic("panic_on_warn set ...\n");
 }
 
 /*
