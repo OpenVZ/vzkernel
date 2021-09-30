@@ -1080,12 +1080,12 @@ int kvm_arch_create_vm_debugfs(struct kvm *kvm);
  */
 static inline struct kvm *kvm_arch_alloc_vm(void)
 {
-	return kzalloc(sizeof(struct kvm), GFP_KERNEL);
+	return kvzalloc(sizeof(struct kvm), GFP_KERNEL);
 }
 
 static inline void kvm_arch_free_vm(struct kvm *kvm)
 {
-	kfree(kvm);
+	kvfree(kvm);
 }
 #endif
 
