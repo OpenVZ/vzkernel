@@ -270,4 +270,12 @@ config CMDLINE_PARTITION
 	  Say Y here if you want to read the partition table from bootargs.
 	  The format for the command line is just like mtdparts.
 
+config BLK_DEV_CBT
+	bool "Block layer changed block tracking support"
+	help
+	Block layer changed block tracking support, It can be used to optimize
+	device backup,copy.
+
+	If unsure, say N.
+
 endmenu
