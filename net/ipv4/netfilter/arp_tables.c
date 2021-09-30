@@ -26,6 +26,7 @@
 #include <net/compat.h>
 #include <net/sock.h>
 #include <linux/uaccess.h>
+#include <linux/fence-watchdog.h>
 
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_arp/arp_tables.h>
@@ -89,6 +90,12 @@ static inline int arp_packet_match(const struct arphdr *arphdr,
 	const char *src_devaddr, *tgt_devaddr;
 	__be32 src_ipaddr, tgt_ipaddr;
 	long ret;
+
+#ifdef CONFIG_FENCE_WATCHDOG
+	if (NF_INVF(arpinfo, ARPT_INV_WDOGTMO,
+		    (arpinfo->flags & ARPT_WDOGTMO) && !fence_wdog_tmo_match()))
+		return 0;
+#endif
 
 	if (NF_INVF(arpinfo, ARPT_INV_ARPOP,
 		    (arphdr->ar_op & arpinfo->arpop_mask) != arpinfo->arpop))
