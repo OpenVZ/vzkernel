@@ -151,6 +151,7 @@
 #include <linux/prandom.h>
 #include <linux/once_lite.h>
 #include <linux/ve.h>
+#include <linux/fence-watchdog.h>
 
 #include "dev.h"
 #include "net-sysfs.h"
@@ -3569,6 +3570,14 @@ struct sk_buff *dev_hard_start_xmit(struct sk_buff *first, struct net_device *de
 	struct sk_buff *skb = first;
 	int rc = NETDEV_TX_OK;
 
+#ifdef CONFIG_FENCE_WATCHDOG
+	if (unlikely(fence_wdog_check_timer())) {
+		kfree_skb(skb);
+		*ret = rc;
+		return NULL;
+	}
+#endif
+
 	while (skb) {
 		struct sk_buff *next = skb->next;
 
@@ -6584,6 +6593,10 @@ static __latent_entropy void net_rx_action(struct softirq_action *h)
 	local_irq_disable();
 	list_splice_init(&sd->poll_list, &list);
 	local_irq_enable();
+
+#ifdef CONFIG_FENCE_WATCHDOG
+	fence_wdog_check_timer();
+#endif
 
 	for (;;) {
 		struct napi_struct *n;
