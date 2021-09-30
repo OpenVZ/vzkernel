@@ -167,6 +167,14 @@ static void dmt_dtr(struct dm_target *ti)
 	dmt_destroy(ti->private);
 }
 
+static int tracking_clear(struct dm_tracking *dmt, u64 clu)
+{
+	spin_lock_irq(&dmt->lock);
+	clear_bit(clu, dmt->bitmap);
+	spin_unlock_irq(&dmt->lock);
+	return 0;
+}
+
 static int tracking_get_next(struct dm_tracking *dmt, char *result,
 			     unsigned int maxlen)
 {
@@ -196,10 +204,24 @@ unlock:
 }
 
 static int dmt_cmd(struct dm_tracking *dmt, const char *suffix,
+		   int argc, char *argv[],
 		   char *result, unsigned int maxlen)
 {
 	unsigned int nr_clus, size;
 	void *bitmap = NULL;
+	u64 val;
+
+	if (!strcmp(suffix, "clear")) {
+		if (argc != 1 || kstrtou64(argv[0], 10, &val) < 0 ||
+		    val >= dmt->nr_clus)
+			return -EINVAL;
+		if (!dmt->bitmap)
+			return -ENOENT;
+		return tracking_clear(dmt, val);
+	}
+
+	if (argc != 0)
+		return -EINVAL;
 
 	if (!strcmp(suffix, "get_next")) {
 		if (!dmt->bitmap)
@@ -247,13 +269,14 @@ static int dmt_message(struct dm_target *ti, unsigned int argc, char **argv,
 		return -EPERM;
 
 	mutex_lock(&dmt->ctl_mutex);
+	ret = -EINVAL;
+	if (argc < 1)
+		goto unlock;
 	ret = -ENOTSUPP;
 	if (strncmp(argv[0], "tracking_", 9))
 		goto unlock;
-	ret = -EINVAL;
-	if (argc != 1)
-		goto unlock;
-	ret = dmt_cmd(dmt, argv[0] + 9, result, maxlen);
+	ret = dmt_cmd(dmt, argv[0] + 9, argc - 1,
+		      &argv[1], result, maxlen);
 unlock:
 	mutex_unlock(&dmt->ctl_mutex);
 
