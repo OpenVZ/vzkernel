@@ -416,7 +416,7 @@ struct page *find_get_incore_page(struct address_space *mapping, pgoff_t index)
 
 struct page *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 			struct vm_area_struct *vma, unsigned long addr,
-			bool *new_page_allocated)
+			bool *new_page_allocated, bool activate)
 {
 	struct swap_info_struct *si;
 	struct folio *folio;
@@ -501,6 +501,8 @@ struct page *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 		workingset_refault(folio, shadow);
 
 	/* Caller will initiate read into locked folio */
+	if (activate)
+		folio_set_active(folio);
 	folio_add_lru(folio);
 	*new_page_allocated = true;
 	return &folio->page;
@@ -521,11 +523,11 @@ fail_unlock:
 struct page *read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 				   struct vm_area_struct *vma,
 				   unsigned long addr, bool do_poll,
-				   struct swap_iocb **plug)
+				   struct swap_iocb **plug, bool activate)
 {
 	bool page_was_allocated;
 	struct page *retpage = __read_swap_cache_async(entry, gfp_mask,
-			vma, addr, &page_was_allocated);
+			vma, addr, &page_was_allocated, activate);
 
 	if (page_was_allocated)
 		swap_readpage(retpage, do_poll, plug);
@@ -645,7 +647,7 @@ struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t gfp_mask,
 		/* Ok, do the async read-ahead now */
 		page = __read_swap_cache_async(
 			swp_entry(swp_type(entry), offset),
-			gfp_mask, vma, addr, &page_allocated);
+			gfp_mask, vma, addr, &page_allocated, offset == entry_offset);
 		if (!page)
 			continue;
 		if (page_allocated) {
@@ -663,7 +665,8 @@ struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t gfp_mask,
 	lru_add_drain();	/* Push any new pages onto the LRU now */
 skip:
 	/* The page was likely read above, so no need for plugging here */
-	return read_swap_cache_async(entry, gfp_mask, vma, addr, do_poll, NULL);
+	return read_swap_cache_async(entry, gfp_mask, vma, addr, do_poll, NULL,
+				     true);
 }
 
 int init_swap_address_space(unsigned int type, unsigned long nr_pages)
@@ -819,7 +822,8 @@ static struct page *swap_vma_readahead(swp_entry_t fentry, gfp_t gfp_mask,
 		if (unlikely(non_swap_entry(entry)))
 			continue;
 		page = __read_swap_cache_async(entry, gfp_mask, vma,
-					       vmf->address, &page_allocated);
+					       vmf->address, &page_allocated,
+					       i == ra_info.offset);
 		if (!page)
 			continue;
 		if (page_allocated) {
@@ -837,7 +841,7 @@ static struct page *swap_vma_readahead(swp_entry_t fentry, gfp_t gfp_mask,
 skip:
 	/* The page was likely read above, so no need for plugging here */
 	return read_swap_cache_async(fentry, gfp_mask, vma, vmf->address,
-				     ra_info.win == 1, NULL);
+				     ra_info.win == 1, NULL, true);
 }
 
 /**
