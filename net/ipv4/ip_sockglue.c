@@ -668,7 +668,7 @@ static int set_mcast_msfilter(struct sock *sk, int ifindex,
 	struct sockaddr_in *psin;
 	int err, i;
 
-	msf = kmalloc(msize, GFP_KERNEL);
+	msf = kvmalloc(msize, GFP_KERNEL);
 	if (!msf)
 		return -ENOBUFS;
 
@@ -687,11 +687,11 @@ static int set_mcast_msfilter(struct sock *sk, int ifindex,
 		msf->imsf_slist[i] = psin->sin_addr.s_addr;
 	}
 	err = ip_mc_msfilter(sk, msf, ifindex);
-	kfree(msf);
+	kvfree(msf);
 	return err;
 
 Eaddrnotavail:
-	kfree(msf);
+	kvfree(msf);
 	return -EADDRNOTAVAIL;
 }
 
@@ -776,7 +776,7 @@ static int ip_set_mcast_msfilter(struct sock *sk, sockptr_t optval, int optlen)
 	if (optlen > READ_ONCE(sysctl_optmem_max))
 		return -ENOBUFS;
 
-	gsf = memdup_sockptr(optval, optlen);
+	gsf = vmemdup_sockptr(optval, optlen);
 	if (IS_ERR(gsf))
 		return PTR_ERR(gsf);
 
@@ -793,7 +793,7 @@ static int ip_set_mcast_msfilter(struct sock *sk, sockptr_t optval, int optlen)
 	err = set_mcast_msfilter(sk, gsf->gf_interface, gsf->gf_numsrc,
 				 gsf->gf_fmode, &gsf->gf_group, gsf->gf_slist);
 out_free_gsf:
-	kfree(gsf);
+	kvfree(gsf);
 	return err;
 }
 
@@ -811,7 +811,7 @@ static int compat_ip_set_mcast_msfilter(struct sock *sk, sockptr_t optval,
 	if (optlen > READ_ONCE(sysctl_optmem_max) - 4)
 		return -ENOBUFS;
 
-	p = kmalloc(optlen + 4, GFP_KERNEL);
+	p = kvmalloc(optlen + 4, GFP_KERNEL);
 	if (!p)
 		return -ENOMEM;
 	gf32 = p + 4; /* we want ->gf_group and ->gf_slist aligned */
@@ -837,7 +837,7 @@ static int compat_ip_set_mcast_msfilter(struct sock *sk, sockptr_t optval,
 	err = set_mcast_msfilter(sk, gf32->gf_interface, n, gf32->gf_fmode,
 				 &gf32->gf_group, gf32->gf_slist);
 out_free_gsf:
-	kfree(p);
+	kvfree(p);
 	return err;
 }
 
@@ -1235,7 +1235,7 @@ int do_ip_setsockopt(struct sock *sk, int level, int optname,
 			err = -ENOBUFS;
 			break;
 		}
-		msf = memdup_sockptr(optval, optlen);
+		msf = vmemdup_sockptr(optval, optlen);
 		if (IS_ERR(msf)) {
 			err = PTR_ERR(msf);
 			break;
@@ -1243,17 +1243,17 @@ int do_ip_setsockopt(struct sock *sk, int level, int optname,
 		/* numsrc >= (1G-4) overflow in 32 bits */
 		if (msf->imsf_numsrc >= 0x3ffffffcU ||
 		    msf->imsf_numsrc > READ_ONCE(net->ipv4.sysctl_igmp_max_msf)) {
-			kfree(msf);
+			kvfree(msf);
 			err = -ENOBUFS;
 			break;
 		}
 		if (IP_MSFILTER_SIZE(msf->imsf_numsrc) > optlen) {
-			kfree(msf);
+			kvfree(msf);
 			err = -EINVAL;
 			break;
 		}
 		err = ip_mc_msfilter(sk, msf, 0);
-		kfree(msf);
+		kvfree(msf);
 		break;
 	}
 	case IP_BLOCK_SOURCE:
