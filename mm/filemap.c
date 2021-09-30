@@ -170,6 +170,8 @@ static void unaccount_page_cache_page(struct address_space *mapping,
 		dump_page(page, "still mapped when deleted");
 		dump_stack();
 		add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
+		if (panic_on_warn)
+			panic("panic_on_warn set ...\n");
 
 		mapcount = page_mapcount(page);
 		if (mapping_exiting(mapping) &&
