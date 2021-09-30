@@ -608,9 +608,10 @@ static int rawv6_send_hdrinc(struct sock *sk, struct msghdr *msg, int length,
 	if (flags&MSG_PROBE)
 		goto out;
 
-	skb = sock_alloc_send_skb(sk,
+	skb = sock_alloc_send_skb_flags(sk,
 				  length + hlen + tlen + 15,
-				  flags & MSG_DONTWAIT, &err);
+				  flags & MSG_DONTWAIT, &err,
+				  __GFP_ORDER_NOWARN);
 	if (!skb)
 		goto error;
 	skb_reserve(skb, hlen);
