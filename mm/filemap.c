@@ -171,6 +171,8 @@ static void filemap_unaccount_folio(struct address_space *mapping,
 		dump_page(&folio->page, "still mapped when deleted");
 		dump_stack();
 		add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
+		if (panic_on_warn)
+			panic("panic_on_warn set ...\n");
 
 		if (mapping_exiting(mapping) && !folio_test_large(folio)) {
 			int mapcount = page_mapcount(&folio->page);
