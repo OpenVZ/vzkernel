@@ -909,6 +909,7 @@ static inline bool mem_cgroup_online(struct mem_cgroup *memcg)
 /*
  * For memory reclaim.
  */
+bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio);
 bool mem_cgroup_cleancache_disabled(struct page *page);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
 struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm);
@@ -1380,6 +1381,12 @@ static inline bool mem_cgroup_online(struct mem_cgroup *memcg)
 }
 
 static inline bool mem_cgroup_cleancache_disabled(struct page *page)
+{
+	return false;
+}
+
+static inline bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg,
+	int vfs_cache_min_ratio)
 {
 	return false;
 }
