@@ -596,7 +596,7 @@ int sctp_packet_transmit(struct sctp_packet *packet, gfp_t gfp)
 
 	/* alloc head skb */
 	head = alloc_skb((gso ? packet->overhead : packet->size) +
-			 MAX_HEADER, gfp);
+			 MAX_HEADER, gfp | __GFP_ORDER_NOWARN);
 	if (!head)
 		goto out;
 	skb_reserve(head, packet->overhead + MAX_HEADER);
