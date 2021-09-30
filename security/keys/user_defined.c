@@ -5,6 +5,7 @@
  * Written by David Howells (dhowells@redhat.com)
  */
 
+#include <linux/mm.h>
 #include <linux/export.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -64,7 +65,7 @@ int user_preparse(struct key_preparsed_payload *prep)
 	if (datalen <= 0 || datalen > 32767 || !prep->data)
 		return -EINVAL;
 
-	upayload = kmalloc(sizeof(*upayload) + datalen, GFP_KERNEL);
+	upayload = kvmalloc(sizeof(*upayload) + datalen, GFP_KERNEL);
 	if (!upayload)
 		return -ENOMEM;
 
@@ -82,7 +83,12 @@ EXPORT_SYMBOL_GPL(user_preparse);
  */
 void user_free_preparse(struct key_preparsed_payload *prep)
 {
-	kfree_sensitive(prep->payload.data[0]);
+	struct user_key_payload *upayload = prep->payload.data[0];
+
+	if (upayload) {
+		memset(upayload, 0, sizeof(*upayload) + upayload->datalen);
+		kvfree(upayload);
+	}
 }
 EXPORT_SYMBOL_GPL(user_free_preparse);
 
@@ -91,7 +97,8 @@ static void user_free_payload_rcu(struct rcu_head *head)
 	struct user_key_payload *payload;
 
 	payload = container_of(head, struct user_key_payload, rcu);
-	kfree_sensitive(payload);
+	memset(payload, 0, sizeof(*payload) + payload->datalen);
+	kvfree(payload);
 }
 
 /*
@@ -147,7 +154,10 @@ void user_destroy(struct key *key)
 {
 	struct user_key_payload *upayload = key->payload.data[0];
 
-	kfree_sensitive(upayload);
+	if (upayload) {
+		memset(upayload, 0, sizeof(*upayload) + upayload->datalen);
+		kvfree(upayload);
+	}
 }
 
 EXPORT_SYMBOL_GPL(user_destroy);
