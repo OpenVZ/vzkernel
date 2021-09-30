@@ -41,7 +41,7 @@ bool can_do_mlock(void)
 {
 	if (rlimit(RLIMIT_MEMLOCK) != 0)
 		return true;
-	if (capable(CAP_IPC_LOCK))
+	if (ve_capable(CAP_IPC_LOCK))
 		return true;
 	return false;
 }
@@ -591,7 +591,7 @@ static __must_check int do_mlock(unsigned long start, size_t len, vm_flags_t fla
 		return -EINTR;
 
 	locked += current->mm->locked_vm;
-	if ((locked > lock_limit) && (!capable(CAP_IPC_LOCK))) {
+	if ((locked > lock_limit) && (!ve_capable(CAP_IPC_LOCK))) {
 		/*
 		 * It is possible that the regions requested intersect with
 		 * previously mlocked areas, that part area in "mm->locked_vm"
@@ -603,7 +603,7 @@ static __must_check int do_mlock(unsigned long start, size_t len, vm_flags_t fla
 	}
 
 	/* check against resource limits */
-	if ((locked <= lock_limit) || capable(CAP_IPC_LOCK))
+	if ((locked <= lock_limit) || ve_capable(CAP_IPC_LOCK))
 		error = apply_vma_lock_flags(start, len, flags);
 
 	mmap_write_unlock(current->mm);
@@ -717,7 +717,7 @@ SYSCALL_DEFINE1(mlockall, int, flags)
 
 	ret = -ENOMEM;
 	if (!(flags & MCL_CURRENT) || (current->mm->total_vm <= lock_limit) ||
-	    capable(CAP_IPC_LOCK))
+	    ve_capable(CAP_IPC_LOCK))
 		ret = apply_mlockall_flags(flags);
 	mmap_write_unlock(current->mm);
 	if (!ret && (flags & MCL_CURRENT))
@@ -756,7 +756,7 @@ int user_shm_lock(size_t size, struct ucounts *ucounts)
 	spin_lock(&shmlock_user_lock);
 	memlock = inc_rlimit_ucounts(ucounts, UCOUNT_RLIMIT_MEMLOCK, locked);
 
-	if ((memlock == LONG_MAX || memlock > lock_limit) && !capable(CAP_IPC_LOCK)) {
+	if ((memlock == LONG_MAX || memlock > lock_limit) && !ve_capable(CAP_IPC_LOCK)) {
 		dec_rlimit_ucounts(ucounts, UCOUNT_RLIMIT_MEMLOCK, locked);
 		goto out;
 	}
