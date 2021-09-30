@@ -220,7 +220,7 @@ static int swapin_walk_pmd_entry(pmd_t *pmd, unsigned long start,
 			continue;
 
 		page = read_swap_cache_async(entry, GFP_HIGHUSER_MOVABLE,
-					     vma, index, false, &splug);
+					     vma, index, false, &splug, false);
 		if (page)
 			put_page(page);
 	}
@@ -257,7 +257,7 @@ static void force_shm_swapin_readahead(struct vm_area_struct *vma,
 		rcu_read_unlock();
 
 		page = read_swap_cache_async(swap, GFP_HIGHUSER_MOVABLE,
-					     NULL, 0, false, &splug);
+					     NULL, 0, false, &splug, false);
 		if (page)
 			put_page(page);
 
