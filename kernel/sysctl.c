@@ -2245,6 +2245,17 @@ static struct ctl_table vm_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_TWO,
 	},
+#ifdef CONFIG_VE
+	{
+		.procname       = "ve_overcommit_memory",
+		.data           = &sysctl_ve_overcommit_memory,
+		.maxlen         = sizeof(sysctl_ve_overcommit_memory),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
+#endif
 	{
 		.procname	= "overcommit_ratio",
 		.data		= &sysctl_overcommit_ratio,

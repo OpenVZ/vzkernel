@@ -1009,6 +1009,9 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 {
 	long allowed;
 
+	if (ve_enough_memory(pages))
+		return -ENOMEM;
+
 	vm_acct_memory(pages);
 
 	/*

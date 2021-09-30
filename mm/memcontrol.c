@@ -67,6 +67,7 @@
 #include <linux/sched/isolation.h>
 #include <linux/virtinfo.h>
 #include <linux/migrate.h>
+#include <linux/ve.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -4194,6 +4195,45 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 
 	/* locked pages are accounted per zone */
 	/* mi->locked = 0; */
+}
+
+int sysctl_ve_overcommit_memory __read_mostly;
+
+static int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
+{
+	long free;
+
+	/* unused memory */
+	free = memcg->memsw.max - page_counter_read(&memcg->memory);
+
+	/* reclaimable slabs */
+	free += memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B) >> PAGE_SHIFT;
+
+	/* assume file cache is reclaimable */
+	free += memcg_page_state(memcg, NR_FILE_PAGES);
+
+	return free < pages ? -ENOMEM : 0;
+}
+
+int ve_enough_memory(long pages)
+{
+	struct ve_struct *ve = get_exec_env();
+	struct cgroup_subsys_state *css;
+	struct mem_cgroup *memcg;
+	int ret;
+
+	if (ve_is_super(ve) || sysctl_ve_overcommit_memory)
+		return 0;
+
+	css = ve_get_init_css(ve, memory_cgrp_id);
+	memcg = mem_cgroup_from_css(css);
+	ret = mem_cgroup_enough_memory(memcg, pages);
+
+	if (unlikely(ret < 0))
+		memcg->memsw.failcnt++;
+
+	css_put(css);
+	return ret;
 }
 
 static int memcg_numa_stat_show(struct seq_file *m, void *v)
