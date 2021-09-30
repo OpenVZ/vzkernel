@@ -393,6 +393,7 @@ static void sio_read_complete(struct kiocb *iocb, long ret)
 
 			SetPageUptodate(page);
 			unlock_page(page);
+			count_memcg_page_event(page, PSWPIN);
 		}
 		count_vm_events(PSWPIN, sio->pages);
 	} else {
@@ -484,6 +485,7 @@ int swap_readpage(struct page *page, bool synchronous,
 	if (sis->flags & SWP_SYNCHRONOUS_IO) {
 		ret = bdev_read_page(sis->bdev, swap_page_sector(page), page);
 		if (!ret) {
+			count_memcg_page_event(page, PSWPIN);
 			count_vm_event(PSWPIN);
 			goto out;
 		}
@@ -502,6 +504,7 @@ int swap_readpage(struct page *page, bool synchronous,
 		get_task_struct(current);
 		bio->bi_private = current;
 	}
+	count_memcg_page_event(page, PSWPIN);
 	count_vm_event(PSWPIN);
 	bio_get(bio);
 	submit_bio(bio);
