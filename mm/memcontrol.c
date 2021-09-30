@@ -4181,6 +4181,8 @@ static const unsigned int memcg1_stats[] = {
 	NR_FILE_MAPPED,
 	NR_FILE_DIRTY,
 	NR_WRITEBACK,
+	NR_SLAB_RECLAIMABLE_B,
+	NR_SLAB_UNRECLAIMABLE_B,
 	MEMCG_SWAP,
 };
 
@@ -4194,6 +4196,8 @@ static const char *const memcg1_stat_names[] = {
 	"mapped_file",
 	"dirty",
 	"writeback",
+	"slab_reclaimable",
+	"slab_unreclaimable",
 	"swap",
 };
 
@@ -4217,12 +4221,14 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 	mem_cgroup_flush_stats();
 
 	for (i = 0; i < ARRAY_SIZE(memcg1_stats); i++) {
-		unsigned long nr;
+		u64 nr;
 
 		if (memcg1_stats[i] == MEMCG_SWAP && !do_memsw_account())
 			continue;
 		nr = memcg_page_state_local(memcg, memcg1_stats[i]);
-		seq_printf(m, "%s %lu\n", memcg1_stat_names[i], nr * PAGE_SIZE);
+		if (!vmstat_item_in_bytes(memcg1_stats[i]))
+			nr *= PAGE_SIZE;
+		seq_printf(m, "%s %llu\n", memcg1_stat_names[i], nr);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(memcg1_events); i++)
@@ -4247,13 +4253,14 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 			   (u64)memsw * PAGE_SIZE);
 
 	for (i = 0; i < ARRAY_SIZE(memcg1_stats); i++) {
-		unsigned long nr;
+		u64 nr;
 
 		if (memcg1_stats[i] == MEMCG_SWAP && !do_memsw_account())
 			continue;
 		nr = memcg_page_state(memcg, memcg1_stats[i]);
-		seq_printf(m, "total_%s %llu\n", memcg1_stat_names[i],
-						(u64)nr * PAGE_SIZE);
+		if (!vmstat_item_in_bytes(memcg1_stats[i]))
+			nr *= PAGE_SIZE;
+		seq_printf(m, "total_%s %llu\n", memcg1_stat_names[i], nr);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(memcg1_events); i++)
