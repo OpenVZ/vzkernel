@@ -273,6 +273,8 @@ static void blk_free_queue(struct request_queue *q)
 	if (queue_is_mq(q))
 		blk_mq_release(q);
 
+	blk_cbt_release(q);
+
 	ida_free(&blk_queue_ida, q->id);
 	call_rcu(&q->rcu_head, blk_free_queue_rcu);
 }
@@ -800,6 +802,7 @@ void submit_bio_noacct(struct bio *bio)
 
 	if (blk_throtl_bio(bio))
 		return;
+	blk_cbt_bio_queue(q, bio);
 	submit_bio_noacct_nocheck(bio);
 	return;
 
