@@ -315,15 +315,14 @@ static unsigned long map_required_size(struct page **map, unsigned long block_ma
 {
 	unsigned long bit, page, npages = NR_PAGES(block_max);
 
-	for (page = npages; page > 0; page--) {
-		if (map[page-1])
+	for (page = npages - 1; page != ULONG_MAX; page--) {
+		if (map[page])
 			break;
 	}
-
-	if (page == 0)
+	if (page == ULONG_MAX)
 		return 0;
 
-	bit = find_last_bit(page_address(map[page - 1]), PAGE_SIZE);
+	bit = find_last_bit(page_address(map[page]), PAGE_SIZE);
 	if (bit >= PAGE_SIZE)
 		bit = 0; /* Not found */
 	else
