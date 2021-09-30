@@ -497,8 +497,6 @@ static inline bool allow_direct_printing(void)
 		atomic_read(&printk_prefer_direct));
 }
 
-DECLARE_WAIT_QUEUE_HEAD(log_wait);
-
 struct latched_seq {
 	seqcount_latch_t	latch;
 	u64			val[2];
@@ -553,6 +551,8 @@ static struct log_state {
 	size_t syslog_partial;
 	bool syslog_time;
 
+	wait_queue_head_t wait;
+
 	/*
 	 * The next printk record to read after the last 'clear' command. There are
 	 * two copies (updated with seqcount_latch) so that reads can locklessly
@@ -563,6 +563,7 @@ static struct log_state {
 } init_log_state = {
 	.buf = __log_buf,
 	.buf_len = __LOG_BUF_LEN,
+	.wait = __WAIT_QUEUE_HEAD_INITIALIZER(init_log_state.wait),
 	.clear_seq = {
 		.latch	= SEQCNT_LATCH_ZERO(init_log_state.clear_seq.latch),
 		.val[0]	= 0,
@@ -599,6 +600,11 @@ static inline struct log_state *ve_log_state(void)
 		log = get_exec_env()->log_state;
 #endif
 	return log;
+}
+
+void log_poll_wait(struct file *filp, poll_table *p)
+{
+	poll_wait(filp, &ve_log_state()->wait, p);
 }
 
 /*
@@ -930,7 +936,7 @@ static ssize_t devkmsg_read(struct file *file, char __user *buf,
 		 *
 		 * This pairs with __wake_up_klogd:A.
 		 */
-		ret = wait_event_interruptible(log_wait,
+		ret = wait_event_interruptible(log->wait,
 				prb_read_valid(log->prb,
 					atomic64_read(&user->seq), r)); /* LMM(devkmsg_read:A) */
 		if (ret)
@@ -1018,7 +1024,7 @@ static __poll_t devkmsg_poll(struct file *file, poll_table *wait)
 	if (!user)
 		return EPOLLERR|EPOLLNVAL;
 
-	poll_wait(file, &log_wait, wait);
+	poll_wait(file, &log->wait, wait);
 
 	if (prb_read_valid_info(log->prb, atomic64_read(&user->seq), &info, NULL)) {
 		/* return error when data has vanished underneath us */
@@ -1714,7 +1720,7 @@ static int syslog_print(struct log_state *log,
 		 *
 		 * This pairs with __wake_up_klogd:A.
 		 */
-		len = wait_event_interruptible(log_wait,
+		len = wait_event_interruptible(log->wait,
 				prb_read_valid(log->prb, seq, NULL)); /* LMM(syslog_print:A) */
 		mutex_lock(&syslog_lock);
 
@@ -2464,36 +2470,45 @@ asmlinkage int vprintk_emit_log(struct log_state *log,
 
 	/* If called from the scheduler, we can not call up(). */
 	if (!in_sched && allow_direct_printing()) {
+		if (log == &init_log_state) {
 #if IS_ENABLED(CONFIG_PREEMPT_RT)
-		/*
-		 * Use the non-spinning trylock since PREEMPT_RT does not
-		 * support console lock handovers.
-		 *
-		 * Direct printing will most likely involve taking spinlocks.
-		 * For PREEMPT_RT, this is only allowed if in a preemptible
-		 * context.
-		 */
-		if (preemptible() && console_trylock())
-			console_unlock();
+			/*
+			 * Use the non-spinning trylock since PREEMPT_RT does not
+			 * support console lock handovers.
+			 *
+			 * Direct printing will most likely involve taking spinlocks.
+			 * For PREEMPT_RT, this is only allowed if in a preemptible
+			 * context.
+			 */
+			if (preemptible() && console_trylock())
+				console_unlock();
 #else
-		/*
-		 * The caller may be holding system-critical or
-		 * timing-sensitive locks. Disable preemption during direct
-		 * printing of all remaining records to all consoles so that
-		 * this context can return as soon as possible. Hopefully
-		 * another printk() caller will take over the printing.
-		 */
-		preempt_disable();
-		/*
-		 * Try to acquire and then immediately release the console
-		 * semaphore. The release will print out buffers. With the
-		 * spinning variant, this context tries to take over the
-		 * printing from another printing context.
-		 */
-		if (console_trylock_spinning())
-			console_unlock();
-		preempt_enable();
+			/*
+			 * The caller may be holding system-critical or
+			 * timing-sensitive locks. Disable preemption during direct
+			 * printing of all remaining records to all consoles so that
+			 * this context can return as soon as possible. Hopefully
+			 * another printk() caller will take over the printing.
+			 */
+			preempt_disable();
+			/*
+			 * Try to acquire and then immediately release the console
+			 * semaphore. The release will print out buffers. With the
+			 * spinning variant, this context tries to take over the
+			 * printing from another printing context.
+			 */
+			if (console_trylock_spinning())
+				console_unlock();
+			preempt_enable();
 #endif
+		} else {
+			/*
+			 * For (in_sched) case we need to wake up via
+			 * irq_work_queue(), so ... let's just wake up only in
+			 * (!in_sched) case for now.
+			 */
+			wake_up_interruptible(&log->wait);
+		}
 	}
 
 	wake_up_klogd();
@@ -4148,7 +4163,7 @@ static int printk_kthread_func(void *data)
 		 *
 		 * This pairs with __wake_up_klogd:A.
 		 */
-		error = wait_event_interruptible(log_wait,
+		error = wait_event_interruptible(init_log_state.wait,
 				printer_should_wake(con, seq)); /* LMM(printk_kthread_func:A) */
 
 		if (kthread_should_stop() || !printk_kthreads_available)
@@ -4247,6 +4262,7 @@ static DEFINE_PER_CPU(int, printk_pending);
 
 static void wake_up_klogd_work_func(struct irq_work *irq_work)
 {
+	struct log_state *log = &init_log_state;
 	int pending = this_cpu_xchg(printk_pending, 0);
 
 	if (pending & PRINTK_PENDING_DIRECT_OUTPUT) {
@@ -4260,7 +4276,7 @@ static void wake_up_klogd_work_func(struct irq_work *irq_work)
 	}
 
 	if (pending & PRINTK_PENDING_WAKEUP)
-		wake_up_interruptible(&log_wait);
+		wake_up_interruptible(&log->wait);
 }
 
 static DEFINE_PER_CPU(struct irq_work, wake_up_klogd_work) =
@@ -4268,6 +4284,8 @@ static DEFINE_PER_CPU(struct irq_work, wake_up_klogd_work) =
 
 static void __wake_up_klogd(int val)
 {
+	struct log_state *log = &init_log_state;
+
 	if (!printk_percpu_data_ready())
 		return;
 
@@ -4284,7 +4302,7 @@ static void __wake_up_klogd(int val)
 	 * This pairs with devkmsg_read:A, syslog_print:A, and
 	 * printk_kthread_func:A.
 	 */
-	if (wq_has_sleeper(&log_wait) || /* LMM(__wake_up_klogd:A) */
+	if (wq_has_sleeper(&log->wait) || /* LMM(__wake_up_klogd:A) */
 	    (val & PRINTK_PENDING_DIRECT_OUTPUT)) {
 		this_cpu_or(printk_pending, val);
 		irq_work_queue(this_cpu_ptr(&wake_up_klogd_work));
@@ -4737,6 +4755,7 @@ int ve_log_init(struct ve_struct *ve)
 		return ret;
 	}
 
+	init_waitqueue_head(&log->wait);
 	seqcount_latch_init(&log->clear_seq.latch);
 
 	ve->log_state = log;
