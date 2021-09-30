@@ -107,6 +107,10 @@ static const int six_hundred_forty_kb = 640 * 1024;
 static const int ngroups_max = NGROUPS_MAX;
 static const int cap_last_cap = CAP_LAST_CAP;
 
+extern int warn_order;
+extern int proc_warn_high_order(struct ctl_table *table, int write,
+			void __user *buffer, size_t *lenp, loff_t *ppos);
+
 #ifdef CONFIG_PROC_SYSCTL
 
 /**
@@ -2598,6 +2602,15 @@ static struct ctl_table vm_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 #endif
+	{
+		.procname       = "warn_high_order",
+		.data           = &warn_order,
+		.maxlen         = sizeof(warn_order),
+		.mode           = 0644,
+		.proc_handler   = &proc_warn_high_order,
+		.extra1         = SYSCTL_ONE,
+		.extra2         = SYSCTL_ONE_HUNDRED,
+	},
 	{ }
 };
 
