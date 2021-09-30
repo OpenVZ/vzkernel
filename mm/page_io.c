@@ -337,14 +337,17 @@ int swap_readpage(struct page *page, bool synchronous)
 		struct address_space *mapping = swap_file->f_mapping;
 
 		ret = mapping->a_ops->readpage(swap_file, page);
-		if (!ret)
+		if (!ret) {
+			count_memcg_page_event(page, PSWPIN);
 			count_vm_event(PSWPIN);
+		}
 		goto out;
 	}
 
 	if (sis->flags & SWP_SYNCHRONOUS_IO) {
 		ret = bdev_read_page(sis->bdev, swap_page_sector(page), page);
 		if (!ret) {
+			count_memcg_page_event(page, PSWPIN);
 			count_vm_event(PSWPIN);
 			goto out;
 		}
