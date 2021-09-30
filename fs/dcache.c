@@ -32,6 +32,7 @@
 #include <linux/bit_spinlock.h>
 #include <linux/rculist_bl.h>
 #include <linux/list_lru.h>
+#include <linux/memcontrol.h>
 #include "internal.h"
 #include "mount.h"
 
@@ -428,8 +429,10 @@ static void d_lru_add(struct dentry *dentry)
 	D_FLAG_VERIFY(dentry, 0);
 	dentry->d_flags |= DCACHE_LRU_LIST;
 	this_cpu_inc(nr_dentry_unused);
-	if (d_is_negative(dentry))
+	if (d_is_negative(dentry)) {
 		this_cpu_inc(nr_dentry_negative);
+		memcg_neg_dentry_inc(dentry);
+	}
 	WARN_ON_ONCE(!list_lru_add(&dentry->d_sb->s_dentry_lru, &dentry->d_lru));
 }
 
@@ -438,8 +441,10 @@ static void d_lru_del(struct dentry *dentry)
 	D_FLAG_VERIFY(dentry, DCACHE_LRU_LIST);
 	dentry->d_flags &= ~DCACHE_LRU_LIST;
 	this_cpu_dec(nr_dentry_unused);
-	if (d_is_negative(dentry))
+	if (d_is_negative(dentry)) {
 		this_cpu_dec(nr_dentry_negative);
+		memcg_neg_dentry_dec(dentry);
+	}
 	WARN_ON_ONCE(!list_lru_del(&dentry->d_sb->s_dentry_lru, &dentry->d_lru));
 }
 
@@ -470,8 +475,10 @@ static void d_lru_isolate(struct list_lru_one *lru, struct dentry *dentry)
 	D_FLAG_VERIFY(dentry, DCACHE_LRU_LIST);
 	dentry->d_flags &= ~DCACHE_LRU_LIST;
 	this_cpu_dec(nr_dentry_unused);
-	if (d_is_negative(dentry))
+	if (d_is_negative(dentry)) {
 		this_cpu_dec(nr_dentry_negative);
+		memcg_neg_dentry_dec(dentry);
+	}
 	list_lru_isolate(lru, &dentry->d_lru);
 }
 
@@ -480,8 +487,10 @@ static void d_lru_shrink_move(struct list_lru_one *lru, struct dentry *dentry,
 {
 	D_FLAG_VERIFY(dentry, DCACHE_LRU_LIST);
 	dentry->d_flags |= DCACHE_SHRINK_LIST;
-	if (d_is_negative(dentry))
+	if (d_is_negative(dentry)) {
 		this_cpu_dec(nr_dentry_negative);
+		memcg_neg_dentry_dec(dentry);
+	}
 	list_lru_isolate_move(lru, &dentry->d_lru, list);
 }
 
@@ -2004,8 +2013,10 @@ static void __d_instantiate(struct dentry *dentry, struct inode *inode)
 	/*
 	 * Decrement negative dentry count if it was in the LRU list.
 	 */
-	if (dentry->d_flags & DCACHE_LRU_LIST)
+	if (dentry->d_flags & DCACHE_LRU_LIST) {
 		this_cpu_dec(nr_dentry_negative);
+		memcg_neg_dentry_dec(dentry);
+	}
 	hlist_add_head(&dentry->d_u.d_alias, &inode->i_dentry);
 	raw_write_seqcount_begin(&dentry->d_seq);
 	__d_set_inode_and_type(dentry, inode, add_flags);

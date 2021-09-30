@@ -761,6 +761,7 @@ struct memcg_vmstats_percpu {
 	/* Cgroup1: threshold notifications & softlimit tree updates */
 	unsigned long		nr_page_events;
 	unsigned long		targets[MEM_CGROUP_NTARGETS];
+	unsigned long		nr_dentry_neg;
 };
 
 struct memcg_vmstats {
@@ -3773,6 +3774,40 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 	return nr_reclaimed;
 }
 
+static inline unsigned long
+mem_cgroup_read_nd(struct mem_cgroup *memcg)
+{
+	long val = 0;
+	int cpu;
+
+	/* Per-cpu values can be negative, use a signed accumulator */
+	for_each_possible_cpu(cpu)
+		val += per_cpu(memcg->vmstats_percpu->nr_dentry_neg, cpu);
+	/*
+	 * Summing races with updates, so val may be negative.  Avoid exposing
+	 * transient negative values.
+	 */
+	if (val < 0)
+		val = 0;
+	return val;
+}
+
+void memcg_neg_dentry_inc(struct dentry *dentry)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_obj(dentry);
+
+	if (memcg)
+		__this_cpu_inc(memcg->vmstats_percpu->nr_dentry_neg);
+}
+
+void memcg_neg_dentry_dec(struct dentry *dentry)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_obj(dentry);
+
+	if (memcg)
+		__this_cpu_dec(memcg->vmstats_percpu->nr_dentry_neg);
+}
+
 /*
  * Reclaims as many pages from the given memcg as possible.
  *
@@ -4355,6 +4390,7 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 	else
 		seq_printf(m, "oom %lu\n",
 			atomic_long_read(&memcg->memory_events[MEMCG_OOM]));
+	seq_printf(m, "negative_dentries %lu\n", mem_cgroup_read_nd(memcg));
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
 		seq_printf(m, "%s %lu\n", lru_list_name(i),
