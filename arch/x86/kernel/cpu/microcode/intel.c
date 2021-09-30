@@ -250,7 +250,7 @@ static void save_microcode_patch(struct microcode_intel *patch)
 	unsigned int size = get_totalsize(&patch->hdr);
 	struct microcode_intel *mc;
 
-	mc = kvmemdup(patch, size, GFP_KERNEL);
+	mc = kvmemdup(patch, size, GFP_KERNEL | __GFP_ORDER_NOWARN);
 	if (mc)
 		update_ucode_pointer(mc);
 	else
