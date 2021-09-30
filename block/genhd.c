@@ -34,13 +34,20 @@ static struct kobject *block_depr;
 #define NR_EXT_DEVT		(1 << MINORBITS)
 static DEFINE_IDA(ext_devt_ida);
 
+void bd_write_size(struct block_device *bdev, loff_t size)
+{
+	spin_lock(&bdev->bd_size_lock);
+	i_size_write(bdev->bd_inode, size);
+	spin_unlock(&bdev->bd_size_lock);
+	blk_cbt_update_size(bdev);
+}
+EXPORT_SYMBOL(bd_write_size);
+
 void set_capacity(struct gendisk *disk, sector_t sectors)
 {
 	struct block_device *bdev = disk->part0;
 
-	spin_lock(&bdev->bd_size_lock);
-	i_size_write(bdev->bd_inode, (loff_t)sectors << SECTOR_SHIFT);
-	spin_unlock(&bdev->bd_size_lock);
+	bd_write_size(bdev, (loff_t)sectors << SECTOR_SHIFT);
 }
 EXPORT_SYMBOL(set_capacity);
 
