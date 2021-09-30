@@ -1211,6 +1211,8 @@ const char * const vmstat_text[] = {
 
 	"pgfault",
 	"pgmajfault",
+	"pswpin",
+	"pswpout",
 	"pglazyfreed",
 
 	"pgrefill",
