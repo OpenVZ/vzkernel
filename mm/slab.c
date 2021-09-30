@@ -443,6 +443,8 @@ static void __slab_error(const char *function, struct kmem_cache *cachep,
 	       function, cachep->name, msg);
 	dump_stack();
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
+	if (panic_on_warn)
+		panic("panic_on_warn set ...\n");
 }
 #endif
 
