@@ -469,7 +469,7 @@ static bool writeback_throttling_sane(struct scan_control *sc)
 	if (!cgroup_reclaim(sc))
 		return true;
 #ifdef CONFIG_CGROUP_WRITEBACK
-	if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+	if (1/*cgroup_subsys_on_dfl(memory_cgrp_subsys)*/)
 		return true;
 #endif
 	return false;
