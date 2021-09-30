@@ -743,6 +743,7 @@ static inline __alloc_size(1, 2) void *kvcalloc(size_t n, size_t size, gfp_t fla
 
 extern void *kvrealloc(const void *p, size_t oldsize, size_t newsize, gfp_t flags)
 		      __realloc_size(3);
+extern void *kvmalloc_check(size_t size, gfp_t flags);
 extern void kvfree(const void *addr);
 DEFINE_FREE(kvfree, void *, if (_T) kvfree(_T))
 
