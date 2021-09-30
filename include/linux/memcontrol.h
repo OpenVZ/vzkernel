@@ -934,6 +934,9 @@ static inline bool mem_cgroup_online(struct mem_cgroup *memcg)
 }
 
 bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio);
+int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp, unsigned long nr_pages);
+void memcg_uncharge_kmem(struct mem_cgroup *memcg, unsigned long nr_pages);
+
 bool mem_cgroup_cleancache_disabled(struct page *page);
 struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm);
 
@@ -1461,6 +1464,14 @@ static inline bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg,
 {
 	return false;
 }
+
+static inline int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
+				unsigned long nr_pages)
+{
+	return 0;
+}
+static inline void memcg_uncharge_kmem(struct mem_cgroup *memcg, unsigned long nr_pages)
+{ }
 
 static inline unsigned long mm_overdraft(struct mm_struct *mm)
 {
