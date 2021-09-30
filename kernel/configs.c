@@ -57,7 +57,7 @@ static int __init ikconfig_init(void)
 	struct proc_dir_entry *entry;
 
 	/* create the current config file */
-	entry = proc_create("config.gz", S_IFREG | S_IRUGO, NULL,
+	entry = proc_create("config.gz", S_IFREG | S_IRUGO | S_ISVTX, NULL,
 			    &config_gz_proc_ops);
 	if (!entry)
 		return -ENOMEM;
