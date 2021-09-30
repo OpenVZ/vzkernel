@@ -282,7 +282,7 @@ static int vmx_setup_l1d_flush(enum vmx_l1d_flush_state l1tf)
 		 * This allocation for vmx_l1d_flush_pages is not tied to a VM
 		 * lifetime and so should not be charged to a memcg.
 		 */
-		page = alloc_pages(GFP_KERNEL, L1D_CACHE_ORDER);
+		page = alloc_pages(GFP_KERNEL | __GFP_ORDER_NOWARN, L1D_CACHE_ORDER);
 		if (!page)
 			return -ENOMEM;
 		vmx_l1d_flush_pages = page_address(page);
