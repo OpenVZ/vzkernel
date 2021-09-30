@@ -868,6 +868,8 @@ static void object_err(struct kmem_cache *s, struct slab *slab,
 	slab_bug(s, "%s", reason);
 	print_trailer(s, slab, object);
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
+	if (panic_on_warn)
+		panic("panic_on_warn set ...\n");
 }
 
 static bool freelist_corrupted(struct kmem_cache *s, struct slab *slab,
@@ -900,6 +902,8 @@ static __printf(3, 4) void slab_err(struct kmem_cache *s, struct slab *slab,
 	print_slab_info(slab);
 	dump_stack();
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
+	if (panic_on_warn)
+		panic("panic_on_warn set ...\n");
 }
 
 static void init_object(struct kmem_cache *s, void *object, u8 val)
@@ -952,6 +956,8 @@ static int check_bytes_and_report(struct kmem_cache *s, struct slab *slab,
 					fault[0], value);
 	print_trailer(s, slab, object);
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
+	if (panic_on_warn)
+		panic("panic_on_warn set ...\n");
 
 skip_bug_print:
 	restore_bytes(s, what, value, fault, end);
