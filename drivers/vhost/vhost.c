@@ -393,7 +393,7 @@ static long vhost_dev_alloc_iovecs(struct vhost_dev *dev)
 					     sizeof(*vq->indirect),
 					     GFP_KERNEL);
 		vq->log = kmalloc_array(dev->iov_limit, sizeof(*vq->log),
-					GFP_KERNEL);
+					GFP_KERNEL | __GFP_ORDER_NOWARN);
 		vq->heads = kmalloc_array(dev->iov_limit, sizeof(*vq->heads),
 					  GFP_KERNEL);
 		if (!vq->indirect || !vq->log || !vq->heads)
