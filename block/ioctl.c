@@ -560,6 +560,13 @@ static int blkdev_common_ioctl(struct block_device *bdev, blk_mode_t mode,
 		return blkdev_pr_preempt(bdev, mode, argp, true);
 	case IOC_PR_CLEAR:
 		return blkdev_pr_clear(bdev, mode, argp);
+	case BLKCBTSTART:
+	case BLKCBTSTOP:
+	case BLKCBTGET:
+	case BLKCBTSET:
+	case BLKCBTCLR:
+	case BLKCBTMISC:
+		return blk_cbt_ioctl(bdev, cmd, (char __user *)arg);
 	default:
 		return -ENOIOCTLCMD;
 	}

@@ -521,6 +521,7 @@ void bdev_set_nr_sectors(struct block_device *bdev, sector_t sectors)
 	i_size_write(bdev->bd_inode, (loff_t)sectors << SECTOR_SHIFT);
 	bdev->bd_nr_sectors = sectors;
 	spin_unlock(&bdev->bd_size_lock);
+	blk_cbt_update_size(bdev);
 }
 
 void bdev_add(struct block_device *bdev, dev_t dev)
