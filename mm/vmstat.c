@@ -1779,6 +1779,12 @@ static void *vmstat_start(struct seq_file *m, loff_t *pos)
 	m->private = v;
 	if (!v)
 		return ERR_PTR(-ENOMEM);
+
+	if (!ve_is_super(get_exec_env())) {
+		memset(v, 0, NR_VMSTAT_ITEMS * sizeof(unsigned long));
+		return (unsigned long *)m->private + *pos;
+	}
+
 	for (i = 0; i < NR_VM_ZONE_STAT_ITEMS; i++)
 		v[i] = global_zone_page_state(i);
 	v += NR_VM_ZONE_STAT_ITEMS;
