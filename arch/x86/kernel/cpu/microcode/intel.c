@@ -66,7 +66,7 @@ static struct ucode_patch *memdup_patch(void *data, unsigned int size)
 	if (!p)
 		return NULL;
 
-	p->data = kmemdup(data, size, GFP_KERNEL);
+	p->data = kmemdup(data, size, GFP_KERNEL | __GFP_ORDER_NOWARN);
 	if (!p->data) {
 		kfree(p);
 		return NULL;
