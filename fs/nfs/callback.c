@@ -16,7 +16,6 @@
 #include <linux/nfs_fs.h>
 #include <linux/errno.h>
 #include <linux/mutex.h>
-#include <linux/freezer.h>
 #include <linux/sunrpc/svcauth_gss.h>
 #include <linux/sunrpc/bc_xprt.h>
 
@@ -76,9 +75,7 @@ nfs4_callback_svc(void *vrqstp)
 {
 	struct svc_rqst *rqstp = vrqstp;
 
-	set_freezable();
-
-	while (!kthread_freezable_should_stop(NULL))
+	while (!kthread_should_stop())
 		svc_recv(rqstp);
 
 	svc_exit_thread(rqstp);
@@ -98,9 +95,7 @@ nfs41_callback_svc(void *vrqstp)
 	int error;
 	DEFINE_WAIT(wq);
 
-	set_freezable();
-
-	while (!kthread_freezable_should_stop(NULL)) {
+	while (!kthread_should_stop()) {
 		prepare_to_wait(&serv->sv_cb_waitq, &wq, TASK_IDLE);
 		spin_lock_bh(&serv->sv_cb_lock);
 		if (!list_empty(&serv->sv_cb_list)) {

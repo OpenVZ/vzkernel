@@ -8,7 +8,6 @@
 #include <linux/sched.h>
 #include <linux/sched/mm.h>
 #include <linux/errno.h>
-#include <linux/freezer.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
 #include <net/sock.h>
@@ -714,10 +713,6 @@ rqst_should_sleep(struct svc_rqst *rqstp)
 	if (kthread_should_stop())
 		return false;
 
-	/* are we freezing? */
-	if (freezing(current))
-		return false;
-
 	return true;
 }
 
@@ -742,8 +737,6 @@ static struct svc_xprt *svc_get_next_xprt(struct svc_rqst *rqstp)
 		schedule();
 	else
 		__set_current_state(TASK_RUNNING);
-
-	try_to_freeze();
 
 	set_bit(RQ_BUSY, &rqstp->rq_flags);
 	smp_mb__after_atomic();
@@ -849,8 +842,6 @@ void svc_recv(struct svc_rqst *rqstp)
 	if (!svc_alloc_arg(rqstp))
 		goto out;
 
-	try_to_freeze();
-	cond_resched();
 	if (kthread_should_stop())
 		goto out;
 
