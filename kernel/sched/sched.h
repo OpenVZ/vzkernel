@@ -428,6 +428,8 @@ struct task_group {
 	struct list_head ve_root_list;
 #endif
 
+	unsigned long avenrun[3];	/* loadavg data */
+
 	struct cfs_bandwidth	cfs_bandwidth;
 
 #ifdef CONFIG_UCLAMP_TASK_GROUP
