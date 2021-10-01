@@ -17,6 +17,8 @@
 #include <linux/sunrpc/rpc_pipe_fs.h>
 #include <linux/module.h>
 #include <linux/fsnotify.h>
+#include <linux/ve.h>
+#include <uapi/linux/vzcalluser.h>
 
 #include "idmap.h"
 #include "nfsd.h"
@@ -1442,6 +1444,9 @@ static const struct fs_context_operations nfsd_fs_context_ops = {
 
 static int nfsd_init_fs_context(struct fs_context *fc)
 {
+	if (!(get_exec_env()->features & VE_FEATURE_NFSD))
+		return -ENODEV;
+
 	put_user_ns(fc->user_ns);
 	fc->user_ns = get_user_ns(fc->net_ns->user_ns);
 	fc->ops = &nfsd_fs_context_ops;
@@ -1463,6 +1468,7 @@ static struct file_system_type nfsd_fs_type = {
 	.name		= "nfsd",
 	.init_fs_context = nfsd_init_fs_context,
 	.kill_sb	= nfsd_umount,
+	.fs_flags	= FS_VIRTUALIZED | FS_VE_MOUNT,
 };
 MODULE_ALIAS_FS("nfsd");
 
