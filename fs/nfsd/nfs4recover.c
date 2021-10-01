@@ -2047,18 +2047,20 @@ nfsd4_client_tracking_init(struct net *net)
 	if (!status)
 		return status;
 
-	/*
-	 * Finally, See if the recoverydir exists and is a directory.
-	 * If it is, then use the legacy ops.
-	 */
-	nn->client_tracking_ops = &nfsd4_legacy_tracking_ops;
-	status = kern_path(nfs4_recoverydir(), LOOKUP_FOLLOW, &path);
-	if (!status) {
-		status = d_is_dir(path.dentry);
-		path_put(&path);
+	if (net_eq(net, &init_net)) {
+		/*
+		 * Finally, See if the recoverydir exists and is a directory.
+		 * If it is, then use the legacy ops.
+		 */
+		nn->client_tracking_ops = &nfsd4_legacy_tracking_ops;
+		status = kern_path(nfs4_recoverydir(), LOOKUP_FOLLOW, &path);
 		if (!status) {
-			status = -EINVAL;
-			goto out;
+			status = d_is_dir(path.dentry);
+			path_put(&path);
+			if (!status) {
+				status = -EINVAL;
+				goto out;
+			}
 		}
 	}
 
