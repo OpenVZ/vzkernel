@@ -876,7 +876,7 @@ long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 		return prctl_map_vdso(&vdso_image_32, arg2);
 # endif
 	case ARCH_MAP_VDSO_64:
-		return prctl_map_vdso(&vdso_image_64, arg2);
+		return prctl_map_vdso(get_exec_env()->vdso_64, arg2);
 #endif
 #ifdef CONFIG_ADDRESS_MASKING
 	case ARCH_GET_UNTAG_MASK:
