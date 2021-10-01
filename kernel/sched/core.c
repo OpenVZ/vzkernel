@@ -141,6 +141,8 @@ __read_mostly int sysctl_resched_latency_warn_ms = 100;
 __read_mostly int sysctl_resched_latency_warn_once = 1;
 #endif /* CONFIG_SCHED_DEBUG */
 
+#include "../cgroup/cgroup-internal.h" /* For cgroup_task_count() */
+
 /*
  * Number of tasks to iterate in a single balance run.
  * Limited because this is done with IRQs disabled.
@@ -11531,6 +11533,44 @@ static int cpu_idle_write_s64(struct cgroup_subsys_state *css,
 	return sched_group_set_idle(css_tg(css), idle);
 }
 #endif
+
+int cpu_cgroup_proc_loadavg(struct cgroup_subsys_state *css,
+			    struct seq_file *p)
+{
+	struct cgroup *cgrp = css->cgroup;
+	struct task_group *tg = css_tg(css);
+	unsigned long avnrun[3];
+	int nr_running = 0;
+	int i;
+
+	avnrun[0] = tg->avenrun[0] + FIXED_1/200;
+	avnrun[1] = tg->avenrun[1] + FIXED_1/200;
+	avnrun[2] = tg->avenrun[2] + FIXED_1/200;
+
+	for_each_possible_cpu(i) {
+#ifdef CONFIG_FAIR_GROUP_SCHED
+		nr_running += tg->cfs_rq[i]->h_nr_running;
+		/*
+		 * We do not export nr_unint to parent task groups
+		 * like we do for h_nr_running, as it gives additional
+		 * overhead for activate/deactivate operations. So, we
+		 * don't account child cgroup unint tasks here.
+		 */
+		nr_running += tg->cfs_rq[i]->nr_unint;
+#endif
+#ifdef CONFIG_RT_GROUP_SCHED
+		nr_running += tg->rt_rq[i]->rt_nr_running;
+#endif
+	}
+
+	seq_printf(p, "%lu.%02lu %lu.%02lu %lu.%02lu %d/%d %d\n",
+		LOAD_INT(avnrun[0]), LOAD_FRAC(avnrun[0]),
+		LOAD_INT(avnrun[1]), LOAD_FRAC(avnrun[1]),
+		LOAD_INT(avnrun[2]), LOAD_FRAC(avnrun[2]),
+		nr_running, cgroup_task_count(cgrp),
+		idr_get_cursor(&task_active_pid_ns(current)->idr));
+	return 0;
+}
 
 static struct cftype cpu_legacy_files[] = {
 #ifdef CONFIG_FAIR_GROUP_SCHED
