@@ -33,6 +33,9 @@
 #include <linux/nsproxy.h>
 #include <linux/notifier.h>
 
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
+
 #include "netns.h"
 #include "sunrpc.h"
 
@@ -1435,6 +1438,9 @@ static const struct fs_context_operations rpc_fs_context_ops = {
 
 static int rpc_init_fs_context(struct fs_context *fc)
 {
+	if (!(get_exec_env()->features & VE_FEATURE_NFSD))
+		return -ENODEV;
+
 	put_user_ns(fc->user_ns);
 	fc->user_ns = get_user_ns(fc->net_ns->user_ns);
 	fc->ops = &rpc_fs_context_ops;
