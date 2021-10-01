@@ -134,4 +134,12 @@ static inline int vz_security_protocol_check(struct net *net, int protocol) { re
 
 #endif	/* CONFIG_VE */
 
+struct seq_file;
+
+#if defined(CONFIG_VE) && defined(CONFIG_CGROUP_SCHED)
+int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p);
+#else
+static inline int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p) { return -ENOSYS; }
+#endif
+
 #endif /* _LINUX_VE_H */
