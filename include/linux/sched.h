@@ -2427,4 +2427,17 @@ static inline void sched_core_free(struct task_struct *tsk) { }
 static inline void sched_core_fork(struct task_struct *p) { }
 #endif
 
+struct cgroup_subsys_state;
+#ifdef CONFIG_VE
+void link_ve_root_cpu_cgroup(struct cgroup_subsys_state *css);
+void unlink_ve_root_cpu_cgroup(struct cgroup_subsys_state *css);
+#else /* CONFIG_VE */
+static inline void link_ve_root_cpu_cgroup(struct cgroup_subsys_state *css)
+{
+}
+static inline void unlink_ve_root_cpu_cgroup(struct cgroup_subsys_state *css)
+{
+}
+#endif /* CONFIG_VE */
+
 #endif
