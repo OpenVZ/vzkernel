@@ -81,6 +81,7 @@ static unsigned long enforced_nproc_rlimit(void)
 int create_user_ns(struct cred *new)
 {
 	struct user_namespace *ns, *parent_ns = new->user_ns;
+	struct user_struct *new_user;
 	kuid_t owner = new->euid;
 	kgid_t group = new->egid;
 	struct ucounts *ucounts;
@@ -124,6 +125,17 @@ int create_user_ns(struct cred *new)
 		goto fail_free;
 	ns->ns.ops = &userns_operations;
 
+	for (i = 0; i < UIDHASH_SZ; ++i)
+		INIT_HLIST_HEAD(ns->uidhash_table + i);
+
+	ret = -ENOMEM;
+	new_user = alloc_uid_ns(ns, owner);
+	if (!new_user)
+		goto fail_uid;
+
+	free_uid(new->user);
+	new->user = new_user;
+
 	refcount_set(&ns->ns.count, 1);
 	/* Leave the new->user_ns reference with the new user namespace. */
 	ns->parent = parent_ns;
@@ -159,6 +171,7 @@ fail_keyring:
 #ifdef CONFIG_PERSISTENT_KEYRINGS
 	key_put(ns->persistent_keyring_register);
 #endif
+fail_uid:
 	ns_free_inum(&ns->ns);
 fail_free:
 	kmem_cache_free(user_ns_cachep, ns);
