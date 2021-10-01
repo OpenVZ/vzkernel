@@ -11122,9 +11122,10 @@ more_balance:
 			env.loop = 0;
 			local_irq_save(rf.flags);
 			double_rq_lock(env.dst_rq, busiest);
-			rq_repin_lock(env.src_rq, &rf);
+			rq_repin_lock(busiest, &rf);
 			update_rq_clock(env.dst_rq);
 			cur_ld_moved = ld_moved = move_task_groups(&env);
+			rq_unpin_lock(busiest, &rf);
 			double_rq_unlock(env.dst_rq, busiest);
 			local_irq_restore(rf.flags);
                 }
