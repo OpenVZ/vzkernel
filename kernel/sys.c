@@ -2571,6 +2571,9 @@ SYSCALL_DEFINE3(getcpu, unsigned __user *, cpup, unsigned __user *, nodep,
 	return err ? -EFAULT : 0;
 }
 
+extern int get_avenrun_tg(struct task_group *tg, unsigned long *loads,
+			  unsigned long offset, int shift);
+
 /**
  * do_sysinfo - fill in sysinfo struct
  * @info: pointer to buffer to fill
@@ -2593,6 +2596,12 @@ static int do_sysinfo(struct sysinfo *info)
 
 	si_meminfo(info);
 	si_swapinfo(info);
+
+	if (!ve_is_super(get_exec_env())) {
+		/* does not fail on non-VE0 task group */
+		(void)get_avenrun_tg(NULL, info->loads,
+				     0, SI_LOAD_SHIFT - FSHIFT);
+	}
 
 	/*
 	 * If the sum of all the available memory (i.e. ram + swap)
