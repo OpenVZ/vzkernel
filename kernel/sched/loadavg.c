@@ -6,6 +6,7 @@
  * figure. Its a silly number but people think its important. We go through
  * great pains to make it work on big machines and tickless kernels.
  */
+#include <linux/vzstat.h>
 
 /*
  * Global load-average calculations
@@ -112,7 +113,7 @@ extern spinlock_t load_ve_lock;
 
 void calc_load_ve(void)
 {
-	unsigned long nr_active;
+	unsigned long nr_unint, nr_active;
 	struct task_group *tg;
 	int i;
 
@@ -144,6 +145,14 @@ void calc_load_ve(void)
 		tg->avenrun[1] = calc_load(tg->avenrun[1], EXP_5, nr_active);
 		tg->avenrun[2] = calc_load(tg->avenrun[2], EXP_15, nr_active);
 	}
+
+	nr_unint = nr_uninterruptible() * FIXED_1;
+
+	write_seqcount_begin(&kstat_glob.nr_unint_avg_seq);
+	calc_load(kstat_glob.nr_unint_avg[0], EXP_1, nr_unint);
+	calc_load(kstat_glob.nr_unint_avg[1], EXP_5, nr_unint);
+	calc_load(kstat_glob.nr_unint_avg[2], EXP_15, nr_unint);
+	write_seqcount_end(&kstat_glob.nr_unint_avg_seq);
 	spin_unlock(&load_ve_lock);
 }
 #endif /* CONFIG_VE */
