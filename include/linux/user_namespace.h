@@ -14,6 +14,9 @@
 #define UID_GID_MAP_MAX_BASE_EXTENTS 5
 #define UID_GID_MAP_MAX_EXTENTS 340
 
+#define UIDHASH_BITS   (CONFIG_BASE_SMALL ? 3 : 7)
+#define UIDHASH_SZ     (1 << UIDHASH_BITS)
+
 struct uid_gid_extent {
 	u32 first;
 	u32 lower_first;
@@ -67,6 +70,7 @@ struct user_namespace {
 	struct uid_gid_map	uid_map;
 	struct uid_gid_map	gid_map;
 	struct uid_gid_map	projid_map;
+	struct hlist_head       uidhash_table[UIDHASH_SZ];
 	struct user_namespace	*parent;
 	int			level;
 	kuid_t			owner;
