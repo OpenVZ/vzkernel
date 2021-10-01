@@ -416,6 +416,10 @@ struct task_group {
 	struct autogroup	*autogroup;
 #endif
 
+#ifdef CONFIG_VE
+	struct list_head ve_root_list;
+#endif
+
 	struct cfs_bandwidth	cfs_bandwidth;
 
 #ifdef CONFIG_UCLAMP_TASK_GROUP
