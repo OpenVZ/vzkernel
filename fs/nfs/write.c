@@ -22,7 +22,6 @@
 #include <linux/nfs_page.h>
 #include <linux/backing-dev.h>
 #include <linux/export.h>
-#include <linux/freezer.h>
 #include <linux/wait.h>
 #include <linux/iversion.h>
 
