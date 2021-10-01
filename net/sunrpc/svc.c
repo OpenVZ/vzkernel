@@ -21,6 +21,7 @@
 #include <linux/module.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
+#include <linux/ve.h>
 
 #include <linux/sunrpc/types.h>
 #include <linux/sunrpc/xdr.h>
@@ -768,8 +769,15 @@ svc_start_kthreads(struct svc_serv *serv, struct svc_pool *pool, int nrservs)
 		if (IS_ERR(rqstp))
 			return PTR_ERR(rqstp);
 
-		task = kthread_create_on_node(serv->sv_threadfn, rqstp,
-					      node, "%s", serv->sv_name);
+		if (serv->ve_virtualized) {
+			task = kthread_create_on_node_ve_flags(get_exec_env(),
+					0, serv->sv_threadfn, rqstp,
+					node, "%s", serv->sv_name);
+		} else {
+			task = kthread_create_on_node(
+					serv->sv_threadfn, rqstp,
+					node, "%s", serv->sv_name);
+		}
 		if (IS_ERR(task)) {
 			svc_exit_thread(rqstp);
 			return PTR_ERR(task);
