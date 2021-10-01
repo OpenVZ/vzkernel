@@ -11,6 +11,7 @@
  * 've.c' helper file performing VE sub-system initialization
  */
 
+#include <linux/ctype.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/ve.h>
@@ -647,6 +648,10 @@ do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
 	kmapset_init_key(&ve->sysfs_perms_key);
+
+	INIT_LIST_HEAD(&ve->devmnt_list);
+	mutex_init(&ve->devmnt_mutex);
+
 	return &ve->css;
 
 err_vdso:
@@ -690,9 +695,32 @@ static void ve_offline(struct cgroup_subsys_state *css)
 	ve->ve_name = NULL;
 }
 
+static void ve_devmnt_free(struct ve_devmnt *devmnt)
+{
+	if (!devmnt)
+		return;
+
+	kfree(devmnt->allowed_options);
+	kfree(devmnt->hidden_options);
+	kfree(devmnt);
+}
+
+static void free_ve_devmnts(struct ve_struct *ve)
+{
+	while (!list_empty(&ve->devmnt_list)) {
+		struct ve_devmnt *devmnt;
+
+		devmnt = list_first_entry(&ve->devmnt_list, struct ve_devmnt, link);
+		list_del(&devmnt->link);
+		ve_devmnt_free(devmnt);
+	}
+}
+
 static void ve_destroy(struct cgroup_subsys_state *css)
 {
 	struct ve_struct *ve = css_to_ve(css);
+
+	free_ve_devmnts(ve);
 
 	kmapset_unlink(&ve->sysfs_perms_key, &sysfs_ve_perms_set);
 	ve_log_destroy(ve);
@@ -1014,6 +1042,147 @@ up_opsem:
 	return ret ? ret : nbytes;
 }
 
+static int ve_mount_opts_read(struct seq_file *sf, void *v)
+{
+	struct ve_struct *ve = css_to_ve(seq_css(sf));
+	struct ve_devmnt *devmnt;
+
+	if (ve_is_super(ve))
+		return -ENODEV;
+
+	mutex_lock(&ve->devmnt_mutex);
+	list_for_each_entry(devmnt, &ve->devmnt_list, link) {
+		dev_t dev = devmnt->dev;
+
+		seq_printf(sf, "0 %u:%u;", MAJOR(dev), MINOR(dev));
+		if (devmnt->hidden_options)
+			seq_printf(sf, "1 %s;", devmnt->hidden_options);
+		if (devmnt->allowed_options)
+			seq_printf(sf, "2 %s;", devmnt->allowed_options);
+		seq_putc(sf, '\n');
+	}
+	mutex_unlock(&ve->devmnt_mutex);
+	return 0;
+}
+
+/*
+ * 'data' for VE_CONFIGURE_MOUNT_OPTIONS is a zero-terminated string
+ * consisting of substrings separated by MNTOPT_DELIM.
+ */
+#define MNTOPT_DELIM ';'
+#define MNTOPT_MAXLEN 256
+
+/*
+ * Each substring has the form of "<type> <comma-separated-list-of-options>"
+ * where types are:
+ */
+enum {
+	MNTOPT_DEVICE = 0,
+	MNTOPT_HIDDEN = 1,
+	MNTOPT_ALLOWED = 2,
+};
+
+/*
+ * 'ptr' points to the first character of buffer to parse
+ * 'endp' points to the last character of buffer to parse
+ */
+static int ve_parse_mount_options(const char *ptr, const char *endp,
+				  struct ve_devmnt *devmnt)
+{
+	while (*ptr) {
+		const char *delim = strchr(ptr, MNTOPT_DELIM) ? : endp;
+		char *space = strchr(ptr, ' ');
+		int type;
+		char *options, c, s;
+		int options_size = delim - space;
+		char **opts_pp = NULL; /* where to store 'options' */
+
+		if (delim == ptr || !space || options_size <= 1 ||
+		    !isdigit(*ptr) || space > delim)
+			return -EINVAL;
+
+		if (sscanf(ptr, "%d%c", &type, &c) != 2 || c != ' ')
+			return -EINVAL;
+
+		if (type == MNTOPT_DEVICE) {
+			unsigned major, minor;
+			if (devmnt->dev)
+				return -EINVAL; /* Already set */
+			if (sscanf(space + 1, "%u%c%u%c", &major, &c,
+							  &minor, &s) != 4 ||
+			    c != ':' || s != MNTOPT_DELIM)
+				return -EINVAL;
+			devmnt->dev = MKDEV(major, minor);
+			goto next;
+		}
+
+	        options = kmalloc(options_size, GFP_KERNEL);
+		if (!options)
+			return -ENOMEM;
+
+		strncpy(options, space + 1, options_size - 1);
+		options[options_size - 1] = 0;
+
+		switch (type) {
+		case MNTOPT_ALLOWED:
+			opts_pp = &devmnt->allowed_options;
+			break;
+		case MNTOPT_HIDDEN:
+			opts_pp = &devmnt->hidden_options;
+			break;
+		};
+
+		/* wrong type or already set */
+		if (!opts_pp || *opts_pp) {
+			kfree(options);
+			return -EINVAL;
+		}
+
+		*opts_pp = options;
+next:
+		if (!*delim)
+			break;
+
+		ptr = delim + 1;
+	}
+
+	if (!devmnt->dev)
+		return -EINVAL;
+	return 0;
+}
+
+static ssize_t ve_mount_opts_write(struct kernfs_open_file *of, char *buf,
+			   size_t nbytes, loff_t off)
+{
+	struct ve_struct *ve = css_to_ve(of_css(of));
+	struct ve_devmnt *devmnt, *old;
+	int err;
+
+	devmnt = kzalloc(sizeof(*devmnt), GFP_KERNEL);
+	if (!devmnt)
+		return -ENOMEM;
+
+	err = ve_parse_mount_options(buf, buf + nbytes, devmnt);
+	if (err) {
+		ve_devmnt_free(devmnt);
+		return err;
+	}
+
+	mutex_lock(&ve->devmnt_mutex);
+	list_for_each_entry(old, &ve->devmnt_list, link) {
+		/* Delete old devmnt */
+		if (old->dev == devmnt->dev) {
+			list_del(&old->link);
+			ve_devmnt_free(old);
+			break;
+		}
+	}
+	list_add(&devmnt->link, &ve->devmnt_list);
+	mutex_unlock(&ve->devmnt_mutex);
+
+	return nbytes;
+}
+
 static struct cftype ve_cftypes[] = {
 
 	{
@@ -1056,6 +1225,13 @@ static struct cftype ve_cftypes[] = {
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.seq_show		= ve_os_release_read,
 		.write			= ve_os_release_write,
+	},
+	{
+		.name			= "mount_opts",
+		.max_write_len		= MNTOPT_MAXLEN,
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.seq_show		= ve_mount_opts_read,
+		.write			= ve_mount_opts_write,
 	},
 	{ }
 };
