@@ -22,15 +22,6 @@ static const struct svc_fh nfs3svc_null_fh = {
 };
 
 /*
- * time_delta. {1, 0} means the server is accurate only
- * to the nearest second.
- */
-static const struct timespec64 nfs3svc_time_delta = {
-	.tv_sec		= 1,
-	.tv_nsec	= 0,
-};
-
-/*
  * Mapping of S_IF* types to NFS file types
  */
 static const u32 nfs3_ftypes[] = {
@@ -1237,6 +1228,19 @@ svcxdr_encode_fsinfo3resok(struct xdr_stream *xdr,
 			   const struct nfsd3_fsinfores *resp)
 {
 	__be32 *p;
+	struct timespec64 nfs3svc_time_delta;
+
+	if (resp->f_time_gran) {
+		nfs3svc_time_delta.tv_sec = 0;
+		nfs3svc_time_delta.tv_nsec = resp->f_time_gran;
+	} else {
+		/*
+		 * {1, 0} means the server is accurate only to the nearest
+		 * second.
+		 */
+		nfs3svc_time_delta.tv_sec = 1;
+		nfs3svc_time_delta.tv_nsec = 0;
+	}
 
 	p = xdr_reserve_space(xdr, XDR_UNIT * 12);
 	if (!p)
