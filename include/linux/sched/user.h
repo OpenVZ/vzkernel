@@ -46,6 +46,7 @@ extern struct user_struct *find_user(kuid_t);
 extern struct user_struct root_user;
 #define INIT_USER (&root_user)
 
+extern struct user_struct * alloc_uid_ns(struct user_namespace *ns, kuid_t);
 
 /* per-UID process charging. */
 extern struct user_struct * alloc_uid(kuid_t);
