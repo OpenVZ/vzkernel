@@ -75,6 +75,22 @@ void get_avenrun(unsigned long *loads, unsigned long offset, int shift)
 	loads[2] = (avenrun[2] + offset) << shift;
 }
 
+int get_avenrun_tg(struct task_group *tg, unsigned long *loads,
+		   unsigned long offset, int shift)
+{
+	/* Get current tg if not provided. */
+	tg = tg ? tg : task_group(current);
+
+	if (tg == &root_task_group)
+		return -ENOSYS;
+
+	loads[0] = (tg->avenrun[0] + offset) << shift;
+	loads[1] = (tg->avenrun[1] + offset) << shift;
+	loads[2] = (tg->avenrun[2] + offset) << shift;
+
+	return 0;
+}
+
 long calc_load_fold_active(struct rq *this_rq, long adjust)
 {
 	long nr_active, delta = 0;
@@ -89,6 +105,48 @@ long calc_load_fold_active(struct rq *this_rq, long adjust)
 
 	return delta;
 }
+
+#ifdef CONFIG_VE
+extern struct list_head ve_root_list;
+extern spinlock_t load_ve_lock;
+
+void calc_load_ve(void)
+{
+	unsigned long nr_active;
+	struct task_group *tg;
+	int i;
+
+	/*
+	 * This is called without jiffies_lock, and here we protect
+	 * against very rare parallel execution on two or more cpus.
+	 */
+	spin_lock(&load_ve_lock);
+	list_for_each_entry(tg, &ve_root_list, ve_root_list) {
+		nr_active = 0;
+		for_each_possible_cpu(i) {
+#ifdef CONFIG_FAIR_GROUP_SCHED
+			nr_active += tg->cfs_rq[i]->h_nr_running;
+			/*
+			 * We do not export nr_unint to parent task groups
+			 * like we do for h_nr_running, as it gives additional
+			 * overhead for activate/deactivate operations. So, we
+			 * don't account child cgroup unint tasks here.
+			 */
+			nr_active += tg->cfs_rq[i]->nr_unint;
+#endif
+#ifdef CONFIG_RT_GROUP_SCHED
+			nr_active += tg->rt_rq[i]->rt_nr_running;
+#endif
+		}
+		nr_active *= FIXED_1;
+
+		tg->avenrun[0] = calc_load(tg->avenrun[0], EXP_1, nr_active);
+		tg->avenrun[1] = calc_load(tg->avenrun[1], EXP_5, nr_active);
+		tg->avenrun[2] = calc_load(tg->avenrun[2], EXP_15, nr_active);
+	}
+	spin_unlock(&load_ve_lock);
+}
+#endif /* CONFIG_VE */
 
 /**
  * fixed_power_int - compute: x^n, in O(log n) time
