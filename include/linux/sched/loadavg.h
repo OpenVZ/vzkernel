@@ -47,4 +47,10 @@ extern unsigned long calc_load_n(unsigned long load, unsigned long exp,
 
 extern bool calc_global_load(void);
 
+#ifdef CONFIG_VE
+extern void calc_load_ve(void);
+#else
+#define calc_load_ve() do { } while (0)
+#endif
+
 #endif /* _LINUX_SCHED_LOADAVG_H */
