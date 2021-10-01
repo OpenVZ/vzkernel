@@ -1395,12 +1395,30 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 		blkdev_put(bdev, mode);
 		down_write(&s->s_umount);
 	} else {
+#ifdef CONFIG_VE
+		void *data_orig = data;
+		struct ve_struct *ve = get_exec_env();
+#endif
+
 		s->s_mode = mode;
+#ifdef CONFIG_VE
+		if (!ve_is_super(ve)) {
+			error = ve_devmnt_process(ve, bdev->bd_dev, &data, 0);
+			if (error) {
+				deactivate_locked_super(s);
+				goto error;
+			}
+		}
+#endif
 		snprintf(s->s_id, sizeof(s->s_id), "%pg", bdev);
 		shrinker_debugfs_rename(&s->s_shrink, "sb-%s:%s",
 					fs_type->name, s->s_id);
 		sb_set_blocksize(s, block_size(bdev));
 		error = fill_super(s, data, flags & SB_SILENT ? 1 : 0);
+#ifdef CONFIG_VE
+		if (data_orig != data)
+			free_page((unsigned long)data);
+#endif
 		if (error) {
 			deactivate_locked_super(s);
 			goto error;
