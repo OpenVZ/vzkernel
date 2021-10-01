@@ -989,6 +989,7 @@ static ssize_t ve_os_release_write(struct kernfs_open_file *of, char *buf,
 {
 	struct cgroup_subsys_state *css = of_css(of);
 	struct ve_struct *ve = css_to_ve(css);
+	int n1, n2, n3, new_version;
 	char *release;
 	int ret = 0;
 
@@ -997,6 +998,12 @@ static ssize_t ve_os_release_write(struct kernfs_open_file *of, char *buf,
 	if (!ve->ve_ns) {
 		ret = -ENOENT;
 		goto up_opsem;
+	}
+
+	if (sscanf(buf, "%d.%d.%d", &n1, &n2, &n3) == 3) {
+		new_version = ((n1 << 16) + (n2 << 8)) + n3;
+		*((int *)(ve->vdso_64->data + ve->vdso_64->sym_linux_version_code)) = new_version;
+		*((int *)(ve->vdso_32->data + ve->vdso_32->sym_linux_version_code)) = new_version;
 	}
 
 	down_write(&uts_sem);
