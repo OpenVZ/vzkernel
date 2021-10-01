@@ -8,7 +8,9 @@
 #include <linux/version.h>
 #include <linux/elfnote.h>
 
+	.globl linux_version_code
 ELFNOTE_START(Linux, 0, "a")
+linux_version_code:
 	.long LINUX_VERSION_CODE
 ELFNOTE_END
 
