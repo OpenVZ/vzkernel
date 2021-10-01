@@ -16,6 +16,7 @@
 #include <linux/kmapset.h>
 #include <linux/kthread.h>
 #include <linux/vzstat.h>
+#include <asm/vdso.h>
 
 struct nsproxy;
 struct user_namespace;
@@ -65,6 +66,8 @@ struct ve_struct {
 
 	struct kthread_worker	umh_worker;
 	struct task_struct	*umh_task;
+
+	struct vdso_image	*vdso_64;
 };
 
 #define VE_MEMINFO_DEFAULT	1	/* default behaviour */

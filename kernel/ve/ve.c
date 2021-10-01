@@ -55,6 +55,7 @@ struct ve_struct ve0 = {
 					2,
 #endif
 	.meminfo_val		= VE_MEMINFO_SYSTEM,
+	.vdso_64		= (struct vdso_image*)&vdso_image_64,
 };
 EXPORT_SYMBOL(ve0);
 
@@ -562,6 +563,33 @@ unlock:
 	up_write(&ve->op_sem);
 }
 
+static int copy_vdso(struct ve_struct *ve)
+{
+	const struct vdso_image *vdso_src = &vdso_image_64;
+	struct vdso_image *vdso;
+	void *vdso_data;
+
+	if (ve->vdso_64)
+		return 0;
+
+	vdso = kmemdup(vdso_src, sizeof(*vdso), GFP_KERNEL);
+	if (!vdso)
+		return -ENOMEM;
+
+	vdso_data = alloc_pages_exact(vdso_src->size, GFP_KERNEL);
+	if (!vdso_data) {
+		kfree(vdso);
+		return -ENOMEM;
+	}
+
+	memcpy(vdso_data, vdso_src->data, vdso_src->size);
+
+	vdso->data = vdso_data;
+
+	ve->vdso_64 = vdso;
+	return 0;
+}
+
 static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_css)
 {
 	struct ve_struct *ve = &ve0;
@@ -595,12 +623,18 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	if (err)
 		goto err_log;
 
+	err = copy_vdso(ve);
+	if (err)
+		goto err_vdso;
+
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
 	kmapset_init_key(&ve->sysfs_perms_key);
 	return &ve->css;
 
+err_vdso:
+	ve_log_destroy(ve);
 err_log:
 	free_percpu(ve->sched_lat_ve.cur);
 err_lat:
@@ -639,12 +673,22 @@ static void ve_offline(struct cgroup_subsys_state *css)
 	ve->ve_name = NULL;
 }
 
+static void ve_free_vdso(struct ve_struct *ve)
+{
+	if (ve->vdso_64 == &vdso_image_64)
+		return;
+
+	free_pages_exact(ve->vdso_64->data, ve->vdso_64->size);
+	kfree(ve->vdso_64);
+}
+
 static void ve_destroy(struct cgroup_subsys_state *css)
 {
 	struct ve_struct *ve = css_to_ve(css);
 
 	kmapset_unlink(&ve->sysfs_perms_key, &sysfs_ve_perms_set);
 	ve_log_destroy(ve);
+	ve_free_vdso(ve);
 	free_percpu(ve->sched_lat_ve.cur);
 	kmem_cache_free(ve_cachep, ve);
 }
