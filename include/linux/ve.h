@@ -69,6 +69,17 @@ struct ve_struct {
 
 	struct vdso_image	*vdso_64;
 	struct vdso_image	*vdso_32;
+
+	struct list_head	devmnt_list;
+	struct mutex		devmnt_mutex;
+};
+
+struct ve_devmnt {
+	struct list_head	link;
+
+	dev_t                   dev;
+	char			*allowed_options;
+	char			*hidden_options; /* balloon_ino, etc. */
 };
 
 #define VE_MEMINFO_DEFAULT	1	/* default behaviour */
