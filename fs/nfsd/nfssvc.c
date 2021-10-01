@@ -678,6 +678,7 @@ int nfsd_create_serv(struct net *net)
 	if (serv == NULL)
 		return -ENOMEM;
 
+	serv->ve_virtualized = true;
 	serv->sv_maxconn = nn->max_connections;
 	error = svc_bind(serv, net);
 	if (error < 0) {
