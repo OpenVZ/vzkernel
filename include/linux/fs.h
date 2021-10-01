@@ -2620,6 +2620,8 @@ extern int super_setup_bdi(struct super_block *sb);
 
 extern int current_umask(void);
 
+extern int ve_devmnt_process(struct ve_struct *, dev_t, void **, int);
+
 extern void ihold(struct inode * inode);
 extern void iput(struct inode *);
 extern int generic_update_time(struct inode *, struct timespec64 *, int);
