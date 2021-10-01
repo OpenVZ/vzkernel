@@ -92,6 +92,7 @@ struct svc_serv {
 						 * entries in the svc_cb_list */
 	bool			sv_bc_enabled;	/* service uses backchannel */
 #endif /* CONFIG_SUNRPC_BACKCHANNEL */
+	bool			ve_virtualized;	/* kthreads start in ve */
 };
 
 /**
