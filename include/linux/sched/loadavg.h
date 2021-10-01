@@ -2,6 +2,8 @@
 #ifndef _LINUX_SCHED_LOADAVG_H
 #define _LINUX_SCHED_LOADAVG_H
 
+#include <linux/types.h>
+
 /*
  * These are the constant used to fake the fixed-point load-average
  * counting. Some notes:
@@ -43,6 +45,6 @@ extern unsigned long calc_load_n(unsigned long load, unsigned long exp,
 #define LOAD_INT(x) ((x) >> FSHIFT)
 #define LOAD_FRAC(x) LOAD_INT(((x) & (FIXED_1-1)) * 100)
 
-extern void calc_global_load(void);
+extern bool calc_global_load(void);
 
 #endif /* _LINUX_SCHED_LOADAVG_H */
