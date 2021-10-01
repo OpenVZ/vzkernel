@@ -15,6 +15,7 @@
 #include <linux/percpu.h>
 #include <linux/profile.h>
 #include <linux/sched.h>
+#include <linux/sched/loadavg.h>
 #include <linux/module.h>
 #include <trace/events/power.h>
 
@@ -85,15 +86,21 @@ int tick_is_oneshot_available(void)
 static void tick_periodic(int cpu)
 {
 	if (tick_do_timer_cpu == cpu) {
+		bool calc_ve;
+
 		raw_spin_lock(&jiffies_lock);
 		write_seqcount_begin(&jiffies_seq);
 
 		/* Keep track of the next tick event */
 		tick_next_period = ktime_add_ns(tick_next_period, TICK_NSEC);
 
-		do_timer(1);
+		calc_ve = do_timer(1);
 		write_seqcount_end(&jiffies_seq);
 		raw_spin_unlock(&jiffies_lock);
+
+		if (calc_ve)
+			calc_load_ve();
+
 		update_wall_time();
 	}
 
