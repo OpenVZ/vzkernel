@@ -506,7 +506,7 @@ static int ocfs2_xattr_set_acl(struct dentry *dentry, const char *name,
 		if (IS_ERR(acl))
 			return PTR_ERR(acl);
 		else if (acl) {
-			ret = posix_acl_valid(acl);
+			ret = posix_acl_valid(inode->i_sb->s_user_ns, acl);
 			if (ret)
 				goto cleanup;
 		}

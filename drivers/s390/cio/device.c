@@ -28,6 +28,7 @@
 #include <asm/param.h>		/* HZ */
 #include <asm/cmb.h>
 #include <asm/isc.h>
+#include <linux/dma-mapping.h>
 
 #include "chp.h"
 #include "cio.h"
@@ -739,6 +740,9 @@ ccw_device_release(struct device *dev)
 	struct ccw_device *cdev;
 
 	cdev = to_ccwdev(dev);
+	cio_gp_dma_free(cdev->private->dma_pool, cdev->private->dma_area,
+			sizeof(*cdev->private->dma_area));
+	cio_gp_dma_destroy(cdev->private->dma_pool, &cdev->dev);
 	/* Release reference of parent subchannel. */
 	put_device(cdev->dev.parent);
 	kfree(cdev->private);
@@ -748,15 +752,33 @@ ccw_device_release(struct device *dev)
 static struct ccw_device * io_subchannel_allocate_dev(struct subchannel *sch)
 {
 	struct ccw_device *cdev;
+	struct gen_pool *dma_pool;
 
 	cdev  = kzalloc(sizeof(*cdev), GFP_KERNEL);
-	if (cdev) {
-		cdev->private = kzalloc(sizeof(struct ccw_device_private),
-					GFP_KERNEL | GFP_DMA);
-		if (cdev->private)
-			return cdev;
-	}
+	if (!cdev)
+		goto err_cdev;
+	cdev->private = kzalloc(sizeof(struct ccw_device_private),
+				GFP_KERNEL | GFP_DMA);
+	if (!cdev->private)
+		goto err_priv;
+	cdev->dev.coherent_dma_mask = sch->dev.coherent_dma_mask;
+	cdev->dev.dma_mask = &cdev->dev.coherent_dma_mask;
+	dma_pool = cio_gp_dma_create(&cdev->dev, 1);
+	if (!dma_pool)
+		goto err_dma_pool;
+	cdev->private->dma_pool = dma_pool;
+	cdev->private->dma_area = cio_gp_dma_zalloc(dma_pool, &cdev->dev,
+					sizeof(*cdev->private->dma_area));
+	if (!cdev->private->dma_area)
+		goto err_dma_area;
+	return cdev;
+err_dma_area:
+	cio_gp_dma_destroy(dma_pool, &cdev->dev);
+err_dma_pool:
+	kfree(cdev->private);
+err_priv:
 	kfree(cdev);
+err_cdev:
 	return ERR_PTR(-ENOMEM);
 }
 
@@ -913,7 +935,7 @@ io_subchannel_recog_done(struct ccw_device *cdev)
 			wake_up(&ccw_device_init_wq);
 		break;
 	case DEV_STATE_OFFLINE:
-		/* 
+		/*
 		 * We can't register the device in interrupt context so
 		 * we schedule a work item.
 		 */
@@ -1107,6 +1129,14 @@ static int io_subchannel_probe(struct subchannel *sch)
 	if (!io_priv)
 		goto out_schedule;
 
+	io_priv->dma_area = dma_alloc_coherent(&sch->dev,
+				sizeof(*io_priv->dma_area),
+				&io_priv->dma_area_dma, GFP_KERNEL);
+	if (!io_priv->dma_area) {
+		kfree(io_priv);
+		goto out_schedule;
+	}
+
 	set_io_private(sch, io_priv);
 	css_schedule_eval(sch->schid);
 	return 0;
@@ -1136,6 +1166,8 @@ io_subchannel_remove (struct subchannel *sch)
 	spin_unlock_irq(cdev->ccwlock);
 	ccw_device_unregister(cdev);
 out_free:
+	dma_free_coherent(&sch->dev, sizeof(*io_priv->dma_area),
+			  io_priv->dma_area, io_priv->dma_area_dma);
 	kfree(io_priv);
 	sysfs_remove_group(&sch->dev.kobj, &io_subchannel_attr_group);
 	return 0;
@@ -1622,12 +1654,18 @@ struct ccw_device *ccw_device_probe_console(void)
 		return ERR_CAST(sch);
 
 	io_priv = kzalloc(sizeof(*io_priv), GFP_KERNEL | GFP_DMA);
-	if (!io_priv) {
-		put_device(&sch->dev);
-		return ERR_PTR(-ENOMEM);
-	}
+	if (!io_priv)
+		goto err_priv;
+	io_priv->dma_area = dma_alloc_coherent(&sch->dev,
+				sizeof(*io_priv->dma_area),
+				&io_priv->dma_area_dma, GFP_KERNEL);
+	if (!io_priv->dma_area)
+		goto err_dma_area;
 	cdev = io_subchannel_create_ccwdev(sch);
 	if (IS_ERR(cdev)) {
+		dma_free_coherent(&sch->dev, sizeof(*io_priv->dma_area),
+				  io_priv->dma_area, io_priv->dma_area_dma);
+		set_io_private(sch, NULL);
 		put_device(&sch->dev);
 		kfree(io_priv);
 		return cdev;
@@ -1635,6 +1673,8 @@ struct ccw_device *ccw_device_probe_console(void)
 	set_io_private(sch, io_priv);
 	ret = ccw_device_console_enable(cdev, sch);
 	if (ret) {
+		dma_free_coherent(&sch->dev, sizeof(*io_priv->dma_area),
+				  io_priv->dma_area, io_priv->dma_area_dma);
 		set_io_private(sch, NULL);
 		put_device(&sch->dev);
 		put_device(&cdev->dev);
@@ -1642,6 +1682,12 @@ struct ccw_device *ccw_device_probe_console(void)
 		return ERR_PTR(ret);
 	}
 	return cdev;
+
+err_dma_area:
+	kfree(io_priv);
+err_priv:
+	put_device(&sch->dev);
+	return ERR_PTR(-ENOMEM);
 }
 
 /**

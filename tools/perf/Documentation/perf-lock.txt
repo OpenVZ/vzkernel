@@ -42,13 +42,17 @@ COMMON OPTIONS
 --dump-raw-trace::
         Dump raw trace in ASCII.
 
+-f::
+--force::
+	Don't complan, do it.
+
 REPORT OPTIONS
 --------------
 
 -k::
 --key=<value>::
         Sorting key. Possible values: acquired (default), contended,
-        wait_total, wait_max, wait_min.
+	avg_wait, wait_total, wait_max, wait_min.
 
 INFO OPTIONS
 ------------

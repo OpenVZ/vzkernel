@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Belkin USB Serial Adapter Driver
  *
@@ -9,23 +10,17 @@
  *  and associated source files.  Please see the usb/serial files for
  *  individual credits and copyrights.
  *
- *	This program is free software; you can redistribute it and/or modify
- *	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation; either version 2 of the License, or
- *	(at your option) any later version.
- *
  * See Documentation/usb/usb-serial.txt for more information on using this
  * driver
  *
  * TODO:
- * -- Add true modem contol line query capability.  Currently we track the
+ * -- Add true modem control line query capability.  Currently we track the
  *    states reported by the interrupt and the states we request.
  * -- Add support for flush commands
  */
 
 #include <linux/kernel.h>
 #include <linux/errno.h>
-#include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>

@@ -281,6 +281,8 @@
 #include <linux/fcntl.h>
 #include <linux/blkdev.h>
 #include <linux/times.h>
+#include <scsi/scsi_cmnd.h>
+#include <scsi/scsi_eh.h>
 
 #include <asm/uaccess.h>
 
@@ -982,9 +984,6 @@ int cdrom_open(struct cdrom_device_info *cdi, struct block_device *bdev, fmode_t
 	int ret;
 
 	cdinfo(CD_OPEN, "entering cdrom_open\n"); 
-
-	/* open is event synchronization point, check events first */
-	check_disk_change(bdev);
 
 	/* if this was a O_NONBLOCK open and we should honor the flags,
 	 * do a quick open without drive/disc integrity checks. */
@@ -2145,6 +2144,7 @@ static int cdrom_read_cdda_bpc(struct cdrom_device_info *cdi, __u8 __user *ubuf,
 	struct bio *bio;
 	unsigned int len;
 	int nr, ret = 0;
+	char sense[SCSI_SENSE_BUFFERSIZE];
 
 	if (!q)
 		return -ENXIO;
@@ -2161,10 +2161,11 @@ static int cdrom_read_cdda_bpc(struct cdrom_device_info *cdi, __u8 __user *ubuf,
 		len = nr * CD_FRAMESIZE_RAW;
 
 		rq = blk_get_request(q, READ, GFP_KERNEL);
-		if (!rq) {
-			ret = -ENOMEM;
+		if (IS_ERR(rq)) {
+			ret = PTR_ERR(rq);
 			break;
 		}
+		blk_rq_set_block_pc(rq);
 
 		ret = blk_rq_map_user(q, rq, NULL, ubuf, len, GFP_KERNEL);
 		if (ret) {
@@ -2184,14 +2185,20 @@ static int cdrom_read_cdda_bpc(struct cdrom_device_info *cdi, __u8 __user *ubuf,
 		rq->cmd[9] = 0xf8;
 
 		rq->cmd_len = 12;
-		rq->cmd_type = REQ_TYPE_BLOCK_PC;
 		rq->timeout = 60 * HZ;
 		bio = rq->bio;
 
+		memset(sense, 0, sizeof(sense));
+		rq->sense = sense;
+		rq->sense_len = 0;
+
 		if (blk_execute_rq(q, cdi->disk, rq, 0)) {
-			struct request_sense *s = rq->sense;
+			struct scsi_sense_hdr sshdr;
+
 			ret = -EIO;
-			cdi->last_sense = s->sense_key;
+			if (scsi_normalize_sense(rq->sense, rq->sense_len,
+						&sshdr))
+				cdi->last_sense = sshdr.sense_key;
 		}
 
 		if (blk_rq_unmap_user(bio))
@@ -2338,7 +2345,7 @@ static int cdrom_ioctl_media_changed(struct cdrom_device_info *cdi,
 	if (!CDROM_CAN(CDC_SELECT_DISC) || arg == CDSL_CURRENT)
 		return media_changed(cdi, 1);
 
-	if ((unsigned int)arg >= cdi->capacity)
+	if (arg >= cdi->capacity)
 		return -EINVAL;
 
 	info = kmalloc(sizeof(*info), GFP_KERNEL);
@@ -2408,7 +2415,7 @@ static int cdrom_ioctl_select_disc(struct cdrom_device_info *cdi,
 		return -ENOSYS;
 
 	if (arg != CDSL_CURRENT && arg != CDSL_NONE) {
-		if ((int)arg >= cdi->capacity)
+		if (arg >= cdi->capacity)
 			return -EINVAL;
 	}
 
@@ -2509,7 +2516,7 @@ static int cdrom_ioctl_drive_status(struct cdrom_device_info *cdi,
 	if (!CDROM_CAN(CDC_SELECT_DISC) ||
 	    (arg == CDSL_CURRENT || arg == CDSL_NONE))
 		return cdi->ops->drive_status(cdi, CDSL_CURRENT);
-	if (((int)arg >= cdi->capacity))
+	if (arg >= cdi->capacity)
 		return -EINVAL;
 	return cdrom_slot_status(cdi, arg);
 }
@@ -2882,7 +2889,7 @@ static noinline int mmc_ioctl_cdrom_read_data(struct cdrom_device_info *cdi,
 	if (lba < 0)
 		return -EINVAL;
 
-	cgc->buffer = kmalloc(blocksize, GFP_KERNEL);
+	cgc->buffer = kzalloc(blocksize, GFP_KERNEL);
 	if (cgc->buffer == NULL)
 		return -ENOMEM;
 

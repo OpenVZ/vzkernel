@@ -106,8 +106,11 @@ struct nlmsgerr {
 #define NETLINK_PKTINFO		3
 #define NETLINK_BROADCAST_ERROR	4
 #define NETLINK_NO_ENOBUFS	5
+#ifndef __KERNEL__
 #define NETLINK_RX_RING		6
 #define NETLINK_TX_RING		7
+#endif
+#define NETLINK_LISTEN_ALL_NSID	8
 
 struct nl_pktinfo {
 	__u32	group;
@@ -130,6 +133,7 @@ struct nl_mmap_hdr {
 	__u32		nm_gid;
 };
 
+#ifndef __KERNEL__
 enum nl_mmap_status {
 	NL_MMAP_STATUS_UNUSED,
 	NL_MMAP_STATUS_RESERVED,
@@ -141,6 +145,7 @@ enum nl_mmap_status {
 #define NL_MMAP_MSG_ALIGNMENT		NLMSG_ALIGNTO
 #define NL_MMAP_MSG_ALIGN(sz)		__ALIGN_KERNEL(sz, NL_MMAP_MSG_ALIGNMENT)
 #define NL_MMAP_HDRLEN			NL_MMAP_MSG_ALIGN(sizeof(struct nl_mmap_hdr))
+#endif
 
 #define NET_MAJOR 36		/* Major 36 is reserved for networking 						*/
 
@@ -181,5 +186,22 @@ struct nlattr {
 #define NLA_ALIGN(len)		(((len) + NLA_ALIGNTO - 1) & ~(NLA_ALIGNTO - 1))
 #define NLA_HDRLEN		((int) NLA_ALIGN(sizeof(struct nlattr)))
 
+/* Generic 32 bitflags attribute content sent to the kernel.
+ *
+ * The value is a bitmap that defines the values being set
+ * The selector is a bitmask that defines which value is legit
+ *
+ * Examples:
+ *  value = 0x0, and selector = 0x1
+ *  implies we are selecting bit 1 and we want to set its value to 0.
+ *
+ *  value = 0x2, and selector = 0x2
+ *  implies we are selecting bit 2 and we want to set its value to 1.
+ *
+ */
+struct nla_bitfield32 {
+	__u32 value;
+	__u32 selector;
+};
 
 #endif /* _UAPI__LINUX_NETLINK_H */

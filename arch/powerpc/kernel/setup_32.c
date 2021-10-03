@@ -39,14 +39,10 @@
 #include <asm/udbg.h>
 #include <asm/mmu_context.h>
 
-#include "setup.h"
-
 #define DBG(fmt...)
 
 extern void bootx_init(unsigned long r4, unsigned long phys);
 
-int boot_cpuid = -1;
-EXPORT_SYMBOL_GPL(boot_cpuid);
 int boot_cpuid_phys;
 EXPORT_SYMBOL_GPL(boot_cpuid_phys);
 
@@ -294,9 +290,6 @@ void __init setup_arch(char **cmdline_p)
 	ucache_bsize = 0;
 	if (cpu_has_feature(CPU_FTR_UNIFIED_ID_CACHE))
 		ucache_bsize = icache_bsize = dcache_bsize;
-
-	/* reboot on panic */
-	panic_timeout = 180;
 
 	if (ppc_md.panic)
 		setup_panic();

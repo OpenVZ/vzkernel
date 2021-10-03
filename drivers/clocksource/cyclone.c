@@ -19,9 +19,9 @@
 int use_cyclone = 0;
 static void __iomem *cyclone_ptr;
 
-static cycle_t read_cyclone(struct clocksource *cs)
+static u64 read_cyclone(struct clocksource *cs)
 {
-	return (cycle_t)readl(cyclone_ptr);
+	return (u64)readl(cyclone_ptr);
 }
 
 static struct clocksource clocksource_cyclone = {

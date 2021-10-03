@@ -769,6 +769,7 @@ static int xc5000_set_params(struct dvb_frontend *fe)
 		if (!bw)
 			bw = 6000000;
 		/* fall to OFDM handling */
+		/* fall through */
 	case SYS_DMBTH:
 	case SYS_DVBT:
 	case SYS_DVBT2:
