@@ -995,6 +995,19 @@ static void do_sys_times(struct tms *tms)
 	tms->tms_cstime = nsec_to_clock_t(cstime);
 }
 
+#ifdef CONFIG_VE
+static u64 ve_relative_clock(void)
+{
+	u64 ve_now = ve_get_monotonic(get_exec_env());
+
+	/* VE not started, fallback to host time */
+	if (!ve_now)
+		ve_now = ktime_get_ns();
+
+	return nsec_to_clock_t(ve_now);
+}
+#endif
+
 SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
 {
 	if (tbuf) {
@@ -1004,8 +1017,13 @@ SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
 		if (copy_to_user(tbuf, &tmp, sizeof(struct tms)))
 			return -EFAULT;
 	}
+#ifndef CONFIG_VE
 	force_successful_syscall_return();
 	return (long) jiffies_64_to_clock_t(get_jiffies_64());
+#else
+	force_successful_syscall_return();
+	return (long) ve_relative_clock();
+#endif
 }
 
 #ifdef CONFIG_COMPAT
