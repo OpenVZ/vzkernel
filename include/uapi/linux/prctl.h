@@ -278,6 +278,14 @@ struct prctl_mm_map {
 # define PR_SME_VL_LEN_MASK		0xffff
 # define PR_SME_VL_INHERIT		(1 << 17) /* inherit across exec */
 
+/* Set task container related fields */
+#define PR_SET_TASK_CT_FIELDS			1000
+# define PR_TASK_CT_FIELDS_START_BOOTTIME	(1UL << 0)
+
+struct prctl_task_ct_fields {
+	__s64 start_boottime;
+};
+
 #define PR_SET_VMA		0x53564d41
 # define PR_SET_VMA_ANON_NAME		0
 
