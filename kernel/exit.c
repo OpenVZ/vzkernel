@@ -449,6 +449,20 @@ static void exit_mm(void)
 	if (!mm)
 		return;
 	sync_mm_rss(mm);
+
+#ifdef CONFIG_VE
+#define K(x) ((x) << (PAGE_SHIFT-10))
+	if (!ve_is_super(current->task_ve) &&
+	    test_tsk_thread_flag(current, TIF_MEMDIE))
+		ve_printk(VE_LOG, KERN_ERR "OOM killed process %d (%s) "
+			  "total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB\n",
+			  task_pid_vnr(current), current->comm,
+			  K(mm->total_vm),
+			  K(get_mm_counter(mm, MM_ANONPAGES)),
+			  K(get_mm_counter(mm, MM_FILEPAGES)));
+#undef K
+#endif
+
 	/*
 	 * Serialize with any possible pending coredump.
 	 * We must hold mmap_lock around checking core_state
