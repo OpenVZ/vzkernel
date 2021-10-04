@@ -214,6 +214,8 @@ struct ctl_path {
 	const char *procname;
 };
 
+extern int trusted_exec;
+
 #ifdef CONFIG_SYSCTL
 
 #define DECLARE_SYSCTL_BASE(_name, _table)				\
