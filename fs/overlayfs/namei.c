@@ -164,8 +164,11 @@ struct dentry *ovl_decode_real_fh(struct ovl_fs *ofs, struct ovl_fh *fh,
 	 * layer where file handle will be decoded.
 	 * In case of uuid=off option just make sure that stored uuid is null.
 	 */
-	if (ofs->config.uuid ? !uuid_equal(&fh->fb.uuid, &mnt->mnt_sb->s_uuid) :
-			      !uuid_is_null(&fh->fb.uuid))
+	/* Virtuozzo: Skip uuid is zero check when uuid=off is set for
+	 * compatibility with older containers which had overlayfs mounts
+	 * mounted without it and have non-zero uuid in fhandles.
+	 */
+	if (ofs->config.uuid && !uuid_equal(&fh->fb.uuid, &mnt->mnt_sb->s_uuid))
 		return NULL;
 
 	bytes = (fh->fb.len - offsetof(struct ovl_fb, fid));
@@ -432,8 +435,18 @@ static int ovl_verify_fh(struct ovl_fs *ofs, struct dentry *dentry,
 	if (IS_ERR(ofh))
 		return PTR_ERR(ofh);
 
-	if (fh->fb.len != ofh->fb.len || memcmp(&fh->fb, &ofh->fb, fh->fb.len))
+	if (fh->fb.len != ofh->fb.len) {
 		err = -ESTALE;
+	} else {
+		/*
+		 * Virtuozzo: Skip uuid comparison check when uuid=off is set
+		 * for compatibility.
+		 */
+		if (!ofs->config.uuid && !uuid_equal(&fh->fb.uuid, &ofh->fb.uuid))
+			ofh->fb.uuid = fh->fb.uuid;
+		if (memcmp(&fh->fb, &ofh->fb, fh->fb.len))
+			err = -ESTALE;
+	}
 
 	kfree(ofh);
 	return err;
