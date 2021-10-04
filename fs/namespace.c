@@ -194,9 +194,22 @@ int mnt_get_count(struct mount *mnt)
 #endif
 }
 
+static inline int ve_mount_allowed(void);
+static inline void ve_mount_nr_inc(struct mount *mnt);
+static inline void ve_mount_nr_dec(struct mount *mnt);
+
 static struct mount *alloc_vfsmnt(const char *name)
 {
-	struct mount *mnt = kmem_cache_zalloc(mnt_cache, GFP_KERNEL);
+	struct mount *mnt;
+
+	if (!ve_mount_allowed()) {
+		pr_warn_ratelimited(
+			"CT#%s reached the limit on mounts.\n",
+			ve_name(get_exec_env()));
+		return NULL;
+	}
+
+	mnt = kmem_cache_zalloc(mnt_cache, GFP_KERNEL);
 	if (mnt) {
 		int err;
 
@@ -234,6 +247,7 @@ static struct mount *alloc_vfsmnt(const char *name)
 		INIT_LIST_HEAD(&mnt->mnt_umounting);
 		INIT_HLIST_HEAD(&mnt->mnt_stuck_children);
 		mnt->mnt.mnt_userns = &init_user_ns;
+		ve_mount_nr_inc(mnt);
 	}
 	return mnt;
 
@@ -565,6 +579,7 @@ static void free_vfsmnt(struct mount *mnt)
 	mnt_userns = mnt_user_ns(&mnt->mnt);
 	if (mnt_userns != &init_user_ns)
 		put_user_ns(mnt_userns);
+	ve_mount_nr_dec(mnt);
 	kfree_const(mnt->mnt_devname);
 #ifdef CONFIG_SMP
 	free_percpu(mnt->mnt_pcp);
@@ -2741,7 +2756,38 @@ again:
 
 	return err;
 }
-#endif
+
+static inline int ve_mount_allowed(void)
+{
+	struct ve_struct *ve = get_exec_env();
+
+	return ve_is_super(ve) ||
+		atomic_read(&ve->mnt_nr) < (int)sysctl_ve_mount_nr;
+}
+
+static inline void ve_mount_nr_inc(struct mount *mnt)
+{
+	struct ve_struct *ve = get_exec_env();
+
+	mnt->ve_owner = get_ve(ve);
+	atomic_inc(&ve->mnt_nr);
+}
+
+static inline void ve_mount_nr_dec(struct mount *mnt)
+{
+	struct ve_struct *ve = mnt->ve_owner;
+
+	atomic_dec(&ve->mnt_nr);
+	put_ve(ve);
+	mnt->ve_owner = NULL;
+}
+
+#else /* CONFIG_VE */
+
+static inline int ve_mount_allowed(void) { return 1; }
+static inline void ve_mount_nr_inc(struct mount *mnt) { }
+static inline void ve_mount_nr_dec(struct mount *mnt) { }
+#endif /* CONFIG_VE */
 
 static int ve_prepare_mount_options(struct fs_context *fc, void *data)
 {
