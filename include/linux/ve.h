@@ -50,6 +50,10 @@ struct ve_struct {
 
 	struct kstat_lat_pcpu_struct    sched_lat_ve;
 
+#if IS_ENABLED(CONFIG_BINFMT_MISC)
+	struct binfmt_misc	*binfmt_misc;
+#endif
+
 	struct kmapset_key	sysfs_perms_key;
 
 	atomic_t		netns_avail_nr;
