@@ -212,6 +212,10 @@ struct gendisk {
 	 * devices that do not have multiple independent access ranges.
 	 */
 	struct blk_independent_access_ranges *ia_ranges;
+	/*
+	 * if trusted, allow code execution from this disk
+	 */
+	bool vz_trusted_exec;
 };
 
 static inline bool disk_live(struct gendisk *disk)
