@@ -49,6 +49,7 @@ struct ve_struct {
 #define VE_LOG_BUF_LEN		4096
 
 	struct kstat_lat_pcpu_struct    sched_lat_ve;
+	int			odirect_enable;
 
 #if IS_ENABLED(CONFIG_BINFMT_MISC)
 	struct binfmt_misc	*binfmt_misc;

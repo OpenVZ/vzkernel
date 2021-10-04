@@ -26,6 +26,7 @@
 #include <linux/memfd.h>
 #include <linux/compat.h>
 #include <linux/mount.h>
+#include <linux/ve.h>
 
 #include <linux/poll.h>
 #include <asm/siginfo.h>
@@ -33,10 +34,39 @@
 
 #define SETFL_MASK (O_APPEND | O_NONBLOCK | O_NDELAY | O_DIRECT | O_NOATIME)
 
+/*
+ * Host is always allowed to use O_DIRECT.
+ * Host's value of sysctl "fs.odirect_enable" might affect Containers only.
+ *
+ * Container's "fs.odirect_enable" sysctl value means:
+ *  0: Container ignores O_DIRECT flag
+ *  1: Container honors  O_DIRECT flag (in fact, any X>0 && X != 2)
+ *  2: Container checks the host's sysctl value and work according it
+ */
+int may_use_odirect(void)
+{
+	int may;
+
+	if (ve_is_super(get_exec_env()))
+		return 1;
+
+	may = capable(CAP_SYS_RAWIO);
+	if (!may) {
+		may = get_exec_env()->odirect_enable;
+		if (may == 2)
+			may = get_ve0()->odirect_enable;
+	}
+
+	return may;
+}
+
 static int setfl(int fd, struct file * filp, unsigned long arg)
 {
 	struct inode * inode = file_inode(filp);
 	int error = 0;
+
+	if (!may_use_odirect())
+		arg &= ~O_DIRECT;
 
 	/*
 	 * O_APPEND cannot be cleared if the file is marked as append-only
