@@ -196,7 +196,7 @@ static void timens_setup_vdso_data(struct vdso_data *vdata,
  * Protects possibly multiple offsets writers racing each other
  * and tasks entering the namespace.
  */
-static DEFINE_MUTEX(offset_lock);
+DEFINE_MUTEX(offset_lock);
 
 static void timens_set_vvar_page(struct task_struct *task,
 				struct time_namespace *ns)
