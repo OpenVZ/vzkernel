@@ -457,15 +457,6 @@ static int ve_start_container(struct ve_struct *ve)
 	if (task_active_pid_ns(tsk) != tsk->nsproxy->pid_ns_for_children)
 		return -ECHILD;
 
-	/*
-	 * Setup uptime for new containers only, if restored
-	 * the value won't be zero here already but setup from
-	 * cgroup write while resuming the container.
-	 */
-	if (ve->start_time == 0) {
-		ve->start_time = tsk->start_time;
-		ve->start_boottime = tsk->start_boottime;
-	}
 	/* The value is wrong, but it is never compared to process
 	 * start times */
 	ve->start_jiffies = get_jiffies_64();
