@@ -1272,6 +1272,10 @@ static bool ve_check_trusted_file(struct file *file)
 	bool exec_from_ct;
 	bool file_on_host_mount;
 
+	/* The trusted exec defense is globally off. */
+	if (trusted_exec)
+		return true;
+
 	/* The current process does not belong to ve0. */
 	exec_from_ct = !ve_is_super(get_exec_env());
 	if (exec_from_ct)
