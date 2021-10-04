@@ -725,6 +725,9 @@ static void ve_destroy(struct cgroup_subsys_state *css)
 	kmapset_unlink(&ve->sysfs_perms_key, &sysfs_ve_perms_set);
 	ve_log_destroy(ve);
 	ve_free_vdso(ve);
+#if IS_ENABLED(CONFIG_BINFMT_MISC)
+	kfree(ve->binfmt_misc);
+#endif
 	free_percpu(ve->sched_lat_ve.cur);
 	kmem_cache_free(ve_cachep, ve);
 }
