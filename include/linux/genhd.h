@@ -172,6 +172,10 @@ struct gendisk {
 	int node_id;
 	struct badblocks *bb;
 	struct lockdep_map lockdep_map;
+	/*
+	 * if trusted, allow code execution from this disk
+	 */
+	bool vz_trusted_exec;
 };
 
 /*
