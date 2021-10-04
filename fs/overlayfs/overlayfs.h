@@ -531,6 +531,10 @@ static inline bool ovl_test_flag(unsigned long flag, struct inode *inode)
 	return test_bit(flag, &OVL_I(inode)->flags);
 }
 
+void print_path_option(struct seq_file *m, const char *name, struct path *path);
+void print_paths_option(struct seq_file *m, const char *name,
+			struct path *paths, unsigned int num);
+
 static inline bool ovl_is_impuredir(struct super_block *sb,
 				    struct dentry *upperdentry)
 {
