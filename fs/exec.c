@@ -65,6 +65,7 @@
 #include <linux/vmalloc.h>
 #include <linux/io_uring.h>
 #include <linux/syscall_user_dispatch.h>
+#include <linux/ve.h>
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -136,10 +137,9 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 		goto out;
 
 	file = do_filp_open(AT_FDCWD, tmp, &uselib_flags);
-	putname(tmp);
 	error = PTR_ERR(file);
 	if (IS_ERR(file))
-		goto out;
+		goto put;
 
 	/*
 	 * may_open() has already checked for this, so it should be
@@ -150,6 +150,12 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 	if (WARN_ON_ONCE(!S_ISREG(file_inode(file)->i_mode) ||
 			 path_noexec(&file->f_path)))
 		goto exit;
+
+	if (!ve_check_trusted_exec(file, tmp))
+		goto exit;
+
+	putname(tmp);
+	tmp = NULL;
 
 	fsnotify_open(file);
 
@@ -171,6 +177,9 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 	read_unlock(&binfmt_lock);
 exit:
 	fput(file);
+put:
+	if (tmp)
+		putname(tmp);
 out:
   	return error;
 }
@@ -927,6 +936,9 @@ static struct file *do_open_execat(int fd, struct filename *name, int flags)
 	err = -EACCES;
 	if (WARN_ON_ONCE(!S_ISREG(file_inode(file)->i_mode) ||
 			 path_noexec(&file->f_path)))
+		goto exit;
+
+	if (!ve_check_trusted_exec(file, name))
 		goto exit;
 
 	err = deny_write_access(file);
