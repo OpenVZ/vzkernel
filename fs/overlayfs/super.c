@@ -43,6 +43,11 @@ module_param_named(index, ovl_index_def, bool, 0644);
 MODULE_PARM_DESC(index,
 		 "Default to on or off for the inodes index feature");
 
+static bool ovl_uuid_def = !IS_ENABLED(CONFIG_OVERLAY_FS_UUID_OFF);
+module_param_named(uuid, ovl_uuid_def, bool, 0644);
+MODULE_PARM_DESC(uuid,
+		 "Default to on or off for the inodes uuid feature");
+
 static bool ovl_nfs_export_def = IS_ENABLED(CONFIG_OVERLAY_FS_NFS_EXPORT);
 module_param_named(nfs_export, ovl_nfs_export_def, bool, 0644);
 MODULE_PARM_DESC(nfs_export,
@@ -403,8 +408,8 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 		seq_printf(m, ",redirect_dir=%s", ofs->config.redirect_mode);
 	if (ofs->config.index != ovl_index_def)
 		seq_printf(m, ",index=%s", ofs->config.index ? "on" : "off");
-	if (!ofs->config.uuid)
-		seq_puts(m, ",uuid=off");
+	if (ofs->config.uuid != ovl_uuid_def)
+		seq_printf(m, ",uuid=%s", ofs->config.uuid ? "on" : "off");
 	if (ofs->config.nfs_export != ovl_nfs_export_def)
 		seq_printf(m, ",nfs_export=%s", ofs->config.nfs_export ?
 						"on" : "off");
@@ -2022,7 +2027,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	ofs->share_whiteout = true;
 
 	ofs->config.index = ovl_index_def;
-	ofs->config.uuid = true;
+	ofs->config.uuid = ovl_uuid_def;
 	ofs->config.nfs_export = ovl_nfs_export_def;
 	ofs->config.xino = ovl_xino_def();
 	ofs->config.metacopy = ovl_metacopy_def;
