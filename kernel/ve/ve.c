@@ -24,6 +24,7 @@
 #include <linux/kthread.h>
 #include <linux/nsproxy.h>
 #include <linux/fs_struct.h>
+#include <linux/time_namespace.h>
 #include <linux/blkdev.h>
 
 #include <uapi/linux/vzcalluser.h>
@@ -1049,6 +1050,56 @@ up_opsem:
 	return ret ? ret : nbytes;
 }
 
+enum {
+	VE_CF_CLOCK_MONOTONIC,
+	VE_CF_CLOCK_BOOTBASED,
+};
+
+static int ve_ts_read(struct seq_file *sf, void *v)
+{
+	struct ve_struct *ve = css_to_ve(seq_css(sf));
+	struct nsproxy *ve_ns;
+	struct time_namespace *time_ns;
+	struct timespec64 tp = ns_to_timespec64(0);
+	struct timespec64 *offset = NULL;
+
+	rcu_read_lock();
+	ve_ns = rcu_dereference(ve->ve_ns);
+	if (!ve_ns) {
+		rcu_read_unlock();
+		goto out;
+	}
+
+	time_ns = get_time_ns(ve_ns->time_ns);
+	rcu_read_unlock();
+
+	switch (seq_cft(sf)->private) {
+		case VE_CF_CLOCK_MONOTONIC:
+			ktime_get_ts64(&tp);
+			offset = &time_ns->offsets.monotonic;
+			break;
+		case VE_CF_CLOCK_BOOTBASED:
+			ktime_get_boottime_ts64(&tp);
+			offset = &time_ns->offsets.boottime;
+			break;
+		default:
+			WARN_ON_ONCE(1);
+			goto out_ns;
+	}
+
+	/*
+	 * Note: ve.clock_* fields should report ve-relative time, but timens
+	 * offsets instead report the offset between ns-relative time and host
+	 * time, so we need to print offset+now to show ve-relative time.
+	 */
+	tp = timespec64_add(tp, *offset);
+out_ns:
+	put_time_ns(time_ns);
+out:
+	seq_printf(sf, "%lld %ld", tp.tv_sec, tp.tv_nsec);
+	return 0;
+}
+
 static int ve_mount_opts_read(struct seq_file *sf, void *v)
 {
 	struct ve_struct *ve = css_to_ve(seq_css(sf));
@@ -1215,6 +1266,18 @@ static struct cftype ve_cftypes[] = {
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.read_u64		= ve_reatures_read,
 		.write_u64		= ve_reatures_write,
+	},
+	{
+		.name			= "clock_monotonic",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.seq_show		= ve_ts_read,
+		.private		= VE_CF_CLOCK_MONOTONIC,
+	},
+	{
+		.name			= "clock_bootbased",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.seq_show		= ve_ts_read,
+		.private		= VE_CF_CLOCK_BOOTBASED,
 	},
 	{
 		.name			= "netns_max_nr",
