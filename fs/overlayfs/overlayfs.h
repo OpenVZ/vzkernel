@@ -355,6 +355,9 @@ static inline bool ovl_test_flag(unsigned long flag, struct inode *inode)
 void print_path_option(struct seq_file *m, const char *name, struct path *path);
 void print_paths_option(struct seq_file *m, const char *name,
 			struct path *paths, unsigned int num);
+void print_mnt_id_option(struct seq_file *m, const char *name, struct path *path);
+void print_mnt_ids_option(struct seq_file *m, const char *name,
+			struct path *paths, unsigned int num);
 
 static inline bool ovl_is_impuredir(struct super_block *sb,
 				    struct dentry *dentry)
