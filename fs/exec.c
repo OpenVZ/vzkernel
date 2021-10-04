@@ -67,6 +67,7 @@
 #include <linux/syscall_user_dispatch.h>
 #include <linux/time_namespace.h>
 #include <linux/coredump.h>
+#include <linux/sysctl.h>
 #include <linux/ve.h>
 
 #include <linux/uaccess.h>
@@ -81,6 +82,14 @@
 static int bprm_creds_from_file(struct linux_binprm *bprm);
 
 int suid_dumpable = 0;
+
+int trusted_exec;
+static int __init set_trusted_exec(char *str)
+{
+	trusted_exec = 1;
+	return 1;
+}
+__setup("trusted_exec", set_trusted_exec);
 
 static LIST_HEAD(formats);
 static DEFINE_RWLOCK(binfmt_lock);
@@ -2162,6 +2171,15 @@ static struct ctl_table fs_exec_sysctls[] = {
 		.proc_handler	= proc_dointvec_minmax_coredump,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_TWO,
+	},
+	{
+		.procname	= "trusted_exec",
+		.data		= &trusted_exec,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
 	},
 	{ }
 };
