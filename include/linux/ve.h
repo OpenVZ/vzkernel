@@ -113,6 +113,29 @@ static inline struct ve_struct *css_to_ve(struct cgroup_subsys_state *css)
 
 extern struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id);
 
+static inline u64 ve_get_monotonic(struct ve_struct *ve)
+{
+	struct timespec64 tp = ns_to_timespec64(0);
+	struct time_namespace *time_ns;
+	struct nsproxy *ve_ns;
+
+	rcu_read_lock();
+	ve_ns = rcu_dereference(ve->ve_ns);
+	if (!ve_ns) {
+		rcu_read_unlock();
+		goto out;
+	}
+
+	time_ns = get_time_ns(ve_ns->time_ns);
+	rcu_read_unlock();
+
+	ktime_get_ts64(&tp);
+	tp = timespec64_add(tp, time_ns->offsets.monotonic);
+	put_time_ns(time_ns);
+out:
+	return timespec64_to_ns(&tp);
+}
+
 static u64 ve_get_uptime(struct ve_struct *ve)
 {
 	struct timespec64 tp = ns_to_timespec64(0);
