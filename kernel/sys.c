@@ -2260,6 +2260,26 @@ static int prctl_get_tid_address(struct task_struct *me, int __user * __user *ti
 }
 #endif
 
+static int prctl_set_task_ct_fields(struct task_struct *t, unsigned long arg,
+				    unsigned long flags)
+{
+	struct prctl_task_ct_fields params;
+#ifdef CONFIG_VE
+	struct ve_struct *ve = t->task_ve;
+
+	if (!ve_is_super(ve) && !ve->is_pseudosuper)
+		return -EPERM;
+#endif
+
+	if (copy_from_user(&params, (const void __user *)arg, sizeof(params)))
+		return -EFAULT;
+
+	if (flags & PR_TASK_CT_FIELDS_START_BOOTTIME)
+		t->start_boottime_ct = (u64)params.start_boottime;
+
+	return 0;
+}
+
 static int propagate_has_child_subreaper(struct task_struct *p, void *data)
 {
 	/*
@@ -2632,6 +2652,10 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 #endif
 	case PR_SET_VMA:
 		error = prctl_set_vma(arg2, arg3, arg4, arg5);
+		break;
+
+	case PR_SET_TASK_CT_FIELDS:
+		error = prctl_set_task_ct_fields(me, arg2, arg3);
 		break;
 	default:
 		error = -EINVAL;
