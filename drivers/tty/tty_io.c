@@ -3037,7 +3037,8 @@ void __do_SAK(struct tty_struct *tty)
 #ifdef TTY_SOFT_SAK
 	tty_hangup(tty);
 #else
-	struct task_struct *g, *p;
+	struct task_struct *p, *t;
+	struct files_struct *files;
 	struct pid *session;
 	int		i;
 	unsigned long flags;
@@ -3062,22 +3063,34 @@ void __do_SAK(struct tty_struct *tty)
 	} while_each_pid_task(session, PIDTYPE_SID, p);
 
 	/* Now kill any processes that happen to have the tty open */
-	do_each_thread(g, p) {
+	for_each_process(p) {
 		if (p->signal->tty == tty) {
 			tty_notice(tty, "SAK: killed process %d (%s): by controlling tty\n",
 				   task_pid_nr(p), p->comm);
-			group_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_SID);
-			continue;
+			goto kill;
 		}
-		task_lock(p);
-		i = iterate_fd(p->files, 0, this_tty, tty);
-		if (i != 0) {
-			tty_notice(tty, "SAK: killed process %d (%s): by fd#%d\n",
-				   task_pid_nr(p), p->comm, i - 1);
-			group_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_SID);
+
+		files = NULL;
+		for_each_thread(p, t) {
+			if (t->files == files) /* racy but we do not care */
+				continue;
+
+			task_lock(t);
+			files = t->files;
+			i = iterate_fd(files, 0, this_tty, tty);
+			task_unlock(t);
+
+			if (i != 0) {
+				dev_notice(tty->dev, "SAK: killed process %d (%s): by fd#%d\n",
+					   task_pid_nr(p), p->comm, i - 1);
+				goto kill;
+			}
 		}
-		task_unlock(p);
-	} while_each_thread(g, p);
+
+		continue;
+kill:
+		group_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_SID);
+	}
 	read_unlock(&tasklist_lock);
 	put_pid(session);
 #endif
