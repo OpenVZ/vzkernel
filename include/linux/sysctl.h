@@ -187,6 +187,8 @@ struct ctl_path {
 	const char *procname;
 };
 
+extern int trusted_exec;
+
 #ifdef CONFIG_SYSCTL
 
 void proc_sys_poll_notify(struct ctl_table_poll *poll);
