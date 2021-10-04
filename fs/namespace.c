@@ -2851,6 +2851,62 @@ out:
 	return ret;
 }
 
+static int do_set_group(struct path *path, const char *sibling_name)
+{
+	struct ve_struct *ve = get_exec_env();
+	struct mount *sibling, *mnt;
+	struct path sibling_path;
+	int err;
+
+	if (!ve_is_super(ve) && !ve->is_pseudosuper)
+		return -EPERM;
+
+	if (!sibling_name || !*sibling_name)
+		return -EINVAL;
+
+	if (path->dentry != path->mnt->mnt_root)
+		return -EINVAL;
+
+	err = kern_path(sibling_name, LOOKUP_FOLLOW, &sibling_path);
+	if (err)
+		return err;
+
+	err = -EINVAL;
+	sibling = real_mount(sibling_path.mnt);
+	mnt = real_mount(path->mnt);
+
+	namespace_lock();
+
+	err = -EPERM;
+	if (!sibling->mnt_ns ||
+	    !ns_capable(sibling->mnt_ns->user_ns, CAP_SYS_ADMIN))
+		goto out_unlock;
+
+	err = -EINVAL;
+	if (sibling->mnt.mnt_sb != mnt->mnt.mnt_sb)
+		goto out_unlock;
+
+	if (IS_MNT_SHARED(mnt) || IS_MNT_SLAVE(mnt))
+		goto out_unlock;
+
+	if (IS_MNT_SLAVE(sibling)) {
+		list_add(&mnt->mnt_slave, &sibling->mnt_slave);
+		mnt->mnt_master = sibling->mnt_master;
+	}
+
+	if (IS_MNT_SHARED(sibling)) {
+		mnt->mnt_group_id = sibling->mnt_group_id;
+		list_add(&mnt->mnt_share, &sibling->mnt_share);
+		set_mnt_shared(mnt);
+	}
+
+	err = 0;
+out_unlock:
+	namespace_unlock();
+	path_put(&sibling_path);
+	return err;
+}
+
 static int do_move_mount(struct path *old_path, struct path *new_path)
 {
 	struct mnt_namespace *ns;
@@ -3398,6 +3454,8 @@ int path_mount(const char *dev_name, struct path *path,
 		return do_change_type(path, flags);
 	if (flags & MS_MOVE)
 		return do_move_mount_old(path, dev_name);
+	if (flags & MS_SET_GROUP)
+		return do_set_group(path, dev_name);
 
 	return do_new_mount(path, type_page, sb_flags, mnt_flags, dev_name,
 			    data_page);
