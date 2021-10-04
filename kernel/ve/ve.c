@@ -1308,6 +1308,27 @@ static bool ve_check_trusted_file(struct file *file)
 #define SIGSEGV_RATELIMIT_INTERVAL	(24 * 60 * 60 * HZ)
 #define SIGSEGV_RATELIMIT_BURST		3
 
+bool ve_check_trusted_mmap(struct file *file)
+{
+	const char *filename = "";
+
+	static DEFINE_RATELIMIT_STATE(sigsegv_rs, SIGSEGV_RATELIMIT_INTERVAL,
+						  SIGSEGV_RATELIMIT_BURST);
+	if (ve_check_trusted_file(file))
+		return true;
+
+	if (!__ratelimit(&sigsegv_rs))
+		return false;
+
+	if (file->f_path.dentry)
+		filename = file->f_path.dentry->d_name.name;
+
+	WARN(1, "VE0 %s tried to map code from file '%s' from VEX\n",
+			current->comm, filename);
+	force_sigsegv(SIGSEGV);
+	return false;
+}
+
 /*
  * We don't want a VE0-privileged user intentionally or by mistake
  * to execute files of container, these files are untrusted.
