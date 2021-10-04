@@ -35,8 +35,6 @@ struct ve_struct {
 	struct rw_semaphore	op_sem;
 
 	/* per VE CPU stats*/
-	u64			start_time;		/* monotonic time */
-	u64			start_boottime;		/* boot based time */
 	u64			start_jiffies;		/* Deprecated */
 
 	struct nsproxy __rcu	*ve_ns;
