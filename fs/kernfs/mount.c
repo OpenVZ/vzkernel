@@ -328,6 +328,7 @@ int kernfs_get_tree(struct fs_context *fc)
 	info->root = kfc->root;
 	info->ns = kfc->ns_tag;
 	INIT_LIST_HEAD(&info->node);
+	info->ve = get_exec_env();
 
 	fc->s_fs_info = info;
 	sb = sget_fc(fc, kernfs_test_super, kernfs_set_super);
