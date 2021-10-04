@@ -173,6 +173,10 @@ struct gendisk {
 	struct badblocks *bb;
 	struct lockdep_map lockdep_map;
 	u64 diskseq;
+	/*
+	 * if trusted, allow code execution from this disk
+	 */
+	bool vz_trusted_exec;
 };
 
 static inline bool disk_live(struct gendisk *disk)
