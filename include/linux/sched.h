@@ -1054,6 +1054,12 @@ struct task_struct {
 	/* Boot based time in nsecs: */
 	u64				start_boottime;
 
+	/*
+	 * This is a Container-side copy of 'start_boottime' field
+	 * shown from inside of a Container and modified by host.
+	 */
+	u64				start_boottime_ct;
+
 	/* MM fault and swap info: this can arguably be seen as either mm-specific or thread-specific: */
 	unsigned long			min_flt;
 	unsigned long			maj_flt;

@@ -96,6 +96,7 @@
 #include <linux/scs.h>
 #include <linux/io_uring.h>
 #include <linux/bpf.h>
+#include <linux/ve.h>
 #include <linux/sched/mm.h>
 
 #include <asm/pgalloc.h>
@@ -1983,6 +1984,9 @@ static __latent_entropy struct task_struct *copy_process(
 	struct file *pidfile = NULL;
 	u64 clone_flags = args->flags;
 	struct nsproxy *nsp = current->nsproxy;
+#ifdef CONFIG_VE
+	struct ve_struct *ve = get_exec_env();
+#endif
 
 	/*
 	 * Don't allow sharing the root directory with processes in a different
@@ -2361,6 +2365,13 @@ static __latent_entropy struct task_struct *copy_process(
 
 	p->start_time = ktime_get_ns();
 	p->start_boottime = ktime_get_boottime_ns();
+
+	p->start_boottime_ct = 0;
+
+#ifdef CONFIG_VE
+	if (!ve_is_super(ve))
+		ve_set_task_start_time(ve, p);
+#endif
 
 	/*
 	 * Make it visible to the rest of the system, but dont wake it up yet.

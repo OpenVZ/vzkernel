@@ -269,4 +269,12 @@ struct prctl_mm_map {
 # define PR_SCHED_CORE_SHARE_FROM	3 /* pull core_sched cookie to pid */
 # define PR_SCHED_CORE_MAX		4
 
+/* Set task container related fields */
+#define PR_SET_TASK_CT_FIELDS			1000
+#define PR_TASK_CT_FIELDS_START_BOOTTIME	(1UL << 0)
+
+struct prctl_task_ct_fields {
+	__s64 start_boottime;
+};
+
 #endif /* _LINUX_PRCTL_H */
