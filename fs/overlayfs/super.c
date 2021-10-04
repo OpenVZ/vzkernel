@@ -58,6 +58,10 @@ static bool ovl_dyn_path_opts = IS_ENABLED(CONFIG_OVERLAY_FS_DYNAMIC_RESOLVE_PAT
 module_param_named(dyn_path_opts, ovl_dyn_path_opts, bool, 0644);
 MODULE_PARM_DESC(dyn_path_opts, "dyn_path_opts feature enabled");
 
+static bool ovl_mnt_id_path_opts = IS_ENABLED(CONFIG_OVERLAY_FS_PATH_OPTIONS_MNT_ID);
+module_param_named(mnt_id_path_opts, ovl_mnt_id_path_opts, bool, 0644);
+MODULE_PARM_DESC(mnt_id_path_opts, "mnt_id_path_opts feature enabled");
+
 static bool ovl_metacopy_def = IS_ENABLED(CONFIG_OVERLAY_FS_METACOPY);
 module_param_named(metacopy, ovl_metacopy_def, bool, 0644);
 MODULE_PARM_DESC(metacopy,
@@ -389,6 +393,18 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 			seq_show_option(m, "workdir", ofs->config.workdir);
 		}
 	}
+
+	if (ovl_mnt_id_path_opts) {
+		print_mnt_ids_option(m, "lowerdir_mnt_id", oe->lowerpaths,
+				     ovl_numlower(oe));
+		/*
+		 * We don't need to show mnt_id for workdir because it
+		 * on the same mount as upperdir.
+		 */
+		if (ofs->config.upperdir)
+			print_mnt_id_option(m, "upperdir_mnt_id", &ofs->upperpath);
+	}
+
 	if (ofs->config.default_permissions)
 		seq_puts(m, ",default_permissions");
 	if (strcmp(ofs->config.redirect_mode, ovl_redirect_mode_def()) != 0)
