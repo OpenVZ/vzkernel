@@ -182,6 +182,8 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 /* File supports async nowait buffered writes */
 #define FMODE_BUF_WASYNC	((__force fmode_t)0x80000000)
 
+extern int may_use_odirect(void);
+
 /*
  * Attribute flags.  These should be or-ed together to figure out what
  * has been changed!
