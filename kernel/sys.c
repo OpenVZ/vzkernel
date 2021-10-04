@@ -2612,6 +2612,7 @@ SYSCALL_DEFINE3(getcpu, unsigned __user *, cpup, unsigned __user *, nodep,
 	return err ? -EFAULT : 0;
 }
 
+extern void si_meminfo_ve(struct sysinfo *si, struct ve_struct *ve);
 extern int get_avenrun_tg(struct task_group *tg, unsigned long *loads,
 			  unsigned long offset, int shift);
 
@@ -2624,25 +2625,28 @@ static int do_sysinfo(struct sysinfo *info)
 	unsigned long mem_total, sav_total;
 	unsigned int mem_unit, bitcount;
 	struct timespec64 tp;
+	struct ve_struct *ve;
 
 	memset(info, 0, sizeof(struct sysinfo));
-
-	ktime_get_boottime_ts64(&tp);
-	timens_add_boottime(&tp);
-	info->uptime = tp.tv_sec + (tp.tv_nsec ? 1 : 0);
-
-	get_avenrun(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
-
-	info->procs = nr_threads;
 
 	si_meminfo(info);
 	si_swapinfo(info);
 
-	if (!ve_is_super(get_exec_env())) {
+	ktime_get_boottime_ts64(&tp);
+	timens_add_boottime(&tp);
+
+	ve = get_exec_env();
+	if (ve_is_super(ve)) {
+		get_avenrun(info->loads, 0, SI_LOAD_SHIFT - FSHIFT);
+		info->procs = nr_threads;
+	} else {
+		si_meminfo_ve(info, ve);
 		/* does not fail on non-VE0 task group */
 		(void)get_avenrun_tg(NULL, info->loads,
 				     0, SI_LOAD_SHIFT - FSHIFT);
+		info->procs = nr_threads_ve(ve);
 	}
+	info->uptime = tp.tv_sec + (tp.tv_nsec ? 1 : 0);
 
 	/*
 	 * If the sum of all the available memory (i.e. ram + swap)
