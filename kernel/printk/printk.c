@@ -3741,7 +3741,7 @@ int ve_log_init(struct ve_struct *ve)
 		return -ENOMEM;
 
 	ret = setup_log_buf_ve(log, ve, 0);
-	if (!ret) {
+	if (ret) {
 		kfree(log);
 		return ret;
 	}
