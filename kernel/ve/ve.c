@@ -1297,17 +1297,27 @@ static bool ve_check_trusted_file(struct file *file)
 	return false;
 }
 
+/* Send signal only 3 times a day so that coredumps don't overflow the disk */
+#define SIGSEGV_RATELIMIT_INTERVAL	(24 * 60 * 60 * HZ)
+#define SIGSEGV_RATELIMIT_BURST		3
+
 /*
  * We don't want a VE0-privileged user intentionally or by mistake
  * to execute files of container, these files are untrusted.
  */
 bool ve_check_trusted_exec(struct file *file, struct filename *name)
 {
+	static DEFINE_RATELIMIT_STATE(sigsegv_rs, SIGSEGV_RATELIMIT_INTERVAL,
+						  SIGSEGV_RATELIMIT_BURST);
 	if (ve_check_trusted_file(file))
 		return true;
 
-	WARN_ONCE(1, "VE0's %s tried to execute untrusted file %s from VEX\n",
-		     current->comm, name->name);
+	if (!__ratelimit(&sigsegv_rs))
+		return false;
+
+	WARN(1, "VE0's %s tried to execute untrusted file %s from VEX\n",
+		current->comm, name->name);
+	force_sigsegv(SIGSEGV);
 	return false;
 }
 
