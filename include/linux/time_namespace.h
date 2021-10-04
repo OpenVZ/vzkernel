@@ -28,6 +28,8 @@ struct time_namespace {
 
 extern struct time_namespace init_time_ns;
 
+extern struct mutex offset_lock;
+
 #ifdef CONFIG_TIME_NS
 extern int vdso_join_timens(struct task_struct *task,
 			    struct time_namespace *ns);
