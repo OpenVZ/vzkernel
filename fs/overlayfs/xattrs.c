@@ -109,7 +109,7 @@ static bool ovl_can_list(struct super_block *sb, const char *s)
 		return true;
 
 	/* list other trusted for superuser only */
-	return ns_capable_noaudit(&init_user_ns, CAP_SYS_ADMIN);
+	return ve_capable_noaudit(CAP_SYS_ADMIN);
 }
 
 ssize_t ovl_listxattr(struct dentry *dentry, char *list, size_t size)
