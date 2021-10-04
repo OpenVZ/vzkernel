@@ -26,6 +26,13 @@ static struct ctl_table fs_shared_sysctls[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_MAXOLDUID,
 	},
+	{
+		.procname	= "odirect_enable",
+		.data		= &ve0.odirect_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= proc_dointvec_virtual,
+	},
 	{ }
 };
 
