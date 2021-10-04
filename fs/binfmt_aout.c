@@ -200,12 +200,12 @@ static int load_aout_binary(struct linux_binprm * bprm)
 		if ((ex.a_text & 0xfff || ex.a_data & 0xfff) &&
 		    (N_MAGIC(ex) != NMAGIC) && printk_ratelimit())
 		{
-			printk(KERN_NOTICE "executable not page aligned\n");
+			ve_printk(VE_LOG, KERN_NOTICE "executable not page aligned\n");
 		}
 
 		if ((fd_offset & ~PAGE_MASK) != 0 && printk_ratelimit())
 		{
-			printk(KERN_WARNING 
+			ve_printk(VE_LOG, KERN_WARNING
 			       "fd_offset is not page aligned. Please convert program: %pD\n",
 			       bprm->file);
 		}
@@ -292,7 +292,7 @@ static int load_aout_library(struct file *file)
 	if ((N_TXTOFF(ex) & ~PAGE_MASK) != 0) {
 		if (printk_ratelimit())
 		{
-			printk(KERN_WARNING 
+			ve_printk(VE_LOG, KERN_WARNING
 			       "N_TXTOFF is not page aligned. Please convert library: %pD\n",
 			       file);
 		}
