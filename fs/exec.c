@@ -66,6 +66,7 @@
 #include <linux/io_uring.h>
 #include <linux/syscall_user_dispatch.h>
 #include <linux/time_namespace.h>
+#include <linux/sysctl.h>
 #include <linux/ve.h>
 
 #include <linux/uaccess.h>
