@@ -66,6 +66,8 @@ struct ve_struct {
 
 	unsigned long		meminfo_val;
 
+	atomic_t		mnt_nr; /* number of present VE mounts */
+
 	struct kthread_worker	*kthreadd_worker;
 	struct task_struct	*kthreadd_task;
 
@@ -93,6 +95,8 @@ struct ve_devmnt {
 extern int nr_ve;
 
 #define NETNS_MAX_NR_DEFAULT	256	/* number of net-namespaces per-VE */
+
+extern unsigned int sysctl_ve_mount_nr;
 
 #ifdef CONFIG_VE
 extern struct ve_struct *get_ve(struct ve_struct *ve);
