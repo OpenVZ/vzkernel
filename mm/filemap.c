@@ -716,14 +716,21 @@ static int __add_to_page_cache_locked(struct page *page,
 	int huge = PageHuge(page);
 	struct mem_cgroup *memcg;
 	int error;
+	gfp_t gfp_mask_memcg = gfp_mask;
 
 	VM_BUG_ON(!PageLocked(page));
 	VM_BUG_ON(PageSwapBacked(page));
 
 	gfp_mask = mapping_gfp_constraint(mapping, gfp_mask);
+	/*
+	 * mapping_gfp_constraint() could have dropped __GFP_NOFAIL -
+	 * restore it for mem_cgroup_try_charge_cache() if it was present.
+	 */
+	if (gfp_mask_memcg & __GFP_NOFAIL)
+		gfp_mask_memcg = gfp_mask | __GFP_NOFAIL;
 
 	if (!huge) {
-		error = mem_cgroup_try_charge_cache(page, current->mm, gfp_mask,
+		error = mem_cgroup_try_charge_cache(page, current->mm, gfp_mask_memcg,
 					&memcg);
 		if (error)
 			return error;
