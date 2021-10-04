@@ -26,6 +26,8 @@
 #include <linux/fs_context.h>
 #include <linux/syscalls.h>
 #include <linux/fs.h>
+#include <linux/ve.h>
+
 #include <linux/uaccess.h>
 
 #include "internal.h"
@@ -70,11 +72,7 @@ struct binfmt_misc {
 	int entry_count;
 };
 
-struct binfmt_misc binfmt_data = {
-	.entries	= LIST_HEAD_INIT(binfmt_data.entries),
-	.enabled	= 1,
-	.entries_lock	= __RW_LOCK_UNLOCKED(binfmt_data.entries_lock),
-};
+#define BINFMT_MISC(sb)		(((struct ve_struct *)(sb)->s_fs_info)->binfmt_misc)
 
 /*
  * Max length of the register string.  Determined by:
@@ -143,7 +141,7 @@ static int load_misc_binary(struct linux_binprm *bprm)
 	Node *fmt;
 	struct file *interp_file = NULL;
 	int retval;
-	struct binfmt_misc *bm_data = &binfmt_data;
+	struct binfmt_misc *bm_data = get_exec_env()->binfmt_misc;
 
 	retval = -ENOEXEC;
 	if (!bm_data || !bm_data->enabled)
@@ -617,7 +615,7 @@ static ssize_t bm_entry_write(struct file *file, const char __user *buffer,
 	Node *e = file_inode(file)->i_private;
 	int res = parse_command(buffer, count);
 	struct super_block *sb = file->f_path.dentry->d_sb;
-	struct binfmt_misc *bm_data = sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
 
 	switch (res) {
 	case 1:
@@ -659,8 +657,8 @@ static ssize_t bm_register_write(struct file *file, const char __user *buffer,
 	Node *e;
 	struct inode *inode;
 	struct super_block *sb = file_inode(file)->i_sb;
-	struct binfmt_misc *bm_data = sb->s_fs_info;
 	struct dentry *root = sb->s_root, *dentry;
+	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
 	int err = 0;
 	struct file *f = NULL;
 
@@ -737,7 +735,7 @@ static const struct file_operations bm_register_operations = {
 static ssize_t
 bm_status_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
-	struct binfmt_misc *bm_data = file->f_path.dentry->d_sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(file->f_path.dentry->d_sb);
 	char *s = bm_data->enabled ? "enabled\n" : "disabled\n";
 
 	return simple_read_from_buffer(buf, nbytes, ppos, s, strlen(s));
@@ -746,7 +744,7 @@ bm_status_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 static ssize_t bm_status_write(struct file *file, const char __user *buffer,
 		size_t count, loff_t *ppos)
 {
-	struct binfmt_misc *bm_data = file->f_path.dentry->d_sb->s_fs_info;
+	struct binfmt_misc *bm_data = BINFMT_MISC(file->f_path.dentry->d_sb);
 	int res = parse_command(buffer, count);
 	struct dentry *root;
 
@@ -785,9 +783,17 @@ static const struct file_operations bm_status_operations = {
 
 /* Superblock handling */
 
+static void bm_put_super(struct super_block *sb)
+{
+	struct binfmt_misc *bm_data = BINFMT_MISC(sb);
+
+	bm_data->enabled = 0;
+}
+
 static const struct super_operations s_ops = {
 	.statfs		= simple_statfs,
 	.evict_inode	= bm_evict_inode,
+	.put_super	= bm_put_super,
 };
 
 static int bm_fill_super(struct super_block *sb, struct fs_context *fc)
@@ -799,20 +805,79 @@ static int bm_fill_super(struct super_block *sb, struct fs_context *fc)
 		/* last one */ {""}
 	};
 
+	struct ve_struct *ve = get_exec_env();
+	struct binfmt_misc *bm_data;
+
+	/*
+	 * bm_get_tree()
+	 *  get_tree_keyed(fc, bm_fill_super, get_ve(ve))
+	 *   fc->s_fs_info = current VE
+	 *   vfs_get_super(fc, vfs_get_keyed_super, bm_fill_super)
+	 *    sb = sget_fc(fc, test, set_anon_super_fc)
+	 *    if (!sb->s_root) {
+	 *		err = bm_fill_super(sb, fc);
+	 *
+	 * => we should never get here with initialized ve->binfmt_misc.
+	 */
+	if (WARN_ON_ONCE(ve->binfmt_misc))
+		return -EEXIST;
+
+	bm_data = kzalloc(sizeof(struct binfmt_misc), GFP_KERNEL);
+	if (!bm_data)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&bm_data->entries);
+	rwlock_init(&bm_data->entries_lock);
+
 	err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
-	if (!err) {
-		sb->s_op = &s_ops;
-		sb->s_fs_info = &binfmt_data;
+	if (err) {
+		kfree(bm_data);
+		return err;
 	}
-	return err;
+
+	sb->s_op = &s_ops;
+
+	ve->binfmt_misc = bm_data;
+	bm_data->enabled = 1;
+
+	return 0;
 }
 
 static int bm_get_tree(struct fs_context *fc)
 {
-	return get_tree_single(fc, bm_fill_super);
+	struct ve_struct *ve = get_exec_env();
+
+	/*
+	 * We need one binfmt_misc superblock per VE,
+	 * use get_tree_keyed() helper to get vfs_tree.
+	 *
+	 * It allows us to find sb by key (in our case ve is the key),
+	 * and if it doesn't exists creates new.
+	 *
+	 * Important: we take ve refcnt here. It will be put
+	 * in one of two places:
+	 * 1. bm_free_fc()
+	 * on error path (wrong mnt opt provided for instance)
+	 * if sb exists and initialized already
+	 * 2. bm_kill_sb() when sb refcnt becomes zero (last mount umounted)
+	 */
+	return get_tree_keyed(fc, bm_fill_super, get_ve(ve));
 }
 
+static void bm_free_fc(struct fs_context *fc)
+{
+	/*
+	 * fc->s_fs_info will be NULL if bm_fill_super() was called and
+	 * no error occured (it means that new sb was allocated successfuly)
+	 * see fs/super.c sget_fc() helper
+	 */
+	if (fc->s_fs_info)
+		put_ve(fc->s_fs_info);
+}
+
+
 static const struct fs_context_operations bm_context_ops = {
+	.free		= bm_free_fc,
 	.get_tree	= bm_get_tree,
 };
 
@@ -820,6 +885,14 @@ static int bm_init_fs_context(struct fs_context *fc)
 {
 	fc->ops = &bm_context_ops;
 	return 0;
+}
+
+static void bm_kill_sb(struct super_block *sb)
+{
+	struct ve_struct *ve = sb->s_fs_info;
+
+	kill_litter_super(sb);
+	put_ve(ve);
 }
 
 static struct linux_binfmt misc_format = {
@@ -831,7 +904,8 @@ static struct file_system_type bm_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "binfmt_misc",
 	.init_fs_context = bm_init_fs_context,
-	.kill_sb	= kill_litter_super,
+	.kill_sb	= bm_kill_sb,
+	.fs_flags	= FS_VIRTUALIZED | FS_VE_MOUNT,
 };
 MODULE_ALIAS_FS("binfmt_misc");
 
