@@ -1090,12 +1090,49 @@ static ssize_t diskseq_show(struct device *dev,
 	return sprintf(buf, "%llu\n", disk->diskseq);
 }
 
+static ssize_t disk_vz_trusted_exec_store(struct device *dev,
+					struct device_attribute *attr,
+					const char *buf, size_t len)
+{
+	int n, value;
+	char newline;
+
+	struct gendisk *disk = dev_to_disk(dev);
+
+	n = sscanf(buf, "%d%c", &value, &newline);
+	switch (n) {
+	case 2:
+		if (newline != '\n')
+			return -EINVAL;
+		fallthrough;
+	case 1:
+		if (value != 1 && value != 0)
+			return -EINVAL;
+		break;
+	default:
+		return -EINVAL;
+	}
+	disk->vz_trusted_exec = value;
+	return len;
+}
+
+static ssize_t disk_vz_trusted_exec_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	struct gendisk *disk = dev_to_disk(dev);
+
+	return sprintf(buf, "%d\n", disk->vz_trusted_exec ? 1 : 0);
+}
+
 static DEVICE_ATTR(range, 0444, disk_range_show, NULL);
 static DEVICE_ATTR(ext_range, 0444, disk_ext_range_show, NULL);
 static DEVICE_ATTR(removable, 0444, disk_removable_show, NULL);
 static DEVICE_ATTR(hidden, 0444, disk_hidden_show, NULL);
 static DEVICE_ATTR(ro, 0444, disk_ro_show, NULL);
 static DEVICE_ATTR(size, 0444, part_size_show, NULL);
+static DEVICE_ATTR(vz_trusted_exec, 0644, disk_vz_trusted_exec_show,
+	disk_vz_trusted_exec_store);
 static DEVICE_ATTR(alignment_offset, 0444, disk_alignment_offset_show, NULL);
 static DEVICE_ATTR(discard_alignment, 0444, disk_discard_alignment_show, NULL);
 static DEVICE_ATTR(capability, 0444, disk_capability_show, NULL);
@@ -1149,6 +1186,7 @@ static struct attribute *disk_attrs[] = {
 	&dev_attr_events_async.attr,
 	&dev_attr_events_poll_msecs.attr,
 	&dev_attr_diskseq.attr,
+	&dev_attr_vz_trusted_exec.attr,
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 	&dev_attr_fail.attr,
 #endif
@@ -1431,6 +1469,7 @@ struct gendisk *__alloc_disk_node(struct request_queue *q, int node_id,
 	if (blkcg_init_disk(disk))
 		goto out_erase_part0;
 
+	disk->vz_trusted_exec = true;
 	rand_initialize_disk(disk);
 	disk_to_dev(disk)->class = &block_class;
 	disk_to_dev(disk)->type = &disk_type;
