@@ -1049,9 +1049,11 @@ static ssize_t write_sysrq_trigger(struct file *file, const char __user *buf,
 			return -EFAULT;
 		if (ve_is_super(cur))
 			__handle_sysrq(c, false);
-		else if (pnum--)
+		else if (pnum > 0) {
 			printk("SysRq: CT#%s sent '%c' magic key.\n",
 				cur->ve_name, c);
+			pnum--;
+		}
 	}
 
 	return count;
