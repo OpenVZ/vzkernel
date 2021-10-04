@@ -23,6 +23,7 @@
 #include <linux/processor.h>
 #include <linux/sizes.h>
 #include <linux/compat.h>
+#include <linux/ve.h>
 
 #include <linux/uaccess.h>
 
@@ -511,6 +512,10 @@ unsigned long vm_mmap_pgoff(struct file *file, unsigned long addr,
 	struct mm_struct *mm = current->mm;
 	unsigned long populate;
 	LIST_HEAD(uf);
+
+	if (!(flag & MAP_ANONYMOUS) && (prot & PROT_EXEC) &&
+		!ve_check_trusted_mmap(file))
+		return -EBADF;
 
 	ret = security_mmap_file(file, prot, flag);
 	if (!ret) {
