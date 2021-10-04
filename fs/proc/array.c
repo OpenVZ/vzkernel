@@ -588,6 +588,11 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	start_time =
 		nsec_to_clock_t(timens_add_boottime_ns(task->start_boottime));
 
+#ifdef CONFIG_VE
+	if (!is_super)
+		start_time = nsec_to_clock_t(task->start_boottime_ct);
+#endif
+
 	seq_put_decimal_ull(m, "", pid_nr_ns(pid, ns));
 	seq_puts(m, " (");
 	proc_task_name(m, task, false);
