@@ -721,6 +721,7 @@ enum {
 #define EXT4_IOC_CLEAR_ES_CACHE		_IO('f', 40)
 #define EXT4_IOC_GETSTATE		_IOW('f', 41, __u32)
 #define EXT4_IOC_GET_ES_CACHE		_IOWR('f', 42, struct fiemap)
+#define EXT4_IOC_OPEN_BALLOON		_IO('f', 42)
 #define EXT4_IOC_CHECKPOINT		_IOW('f', 43, __u32)
 
 #define EXT4_IOC_SHUTDOWN _IOR ('X', 125, __u32)
