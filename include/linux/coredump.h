@@ -15,7 +15,6 @@ struct core_vma_metadata {
 };
 
 extern int core_uses_pid;
-extern char core_pattern[];
 extern unsigned int core_pipe_limit;
 
 /*

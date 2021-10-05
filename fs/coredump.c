@@ -41,6 +41,7 @@
 #include <linux/fs.h>
 #include <linux/path.h>
 #include <linux/timekeeping.h>
+#include <linux/ve.h>
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -54,7 +55,6 @@
 
 int core_uses_pid;
 unsigned int core_pipe_limit;
-char core_pattern[CORENAME_MAX_SIZE] = "core";
 static int core_name_size = CORENAME_MAX_SIZE;
 
 struct core_name {
@@ -197,7 +197,8 @@ static int format_corename(struct core_name *cn, struct coredump_params *cprm,
 			   size_t **argv, int *argc)
 {
 	const struct cred *cred = current_cred();
-	const char *pat_ptr = core_pattern;
+	struct ve_struct *ve = get_exec_env();
+	const char *pat_ptr = ve->core_pattern;
 	int ispipe = (*pat_ptr == '|');
 	bool was_space = false;
 	int pid_in_pattern = 0;
@@ -210,7 +211,7 @@ static int format_corename(struct core_name *cn, struct coredump_params *cprm,
 	cn->corename[0] = '\0';
 
 	if (ispipe) {
-		int argvs = sizeof(core_pattern) / 2;
+		int argvs = sizeof(ve->core_pattern) / 2;
 		(*argv) = kmalloc_array(argvs, sizeof(**argv), GFP_KERNEL);
 		if (!(*argv))
 			return -ENOMEM;
@@ -696,8 +697,9 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 						helper_argv, NULL, GFP_KERNEL,
 						umh_pipe_setup, NULL, &cprm);
 		if (sub_info)
-			retval = call_usermodehelper_exec(sub_info,
-							  UMH_WAIT_EXEC);
+			retval = call_usermodehelper_exec_ve(get_exec_env(),
+							     sub_info,
+							     UMH_WAIT_EXEC);
 
 		kfree(helper_argv);
 		if (retval) {
