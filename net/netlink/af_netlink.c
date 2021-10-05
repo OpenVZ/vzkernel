@@ -1959,14 +1959,17 @@ static int netlink_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 	struct netlink_sock *nlk = nlk_sk(sk);
 	size_t copied;
 	struct sk_buff *skb, *data_skb;
+	int skip;
 	int err, ret;
 
 	if (flags & MSG_OOB)
 		return -EOPNOTSUPP;
 
 	copied = 0;
+	skip = sk_peek_offset(sk, flags);
 
-	skb = skb_recv_datagram(sk, flags, &err);
+	skb = __skb_recv_datagram(sk, &sk->sk_receive_queue, flags,
+				  &skip, &err);
 	if (skb == NULL)
 		goto out;
 
@@ -1994,14 +1997,20 @@ static int netlink_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 	nlk->max_recvmsg_len = min_t(size_t, nlk->max_recvmsg_len,
 				     SKB_WITH_OVERHEAD(32768));
 
-	copied = data_skb->len;
+	copied = data_skb->len - skip;
 	if (len < copied) {
 		msg->msg_flags |= MSG_TRUNC;
 		copied = len;
 	}
 
 	skb_reset_transport_header(data_skb);
-	err = skb_copy_datagram_msg(data_skb, 0, msg, copied);
+	err = skb_copy_datagram_msg(data_skb, skip, msg, copied);
+	if (!err) {
+		if (flags & MSG_PEEK)
+			sk_peek_offset_fwd(sk, copied);
+		else
+			sk_peek_offset_bwd(sk, skb->len);
+	}
 
 	if (msg->msg_name) {
 		DECLARE_SOCKADDR(struct sockaddr_nl *, addr, msg->msg_name);
@@ -2020,7 +2029,7 @@ static int netlink_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 	memset(&scm, 0, sizeof(scm));
 	scm.creds = *NETLINK_CREDS(skb);
 	if (flags & MSG_TRUNC)
-		copied = data_skb->len;
+		copied = data_skb->len - skip;
 
 	skb_free_datagram(sk, skb);
 
@@ -2805,6 +2814,13 @@ int netlink_unregister_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL(netlink_unregister_notifier);
 
+static int netlink_set_peek_off(struct sock *sk, int val)
+{
+	sk->sk_peek_off = val;
+
+	return 0;
+}
+
 static const struct proto_ops netlink_ops = {
 	.family =	PF_NETLINK,
 	.owner =	THIS_MODULE,
@@ -2824,6 +2840,7 @@ static const struct proto_ops netlink_ops = {
 	.recvmsg =	netlink_recvmsg,
 	.mmap =		sock_no_mmap,
 	.sendpage =	sock_no_sendpage,
+	.set_peek_off = netlink_set_peek_off,
 };
 
 static const struct net_proto_family netlink_family_ops = {
