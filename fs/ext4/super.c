@@ -1679,6 +1679,7 @@ enum {
 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
 	Opt_max_dir_size_kb, Opt_nojournal_checksum, Opt_nombcache,
 	Opt_no_prefetch_block_bitmaps, Opt_mb_optimize_scan,
+	Opt_balloon_ino,
 #ifdef CONFIG_EXT4_DEBUG
 	Opt_fc_debug_max_replay, Opt_fc_debug_force
 #endif
@@ -1786,6 +1787,7 @@ static const match_table_t tokens = {
 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
 	{Opt_removed, "noreservation"}, /* mount option from ext2/3 */
 	{Opt_removed, "journal=%u"},	/* mount option from ext2/3 */
+	{Opt_balloon_ino, "balloon_ino=%u"},
 	{Opt_err, NULL},
 };
 
@@ -2009,6 +2011,7 @@ static const struct mount_opts {
 	 MOPT_SET | MOPT_2 | MOPT_EXT4_ONLY},
 	{Opt_fc_debug_max_replay, 0, MOPT_GTE0},
 #endif
+	{Opt_balloon_ino, 0, 0},
 	{Opt_err, 0, 0}
 };
 
@@ -2093,7 +2096,8 @@ struct ext4_parsed_options {
 
 static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 			    substring_t *args, struct ext4_parsed_options *parsed_opts,
-			    int is_remount)
+
+			    unsigned long *balloon_ino, int is_remount)
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	const struct mount_opts *m;
@@ -2300,6 +2304,8 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 	} else if (token == Opt_test_dummy_encryption) {
 		return ext4_set_test_dummy_encryption(sb, opt, &args[0],
 						      is_remount);
+	} else if (token == Opt_balloon_ino) {
+		*balloon_ino = arg;
 	} else if (m->flags & MOPT_DATAJ) {
 		if (is_remount) {
 			if (!sbi->s_journal)
@@ -2420,6 +2426,7 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 
 static int parse_options(char *options, struct super_block *sb,
 			 struct ext4_parsed_options *ret_opts,
+			 unsigned long *balloon_ino,
 			 int is_remount)
 {
 	struct ext4_sb_info __maybe_unused *sbi = EXT4_SB(sb);
@@ -2440,7 +2447,7 @@ static int parse_options(char *options, struct super_block *sb,
 		args[0].to = args[0].from = NULL;
 		token = match_token(p, tokens, args);
 		if (handle_mount_opt(sb, p, token, args, ret_opts,
-				     is_remount) < 0)
+				     balloon_ino, is_remount) < 0)
 			return 0;
 	}
 #ifdef CONFIG_QUOTA
@@ -2628,6 +2635,10 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
 	} else if (test_opt2(sb, DAX_INODE)) {
 		SEQ_OPTS_PUTS("dax=inode");
 	}
+
+	if (sbi->s_balloon_ino)
+		SEQ_OPTS_PRINT("balloon_ino=%ld", sbi->s_balloon_ino->i_ino);
+
 	ext4_show_quota_options(seq, sb);
 	return 0;
 }
@@ -4014,6 +4025,54 @@ static const char *ext4_quota_mode(struct super_block *sb)
 #endif
 }
 
+static void ext4_load_balloon(struct super_block *sb, unsigned long ino)
+{
+	struct inode *inode;
+	struct ext4_sb_info *sbi;
+
+	sbi = EXT4_SB(sb);
+
+	if (!ino) {
+		/* FIXME locking */
+		if (sbi->s_balloon_ino) {
+			iput(sbi->s_balloon_ino);
+			sbi->s_balloon_ino = NULL;
+		}
+
+		return;
+	}
+
+	if (ino < EXT4_FIRST_INO(sb)) {
+		ext4_msg(sb, KERN_WARNING, "bad balloon inode specified");
+		return;
+	}
+
+	inode = ext4_iget(sb, ino, EXT4_IGET_NORMAL);
+	if (IS_ERR(inode)) {
+		ext4_msg(sb, KERN_WARNING, "can't load balloon inode (%ld)", PTR_ERR(inode));
+		return;
+	}
+
+	if (!S_ISREG(inode->i_mode)) {
+		iput(inode);
+		ext4_msg(sb, KERN_WARNING, "balloon should be regular");
+		return;
+	}
+
+	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL)) {
+		iput(inode);
+		ext4_msg(sb, KERN_WARNING, "balloon should support extents");
+		return;
+	}
+
+	/* FIXME - locking */
+	if (sbi->s_balloon_ino)
+		iput(sbi->s_balloon_ino);
+	sbi->s_balloon_ino = inode;
+	ext4_msg(sb, KERN_INFO, "loaded balloon from %ld (%llu blocks)",
+			inode->i_ino, inode->i_blocks);
+}
+
 static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct dax_device *dax_dev = fs_dax_get_by_bdev(sb->s_bdev);
@@ -4036,6 +4095,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	int needs_recovery, has_huge_files;
 	__u64 blocks_count;
 	int err = 0;
+	unsigned long balloon_ino = 0;
 	ext4_group_t first_not_zeroed;
 	struct ext4_parsed_options parsed_opts;
 
@@ -4288,7 +4348,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 					      GFP_KERNEL);
 		if (!s_mount_opts)
 			goto failed_mount;
-		if (!parse_options(s_mount_opts, sb, &parsed_opts, 0)) {
+		if (!parse_options(s_mount_opts, sb, &parsed_opts,
+				   &balloon_ino, 0)) {
 			ext4_msg(sb, KERN_WARNING,
 				 "failed to parse options in superblock: %s",
 				 s_mount_opts);
@@ -4296,7 +4357,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		kfree(s_mount_opts);
 	}
 	sbi->s_def_mount_opt = sbi->s_mount_opt;
-	if (!parse_options((char *) data, sb, &parsed_opts, 0))
+	if (!parse_options((char *) data, sb, &parsed_opts,
+			   &balloon_ino, 0))
 		goto failed_mount;
 
 #ifdef CONFIG_UNICODE
@@ -5115,6 +5177,8 @@ no_journal:
 				 "the device does not support discard");
 	}
 
+	ext4_load_balloon(sb, balloon_ino);
+
 	if (___ratelimit(&ext4_mount_msg_ratelimit, "EXT4-fs mount"))
 		ext4_msg(sb, KERN_INFO, "mounted filesystem with%s. "
 			 "Opts: %.*s%s%s. Quota mode: %s.", descr,
@@ -5854,6 +5918,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 #endif
 	char *orig_data = kstrdup(data, GFP_KERNEL);
 	struct ext4_parsed_options parsed_opts;
+	unsigned long balloon_ino = -1;
 
 	parsed_opts.journal_ioprio = DEFAULT_JOURNAL_IOPRIO;
 	parsed_opts.journal_devnum = 0;
@@ -5898,7 +5963,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 	vfs_flags = SB_LAZYTIME | SB_I_VERSION;
 	sb->s_flags = (sb->s_flags & ~vfs_flags) | (*flags & vfs_flags);
 
-	if (!parse_options(data, sb, &parsed_opts, 1)) {
+	if (!parse_options(data, sb, &parsed_opts, &balloon_ino, 1)) {
 		err = -EINVAL;
 		goto restore_opts;
 	}
@@ -6085,6 +6150,9 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 		if (err)
 			goto restore_opts;
 	}
+
+	if (balloon_ino != -1)
+		ext4_load_balloon(sb, balloon_ino);
 
 #ifdef CONFIG_QUOTA
 	/* Release old quota file names */
@@ -6699,11 +6767,22 @@ static inline int ext3_feature_set_ok(struct super_block *sb)
 	return 1;
 }
 
+static void ext4_kill_sb(struct super_block *sb)
+{
+	struct ext4_sb_info *sbi;
+
+	sbi = EXT4_SB(sb);
+	if (sbi && sbi->s_balloon_ino)
+		iput(sbi->s_balloon_ino);
+
+	kill_block_super(sb);
+}
+
 static struct file_system_type ext4_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "ext4",
 	.mount		= ext4_mount,
-	.kill_sb	= kill_block_super,
+	.kill_sb	= ext4_kill_sb,
 	.fs_flags	= FS_REQUIRES_DEV | FS_ALLOW_IDMAP | FS_VIRTUALIZED,
 };
 MODULE_ALIAS_FS("ext4");
