@@ -6867,6 +6867,22 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
 	    sb_has_quota_limits_enabled(sb, PRJQUOTA))
 		ext4_statfs_project(sb, EXT4_I(dentry->d_inode)->i_projid, buf);
 #endif
+
+	if (sbi->s_balloon_ino) {
+		struct ext4_inode_info *ei;
+		blkcnt_t balloon_blocks;
+
+		balloon_blocks = sbi->s_balloon_ino->i_blocks;
+		ei = EXT4_I(sbi->s_balloon_ino);
+		spin_lock(&ei->i_block_reservation_lock);
+		balloon_blocks += ei->i_reserved_data_blocks;
+		spin_unlock(&ei->i_block_reservation_lock);
+
+		BUG_ON(sbi->s_balloon_ino->i_blkbits < 9);
+		buf->f_blocks -= balloon_blocks >>
+				 (sbi->s_balloon_ino->i_blkbits - 9);
+	}
+
 	return 0;
 }
 
