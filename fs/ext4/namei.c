@@ -1869,6 +1869,11 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
 			iput(inode);
 			return ERR_PTR(-EPERM);
 		}
+		if (!IS_ERR(inode) &&
+		    inode == EXT4_SB(inode->i_sb)->s_balloon_ino) {
+			iput(inode);
+			return ERR_PTR(-EPERM);
+		}
 	}
 
 #ifdef CONFIG_UNICODE
@@ -3320,6 +3325,10 @@ static int ext4_unlink(struct inode *dir, struct dentry *dentry)
 	retval = dquot_initialize(d_inode(dentry));
 	if (retval)
 		goto out_trace;
+        if (d_inode(dentry) == EXT4_SB(dir->i_sb)->s_balloon_ino) {
+		retval = -EPERM;
+                goto out_trace;
+	}
 
 	retval = __ext4_unlink(dir, &dentry->d_name, d_inode(dentry), dentry);
 #ifdef CONFIG_UNICODE
