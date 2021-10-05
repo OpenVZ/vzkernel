@@ -18,6 +18,7 @@
 #include <linux/vzstat.h>
 #include <asm/vdso.h>
 #include <linux/time_namespace.h>
+#include <linux/binfmts.h>
 
 struct nsproxy;
 struct veip_struct;
@@ -72,6 +73,10 @@ struct ve_struct {
 	unsigned long		meminfo_val;
 
 	atomic_t		mnt_nr; /* number of present VE mounts */
+
+#ifdef CONFIG_COREDUMP
+	char			core_pattern[CORENAME_MAX_SIZE];
+#endif
 
 	struct kthread_worker	*kthreadd_worker;
 	struct task_struct	*kthreadd_task;
