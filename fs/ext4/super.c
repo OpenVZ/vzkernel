@@ -1595,6 +1595,7 @@ enum {
 	Opt_max_dir_size_kb, Opt_nojournal_checksum, Opt_nombcache,
 	Opt_no_prefetch_block_bitmaps, Opt_mb_optimize_scan,
 	Opt_errors, Opt_data, Opt_data_err, Opt_jqfmt, Opt_dax_type,
+	Opt_balloon_ino,
 #ifdef CONFIG_EXT4_DEBUG
 	Opt_fc_debug_max_replay, Opt_fc_debug_force
 #endif
@@ -1743,6 +1744,7 @@ static const struct fs_parameter_spec ext4_param_specs[] = {
 	fsparam_flag	("reservation",		Opt_removed),	/* mount option from ext2/3 */
 	fsparam_flag	("noreservation",	Opt_removed),	/* mount option from ext2/3 */
 	fsparam_u32	("journal",		Opt_removed),	/* mount option from ext2/3 */
+	fsparam_u32	("balloon_ino",		Opt_balloon_ino),
 	{}
 };
 
@@ -1843,6 +1845,7 @@ static const struct mount_opts {
 	{Opt_fc_debug_force, EXT4_MOUNT2_JOURNAL_FAST_COMMIT,
 	 MOPT_SET | MOPT_2 | MOPT_EXT4_ONLY},
 #endif
+	{Opt_balloon_ino, 0, 0},
 	{Opt_err, 0, 0}
 };
 
@@ -1888,6 +1891,7 @@ ext4_sb_read_encoding(const struct ext4_super_block *es)
 #define EXT4_SPEC_s_fc_debug_max_replay		(1 << 17)
 #define EXT4_SPEC_s_sb_block			(1 << 18)
 #define EXT4_SPEC_mb_optimize_scan		(1 << 19)
+#define EXT4_SPEC_balloon_ino			(1 << 20)
 
 struct ext4_fs_context {
 	char		*s_qf_names[EXT4_MAXQUOTAS];
@@ -1913,6 +1917,7 @@ struct ext4_fs_context {
 	unsigned int	mask_s_mount_opt2;
 	unsigned long	vals_s_mount_flags;
 	unsigned long	mask_s_mount_flags;
+	unsigned long	balloon_ino;
 	unsigned int	opt_flags;	/* MOPT flags */
 	unsigned int	spec;
 	u32		s_max_batch_time;
@@ -2338,6 +2343,10 @@ static int ext4_parse_param(struct fs_context *fc, struct fs_parameter *param)
 				 "mb_optimize_scan should be set to 0 or 1.");
 			return -EINVAL;
 		}
+		return 0;
+	case Opt_balloon_ino:
+		ctx->balloon_ino = result.uint_32;
+		ctx->spec |= EXT4_SPEC_balloon_ino;
 		return 0;
 	}
 
@@ -3016,6 +3025,9 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
 			test_opt2(sb, MB_OPTIMIZE_SCAN)) {
 		SEQ_OPTS_PUTS("mb_optimize_scan=1");
 	}
+
+	if (sbi->s_balloon_ino)
+		SEQ_OPTS_PRINT("balloon_ino=%ld", sbi->s_balloon_ino->i_ino);
 
 	ext4_show_quota_options(seq, sb);
 	return 0;
@@ -4309,6 +4321,54 @@ err_out:
 	return NULL;
 }
 
+static void ext4_load_balloon(struct super_block *sb, unsigned long ino)
+{
+	struct inode *inode;
+	struct ext4_sb_info *sbi;
+
+	sbi = EXT4_SB(sb);
+
+	if (!ino) {
+		/* FIXME locking */
+		if (sbi->s_balloon_ino) {
+			iput(sbi->s_balloon_ino);
+			sbi->s_balloon_ino = NULL;
+		}
+
+		return;
+	}
+
+	if (ino < EXT4_FIRST_INO(sb)) {
+		ext4_msg(sb, KERN_WARNING, "bad balloon inode specified");
+		return;
+	}
+
+	inode = ext4_iget(sb, ino, EXT4_IGET_NORMAL);
+	if (IS_ERR(inode)) {
+		ext4_msg(sb, KERN_WARNING, "can't load balloon inode (%ld)", PTR_ERR(inode));
+		return;
+	}
+
+	if (!S_ISREG(inode->i_mode)) {
+		iput(inode);
+		ext4_msg(sb, KERN_WARNING, "balloon should be regular");
+		return;
+	}
+
+	if (!(EXT4_I(inode)->i_flags & EXT4_EXTENTS_FL)) {
+		iput(inode);
+		ext4_msg(sb, KERN_WARNING, "balloon should support extents");
+		return;
+	}
+
+	/* FIXME - locking */
+	if (sbi->s_balloon_ino)
+		iput(sbi->s_balloon_ino);
+	sbi->s_balloon_ino = inode;
+	ext4_msg(sb, KERN_INFO, "loaded balloon from %ld (%llu blocks)",
+			inode->i_ino, inode->i_blocks);
+}
+
 static void ext4_set_def_opts(struct super_block *sb,
 			      struct ext4_super_block *es)
 {
@@ -5576,6 +5636,9 @@ static int __ext4_fill_super(struct fs_context *fc, struct super_block *sb)
 		ext4_msg(sb, KERN_WARNING,
 			 "mounting with \"discard\" option, but the device does not support discard");
 
+	if (ctx->spec & EXT4_SPEC_balloon_ino)
+		ext4_load_balloon(sb, ctx->balloon_ino);
+
 	if (es->s_error_count)
 		mod_timer(&sbi->s_err_report, jiffies + 300*HZ); /* 5 minutes */
 
@@ -6635,6 +6698,9 @@ static int __ext4_remount(struct fs_context *fc, struct super_block *sb)
 			goto restore_opts;
 	}
 
+	if (ctx->spec & EXT4_SPEC_balloon_ino)
+		ext4_load_balloon(sb, ctx->balloon_ino);
+
 #ifdef CONFIG_QUOTA
 	if (enable_quota) {
 		if (sb_any_quota_suspended(sb))
@@ -7296,12 +7362,23 @@ static inline int ext3_feature_set_ok(struct super_block *sb)
 	return 1;
 }
 
+static void ext4_kill_sb(struct super_block *sb)
+{
+	struct ext4_sb_info *sbi;
+
+	sbi = EXT4_SB(sb);
+	if (sbi && sbi->s_balloon_ino)
+		iput(sbi->s_balloon_ino);
+
+	kill_block_super(sb);
+}
+
 static struct file_system_type ext4_fs_type = {
 	.owner			= THIS_MODULE,
 	.name			= "ext4",
 	.init_fs_context	= ext4_init_fs_context,
 	.parameters		= ext4_param_specs,
-	.kill_sb		= kill_block_super,
+	.kill_sb		= ext4_kill_sb,
 	.fs_flags		= FS_REQUIRES_DEV | FS_ALLOW_IDMAP |
 				  FS_VIRTUALIZED,
 };
