@@ -1684,6 +1684,16 @@ static int netlink_setsockopt(struct socket *sock, int level, int optname,
 			nlk->flags &= ~NETLINK_F_REPAIR;
 		err = 0;
 		break;
+	case NETLINK_SETERR:
+		err = -ENOPROTOOPT;
+		if (nlk->flags & NETLINK_F_REPAIR) {
+			if (!val || val > MAX_ERRNO)
+				return -EINVAL;
+			sk->sk_err = val;
+			sk->sk_error_report(sk);
+			err = 0;
+		}
+		break;
 	case NETLINK_PKTINFO:
 		if (val)
 			nlk->flags |= NETLINK_F_RECV_PKTINFO;
