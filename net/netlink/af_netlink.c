@@ -1341,6 +1341,7 @@ static int netlink_unicast_kernel(struct sock *sk, struct sk_buff *skb,
 int netlink_unicast(struct sock *ssk, struct sk_buff *skb,
 		    u32 portid, int nonblock)
 {
+	struct netlink_sock *nlk = nlk_sk(ssk);
 	struct sock *sk;
 	int err;
 	long timeo;
@@ -1349,19 +1350,24 @@ int netlink_unicast(struct sock *ssk, struct sk_buff *skb,
 
 	timeo = sock_sndtimeo(ssk, nonblock);
 retry:
-	sk = netlink_getsockbyportid(ssk, portid);
-	if (IS_ERR(sk)) {
-		kfree_skb(skb);
-		return PTR_ERR(sk);
-	}
-	if (netlink_is_kernel(sk))
-		return netlink_unicast_kernel(sk, skb, ssk);
+	if (nlk->flags & NETLINK_F_REPAIR) {
+		sk = ssk;
+		sock_hold(sk);
+	} else {
+		sk = netlink_getsockbyportid(ssk, portid);
+		if (IS_ERR(sk)) {
+			kfree_skb(skb);
+			return PTR_ERR(sk);
+		}
+		if (netlink_is_kernel(sk))
+			return netlink_unicast_kernel(sk, skb, ssk);
 
-	if (sk_filter(sk, skb)) {
-		err = skb->len;
-		kfree_skb(skb);
-		sock_put(sk);
-		return err;
+		if (sk_filter(sk, skb)) {
+			err = skb->len;
+			kfree_skb(skb);
+			sock_put(sk);
+			return err;
+		}
 	}
 
 	err = netlink_attachskb(sk, skb, &timeo, ssk);
@@ -1664,6 +1670,20 @@ static int netlink_setsockopt(struct socket *sock, int level, int optname,
 		return -EFAULT;
 
 	switch (optname) {
+	case NETLINK_REPAIR:
+#ifdef CONFIG_VE
+		{
+			struct ve_struct *ve = get_exec_env();
+			if (!ve_is_super(ve) && !ve->is_pseudosuper)
+				return -ENOPROTOOPT;
+		}
+#endif
+		if (val)
+			nlk->flags |= NETLINK_F_REPAIR;
+		else
+			nlk->flags &= ~NETLINK_F_REPAIR;
+		err = 0;
+		break;
 	case NETLINK_PKTINFO:
 		if (val)
 			nlk->flags |= NETLINK_F_RECV_PKTINFO;
@@ -1880,6 +1900,7 @@ static int netlink_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 	int err;
 	struct scm_cookie scm;
 	u32 netlink_skb_flags = 0;
+	bool repair = nlk->flags & NETLINK_F_REPAIR;
 
 	if (msg->msg_flags & MSG_OOB)
 		return -EOPNOTSUPP;
@@ -1898,7 +1919,8 @@ static int netlink_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 		dst_group = ffs(addr->nl_groups);
 		err =  -EPERM;
 		if ((dst_group || dst_portid) &&
-		    !netlink_allowed(sock, NL_CFG_F_NONROOT_SEND))
+		    !netlink_allowed(sock, NL_CFG_F_NONROOT_SEND &&
+		    !repair))
 			goto out;
 		netlink_skb_flags |= NETLINK_SKB_DST;
 	} else {
@@ -1923,7 +1945,11 @@ static int netlink_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 	if (skb == NULL)
 		goto out;
 
-	NETLINK_CB(skb).portid	= nlk->portid;
+	if (unlikely(repair))
+		NETLINK_CB(skb).portid = dst_portid;
+	else
+		NETLINK_CB(skb).portid	= nlk->portid;
+
 	NETLINK_CB(skb).dst_group = dst_group;
 	NETLINK_CB(skb).creds	= scm.creds;
 	NETLINK_CB(skb).flags	= netlink_skb_flags;
@@ -1940,7 +1966,7 @@ static int netlink_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 		goto out;
 	}
 
-	if (dst_group) {
+	if (dst_group && !repair) {
 		refcount_inc(&skb->users);
 		netlink_broadcast(sk, skb, dst_portid, dst_group, GFP_KERNEL);
 	}
