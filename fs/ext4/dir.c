@@ -123,6 +123,14 @@ int __ext4_check_dir_entry(const char *function, unsigned int line,
 	return 1;
 }
 
+static inline int ext4_balloon(struct super_block *sb, unsigned ino)
+{
+	struct ext4_sb_info *sbi;
+
+	sbi = EXT4_SB(sb);
+	return sbi->s_balloon_ino && (sbi->s_balloon_ino->i_ino == ino);
+}
+
 static int ext4_readdir(struct file *file, struct dir_context *ctx)
 {
 	unsigned int offset;
@@ -267,7 +275,8 @@ static int ext4_readdir(struct file *file, struct dir_context *ctx)
 			}
 			offset += ext4_rec_len_from_disk(de->rec_len,
 					sb->s_blocksize);
-			if (le32_to_cpu(de->inode)) {
+			if (le32_to_cpu(de->inode) &&
+			    !ext4_balloon(sb, le32_to_cpu(de->inode))) {
 				if (!IS_ENCRYPTED(inode)) {
 					if (!dir_emit(ctx, de->name,
 					    de->name_len,
@@ -533,6 +542,9 @@ static int call_filldir(struct file *file, struct dir_context *ctx,
 	}
 	ctx->pos = hash2pos(file, fname->hash, fname->minor_hash);
 	while (fname) {
+		if (ext4_balloon(sb, fname->inode))
+			goto skip;
+
 		if (!dir_emit(ctx, fname->name,
 				fname->name_len,
 				fname->inode,
@@ -540,6 +552,7 @@ static int call_filldir(struct file *file, struct dir_context *ctx,
 			info->extra_fname = fname;
 			return 1;
 		}
+skip:
 		fname = fname->next;
 	}
 	return 0;
