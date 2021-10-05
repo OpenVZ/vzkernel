@@ -43,6 +43,7 @@
 #include <linux/timekeeping.h>
 #include <linux/sysctl.h>
 #include <linux/elf.h>
+#include <linux/ve.h>
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -59,7 +60,6 @@ static void free_vma_snapshot(struct coredump_params *cprm);
 
 static int core_uses_pid;
 static unsigned int core_pipe_limit;
-static char core_pattern[CORENAME_MAX_SIZE] = "core";
 static int core_name_size = CORENAME_MAX_SIZE;
 
 struct core_name {
@@ -200,7 +200,8 @@ static int format_corename(struct core_name *cn, struct coredump_params *cprm,
 			   size_t **argv, int *argc)
 {
 	const struct cred *cred = current_cred();
-	const char *pat_ptr = core_pattern;
+	struct ve_struct *ve = get_exec_env();
+	const char *pat_ptr = ve->core_pattern;
 	int ispipe = (*pat_ptr == '|');
 	bool was_space = false;
 	int pid_in_pattern = 0;
@@ -213,7 +214,7 @@ static int format_corename(struct core_name *cn, struct coredump_params *cprm,
 	cn->corename[0] = '\0';
 
 	if (ispipe) {
-		int argvs = sizeof(core_pattern) / 2;
+		int argvs = sizeof(ve->core_pattern) / 2;
 		(*argv) = kmalloc_array(argvs, sizeof(**argv), GFP_KERNEL);
 		if (!(*argv))
 			return -ENOMEM;
@@ -632,8 +633,9 @@ void do_coredump(const kernel_siginfo_t *siginfo)
 						helper_argv, NULL, GFP_KERNEL,
 						umh_pipe_setup, NULL, &cprm);
 		if (sub_info)
-			retval = call_usermodehelper_exec(sub_info,
-							  UMH_WAIT_EXEC);
+			retval = call_usermodehelper_exec_ve(get_exec_env(),
+							     sub_info,
+							     UMH_WAIT_EXEC);
 
 		kfree(helper_argv);
 		if (retval) {
@@ -901,8 +903,9 @@ EXPORT_SYMBOL(dump_align);
 
 void validate_coredump_safety(void)
 {
+	struct ve_struct *ve = get_exec_env();
 	if (suid_dumpable == SUID_DUMP_ROOT &&
-	    core_pattern[0] != '/' && core_pattern[0] != '|') {
+	    ve->core_pattern[0] != '/' && ve->core_pattern[0] != '|') {
 		pr_warn(
 "Unsafe core_pattern used with fs.suid_dumpable=2.\n"
 "Pipe handler or fully qualified core dump path required.\n"
@@ -921,6 +924,8 @@ static int proc_dostring_coredump(struct ctl_table *table, int write,
 	return error;
 }
 
+sysctl_virtual(proc_dostring_coredump);
+
 static struct ctl_table coredump_sysctls[] = {
 	{
 		.procname	= "core_uses_pid",
@@ -931,10 +936,10 @@ static struct ctl_table coredump_sysctls[] = {
 	},
 	{
 		.procname	= "core_pattern",
-		.data		= core_pattern,
+		.data		= ve0.core_pattern,
 		.maxlen		= CORENAME_MAX_SIZE,
-		.mode		= 0644,
-		.proc_handler	= proc_dostring_coredump,
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= proc_dostring_coredump_virtual,
 	},
 	{
 		.procname	= "core_pipe_limit",

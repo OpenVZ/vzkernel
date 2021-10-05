@@ -653,6 +653,9 @@ do_init:
 
 	atomic_set(&ve->mnt_nr, 0);
 
+#ifdef CONFIG_COREDUMP
+	strcpy(ve->core_pattern, "core");
+#endif
 	INIT_LIST_HEAD(&ve->devmnt_list);
 	mutex_init(&ve->devmnt_mutex);
 
@@ -1318,7 +1321,7 @@ struct cgroup_subsys ve_cgrp_subsys = {
 
 static int __init ve_subsys_init(void)
 {
-	ve_cachep = KMEM_CACHE(ve_struct, SLAB_PANIC);
+	ve_cachep = KMEM_CACHE_USERCOPY(ve_struct, SLAB_PANIC, core_pattern);
 	list_add(&ve0.ve_list, &ve_list_head);
 	return 0;
 }
