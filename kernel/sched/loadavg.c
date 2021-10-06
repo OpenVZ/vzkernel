@@ -320,11 +320,15 @@ static void calc_load_nohz_fold(struct rq *rq)
 
 void calc_load_nohz_start(void)
 {
+	struct rq *rq = this_rq();
+	struct rq_flags rf;
 	/*
 	 * We're going into NO_HZ mode, if there's any pending delta, fold it
 	 * into the pending NO_HZ delta.
 	 */
-	calc_load_nohz_fold(this_rq());
+	rq_lock(rq, &rf);
+	calc_load_nohz_fold(rq);
+	rq_unlock(rq, &rf);
 }
 
 /*
