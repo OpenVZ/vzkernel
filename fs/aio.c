@@ -31,6 +31,7 @@
 #include <linux/slab.h>
 #include <linux/timer.h>
 #include <linux/aio.h>
+#include <linux/ve.h>
 #include <linux/highmem.h>
 #include <linux/workqueue.h>
 #include <linux/security.h>
@@ -162,6 +163,7 @@ struct kioctx {
 
 	struct page		*internal_pages[AIO_RING_PAGES];
 	struct file		*aio_ring_file;
+	struct ve_struct	*ve;
 
 	unsigned		id;
 };
@@ -217,26 +219,21 @@ struct aio_kiocb {
 	struct eventfd_ctx	*ki_eventfd;
 };
 
-/*------ sysctl variables----*/
-static DEFINE_SPINLOCK(aio_nr_lock);
-static unsigned long aio_nr;		/* current system wide number of aio requests */
-static unsigned long aio_max_nr = 0x10000; /* system wide maximum number of aio requests */
-/*----end sysctl variables---*/
 #ifdef CONFIG_SYSCTL
 static struct ctl_table aio_sysctls[] = {
 	{
 		.procname	= "aio-nr",
-		.data		= &aio_nr,
-		.maxlen		= sizeof(aio_nr),
-		.mode		= 0444,
-		.proc_handler	= proc_doulongvec_minmax,
+		.data		= &ve0.aio_nr,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0444 | S_ISVTX,
+		.proc_handler	= proc_doulongvec_minmax_virtual,
 	},
 	{
 		.procname	= "aio-max-nr",
-		.data		= &aio_max_nr,
-		.maxlen		= sizeof(aio_max_nr),
-		.mode		= 0644,
-		.proc_handler	= proc_doulongvec_minmax,
+		.data		= &ve0.aio_max_nr,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0644 | S_ISVTX,
+		.proc_handler	= proc_doulongvec_minmax_virtual,
 	},
 	{}
 };
@@ -613,12 +610,14 @@ static void free_ioctx(struct work_struct *work)
 {
 	struct kioctx *ctx = container_of(to_rcu_work(work), struct kioctx,
 					  free_rwork);
+	struct ve_struct *ve = ctx->ve;
 	pr_debug("freeing %p\n", ctx);
 
 	aio_free_ring(ctx);
 	free_percpu(ctx->cpu);
 	percpu_ref_exit(&ctx->reqs);
 	percpu_ref_exit(&ctx->users);
+	put_ve(ve);
 	kmem_cache_free(kioctx_cachep, ctx);
 }
 
@@ -715,14 +714,16 @@ static int ioctx_add_table(struct kioctx *ctx, struct mm_struct *mm)
 	}
 }
 
-static void aio_nr_sub(unsigned nr)
+static void aio_nr_sub(struct kioctx *ctx, unsigned nr)
 {
-	spin_lock(&aio_nr_lock);
-	if (WARN_ON(aio_nr - nr > aio_nr))
-		aio_nr = 0;
+	struct ve_struct *ve = ctx->ve;
+
+	spin_lock(&ve->aio_nr_lock);
+	if (WARN_ON(ve->aio_nr - nr > ve->aio_nr))
+		ve->aio_nr = 0;
 	else
-		aio_nr -= nr;
-	spin_unlock(&aio_nr_lock);
+		ve->aio_nr -= nr;
+	spin_unlock(&ve->aio_nr_lock);
 }
 
 /* ioctx_alloc
@@ -732,6 +733,7 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 {
 	struct mm_struct *mm = current->mm;
 	struct kioctx *ctx;
+	struct ve_struct *ve = get_exec_env();
 	int err = -ENOMEM;
 
 	/*
@@ -758,7 +760,7 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (!nr_events || (unsigned long)max_reqs > aio_max_nr)
+	if (!nr_events || (unsigned long)max_reqs > ve->aio_max_nr)
 		return ERR_PTR(-EAGAIN);
 
 	ctx = kmem_cache_zalloc(kioctx_cachep, GFP_KERNEL);
@@ -766,6 +768,7 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 		return ERR_PTR(-ENOMEM);
 
 	ctx->max_reqs = max_reqs;
+	ctx->ve = get_ve(ve);
 
 	spin_lock_init(&ctx->ctx_lock);
 	spin_lock_init(&ctx->completion_lock);
@@ -797,15 +800,15 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 		ctx->req_batch = 1;
 
 	/* limit the number of system wide aios */
-	spin_lock(&aio_nr_lock);
-	if (aio_nr + ctx->max_reqs > aio_max_nr ||
-	    aio_nr + ctx->max_reqs < aio_nr) {
-		spin_unlock(&aio_nr_lock);
+	spin_lock(&ve->aio_nr_lock);
+	if (ve->aio_nr + ctx->max_reqs > ve->aio_max_nr ||
+	    ve->aio_nr + ctx->max_reqs < ve->aio_nr) {
+		spin_unlock(&ve->aio_nr_lock);
 		err = -EAGAIN;
 		goto err_ctx;
 	}
-	aio_nr += ctx->max_reqs;
-	spin_unlock(&aio_nr_lock);
+	ve->aio_nr += ctx->max_reqs;
+	spin_unlock(&ve->aio_nr_lock);
 
 	percpu_ref_get(&ctx->users);	/* io_setup() will drop this ref */
 	percpu_ref_get(&ctx->reqs);	/* free_ioctx_users() will drop this */
@@ -822,13 +825,14 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 	return ctx;
 
 err_cleanup:
-	aio_nr_sub(ctx->max_reqs);
+	aio_nr_sub(ctx, ctx->max_reqs);
 err_ctx:
 	atomic_set(&ctx->dead, 1);
 	if (ctx->mmap_size)
 		vm_munmap(ctx->mmap_base, ctx->mmap_size);
 	aio_free_ring(ctx);
 err:
+	put_ve(ctx->ve);
 	mutex_unlock(&ctx->ring_lock);
 	free_percpu(ctx->cpu);
 	percpu_ref_exit(&ctx->reqs);
@@ -869,7 +873,7 @@ static int kill_ioctx(struct mm_struct *mm, struct kioctx *ctx,
 	 * -EAGAIN with no ioctxs actually in use (as far as userspace
 	 *  could tell).
 	 */
-	aio_nr_sub(ctx->max_reqs);
+	aio_nr_sub(ctx, ctx->max_reqs);
 
 	if (ctx->mmap_size)
 		vm_munmap(ctx->mmap_base, ctx->mmap_size);
