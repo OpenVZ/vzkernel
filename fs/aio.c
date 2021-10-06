@@ -22,6 +22,7 @@
 #include <linux/refcount.h>
 #include <linux/uio.h>
 
+#include <linux/sched/mm.h>
 #include <linux/sched/signal.h>
 #include <linux/fs.h>
 #include <linux/file.h>
@@ -2270,6 +2271,97 @@ COMPAT_SYSCALL_DEFINE6(io_pgetevents_time64,
 	restore_saved_sigmask_unless(interrupted);
 	if (interrupted && !ret)
 		ret = -ERESTARTNOHAND;
+
+	return ret;
+}
+#endif
+
+#ifdef CONFIG_VE
+static bool has_reqs_active(struct kioctx *ctx)
+{
+	unsigned long flags;
+	unsigned nr;
+	int cpu;
+	unsigned reqs_avail_batch = 0;
+
+	spin_lock_irqsave(&ctx->completion_lock, flags);
+	/*
+	 * See get_reqs_available()/put_reqs_available() about
+	 * how reqs_available distributed between atomic
+	 * ctx->reqs_available and percpu ctx->cpu reqs_available.
+	 */
+	for_each_possible_cpu(cpu)
+		reqs_avail_batch += per_cpu_ptr(ctx->cpu, cpu)->reqs_available;
+	nr = ctx->nr_events - 1;
+	nr -= atomic_read(&ctx->reqs_available) + reqs_avail_batch;
+	nr -= ctx->completed_events;
+	spin_unlock_irqrestore(&ctx->completion_lock, flags);
+
+	return !!nr;
+}
+
+static int ve_aio_wait_inflight_reqs(struct task_struct *p)
+{
+	struct mm_struct *mm;
+	struct kioctx_table *table;
+	int ret, i;
+
+	if (p->flags & PF_KTHREAD)
+		return -EINVAL;
+
+	task_lock(p);
+	mm = p->mm;
+	if (mm)
+		atomic_inc(&mm->mm_count);
+	task_unlock(p);
+	if (!mm)
+		return -ESRCH;
+
+again:
+	spin_lock_irq(&mm->ioctx_lock);
+	rcu_read_lock();
+	table = rcu_dereference(mm->ioctx_table);
+	for (i = 0; i < table->nr; i++) {
+		struct kioctx *ctx;
+
+		ctx = rcu_dereference(table->table[i]);
+		if (!ctx)
+			continue;
+
+		if (!has_reqs_active(ctx))
+			continue;
+
+		percpu_ref_get(&ctx->users);
+		rcu_read_unlock();
+		spin_unlock_irq(&mm->ioctx_lock);
+
+		ret = wait_event_interruptible(ctx->wait, !has_reqs_active(ctx));
+		percpu_ref_put(&ctx->users);
+
+		if (ret)
+			goto mmdrop;
+		goto again;
+	}
+
+	rcu_read_unlock();
+	spin_unlock_irq(&mm->ioctx_lock);
+	ret = 0;
+mmdrop:
+	mmdrop(mm);
+	return ret;
+}
+
+int ve_aio_ioctl(struct task_struct *task, unsigned int cmd, unsigned long arg)
+{
+	int ret;
+
+	switch (cmd) {
+		case VE_AIO_IOC_WAIT_ACTIVE:
+			ret = ve_aio_wait_inflight_reqs(task);
+			break;
+		default:
+			ret = -EINVAL;
+	}
 
 	return ret;
 }
