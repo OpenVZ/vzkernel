@@ -11629,6 +11629,7 @@ static void task_fork_fair(struct task_struct *p)
 	}
 
 	se->vruntime -= cfs_rq->min_vruntime;
+	cfs_rq->nr_forks++;
 	rq_unlock(rq, &rf);
 }
 
