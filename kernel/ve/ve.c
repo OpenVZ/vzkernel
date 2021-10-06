@@ -16,6 +16,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/ve.h>
+#include <linux/aio.h>
 #include <linux/errno.h>
 #include <linux/rcupdate.h>
 #include <linux/init_task.h>
@@ -693,6 +694,12 @@ do_init:
 #endif
 	INIT_LIST_HEAD(&ve->devmnt_list);
 	mutex_init(&ve->devmnt_mutex);
+
+#ifdef CONFIG_AIO
+	spin_lock_init(&ve->aio_nr_lock);
+	ve->aio_nr = 0;
+	ve->aio_max_nr = AIO_MAX_NR_DEFAULT;
+#endif
 
 	return &ve->css;
 
