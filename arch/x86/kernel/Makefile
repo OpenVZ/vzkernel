@@ -65,6 +65,7 @@ obj-y			+= tsc.o tsc_msr.o io_delay.o rtc.o
 obj-y			+= resource.o
 obj-y			+= irqflags.o
 obj-y			+= static_call.o
+obj-y			+= cpuid_fault.o
 
 obj-y				+= process.o
 obj-y				+= fpu/
