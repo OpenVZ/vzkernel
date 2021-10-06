@@ -422,6 +422,11 @@ struct task_group {
 
 	unsigned long avenrun[3];	/* loadavg data */
 
+	struct kernel_cpustat	*cpustat_last;
+	struct kernel_cpustat	*vcpustat;
+	u64			vcpustat_last_update;
+	spinlock_t		vcpustat_lock;
+
 	struct cfs_bandwidth	cfs_bandwidth;
 
 #ifdef CONFIG_UCLAMP_TASK_GROUP
