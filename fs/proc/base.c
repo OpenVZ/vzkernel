@@ -96,6 +96,7 @@
 #include <linux/posix-timers.h>
 #include <linux/time_namespace.h>
 #include <linux/resctrl.h>
+#include <linux/aio.h>
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"
@@ -2604,6 +2605,35 @@ static const struct file_operations proc_pid_set_timerslack_ns_operations = {
 	.release	= single_release,
 };
 
+#ifdef CONFIG_VE
+static long proc_aio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct inode *inode = file_inode(file);
+	struct task_struct *task;
+	int ret;
+
+	task = get_proc_task(inode);
+	if (!task)
+		return -ESRCH;
+
+	ret = ve_aio_ioctl(task, cmd, arg);
+
+	put_task_struct(task);
+
+	return ret;
+}
+
+ssize_t proc_aio_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
+{
+	return 0;
+}
+
+static const struct file_operations proc_aio_operations = {
+	.unlocked_ioctl		= proc_aio_ioctl,
+	.read			= proc_aio_read,
+};
+#endif /* CONFIG_VE */
+
 static struct dentry *proc_pident_instantiate(struct dentry *dentry,
 	struct task_struct *task, const void *ptr)
 {
@@ -3275,6 +3305,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 	REG("timers",	  S_IRUGO, proc_timers_operations),
 #endif
 	REG("timerslack_ns", S_IRUGO|S_IWUGO, proc_pid_set_timerslack_ns_operations),
+#ifdef CONFIG_CHECKPOINT_RESTORE
+	REG("aio",	  S_IRUGO|S_IWUSR, proc_aio_operations),
+#endif
 #ifdef CONFIG_LIVEPATCH
 	ONE("patch_state",  S_IRUSR, proc_pid_patch_state),
 #endif
