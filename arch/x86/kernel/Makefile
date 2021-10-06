@@ -70,6 +70,7 @@ obj-y			+= pci-iommu_table.o
 obj-y			+= resource.o
 obj-y			+= irqflags.o
 obj-y			+= static_call.o
+obj-y			+= cpuid_fault.o
 
 obj-y				+= process.o
 obj-y				+= fpu/
