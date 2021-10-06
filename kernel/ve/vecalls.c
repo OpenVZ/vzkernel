@@ -24,6 +24,8 @@
 #include <linux/seq_file.h>
 #include <linux/rcupdate.h>
 #include <linux/mount.h>
+#include <linux/jiffies.h>
+#include <linux/sched/loadavg.h>
 #include <generated/utsrelease.h>
 
 #include <linux/ve.h>
@@ -31,6 +33,62 @@
 #include <linux/veowner.h>
 #include <linux/device_cgroup.h>
 #include <uapi/linux/vzcalluser.h>
+
+static int fill_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
+{
+	struct ve_struct *ve;
+	struct vz_cpu_stat *vstat;
+	int retval;
+	int i;
+	unsigned long tmp;
+	unsigned long avnrun[3];
+	struct kernel_cpustat kstat;
+
+	if (!ve_is_super(get_exec_env()) && (veid != get_exec_env()->veid))
+		return -EPERM;
+	ve = get_ve_by_id(veid);
+	if (!ve)
+		return -ESRCH;
+
+	retval = -ENOMEM;
+	vstat = kzalloc(sizeof(*vstat), GFP_KERNEL);
+	if (!vstat)
+		goto out_put_ve;
+
+	retval = ve_get_cpu_stat(ve, &kstat);
+	if (retval)
+		goto out_free;
+
+	retval = ve_get_cpu_avenrun(ve, avnrun);
+	if (retval)
+		goto out_free;
+
+	vstat->user_jif	  = (unsigned long)nsec_to_clock_t(
+					   kstat.cpustat[CPUTIME_USER]);
+	vstat->nice_jif   = (unsigned long)nsec_to_clock_t(
+					   kstat.cpustat[CPUTIME_NICE]);
+	vstat->system_jif = (unsigned long)nsec_to_clock_t(
+					   kstat.cpustat[CPUTIME_SYSTEM]);
+	vstat->idle_clk   = kstat.cpustat[CPUTIME_IDLE];
+	vstat->uptime_clk = ve_get_uptime(ve);
+
+	vstat->uptime_jif = (unsigned long)jiffies_64_to_clock_t(
+			    get_jiffies_64() - ve->start_jiffies);
+	for (i = 0; i < 3; i++) {
+		tmp = avnrun[i] + (FIXED_1/200);
+		vstat->avenrun[i].val_int = LOAD_INT(tmp);
+		vstat->avenrun[i].val_frac = LOAD_FRAC(tmp);
+	}
+
+	retval = 0;
+	if (copy_to_user(buf, vstat, sizeof(*vstat)))
+		retval = -EFAULT;
+out_free:
+	kfree(vstat);
+out_put_ve:
+	put_ve(ve);
+	return retval;
+}
 
 /**********************************************************************
  **********************************************************************
@@ -336,6 +394,14 @@ int vzcalls_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	err = -ENOTTY;
 	switch(cmd) {
+	    case VZCTL_GET_CPU_STAT: {
+			struct vzctl_cpustatctl s;
+			err = -EFAULT;
+			if (copy_from_user(&s, (void __user *)arg, sizeof(s)))
+				break;
+			err = fill_cpu_stat(s.veid, s.cpustat);
+		}
+		break;
 	    case VZCTL_VE_CONFIGURE:
 		err = ve_configure_ioctl((struct vzctl_ve_configure *)arg);
 		break;

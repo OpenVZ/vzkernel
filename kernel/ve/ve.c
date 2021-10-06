@@ -1479,6 +1479,24 @@ int ve_show_loadavg(struct ve_struct *ve, struct seq_file *p)
 	return err;
 }
 
+struct task_group *css_tg(struct cgroup_subsys_state *css);
+int get_avenrun_tg(struct task_group *tg, unsigned long *loads,
+		   unsigned long offset, int shift);
+
+int ve_get_cpu_avenrun(struct ve_struct *ve, unsigned long *avnrun)
+{
+	struct cgroup_subsys_state *css;
+	struct task_group *tg;
+	int err;
+
+	css = ve_get_init_css(ve, cpu_cgrp_id);
+	tg = css_tg(css);
+	err = get_avenrun_tg(tg, avnrun, 0, 0);
+	css_put(css);
+	return err;
+}
+EXPORT_SYMBOL(ve_get_cpu_avenrun);
+
 int cpu_cgroup_get_stat(struct cgroup_subsys_state *cpu_css,
 			struct cgroup_subsys_state *cpuacct_css,
 			struct kernel_cpustat *kstat);
