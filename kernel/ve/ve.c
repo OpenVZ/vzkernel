@@ -991,11 +991,12 @@ static u64 ve_reatures_read(struct cgroup_subsys_state *css, struct cftype *cft)
 	return css_to_ve(css)->features;
 }
 
-static int ve_reatures_write(struct cgroup_subsys_state *css, struct cftype *cft, u64 val)
+static int ve_features_write(struct cgroup_subsys_state *css, struct cftype *cft, u64 val)
 {
 	struct ve_struct *ve = css_to_ve(css);
 
-	if (!ve_is_super(get_exec_env()))
+	if (!ve_is_super(get_exec_env()) &&
+	    !ve->is_pseudosuper)
 		return -EPERM;
 
 	down_write(&ve->op_sem);
@@ -1308,7 +1309,7 @@ static struct cftype ve_cftypes[] = {
 		.name			= "features",
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.read_u64		= ve_reatures_read,
-		.write_u64		= ve_reatures_write,
+		.write_u64		= ve_features_write,
 	},
 	{
 		.name			= "clock_monotonic",
