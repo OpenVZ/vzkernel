@@ -45,4 +45,6 @@ void __noreturn handle_stack_overflow(const char *message,
 				      unsigned long fault_address);
 #endif
 
+void do_cpuid_fault(struct pt_regs *);
+
 #endif /* _ASM_X86_TRAPS_H */
