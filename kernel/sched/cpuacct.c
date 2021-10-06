@@ -775,3 +775,33 @@ int cpu_cgroup_get_stat(struct cgroup_subsys_state *cpu_css,
 
 	return 0;
 }
+
+int cpu_cgroup_proc_stat_show(struct seq_file *sf, void *v)
+{
+	struct cgroup_subsys_state *cpu_css = seq_css(sf);
+	struct cgroup_subsys_state *cpuacct_css;
+	int ret;
+
+	/*
+	 * The cgroup the file is associated with should not disappear from
+	 * under us (the file is open, after all). Still, it won't hurt to
+	 * use RCU read-side lock as cgroup->subsys[] might need it.
+	 */
+	rcu_read_lock();
+	/*
+	 * Data from both 'cpu' and 'cpuacct' subsystems are needed. These
+	 * subsystems are often used together, but let us check if 'cpuacct'
+	 * is available for the cgroup, just in case.
+	 */
+	cpuacct_css = rcu_dereference(cpu_css->cgroup->subsys[cpuacct_cgrp_id]);
+	if (!cpuacct_css) {
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+	css_get(cpuacct_css);
+	rcu_read_unlock();
+
+	ret = cpu_cgroup_proc_stat(cpu_css, cpuacct_css, sf);
+	css_put(cpuacct_css);
+	return ret;
+}
