@@ -611,6 +611,27 @@ static enum kernel_gp_hint get_kernel_gp_address(struct pt_regs *regs,
 	return GP_CANONICAL;
 }
 
+static int check_cpuid_fault(struct pt_regs *regs, long error_code)
+{
+	unsigned long addr;
+	unsigned short opcode;
+
+	if (error_code != 0)
+		return 0;
+
+	addr = convert_ip_to_linear(current, regs);
+	if (get_user(opcode, (unsigned short __user *)addr))
+		return 0;
+
+	if (opcode != 0xa20f)
+		return 0;
+
+	do_cpuid_fault(regs);
+
+	regs->ip += 2;
+	return 1;
+}
+
 #define GPFSTR "general protection fault"
 
 static bool fixup_iopl_exception(struct pt_regs *regs)
@@ -759,6 +780,9 @@ DEFINE_IDTENTRY_ERRORCODE(exc_general_protection)
 	}
 
 	if (gp_try_fixup_and_notify(regs, X86_TRAP_GP, error_code, desc, 0))
+		goto exit;
+
+	if (check_cpuid_fault(regs, error_code))
 		goto exit;
 
 	if (error_code)
