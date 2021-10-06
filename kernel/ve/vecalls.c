@@ -40,6 +40,74 @@
  **********************************************************************
  **********************************************************************/
 #ifdef CONFIG_PROC_FS
+#if BITS_PER_LONG == 32
+#define VESTAT_LINE_WIDTH (6 * 11 + 6 * 21)
+#define VESTAT_LINE_FMT "%10s %10lu %10lu %10lu %10Lu %20Lu %20Lu %20Lu %20Lu %20Lu %20Lu %10lu\n"
+#define VESTAT_HEAD_FMT "%10s %10s %10s %10s %10s %20s %20s %20s %20s %20s %20s %10s\n"
+#else
+#define VESTAT_LINE_WIDTH (12 * 21)
+#define VESTAT_LINE_FMT "%20s %20lu %20lu %20lu %20Lu %20Lu %20Lu %20Lu %20Lu %20Lu %20Lu %20lu\n"
+#define VESTAT_HEAD_FMT "%20s %20s %20s %20s %20s %20s %20s %20s %20s %20s %20s %20s\n"
+#endif
+
+static int vestat_seq_show(struct seq_file *m, void *v)
+{
+	struct list_head *entry;
+	struct ve_struct *ve;
+	struct ve_struct *curve;
+	int ret;
+	unsigned long user_ve, nice_ve, system_ve;
+	unsigned long long uptime;
+	u64 uptime_cycles, idle_time, strv_time, used;
+	struct kernel_cpustat kstat;
+
+	entry = (struct list_head *)v;
+	ve = list_entry(entry, struct ve_struct, ve_list);
+
+	curve = get_exec_env();
+	if (entry == ve_list_head.next ||
+	    (!ve_is_super(curve) && ve == curve)) {
+		/* print header */
+		seq_printf(m, "%-*s\n",
+			   VESTAT_LINE_WIDTH - 1,
+			   "Version: 2.2");
+		seq_printf(m, VESTAT_HEAD_FMT, "VEID",
+			   "user", "nice", "system",
+			   "uptime", "idle",
+			   "strv", "uptime", "used",
+			   "maxlat", "totlat", "numsched");
+	}
+
+	if (ve == get_ve0())
+		return 0;
+
+	ret = ve_get_cpu_stat(ve, &kstat);
+	if (ret)
+		return ret;
+
+	strv_time	= 0;
+	user_ve		= nsecs_to_jiffies(kstat.cpustat[CPUTIME_USER]);
+	nice_ve		= nsecs_to_jiffies(kstat.cpustat[CPUTIME_NICE]);
+	system_ve	= nsecs_to_jiffies(kstat.cpustat[CPUTIME_SYSTEM]);
+	used		= kstat.cpustat[CPUTIME_USED];
+	idle_time	= kstat.cpustat[CPUTIME_IDLE];
+
+	uptime_cycles = ve_get_uptime(ve);
+	uptime = get_jiffies_64() - ve->start_jiffies;
+
+	seq_printf(m, VESTAT_LINE_FMT, ve_name(ve),
+		   user_ve, nice_ve, system_ve,
+		   (unsigned long long)uptime,
+		   (unsigned long long)idle_time,
+		   (unsigned long long)strv_time,
+		   (unsigned long long)uptime_cycles,
+		   (unsigned long long)used,
+		   (unsigned long long)ve->sched_lat_ve.last.maxlat,
+		   (unsigned long long)ve->sched_lat_ve.last.totlat,
+		   ve->sched_lat_ve.last.count);
+	return 0;
+}
+
 static void *ve_seq_start(struct seq_file *m, loff_t *pos)
 {
 	struct ve_struct *curve;
@@ -68,6 +136,25 @@ static void ve_seq_stop(struct seq_file *m, void *v)
 {
 	mutex_unlock(&ve_list_lock);
 }
+
+static struct seq_operations vestat_seq_op = {
+	.start	= ve_seq_start,
+	.next	= ve_seq_next,
+	.stop	= ve_seq_stop,
+	.show	= vestat_seq_show
+};
+
+static int vestat_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &vestat_seq_op);
+}
+
+static struct proc_ops proc_vestat_operations = {
+	.proc_open	= vestat_open,
+	.proc_read	= seq_read,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= seq_release
+};
 
 static int devperms_seq_show(struct seq_file *m, void *v)
 {
@@ -160,6 +247,11 @@ static int __init init_vecalls_proc(void)
 {
 	struct proc_dir_entry *de;
 
+	de = proc_create("vestat", S_IFREG | S_IRUSR | S_ISVTX, proc_vz_dir,
+			&proc_vestat_operations);
+	if (!de)
+		printk(KERN_WARNING "VZMON: can't make vestat proc entry\n");
+
 	de = proc_create("devperms", S_IFREG | S_IRUSR, proc_vz_dir,
 			&proc_devperms_ops);
 	if (!de)
@@ -182,6 +274,7 @@ static void __exit fini_vecalls_proc(void)
 {
 	remove_proc_entry("devperms", proc_vz_dir);
 	remove_proc_entry("version", proc_vz_dir);
+	remove_proc_entry("vestat", proc_vz_dir);
 	remove_proc_entry("veinfo", proc_vz_dir);
 }
 #else
