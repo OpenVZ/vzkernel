@@ -10,6 +10,8 @@ struct mm_struct;
 
 typedef int (kiocb_cancel_fn)(struct kiocb *);
 
+#define AIO_MAX_NR_DEFAULT	0x10000
+
 /* prototypes */
 #ifdef CONFIG_AIO
 extern void exit_aio(struct mm_struct *mm);
