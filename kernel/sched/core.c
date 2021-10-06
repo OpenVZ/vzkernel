@@ -11139,6 +11139,9 @@ int cpu_cgroup_proc_loadavg(struct cgroup_subsys_state *css,
 	int nr_running = 0;
 	int i;
 
+	if (!test_bit(CGRP_VE_ROOT, &cgrp->flags))
+		return 0;
+
 	avnrun[0] = tg->avenrun[0] + FIXED_1/200;
 	avnrun[1] = tg->avenrun[1] + FIXED_1/200;
 	avnrun[2] = tg->avenrun[2] + FIXED_1/200;
