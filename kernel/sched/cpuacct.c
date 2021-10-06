@@ -418,7 +418,7 @@ static void cpu_cgroup_update_stat(struct cgroup_subsys_state *cpu_css,
 	struct sched_statistics *stats;
 	u64 *cpustat = cpuacct_cpustat(cpuacct_css, i)->cpustat;
 	u64 now = cpu_clock(i);
-	u64 delta, idle, iowait, steal;
+	u64 delta, idle, iowait, steal, used;
 
 	/* root_task_group has not sched entities */
 	if (tg == &root_task_group)
@@ -429,6 +429,7 @@ static void cpu_cgroup_update_stat(struct cgroup_subsys_state *cpu_css,
 	iowait = stats->iowait_sum;
 	idle = stats->sum_sleep_runtime;
 	steal = stats->wait_sum;
+	used = se->sum_exec_runtime;
 
 	if (idle > iowait)
 		idle -= iowait;
@@ -452,6 +453,7 @@ static void cpu_cgroup_update_stat(struct cgroup_subsys_state *cpu_css,
 	cpustat[CPUTIME_IDLE]	= max(cpustat[CPUTIME_IDLE], idle);
 	cpustat[CPUTIME_IOWAIT]	= max(cpustat[CPUTIME_IOWAIT], iowait);
 	cpustat[CPUTIME_STEAL]	= steal;
+	cpustat[CPUTIME_USED]	= used;
 #endif
 }
 
@@ -529,6 +531,8 @@ static void fixup_vcpustat_delta(struct kernel_cpustat *cur,
 		calc_vcpustat_delta_idle(cur, CPUTIME_IOWAIT,
 					 cur_idle, target_idle);
 	}
+
+	cur->cpustat[CPUTIME_USED] = target_usage;
 
 	/* do not show steal time inside ve */
 	cur->cpustat[CPUTIME_STEAL] = 0;
