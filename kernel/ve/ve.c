@@ -875,6 +875,9 @@ static void ve_attach(struct cgroup_taskset *tset)
 		task->parent_exec_id--;
 
 		ve_set_task_start_time(ve, task);
+
+		set_tsk_thread_flag(task, TIF_CPUID_OVERRIDE);
+
 		task->task_ve = ve;
 	}
 }
