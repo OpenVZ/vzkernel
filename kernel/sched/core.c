@@ -11175,6 +11175,8 @@ int cpu_cgroup_proc_loadavg(struct cgroup_subsys_state *css,
 	return 0;
 }
 
+int cpu_cgroup_proc_stat_show(struct seq_file *sf, void *v);
+
 static struct cftype cpu_legacy_files[] = {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	{
@@ -11247,6 +11249,10 @@ static struct cftype cpu_legacy_files[] = {
 		.write = cpu_uclamp_max_write,
 	},
 #endif
+	{
+		.name = "proc.stat",
+		.seq_show = cpu_cgroup_proc_stat_show,
+	},
 	{ }	/* Terminate */
 };
 
