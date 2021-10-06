@@ -104,7 +104,8 @@ void __update_stats_enqueue_sleeper(struct rq *rq, struct task_struct *p,
 					     delta >> 20);
 			}
 			account_scheduler_latency(p, delta >> 10, 0);
-		}
+		} else
+			__schedstat_add(stats->iowait_sum, delta);
 	}
 }
 
