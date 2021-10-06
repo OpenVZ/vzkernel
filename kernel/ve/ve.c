@@ -1454,6 +1454,23 @@ bool ve_check_trusted_exec(struct file *file, struct filename *name)
 }
 
 #ifdef CONFIG_CGROUP_SCHED
+int cpu_cgroup_proc_stat(struct cgroup_subsys_state *cpu_css,
+			 struct cgroup_subsys_state *cpuacct_css,
+			 struct seq_file *p);
+
+int ve_show_cpu_stat(struct ve_struct *ve, struct seq_file *p)
+{
+	struct cgroup_subsys_state *cpu_css, *cpuacct_css;
+	int err;
+
+	cpu_css = ve_get_init_css(ve, cpu_cgrp_id);
+	cpuacct_css = ve_get_init_css(ve, cpuacct_cgrp_id);
+	err = cpu_cgroup_proc_stat(cpu_css, cpuacct_css, p);
+	css_put(cpuacct_css);
+	css_put(cpu_css);
+	return err;
+}
+
 int cpu_cgroup_proc_loadavg(struct cgroup_subsys_state *css,
 			    struct seq_file *p);
 
