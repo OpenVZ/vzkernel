@@ -83,6 +83,12 @@ struct ve_struct {
 
 	struct list_head	devmnt_list;
 	struct mutex		devmnt_mutex;
+
+#ifdef CONFIG_AIO
+	spinlock_t		aio_nr_lock;
+	unsigned long		aio_nr;
+	unsigned long		aio_max_nr;
+#endif
 };
 
 struct ve_devmnt {
