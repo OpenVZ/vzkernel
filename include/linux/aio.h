@@ -10,6 +10,8 @@ struct mm_struct;
 
 typedef int (kiocb_cancel_fn)(struct kiocb *);
 
+#define AIO_MAX_NR_DEFAULT	0x10000
+
 /* prototypes */
 #ifdef CONFIG_AIO
 extern void exit_aio(struct mm_struct *mm);
@@ -19,9 +21,5 @@ static inline void exit_aio(struct mm_struct *mm) { }
 static inline void kiocb_set_cancel_fn(struct kiocb *req,
 				       kiocb_cancel_fn *cancel) { }
 #endif /* CONFIG_AIO */
-
-/* for sysctl: */
-extern unsigned long aio_nr;
-extern unsigned long aio_max_nr;
 
 #endif /* __LINUX__AIO_H */
