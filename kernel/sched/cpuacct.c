@@ -644,6 +644,7 @@ int cpu_cgroup_proc_stat(struct cgroup_subsys_state *cpu_css,
 	unsigned long tg_nr_running = 0;
 	unsigned long tg_nr_iowait = 0;
 	unsigned long long tg_nr_switches = 0;
+	unsigned long tg_nr_forks = 0;
 
 	time_ns = ve_get_time_ns(get_exec_env());
 	if (time_ns) {
@@ -668,6 +669,7 @@ int cpu_cgroup_proc_stat(struct cgroup_subsys_state *cpu_css,
 		tg_nr_running += tg->cfs_rq[i]->h_nr_running;
 		tg_nr_iowait  += tg->cfs_rq[i]->nr_iowait;
 		tg_nr_switches += tg->cfs_rq[i]->nr_switches;
+		tg_nr_forks   += tg->cfs_rq[i]->nr_forks;
 #endif
 #ifdef CONFIG_RT_GROUP_SCHED
 		tg_nr_running += tg->rt_rq[i]->rt_nr_running;
@@ -743,7 +745,7 @@ int cpu_cgroup_proc_stat(struct cgroup_subsys_state *cpu_css,
 		   "procs_blocked %lu\n",
 		   tg_nr_switches,
 		   (unsigned long long)boottime.tv_sec,
-		   total_forks,
+		   tg_nr_forks,
 		   tg_nr_running,
 		   tg_nr_iowait);
 
