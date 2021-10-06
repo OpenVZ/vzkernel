@@ -1485,8 +1485,8 @@ struct cgroup *task_cgroup_from_root(struct task_struct *task,
 
 static struct kernfs_syscall_ops cgroup_kf_syscall_ops;
 
-static char *cgroup_file_name(struct cgroup *cgrp, const struct cftype *cft,
-			      char *buf)
+static char *cgroup_fill_name(struct cgroup *cgrp, const struct cftype *cft,
+			      char *buf, bool write_link_name)
 {
 	struct cgroup_subsys *ss = cft->ss;
 
@@ -1496,11 +1496,24 @@ static char *cgroup_file_name(struct cgroup *cgrp, const struct cftype *cft,
 
 		snprintf(buf, CGROUP_FILE_NAME_MAX, "%s%s.%s",
 			 dbg, cgroup_on_dfl(cgrp) ? ss->name : ss->legacy_name,
-			 cft->name);
+			 write_link_name ? cft->link_name : cft->name);
 	} else {
-		strscpy(buf, cft->name, CGROUP_FILE_NAME_MAX);
+		strscpy(buf, write_link_name ? cft->link_name : cft->name,
+			CGROUP_FILE_NAME_MAX);
 	}
 	return buf;
+}
+
+static char *cgroup_file_name(struct cgroup *cgrp, const struct cftype *cft,
+			      char *buf)
+{
+	return cgroup_fill_name(cgrp, cft, buf, false);
+}
+
+static char *cgroup_link_name(struct cgroup *cgrp, const struct cftype *cft,
+			      char *buf)
+{
+	return cgroup_fill_name(cgrp, cft, buf, true);
 }
 
 /**
@@ -1661,6 +1674,9 @@ static void cgroup_rm_file(struct cgroup *cgrp, const struct cftype *cft)
 	}
 
 	kernfs_remove_by_name(cgrp->kn, cgroup_file_name(cgrp, cft, name));
+	if (cft->flags & CFTYPE_SYMLINKED)
+		kernfs_remove_by_name(cgrp->kn,
+				      cgroup_link_name(cgrp, cft, name));
 }
 
 /**
@@ -4081,6 +4097,7 @@ static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
 {
 	char name[CGROUP_FILE_NAME_MAX];
 	struct kernfs_node *kn;
+	struct kernfs_node *kn_link;
 	struct lock_class_key *key = NULL;
 	int ret;
 
@@ -4109,6 +4126,14 @@ static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
 		spin_lock_irq(&cgroup_file_kn_lock);
 		cfile->kn = kn;
 		spin_unlock_irq(&cgroup_file_kn_lock);
+	}
+
+	if (cft->flags & CFTYPE_SYMLINKED) {
+		kn_link = kernfs_create_link(cgrp->kn,
+					     cgroup_link_name(cgrp, cft, name),
+					     kn);
+		if (IS_ERR(kn_link))
+			return PTR_ERR(kn_link);
 	}
 
 	return 0;
