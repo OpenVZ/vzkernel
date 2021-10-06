@@ -577,6 +577,40 @@ unlock:
 	up_write(&ve->op_sem);
 }
 
+u64 ve_get_monotonic(struct ve_struct *ve)
+{
+	struct time_namespace *time_ns = ve_get_time_ns(ve);
+	struct timespec64 tp;
+
+	if (unlikely(!time_ns)) {
+		/* container not yet started */
+		return 0;
+	}
+
+	ktime_get_ts64(&tp);
+	tp = timespec64_add(tp, time_ns->offsets.monotonic);
+	put_time_ns(time_ns);
+	return timespec64_to_ns(&tp);
+}
+EXPORT_SYMBOL(ve_get_monotonic);
+
+u64 ve_get_uptime(struct ve_struct *ve)
+{
+	struct time_namespace *time_ns = ve_get_time_ns(ve);
+	struct timespec64 tp;
+
+	if (unlikely(!time_ns)) {
+		/* container not yet started */
+		return 0;
+	}
+
+	ktime_get_boottime_ts64(&tp);
+	tp = timespec64_add(tp, time_ns->offsets.boottime);
+	put_time_ns(time_ns);
+	return timespec64_to_ns(&tp);
+}
+EXPORT_SYMBOL(ve_get_uptime);
+
 static int copy_vdso(struct vdso_image **vdso_dst, const struct vdso_image *vdso_src)
 {
 	struct vdso_image *vdso;
