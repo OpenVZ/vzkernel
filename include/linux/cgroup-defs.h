@@ -117,6 +117,7 @@ enum {
 	CFTYPE_WORLD_WRITABLE	= (1 << 4),	/* (DON'T USE FOR NEW FILES) S_IWUGO */
 	CFTYPE_DEBUG		= (1 << 5),	/* create when cgroup_debug */
 	CFTYPE_PRESSURE		= (1 << 6),	/* only if pressure feature is enabled */
+	CFTYPE_SYMLINKED	= (1 << 7),	/* pointed to by symlink too */
 
 	/*
 	 * Allow write to file when it's on writer's ve init cgroup ns root. We don't
@@ -552,6 +553,7 @@ struct cftype {
 	 * end of cftype array.
 	 */
 	char name[MAX_CFTYPE_NAME];
+	char link_name[MAX_CFTYPE_NAME];
 	unsigned long private;
 
 	/*
