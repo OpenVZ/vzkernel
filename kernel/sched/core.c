@@ -9996,9 +9996,9 @@ int sched_cpu_dying(unsigned int cpu)
 		WARN(true, "Dying CPU not properly vacated!");
 		dump_rq_tasks(rq, KERN_WARNING);
 	}
+	calc_load_migrate(rq);
 	rq_unlock_irqrestore(rq, &rf);
 
-	calc_load_migrate(rq);
 	update_max_interval();
 	hrtick_clear(rq);
 	sched_core_cpu_dying(cpu);
