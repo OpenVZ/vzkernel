@@ -156,6 +156,13 @@ static inline void ve_set_task_start_time(struct ve_struct *ve,
 extern bool current_user_ns_initial(void);
 struct user_namespace *ve_init_user_ns(void);
 
+#ifdef CONFIG_TTY
+extern struct tty_driver *vtty_driver(dev_t dev, int *index);
+extern struct tty_driver *vtty_console_driver(int *index);
+extern int vtty_open_master(envid_t veid, int idx);
+extern bool vtty_is_master(struct tty_struct *tty);
+#endif /* CONFIG_TTY */
+
 extern struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp);
 
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
