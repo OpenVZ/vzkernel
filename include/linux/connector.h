@@ -63,6 +63,15 @@ struct cn_private {
 
 };
 
+struct ve_struct;
+int cn_add_callback_ve(struct ve_struct *ve,
+		       const struct cb_id *id, const char *name,
+		       void (*callback)(struct cn_msg *,
+					struct netlink_skb_parms *));
+void cn_del_callback_ve(struct ve_struct *ve, const struct cb_id *id);
+int cn_netlink_send_ve(struct ve_struct *ve, struct cn_msg *msg, u32 portid,
+		       u32 group, gfp_t gfp_mask);
+
 /**
  * cn_add_callback() - Registers new callback with connector core.
  *
