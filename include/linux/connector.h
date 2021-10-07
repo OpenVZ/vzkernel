@@ -54,6 +54,15 @@ struct cn_dev {
 	struct cn_queue_dev *cbdev;
 };
 
+struct cn_private {
+	struct cn_dev   cdev;
+	int             cn_already_initialized;
+
+	atomic_t        proc_event_num_listeners;
+	u32 __percpu    *proc_event_counts;
+
+};
+
 /**
  * cn_add_callback() - Registers new callback with connector core.
  *
