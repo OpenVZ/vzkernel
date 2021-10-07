@@ -23,6 +23,7 @@
 struct nsproxy;
 struct veip_struct;
 struct user_namespace;
+struct cn_private;
 
 struct ve_struct {
 	struct cgroup_subsys_state	css;
@@ -76,6 +77,9 @@ struct ve_struct {
 
 #ifdef CONFIG_COREDUMP
 	char			core_pattern[CORENAME_MAX_SIZE];
+#endif
+#ifdef CONFIG_CONNECTOR
+	struct cn_private	*cn;
 #endif
 
 	struct kthread_worker	*kthreadd_worker;
