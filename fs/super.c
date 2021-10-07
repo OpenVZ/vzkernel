@@ -45,8 +45,8 @@
 
 static int thaw_super_locked(struct super_block *sb);
 
-static LIST_HEAD(super_blocks);
-static DEFINE_SPINLOCK(sb_lock);
+LIST_HEAD(super_blocks);
+DEFINE_SPINLOCK(sb_lock);
 
 static char *sb_writers_name[SB_FREEZE_LEVELS] = {
 	"sb_writers",
