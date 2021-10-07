@@ -582,7 +582,12 @@ retry:
 	return s;
 
 share_extant_sb:
-	if (user_ns != old->s_user_ns) {
+	/* PSBM-86208: we mount secondary ploop on host for
+	 * resize functionality so allow mount in init userns
+	 * if fs already mounted in non-init userns
+	 */
+	if (user_ns != old->s_user_ns &&
+	    user_ns != &init_user_ns) {
 		spin_unlock(&sb_lock);
 		destroy_unused_super(s);
 		return ERR_PTR(-EBUSY);
