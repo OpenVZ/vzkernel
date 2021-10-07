@@ -33,6 +33,7 @@ struct proc_fs_context {
 	struct pid_namespace	*pid_ns;
 	unsigned int		mask;
 	enum proc_hidepid	hidepid;
+	int			hidepidns;
 	int			gid;
 	enum proc_pidonly	pidonly;
 };
@@ -40,12 +41,14 @@ struct proc_fs_context {
 enum proc_param {
 	Opt_gid,
 	Opt_hidepid,
+	Opt_hidepidns,
 	Opt_subset,
 };
 
 static const struct fs_parameter_spec proc_fs_parameters[] = {
 	fsparam_u32("gid",	Opt_gid),
 	fsparam_string("hidepid",	Opt_hidepid),
+	fsparam_u32("hidepidns",Opt_hidepidns),
 	fsparam_string("subset",	Opt_subset),
 	{}
 };
@@ -137,6 +140,13 @@ static int proc_parse_param(struct fs_context *fc, struct fs_parameter *param)
 			return -EINVAL;
 		break;
 
+	case Opt_hidepidns:
+		ctx->hidepidns = result.uint_32;
+		if (ctx->hidepidns < 0 || ctx->hidepidns > 1) {
+			return invalfc(fc, "proc: hidepidns value must be between 0 and 1.\n");
+		}
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -155,6 +165,8 @@ static void proc_apply_options(struct proc_fs_info *fs_info,
 		fs_info->pid_gid = make_kgid(user_ns, ctx->gid);
 	if (ctx->mask & (1 << Opt_hidepid))
 		fs_info->hide_pid = ctx->hidepid;
+	if (ctx->mask & (1 << Opt_hidepidns))
+		fs_info->hide_pidns = ctx->hidepidns;
 	if (ctx->mask & (1 << Opt_subset))
 		fs_info->pidonly = ctx->pidonly;
 }
