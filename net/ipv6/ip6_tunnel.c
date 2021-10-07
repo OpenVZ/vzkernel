@@ -1841,6 +1841,9 @@ static void ip6_tnl_dev_setup(struct net_device *dev)
 	dev->flags |= IFF_NOARP;
 	dev->addr_len = sizeof(struct in6_addr);
 	dev->features |= NETIF_F_LLTX;
+#ifdef CONFIG_VE
+	dev->ve_features = NETIF_F_VIRTUAL;
+#endif
 	netif_keep_dst(dev);
 
 	dev->features		|= IPXIPX_FEATURES;
