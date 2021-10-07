@@ -59,8 +59,7 @@ struct cn_private {
 	int             cn_already_initialized;
 
 	atomic_t        proc_event_num_listeners;
-	u32 __percpu    *proc_event_counts;
-
+	struct local_event __percpu *local_event;
 };
 
 struct ve_struct;
