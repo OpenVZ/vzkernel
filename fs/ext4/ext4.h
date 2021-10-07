@@ -1689,6 +1689,8 @@ struct ext4_sb_info {
 	/* Precomputed FS UUID checksum for seeding other checksums */
 	__u32 s_csum_seed;
 
+	bool s_err_event_sent;
+
 	/* Reclaim extents from extent status tree */
 	struct shrinker s_es_shrinker;
 	struct list_head s_es_list;	/* List of inodes with reclaimable extents */
@@ -3711,6 +3713,15 @@ extern int ext4_sb_block_valid(struct super_block *sb, struct inode *inode,
 /* extents.c */
 struct ext4_ext_path;
 struct ext4_extent;
+
+enum ext4_event_type {
+	EXT4_UA_MOUNT,
+	EXT4_UA_UMOUNT,
+	EXT4_UA_REMOUNT,
+	EXT4_UA_ERROR,
+	EXT4_UA_FREEZE,
+	EXT4_UA_UNFREEZE,
+};
 
 /*
  * Maximum number of logical blocks in a file; ext4_extent's ee_block is
