@@ -21,7 +21,7 @@ struct cpuid_override_entry {
 	unsigned int edx;
 };
 
-#define MAX_CPUID_OVERRIDE_ENTRIES	16
+#define MAX_CPUID_OVERRIDE_ENTRIES	128
 
 struct cpuid_override_table {
 	struct rcu_head rcu_head;
