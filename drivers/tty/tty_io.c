@@ -108,6 +108,7 @@
 
 #include <linux/kmod.h>
 #include <linux/nsproxy.h>
+#include <linux/ve.h>
 #include "tty.h"
 
 #undef TTY_DEBUG_HANGUP
@@ -1737,12 +1738,21 @@ EXPORT_SYMBOL_GPL(tty_release_struct);
 
 int tty_release(struct inode *inode, struct file *filp)
 {
-	struct tty_struct *tty = file_tty(filp);
+	struct tty_struct *tty;
 	struct tty_struct *o_tty = NULL;
 	int	do_sleep, final;
 	int	idx;
 	long	timeout = 0;
 	int	once = 1;
+
+	/*
+	 * filp can be released at error path with private_data already
+	 * reverted to NULL, see vtty_open_master.
+	 */
+	if (!filp->private_data)
+		return 0;
+
+	tty = file_tty(filp);
 
 	if (tty_paranoia_check(tty, inode, __func__))
 		return 0;
@@ -1929,6 +1939,20 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 {
 	struct tty_driver *driver = NULL;
 
+#ifdef CONFIG_VE
+	struct ve_struct *ve = get_exec_env();
+
+	if (!ve_is_super(ve)) {
+		driver = vtty_driver(device, index);
+		if (driver)
+			/*
+			 * noctty = 1 has been removed at porting in hope that
+			 * at tty_open noctty will be set as expected.
+			 */
+			return tty_driver_kref_get(driver);
+	}
+#endif
+
 	switch (device) {
 #ifdef CONFIG_VT
 	case MKDEV(TTY_MAJOR, 0): {
@@ -1941,7 +1965,10 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 #endif
 	case MKDEV(TTYAUX_MAJOR, 1): {
 		struct tty_driver *console_driver = console_device(index);
-
+#ifdef CONFIG_VE
+		if (!ve_is_super(ve))
+			console_driver = vtty_console_driver(index);
+#endif
 		if (console_driver) {
 			driver = tty_driver_kref_get(console_driver);
 			if (driver && filp) {
@@ -2048,23 +2075,22 @@ EXPORT_SYMBOL_GPL(tty_kopen_shared);
  *	  - concurrent tty driver removal w/ lookup
  *	  - concurrent tty removal from driver table
  */
-static struct tty_struct *tty_open_by_driver(dev_t device,
-					     struct file *filp)
+static struct tty_struct *tty_open_by_driver(dev_t device, struct inode *inode,
+					     struct file *filp, int *index)
 {
 	struct tty_struct *tty;
 	struct tty_driver *driver = NULL;
-	int index = -1;
 	int retval;
 
 	mutex_lock(&tty_mutex);
-	driver = tty_lookup_driver(device, filp, &index);
+	driver = tty_lookup_driver(device, filp, index);
 	if (IS_ERR(driver)) {
 		mutex_unlock(&tty_mutex);
 		return ERR_CAST(driver);
 	}
 
 	/* check whether we're reopening an existing tty */
-	tty = tty_driver_lookup_tty(driver, filp, index);
+	tty = tty_driver_lookup_tty(driver, filp, *index);
 	if (IS_ERR(tty)) {
 		mutex_unlock(&tty_mutex);
 		goto out;
@@ -2092,7 +2118,7 @@ static struct tty_struct *tty_open_by_driver(dev_t device,
 			tty = ERR_PTR(retval);
 		}
 	} else { /* Returns with the tty_lock held for now */
-		tty = tty_init_dev(driver, index);
+		tty = tty_init_dev(driver, *index);
 		mutex_unlock(&tty_mutex);
 	}
 out:
@@ -2130,6 +2156,7 @@ static int tty_open(struct inode *inode, struct file *filp)
 	int noctty, retval;
 	dev_t device = inode->i_rdev;
 	unsigned saved_flags = filp->f_flags;
+	int index = -1;
 
 	nonseekable_open(inode, filp);
 
@@ -2140,7 +2167,7 @@ retry_open:
 
 	tty = tty_open_current_tty(device, filp);
 	if (!tty)
-		tty = tty_open_by_driver(device, filp);
+		tty = tty_open_by_driver(device, inode, filp, &index);
 
 	if (IS_ERR(tty)) {
 		tty_free_file(filp);
@@ -2188,6 +2215,14 @@ retry_open:
 		 device == MKDEV(TTYAUX_MAJOR, 1) ||
 		 (tty->driver->type == TTY_DRIVER_TYPE_PTY &&
 		  tty->driver->subtype == PTY_TYPE_MASTER);
+#ifdef CONFIG_VE
+	if (!noctty) {
+		if (vtty_driver(device, &index)) {
+			if (MINOR(device) == 0)
+				noctty = 1;
+		}
+	}
+#endif
 	if (!noctty)
 		tty_open_proc_set_tty(filp, tty);
 	tty_unlock(tty);
