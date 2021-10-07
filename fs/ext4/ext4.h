@@ -1690,6 +1690,7 @@ struct ext4_sb_info {
 	__u32 s_csum_seed;
 
 	bool s_err_event_sent;
+	bool s_abrt_event_sent;
 
 	/* Reclaim extents from extent status tree */
 	struct shrinker s_es_shrinker;
@@ -3719,6 +3720,7 @@ enum ext4_event_type {
 	EXT4_UA_UMOUNT,
 	EXT4_UA_REMOUNT,
 	EXT4_UA_ERROR,
+	EXT4_UA_ABORT,
 	EXT4_UA_FREEZE,
 	EXT4_UA_UNFREEZE,
 };

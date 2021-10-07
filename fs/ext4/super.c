@@ -500,6 +500,9 @@ static void ext4_send_uevent_work(struct work_struct *w)
 	case EXT4_UA_ERROR:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "ERROR");
 		break;
+	case EXT4_UA_ABORT:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "ABORT");
+		break;
 	case EXT4_UA_FREEZE:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "FREEZE");
 		break;
@@ -773,6 +776,9 @@ static void ext4_handle_error(struct super_block *sb, bool force_ro, int error,
 		WARN_ON_ONCE(1);
 
 	if (!continue_fs && !sb_rdonly(sb)) {
+		if (!xchg(&EXT4_SB(sb)->s_abrt_event_sent, 1))
+			ext4_send_uevent(sb, EXT4_UA_ABORT);
+
 		ext4_set_mount_flag(sb, EXT4_MF_FS_ABORTED);
 		if (journal)
 			jbd2_journal_abort(journal, -EIO);
