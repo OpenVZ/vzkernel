@@ -6187,6 +6187,21 @@ void cgroup_path_from_kernfs_id(u64 id, char *buf, size_t buflen)
 	kernfs_put(kn);
 }
 
+#ifdef CONFIG_VE
+int ve_hide_cgroups(struct cgroup_root *root)
+{
+	struct ve_struct *ve = get_exec_env();
+	unsigned long hidden_mask = (1UL << ve_cgrp_id);
+
+	/*
+	 * Hide ve cgroup in CT for docker,
+	 * still showing it to pseudosuper (criu)
+	 */
+	return !ve_is_super(ve) && !ve->is_pseudosuper
+		&& (root->subsys_mask & hidden_mask);
+}
+#endif
+
 /*
  * cgroup_get_from_id : get the cgroup associated with cgroup id
  * @id: cgroup id
@@ -6256,6 +6271,11 @@ int proc_cgroup_show(struct seq_file *m, struct pid_namespace *ns,
 
 		if (root == &cgrp_dfl_root && !READ_ONCE(cgrp_dfl_visible))
 			continue;
+
+#ifdef CONFIG_VE
+		if (ve_hide_cgroups(root))
+			continue;
+#endif
 
 		seq_printf(m, "%d:", root->hierarchy_id);
 		if (root != &cgrp_dfl_root)
