@@ -1966,8 +1966,15 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 	case MKDEV(TTYAUX_MAJOR, 1): {
 		struct tty_driver *console_driver = console_device(index);
 #ifdef CONFIG_VE
-		if (!ve_is_super(ve))
+		if (!ve_is_super(ve)) {
 			console_driver = vtty_console_driver(index);
+			/*
+			 * Reset fops, sometimes there might be
+			 * console_fops picked from inode->i_cdev
+			 * in chrdev_open()
+			 */
+			filp->f_op = &tty_fops;
+		}
 #endif
 		if (console_driver) {
 			driver = tty_driver_kref_get(console_driver);
