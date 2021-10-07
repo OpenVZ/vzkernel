@@ -131,14 +131,15 @@ static bool fill_fork_event(struct proc_event *ev, struct ve_struct *ve,
 			    struct task_struct *task, int unused)
 {
 	struct task_struct *parent;
+	struct pid_namespace *pid_ns = ve->ve_ns->pid_ns_for_children;
 
 	rcu_read_lock();
 	parent = rcu_dereference(task->real_parent);
-	ev->event_data.fork.parent_pid = task_pid_nr_ns(parent, &init_pid_ns);
-	ev->event_data.fork.parent_tgid = task_tgid_nr_ns(parent, &init_pid_ns);
+	ev->event_data.fork.parent_pid = task_pid_nr_ns(parent, pid_ns);
+	ev->event_data.fork.parent_tgid = task_tgid_nr_ns(parent, pid_ns);
 	rcu_read_unlock();
-	ev->event_data.fork.child_pid = task_pid_nr_ns(task, &init_pid_ns);
-	ev->event_data.fork.child_tgid = task_tgid_nr_ns(task, &init_pid_ns);
+	ev->event_data.fork.child_pid = task_pid_nr_ns(task, pid_ns);
+	ev->event_data.fork.child_tgid = task_tgid_nr_ns(task, pid_ns);
 	return true;
 }
 
@@ -150,8 +151,10 @@ void proc_fork_connector(struct task_struct *task)
 static bool fill_exec_event(struct proc_event *ev, struct ve_struct *ve,
 			    struct task_struct *task, int unused)
 {
-	ev->event_data.exec.process_pid = task_pid_nr_ns(task, &init_pid_ns);
-	ev->event_data.exec.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
+	struct pid_namespace *pid_ns = ve->ve_ns->pid_ns_for_children;
+
+	ev->event_data.exec.process_pid = task_pid_nr_ns(task, pid_ns);
+	ev->event_data.exec.process_tgid = task_tgid_nr_ns(task, pid_ns);
 	return true;
 }
 
@@ -164,17 +167,19 @@ static bool fill_id_event(struct proc_event *ev, struct ve_struct *ve,
 			  struct task_struct *task, int which_id)
 {
 	const struct cred *cred;
+	struct pid_namespace *pid_ns = ve->ve_ns->pid_ns_for_children;
+	struct user_namespace *user_ns = ve->init_cred->user_ns;
 
-	ev->event_data.id.process_pid = task_pid_nr_ns(task, &init_pid_ns);
-	ev->event_data.id.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
+	ev->event_data.id.process_pid = task_pid_nr_ns(task, pid_ns);
+	ev->event_data.id.process_tgid = task_tgid_nr_ns(task, pid_ns);
 	rcu_read_lock();
 	cred = __task_cred(task);
 	if (which_id == PROC_EVENT_UID) {
-		ev->event_data.id.r.ruid = from_kuid_munged(&init_user_ns, cred->uid);
-		ev->event_data.id.e.euid = from_kuid_munged(&init_user_ns, cred->euid);
+		ev->event_data.id.r.ruid = from_kuid_munged(user_ns, cred->uid);
+		ev->event_data.id.e.euid = from_kuid_munged(user_ns, cred->euid);
 	} else if (which_id == PROC_EVENT_GID) {
-		ev->event_data.id.r.rgid = from_kgid_munged(&init_user_ns, cred->gid);
-		ev->event_data.id.e.egid = from_kgid_munged(&init_user_ns, cred->egid);
+		ev->event_data.id.r.rgid = from_kgid_munged(user_ns, cred->gid);
+		ev->event_data.id.e.egid = from_kgid_munged(user_ns, cred->egid);
 	} else {
 		rcu_read_unlock();
 		return false;
@@ -191,8 +196,10 @@ void proc_id_connector(struct task_struct *task, int which_id)
 static bool fill_sid_event(struct proc_event *ev, struct ve_struct *ve,
 			   struct task_struct *task, int unused)
 {
-	ev->event_data.sid.process_pid = task_pid_nr_ns(task, &init_pid_ns);
-	ev->event_data.sid.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
+	struct pid_namespace *pid_ns = ve->ve_ns->pid_ns_for_children;
+
+	ev->event_data.sid.process_pid = task_pid_nr_ns(task, pid_ns);
+	ev->event_data.sid.process_tgid = task_tgid_nr_ns(task, pid_ns);
 	return true;
 }
 
@@ -204,11 +211,13 @@ void proc_sid_connector(struct task_struct *task)
 static bool fill_ptrace_event(struct proc_event *ev, struct ve_struct *ve,
 			      struct task_struct *task, int ptrace_id)
 {
-	ev->event_data.ptrace.process_pid  = task_pid_nr_ns(task, &init_pid_ns);
-	ev->event_data.ptrace.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
+	struct pid_namespace *pid_ns = ve->ve_ns->pid_ns_for_children;
+
+	ev->event_data.ptrace.process_pid  = task_pid_nr_ns(task, pid_ns);
+	ev->event_data.ptrace.process_tgid = task_tgid_nr_ns(task, pid_ns);
 	if (ptrace_id == PTRACE_ATTACH) {
-		ev->event_data.ptrace.tracer_pid  = task_pid_nr_ns(current, &init_pid_ns);
-		ev->event_data.ptrace.tracer_tgid = task_tgid_nr_ns(current, &init_pid_ns);
+		ev->event_data.ptrace.tracer_pid  = task_pid_nr_ns(current, pid_ns);
+		ev->event_data.ptrace.tracer_tgid = task_tgid_nr_ns(current, pid_ns);
 	} else if (ptrace_id == PTRACE_DETACH) {
 		ev->event_data.ptrace.tracer_pid  = 0;
 		ev->event_data.ptrace.tracer_tgid = 0;
@@ -226,8 +235,10 @@ void proc_ptrace_connector(struct task_struct *task, int ptrace_id)
 static bool fill_comm_event(struct proc_event *ev, struct ve_struct *ve,
 			    struct task_struct *task, int unused)
 {
-	ev->event_data.comm.process_pid  = task_pid_nr_ns(task, &init_pid_ns);
-	ev->event_data.comm.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
+	struct pid_namespace *pid_ns = ve->ve_ns->pid_ns_for_children;
+
+	ev->event_data.comm.process_pid  = task_pid_nr_ns(task, pid_ns);
+	ev->event_data.comm.process_tgid = task_tgid_nr_ns(task, pid_ns);
 	get_task_comm(ev->event_data.comm.comm, task);
 	return true;
 }
@@ -240,20 +251,21 @@ void proc_comm_connector(struct task_struct *task)
 static bool fill_coredump_event(struct proc_event *ev, struct ve_struct *ve,
 				struct task_struct *task, int unused)
 {
+	struct pid_namespace *pid_ns = ve->ve_ns->pid_ns_for_children;
 	struct task_struct *parent;
 
 	ev->event_data.coredump.process_pid =
-		task_pid_nr_ns(task, &init_pid_ns);
+		task_pid_nr_ns(task, pid_ns);
 	ev->event_data.coredump.process_tgid =
-		task_tgid_nr_ns(task, &init_pid_ns);
+		task_tgid_nr_ns(task, pid_ns);
 
 	rcu_read_lock();
 	if (pid_alive(task)) {
 		parent = rcu_dereference(task->real_parent);
 		ev->event_data.coredump.parent_pid =
-			task_pid_nr_ns(parent, &init_pid_ns);
+			task_pid_nr_ns(parent, pid_ns);
 		ev->event_data.coredump.parent_tgid =
-			task_tgid_nr_ns(parent, &init_pid_ns);
+			task_tgid_nr_ns(parent, pid_ns);
 	}
 	rcu_read_unlock();
 	return true;
@@ -267,10 +279,11 @@ void proc_coredump_connector(struct task_struct *task)
 static bool fill_exit_event(struct proc_event *ev, struct ve_struct *ve,
 			    struct task_struct *task, int unused)
 {
+	struct pid_namespace *pid_ns = ve->ve_ns->pid_ns_for_children;
 	struct task_struct *parent;
 
-	ev->event_data.exit.process_pid = task_pid_nr_ns(task, &init_pid_ns);
-	ev->event_data.exit.process_tgid = task_tgid_nr_ns(task, &init_pid_ns);
+	ev->event_data.exit.process_pid = task_pid_nr_ns(task, pid_ns);
+	ev->event_data.exit.process_tgid = task_tgid_nr_ns(task, pid_ns);
 	ev->event_data.exit.exit_code = task->exit_code;
 	ev->event_data.exit.exit_signal = task->exit_signal;
 
@@ -278,9 +291,9 @@ static bool fill_exit_event(struct proc_event *ev, struct ve_struct *ve,
 	if (pid_alive(task)) {
 		parent = rcu_dereference(task->real_parent);
 		ev->event_data.exit.parent_pid = task_pid_nr_ns(parent,
-								&init_pid_ns);
+								pid_ns);
 		ev->event_data.exit.parent_tgid = task_tgid_nr_ns(parent,
-								  &init_pid_ns);
+								  pid_ns);
 	}
 	rcu_read_unlock();
 	return true;
@@ -332,6 +345,7 @@ static void cn_proc_mcast_ctl(struct cn_msg *msg,
 {
 	enum proc_cn_mcast_op *mc_op = NULL;
 	struct ve_struct *ve = get_exec_env();
+	struct nsproxy *ve_ns;
 	int err = 0;
 
 	if (msg->len != sizeof(*mc_op))
@@ -342,12 +356,17 @@ static void cn_proc_mcast_ctl(struct cn_msg *msg,
 	 * and user namespaces so ignore requestors from
 	 * other namespaces.
 	 */
-	if ((current_user_ns() != &init_user_ns) ||
-	    (task_active_pid_ns(current) != &init_pid_ns))
+	rcu_read_lock();
+	ve_ns = rcu_dereference(ve->ve_ns);
+	if (!current_user_ns_initial() || !ve_ns ||
+	    (task_active_pid_ns(current) != ve_ns->pid_ns_for_children)) {
+		rcu_read_unlock();
 		return;
+	}
+	rcu_read_unlock();
 
 	/* Can only change if privileged. */
-	if (!__netlink_ns_capable(nsp, &init_user_ns, CAP_NET_ADMIN)) {
+	if (!__netlink_ns_capable(nsp, ve_init_user_ns(), CAP_NET_ADMIN)) {
 		err = EPERM;
 		goto out;
 	}
