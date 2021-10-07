@@ -614,6 +614,11 @@ struct compat_ext4_new_group_input {
 };
 #endif
 
+struct ext4_ioc_mfsync_info {
+	__u32 size;
+	__u32 fd[0];
+};
+
 /* The struct ext4_new_group_input in kernel space, with free_blocks_count */
 struct ext4_new_group_data {
 	__u32 group;
@@ -723,6 +728,7 @@ enum {
 #define EXT4_IOC_GET_ES_CACHE		_IOWR('f', 42, struct fiemap)
 #define EXT4_IOC_OPEN_BALLOON		_IO('f', 42)
 #define EXT4_IOC_CHECKPOINT		_IOW('f', 43, __u32)
+#define EXT4_IOC_MFSYNC			_IO('f', 43)
 #define EXT4_IOC_GETFSUUID		_IOR('f', 44, struct fsuuid)
 #define EXT4_IOC_SETFSUUID		_IOW('f', 44, struct fsuuid)
 
@@ -2863,6 +2869,7 @@ extern int ext4_check_all_de(struct inode *dir, struct buffer_head *bh,
 
 /* fsync.c */
 extern int ext4_sync_file(struct file *, loff_t, loff_t, int);
+extern int ext4_sync_files(struct file **, unsigned int *, unsigned int);
 
 /* hash.c */
 extern int ext4fs_dirhash(const struct inode *dir, const char *name, int len,
