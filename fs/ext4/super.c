@@ -2142,6 +2142,10 @@ static int ext4_parse_param(struct fs_context *fc, struct fs_parameter *param)
 #endif
 		return 0;
 	case Opt_errors:
+		if ((result.uint_32 & EXT4_MOUNT_ERRORS_PANIC) &&
+		    !capable(CAP_SYS_ADMIN))
+			return -EPERM;
+
 		ctx_clear_mount_opt(ctx, EXT4_MOUNT_ERRORS_MASK);
 		ctx_set_mount_opt(ctx, result.uint_32);
 		return 0;
@@ -4393,8 +4397,12 @@ static void ext4_set_def_opts(struct super_block *sb,
 	else if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_WBACK)
 		set_opt(sb, WRITEBACK_DATA);
 
-	if (le16_to_cpu(es->s_errors) == EXT4_ERRORS_PANIC)
-		set_opt(sb, ERRORS_PANIC);
+	if (le16_to_cpu(es->s_errors) == EXT4_ERRORS_PANIC) {
+		if (capable(CAP_SYS_ADMIN))
+			set_opt(sb, ERRORS_PANIC);
+		else
+			set_opt(sb, ERRORS_RO);
+	}
 	else if (le16_to_cpu(es->s_errors) == EXT4_ERRORS_CONTINUE)
 		set_opt(sb, ERRORS_CONT);
 	else
