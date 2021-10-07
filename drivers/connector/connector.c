@@ -297,22 +297,39 @@ static int cn_init_ve(struct ve_struct *ve)
 	err = -EIO;
 	dev->nls = netlink_kernel_create(net, NETLINK_CONNECTOR, &cfg);
 	if (!dev->nls)
-		goto net_unlock;
+		goto free_cn;
 
 	err = -EINVAL;
 	dev->cbdev = cn_queue_alloc_dev("cqueue", dev->nls);
 	if (!dev->cbdev) {
-		netlink_kernel_release(dev->nls);
-		goto net_unlock;
+		goto netlink_release;
 	}
 
 	ve->cn->cn_already_initialized = 1;
 
-	proc_create_single("connector", S_IRUGO, net->proc_net, cn_proc_show);
-	err = 0;
+	if (!proc_create_single("connector", S_IRUGO, net->proc_net,
+				cn_proc_show)) {
+		err = -ENOMEM;
+		goto free_cdev;
+	}
+
+	err = cn_proc_init_ve(ve);
+	if (err)
+		goto remove_proc;
 
 net_unlock:
 	return err;
+
+remove_proc:
+	remove_proc_entry("connector", net->proc_net);
+free_cdev:
+	cn_queue_free_dev(dev->cbdev);
+netlink_release:
+	netlink_kernel_release(dev->nls);
+free_cn:
+	kfree(ve->cn);
+	ve->cn = NULL;
+	goto net_unlock;
 }
 
 static void cn_fini_ve(struct ve_struct *ve)
@@ -321,6 +338,8 @@ static void cn_fini_ve(struct ve_struct *ve)
 	struct net *net;
 
 	ve->cn->cn_already_initialized = 0;
+
+	cn_proc_fini_ve(ve);
 
 	/*
 	 * This is a hook called on ve stop, ve->ve_ns will be destroyed
