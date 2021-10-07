@@ -272,8 +272,9 @@ static int __maybe_unused cn_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int cn_init_ve(struct ve_struct *ve)
+static int cn_init_ve(void *data)
 {
+	struct ve_struct *ve = data;
 	struct cn_dev *dev;
 	struct netlink_kernel_cfg cfg = {
 		.groups	= CN_NETLINK_USERS + 0xf,
@@ -332,8 +333,9 @@ free_cn:
 	goto net_unlock;
 }
 
-static void cn_fini_ve(struct ve_struct *ve)
+static void cn_fini_ve(void *data)
 {
+	struct ve_struct *ve = data;
 	struct cn_dev *dev = get_cdev(ve);
 	struct net *net;
 
@@ -356,13 +358,28 @@ static void cn_fini_ve(struct ve_struct *ve)
 	ve->cn = NULL;
 }
 
+static struct ve_hook cn_ss_hook = {
+	.init = cn_init_ve,
+	.fini = cn_fini_ve,
+	.priority = HOOK_PRIO_DEFAULT,
+	.owner = THIS_MODULE,
+};
+
 static int cn_init(void)
 {
-	return cn_init_ve(get_ve0());
+	int err;
+
+	err = cn_init_ve(get_ve0());
+	if (err)
+		return err;
+
+	ve_hook_register(VE_SS_CHAIN, &cn_ss_hook);
+	return 0;
 }
 
 static void cn_fini(void)
 {
+	ve_hook_unregister(&cn_ss_hook);
 	return cn_fini_ve(get_ve0());
 }
 
