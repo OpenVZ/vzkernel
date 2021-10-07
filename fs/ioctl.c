@@ -190,8 +190,14 @@ int fiemap_prep(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		return -EBADR;
 	}
 
-	if (fieinfo->fi_flags & FIEMAP_FLAG_SYNC)
-		ret = filemap_write_and_wait(inode->i_mapping);
+	if (fieinfo->fi_flags & FIEMAP_FLAG_SYNC) {
+		/* Complete sync is expensive for vstorage */
+		if (inode->i_sb->s_type->fs_flags & FS_FIEMAP_RELAXED_FSYNC)
+			ret = filemap_write_and_wait_range(inode->i_mapping,
+						   start, start + *len - 1);
+		else
+			ret = filemap_write_and_wait(inode->i_mapping);
+	}
 	return ret;
 }
 EXPORT_SYMBOL(fiemap_prep);
