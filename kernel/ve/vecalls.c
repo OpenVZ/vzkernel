@@ -346,6 +346,9 @@ static int ve_configure(envid_t veid, unsigned int key,
 	struct ve_struct *ve;
 	int err = -ENOKEY;
 
+	if (key == VE_CONFIGURE_OPEN_TTY)
+		return vtty_open_master(veid, val);
+
 	ve = get_ve_by_id(veid);
 	if (!ve)
 		return -EINVAL;
