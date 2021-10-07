@@ -141,7 +141,7 @@ static ssize_t cpuid_override_write(struct file *file, const char __user *buf,
 	if (!t)
 		goto out;
 
-	page = (void *)__get_free_page(GFP_KERNEL);
+	page = (void *)__get_free_pages(GFP_KERNEL, 1);
 	if (!page)
 		goto out;
 
@@ -166,7 +166,7 @@ static ssize_t cpuid_override_write(struct file *file, const char __user *buf,
 	}
 	err = 0;
 out:
-	free_page((unsigned long)page);
+	free_pages((unsigned long)page, 1);
 
 	if (!err)
 		cpuid_override_update(t);
