@@ -71,6 +71,7 @@ struct fsverity_operations;
 struct fs_context;
 struct fs_parameter_spec;
 struct fileattr;
+struct mnt_namespace;
 
 extern void __init inode_init(void);
 extern void __init inode_init_early(void);
@@ -2521,6 +2522,7 @@ void kill_anon_super(struct super_block *sb);
 void kill_litter_super(struct super_block *sb);
 void deactivate_super(struct super_block *sb);
 void deactivate_locked_super(struct super_block *sb);
+void put_super(struct super_block *sb);
 int set_anon_super(struct super_block *s, void *data);
 int set_anon_super_fc(struct super_block *s, struct fs_context *fc);
 int get_anon_bdev(dev_t *);
@@ -3146,6 +3148,13 @@ extern bool path_is_under(const struct path *, const struct path *);
 
 extern char *file_path(struct file *, char *, int);
 
+int ve_fsync_behavior(void);
+
+#define FSYNC_NEVER	0	/* ve syncs are ignored    */
+#define FSYNC_ALWAYS	1	/* ve syncs work as ususal */
+#define FSYNC_FILTERED	2	/* ve syncs only its files */
+/* For non-ve0 FSYNC_FILTERED value means "get value from ve0". */
+
 #include <linux/err.h>
 
 /* needed for stackable file system support */
@@ -3494,6 +3503,9 @@ void setattr_copy(struct user_namespace *, struct inode *inode,
 		  const struct iattr *attr);
 
 extern int file_update_time(struct file *file);
+
+extern struct mount *mnt_list_next(struct mnt_namespace *ns,
+				   struct list_head *p);
 
 static inline bool vma_is_dax(const struct vm_area_struct *vma)
 {
