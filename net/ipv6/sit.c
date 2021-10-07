@@ -1442,6 +1442,9 @@ static void ipip6_tunnel_setup(struct net_device *dev)
 	dev->addr_len		= 4;
 	dev->features		|= NETIF_F_LLTX;
 	dev->features		|= SIT_FEATURES;
+#ifdef CONFIG_VE
+	dev->ve_features	= NETIF_F_VIRTUAL;
+#endif
 	dev->hw_features	|= SIT_FEATURES;
 }
 
