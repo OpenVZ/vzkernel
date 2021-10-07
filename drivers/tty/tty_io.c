@@ -2802,6 +2802,11 @@ long tty_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case TIOCGPTPEER:
 		/* Special because the struct file is needed */
 		return ptm_open_peer(file, tty, (int)arg);
+	case TIOSAK:
+		if (real_tty == tty && !capable(CAP_SYS_ADMIN))
+			return -EPERM;
+		__do_SAK(real_tty);
+		return 0;
 	default:
 		retval = tty_jobctrl_ioctl(tty, real_tty, file, cmd, arg);
 		if (retval != -ENOIOCTLCMD)
