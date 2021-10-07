@@ -207,29 +207,18 @@ void proc_ptrace_connector(struct task_struct *task, int ptrace_id)
 			     fill_ptrace_event);
 }
 
-void proc_comm_connector(struct task_struct *task)
+static bool fill_comm_event(struct proc_event *ev, struct task_struct *task,
+			    int unused)
 {
-	struct cn_msg *msg;
-	struct proc_event *ev;
-	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
-
-	if (atomic_read(&proc_event_num_listeners) < 1)
-		return;
-
-	msg = buffer_to_cn_msg(buffer);
-	ev = (struct proc_event *)msg->data;
-	memset(&ev->event_data, 0, sizeof(ev->event_data));
-	ev->timestamp_ns = ktime_get_ns();
-	ev->what = PROC_EVENT_COMM;
 	ev->event_data.comm.process_pid  = task->pid;
 	ev->event_data.comm.process_tgid = task->tgid;
 	get_task_comm(ev->event_data.comm.comm, task);
+	return true;
+}
 
-	memcpy(&msg->id, &cn_proc_event_id, sizeof(msg->id));
-	msg->ack = 0; /* not used */
-	msg->len = sizeof(*ev);
-	msg->flags = 0; /* not used */
-	send_msg(msg);
+void proc_comm_connector(struct task_struct *task)
+{
+	proc_event_connector(task, PROC_EVENT_COMM, 0, fill_comm_event);
 }
 
 void proc_coredump_connector(struct task_struct *task)
