@@ -440,6 +440,118 @@ static time64_t __ext4_get_tstamp(__le32 *lo, __u8 *hi)
 #define ext4_get_tstamp(es, tstamp) \
 	__ext4_get_tstamp(&(es)->tstamp, &(es)->tstamp ## _hi)
 
+static int ext4_uuid_valid(const u8 *uuid)
+{
+	int i;
+
+	for (i = 0; i < 16; i++) {
+		if (uuid[i])
+			return 1;
+	}
+	return 0;
+}
+
+struct ext4_uevent {
+	struct super_block *sb;
+	enum ext4_event_type action;
+	struct work_struct work;
+};
+
+/**
+ * ext4_send_uevent - prepare and send uevent
+ *
+ * @sb:		super_block
+ * @action:		action type
+ *
+ */
+static void ext4_send_uevent_work(struct work_struct *w)
+{
+	struct ext4_uevent *e = container_of(w, struct ext4_uevent, work);
+	struct super_block *sb = e->sb;
+	struct kobj_uevent_env *env;
+	const u8 *uuid = EXT4_SB(sb)->s_es->s_uuid;
+	enum kobject_action kaction = KOBJ_CHANGE;
+	int ret;
+
+	env = kzalloc(sizeof(struct kobj_uevent_env), GFP_KERNEL);
+	if (!env){
+		kfree(e);
+		return;
+	}
+	ret = add_uevent_var(env, "FS_TYPE=%s", sb->s_type->name);
+	if (ret)
+		goto out;
+	ret = add_uevent_var(env, "FS_NAME=%s", sb->s_id);
+	if (ret)
+		goto out;
+
+	if (ext4_uuid_valid(uuid)) {
+		ret = add_uevent_var(env, "UUID=%pUB", uuid);
+		if (ret)
+			goto out;
+	}
+
+	switch (e->action) {
+	case EXT4_UA_MOUNT:
+		kaction = KOBJ_ONLINE;
+		ret = add_uevent_var(env, "FS_ACTION=%s", "MOUNT");
+		break;
+	case EXT4_UA_UMOUNT:
+		kaction = KOBJ_OFFLINE;
+		ret = add_uevent_var(env, "FS_ACTION=%s", "UMOUNT");
+		break;
+	case EXT4_UA_REMOUNT:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "REMOUNT");
+		break;
+	case EXT4_UA_ERROR:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "ERROR");
+		break;
+	case EXT4_UA_FREEZE:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "FREEZE");
+		break;
+	case EXT4_UA_UNFREEZE:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "UNFREEZE");
+		break;
+	default:
+		ret = -EINVAL;
+	}
+	if (ret)
+		goto out;
+	ret = kobject_uevent_env(&(EXT4_SB(sb)->s_kobj), kaction, env->envp);
+out:
+	kfree(env);
+	kfree(e);
+}
+
+/**
+ * ext4_send_uevent - prepare and schedule event submission
+ *
+ * @sb:		super_block
+ * @action:		action type
+ *
+ */
+void ext4_send_uevent(struct super_block *sb, enum ext4_event_type action)
+{
+	struct ext4_uevent *e;
+
+	/*
+	 * May happen if called from ext4_put_super() -> __ext4_abort()
+	 * -> ext4_send_uevent()
+	 */
+	if (!EXT4_SB(sb)->rsv_conversion_wq)
+		return;
+
+	e = kzalloc(sizeof(*e), GFP_NOIO);
+	if (!e)
+		return;
+
+	e->sb = sb;
+	e->action = action;
+	INIT_WORK(&e->work, ext4_send_uevent_work);
+	queue_work(EXT4_SB(sb)->rsv_conversion_wq, &e->work);
+}
+
+
 /*
  * The del_gendisk() function uninitializes the disk-specific data
  * structures, including the bdi structure, without telling anyone
@@ -659,6 +771,9 @@ static void ext4_handle_error(struct super_block *sb, bool force_ro, int error,
 {
 	journal_t *journal = EXT4_SB(sb)->s_journal;
 	bool continue_fs = !force_ro && test_opt(sb, ERRORS_CONT);
+
+	if (!xchg(&EXT4_SB(sb)->s_err_event_sent, 1))
+		ext4_send_uevent(sb, EXT4_UA_ERROR);
 
 	EXT4_SB(sb)->s_mount_state |= EXT4_ERROR_FS;
 	if (test_opt(sb, WARN_ON_ERROR))
@@ -1193,6 +1308,7 @@ static void ext4_put_super(struct super_block *sb)
 	int aborted = 0;
 	int i, err;
 
+	ext4_send_uevent(sb, EXT4_UA_UMOUNT);
 	/*
 	 * Unregister sysfs before destroying jbd2 journal.
 	 * Since we could still access attr_journal_task attribute via sysfs
@@ -1210,6 +1326,7 @@ static void ext4_put_super(struct super_block *sb)
 
 	flush_work(&sbi->s_error_work);
 	destroy_workqueue(sbi->rsv_conversion_wq);
+	sbi->rsv_conversion_wq = NULL;
 	ext4_release_orphan_info(sb);
 
 	if (sbi->s_journal) {
@@ -5580,6 +5697,7 @@ no_journal:
 	atomic_set(&sbi->s_warning_count, 0);
 	atomic_set(&sbi->s_msg_count, 0);
 
+	ext4_send_uevent(sb, EXT4_UA_MOUNT);
 	return 0;
 
 cantfind_ext4:
@@ -6286,8 +6404,10 @@ static int ext4_freeze(struct super_block *sb)
 	int error = 0;
 	journal_t *journal;
 
-	if (sb_rdonly(sb))
+	if (sb_rdonly(sb)) {
+		ext4_send_uevent(sb, EXT4_UA_FREEZE);
 		return 0;
+	}
 
 	journal = EXT4_SB(sb)->s_journal;
 
@@ -6314,6 +6434,10 @@ out:
 	if (journal)
 		/* we rely on upper layer to stop further updates */
 		jbd2_journal_unlock_updates(journal);
+
+	if (!error)
+		ext4_send_uevent(sb, EXT4_UA_FREEZE);
+
 	return error;
 }
 
@@ -6323,6 +6447,8 @@ out:
  */
 static int ext4_unfreeze(struct super_block *sb)
 {
+	ext4_send_uevent(sb, EXT4_UA_UNFREEZE);
+
 	if (sb_rdonly(sb) || ext4_forced_shutdown(EXT4_SB(sb)))
 		return 0;
 
@@ -6638,6 +6764,7 @@ restore_opts:
 #endif
 	if (!ext4_has_feature_mmp(sb) || sb_rdonly(sb))
 		ext4_stop_mmpd(sbi);
+	ext4_send_uevent(sb, EXT4_UA_REMOUNT);
 	return err;
 }
 
