@@ -67,7 +67,7 @@ static inline void send_msg_ve(struct ve_struct *ve, struct cn_msg *msg)
 	 *
 	 * If cn_netlink_send() fails, the data is not sent.
 	 */
-	cn_netlink_send(msg, 0, CN_IDX_PROC, GFP_NOWAIT);
+	cn_netlink_send_ve(ve, msg, 0, CN_IDX_PROC, GFP_NOWAIT);
 
 	local_unlock(&ve->cn->local_event->lock);
 }
