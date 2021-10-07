@@ -2154,6 +2154,7 @@ The following mount options are supported:
 
 	=========	========================================================
 	hidepid=	Set /proc/<pid>/ access mode.
+	hidepidns=	Hide tasks from nested pid-namespaces.
 	gid=		Set the group authorized to learn processes information.
 	subset=		Show only the specified subset of procfs.
 	=========	========================================================
@@ -2180,6 +2181,9 @@ other users run any program at all, etc.
 
 hidepid=ptraceable or hidepid=4 means that procfs should only contain
 /proc/<pid>/ directories that the caller can ptrace.
+
+hidepidns=1 makes all tasks from nested pid-namespaces invisible. They are still
+accessible via /proc/<pid>/, but readdir will not show them.
 
 gid= defines a group authorized to learn processes information otherwise
 prohibited by hidepid=.  If you use some daemon like identd which needs to learn
