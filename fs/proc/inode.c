@@ -186,6 +186,8 @@ static int proc_show_options(struct seq_file *seq, struct dentry *root)
 		seq_printf(seq, ",gid=%u", from_kgid_munged(&init_user_ns, fs_info->pid_gid));
 	if (fs_info->hide_pid != HIDEPID_OFF)
 		seq_printf(seq, ",hidepid=%s", hidepid2str(fs_info->hide_pid));
+	if (fs_info->hide_pidns)
+		seq_printf(seq, ",hidepidns=%u", fs_info->hide_pidns);
 	if (fs_info->pidonly != PROC_PIDONLY_OFF)
 		seq_printf(seq, ",subset=pid");
 
