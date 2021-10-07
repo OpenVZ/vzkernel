@@ -66,12 +66,59 @@ static inline void send_msg(struct cn_msg *msg)
 	local_unlock(&local_event.lock);
 }
 
+static struct cn_msg *cn_msg_fill(__u8 *buffer,
+				  struct task_struct *task,
+				  int what, int cookie,
+				  bool (*fill_event)(struct proc_event *ev,
+						     struct task_struct *task,
+						     int cookie))
+{
+	struct cn_msg *msg;
+	struct proc_event *ev;
+
+	msg = buffer_to_cn_msg(buffer);
+	ev = (struct proc_event *)msg->data;
+
+	memset(&ev->event_data, 0, sizeof(ev->event_data));
+	ev->timestamp_ns = ktime_get_ns();
+	ev->what = what;
+
+	memcpy(&msg->id, &cn_proc_event_id, sizeof(msg->id));
+	msg->ack = 0; /* not used */
+	msg->len = sizeof(*ev);
+	msg->flags = 0; /* not used */
+
+	return fill_event(ev, task, cookie) ? msg : NULL;
+}
+
+static void proc_event_connector(struct task_struct *task,
+				 int what, int cookie,
+				 bool (*fill_event)(struct proc_event *ev,
+						    struct task_struct *task,
+						    int cookie))
+{
+	struct cn_msg *msg;
+	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
+
+	if (atomic_read(&proc_event_num_listeners) < 1)
+		return;
+
+	msg = cn_msg_fill(buffer, task, what, cookie, fill_event);
+	if (!msg)
+		return;
+
+	/*  If cn_netlink_send() failed, the data is not sent */
+	send_msg(msg);
+}
+
 void proc_fork_connector(struct task_struct *task)
 {
 	struct cn_msg *msg;
 	struct proc_event *ev;
 	__u8 buffer[CN_PROC_MSG_SIZE] __aligned(8);
 	struct task_struct *parent;
+
+	(void) proc_event_connector;
 
 	if (atomic_read(&proc_event_num_listeners) < 1)
 		return;
