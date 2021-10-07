@@ -2747,6 +2747,13 @@ again:
 	list_for_each_entry(devmnt, &ve->devmnt_list, link) {
 		if (devmnt->dev == dev) {
 			err = ve_devmnt_check(data, devmnt->allowed_options);
+			/*
+			 * In case of @is_pseudouser set, ie restore procedure,
+			 * we don't check for allowed options filtering, since
+			 * restore mode is special.
+			 */
+			if (ve->is_pseudosuper)
+				err = 0;
 
 			if (!err && !remount)
 				err = ve_devmnt_insert(data, devmnt->hidden_options);
