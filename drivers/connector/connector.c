@@ -148,7 +148,7 @@ static int cn_call_callback(struct sk_buff *skb)
 {
 	struct nlmsghdr *nlh;
 	struct cn_callback_entry *i, *cbq = NULL;
-	struct cn_dev *dev = get_cdev(get_ve0());
+	struct cn_dev *dev = get_cdev(sock_net(skb->sk)->owner_ve);
 	struct cn_msg *msg = nlmsg_data(nlmsg_hdr(skb));
 	struct netlink_skb_parms *nsp = &NETLINK_CB(skb);
 	int err = -ENODEV;
