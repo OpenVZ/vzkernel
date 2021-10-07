@@ -253,7 +253,7 @@ EXPORT_SYMBOL_GPL(cn_del_callback);
 
 static int __maybe_unused cn_proc_show(struct seq_file *m, void *v)
 {
-	struct cn_queue_dev *dev = get_cdev(get_ve0())->cbdev;
+	struct cn_queue_dev *dev = get_cdev(get_exec_env())->cbdev;
 	struct cn_callback_entry *cbq;
 
 	seq_printf(m, "Name            ID\n");
@@ -307,7 +307,7 @@ static int cn_init_ve(struct ve_struct *ve)
 
 	ve->cn->cn_already_initialized = 1;
 
-	if (!proc_create_single("connector", S_IRUGO, net->proc_net,
+	if (!proc_ve_create_single("connector", S_IRUGO, net->proc_net,
 				cn_proc_show)) {
 		err = -ENOMEM;
 		goto free_cdev;
