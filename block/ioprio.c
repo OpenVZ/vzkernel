@@ -72,10 +72,26 @@ SYSCALL_DEFINE3(ioprio_set, int, which, int, who, int, ioprio)
 	struct pid *pgrp;
 	kuid_t uid;
 	int ret;
+	int class = IOPRIO_PRIO_CLASS(ioprio);
+	int data = IOPRIO_PRIO_DATA(ioprio);
 
 	ret = ioprio_check_cap(ioprio);
 	if (ret)
 		return ret;
+
+	if (!ve_is_super(get_exec_env())) {
+		switch (class) {
+			case IOPRIO_CLASS_RT:
+				class = IOPRIO_CLASS_BE;
+				data = 0;
+				break;
+			case IOPRIO_CLASS_IDLE:
+				class = IOPRIO_CLASS_BE;
+				data = IOPRIO_BE_NR - 1;
+				break;
+		}
+		ioprio = IOPRIO_PRIO_VALUE(class, data);
+	}
 
 	ret = -ESRCH;
 	rcu_read_lock();
