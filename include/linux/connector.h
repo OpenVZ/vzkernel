@@ -64,6 +64,10 @@ struct cn_private {
 };
 
 struct ve_struct;
+
+int cn_proc_init_ve(struct ve_struct *ve);
+void cn_proc_fini_ve(struct ve_struct *ve);
+
 int cn_add_callback_ve(struct ve_struct *ve,
 		       const struct cb_id *id, const char *name,
 		       void (*callback)(struct cn_msg *,
