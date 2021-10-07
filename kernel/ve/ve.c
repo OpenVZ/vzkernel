@@ -1304,6 +1304,35 @@ static ssize_t ve_mount_opts_write(struct kernfs_open_file *of, char *buf,
 	return nbytes;
 }
 
+#ifdef CONFIG_AIO
+static u64 ve_aio_max_nr_read(struct cgroup_subsys_state *css,
+			      struct cftype *cft)
+{
+	return css_to_ve(css)->aio_max_nr;
+}
+
+static int ve_aio_max_nr_write(struct cgroup_subsys_state *css,
+			       struct cftype *cft, u64 val)
+{
+	struct ve_struct *ve = css_to_ve(css);
+
+	if (!ve_is_super(get_exec_env()) && !ve->is_pseudosuper)
+		return -EPERM;
+
+	down_write(&ve->op_sem);
+	if (ve->is_running || ve->ve_ns) {
+		up_write(&ve->op_sem);
+		return -EBUSY;
+	}
+
+	ve->aio_max_nr = val;
+
+	up_write(&ve->op_sem);
+
+	return 0;
+}
+#endif
+
 static struct cftype ve_cftypes[] = {
 
 	{
@@ -1366,6 +1395,14 @@ static struct cftype ve_cftypes[] = {
 		.seq_show		= ve_mount_opts_read,
 		.write			= ve_mount_opts_write,
 	},
+#ifdef CONFIG_AIO
+	{
+		.name			= "aio_max_nr",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_aio_max_nr_read,
+		.write_u64		= ve_aio_max_nr_write,
+	},
+#endif
 	{ }
 };
 
