@@ -12,10 +12,12 @@
 
 #include <linux/types.h>
 #include <linux/ve_proto.h>
+#include <linux/vzstat.h>
 #include <linux/cgroup.h>
 #include <linux/kmapset.h>
 #include <linux/kthread.h>
-#include <linux/vzstat.h>
+#include <linux/binfmts.h>
+#include <linux/tty_driver.h>
 #include <asm/vdso.h>
 #include <linux/time_namespace.h>
 #include <linux/binfmts.h>
@@ -160,6 +162,8 @@ struct user_namespace *ve_init_user_ns(void);
 extern struct tty_driver *vtty_driver(dev_t dev, int *index);
 extern struct tty_driver *vtty_console_driver(int *index);
 extern int vtty_open_master(envid_t veid, int idx);
+extern void vtty_release(struct tty_struct *tty, struct tty_struct *o_tty,
+			int *tty_closing, int *o_tty_closing);
 extern bool vtty_is_master(struct tty_struct *tty);
 #endif /* CONFIG_TTY */
 
