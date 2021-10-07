@@ -1906,6 +1906,7 @@ static int clear_qf_name(struct super_block *sb, int qtype)
 #define MOPT_STRING	0x0400
 #define MOPT_SKIP	0x0800
 #define	MOPT_2		0x1000
+#define MOPT_WANT_SYS_ADMIN	0x4000
 
 static const struct mount_opts {
 	int	token;
@@ -1938,7 +1939,7 @@ static const struct mount_opts {
 				    EXT4_MOUNT_JOURNAL_CHECKSUM),
 	 MOPT_EXT4_ONLY | MOPT_SET | MOPT_EXPLICIT},
 	{Opt_noload, EXT4_MOUNT_NOLOAD, MOPT_NO_EXT2 | MOPT_SET},
-	{Opt_err_panic, EXT4_MOUNT_ERRORS_PANIC, MOPT_SET | MOPT_CLEAR_ERR},
+	{Opt_err_panic, EXT4_MOUNT_ERRORS_PANIC, MOPT_SET | MOPT_CLEAR_ERR|MOPT_WANT_SYS_ADMIN},
 	{Opt_err_ro, EXT4_MOUNT_ERRORS_RO, MOPT_SET | MOPT_CLEAR_ERR},
 	{Opt_err_cont, EXT4_MOUNT_ERRORS_CONT, MOPT_SET | MOPT_CLEAR_ERR},
 	{Opt_data_err_abort, EXT4_MOUNT_DATA_ERR_ABORT,
@@ -2182,6 +2183,9 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 	}
 	if (m->flags & MOPT_CLEAR_ERR)
 		clear_opt(sb, ERRORS_MASK);
+	if (m->flags & MOPT_WANT_SYS_ADMIN && !capable(CAP_SYS_ADMIN))
+		return 1;
+
 	if (token == Opt_noquota && sb_any_quota_loaded(sb)) {
 		ext4_msg(sb, KERN_ERR, "Cannot change quota "
 			 "options when quota turned on");
@@ -4226,8 +4230,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	else if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_WBACK)
 		set_opt(sb, WRITEBACK_DATA);
 
-	if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_PANIC)
-		set_opt(sb, ERRORS_PANIC);
+	if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_PANIC) {
+		if (capable(CAP_SYS_ADMIN))
+			set_opt(sb, ERRORS_PANIC);
+		else
+			set_opt(sb, ERRORS_RO);
+	}
 	else if (le16_to_cpu(sbi->s_es->s_errors) == EXT4_ERRORS_CONTINUE)
 		set_opt(sb, ERRORS_CONT);
 	else
