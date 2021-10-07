@@ -705,11 +705,17 @@ int proc_cgroupstats_show(struct seq_file *m, void *v)
 	 * cgroup_mutex contention.
 	 */
 
-	for_each_subsys(ss, i)
+	for_each_subsys(ss, i) {
+#ifdef CONFIG_VE
+		if (ve_hide_cgroups(ss->root))
+			continue;
+#endif
+
 		seq_printf(m, "%s\t%d\t%d\t%d\n",
 			   ss->legacy_name, ss->root->hierarchy_id,
 			   _cg_virtualized(atomic_read(&ss->root->nr_cgrps)),
 			   cgroup_ssid_enabled(i));
+	}
 
 	return 0;
 }
