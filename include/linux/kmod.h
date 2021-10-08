@@ -32,4 +32,9 @@ static inline int request_module_nowait(const char *name, ...) { return -ENOSYS;
 #define try_then_request_module(x, mod...) (x)
 #endif
 
+#ifdef CONFIG_VE
+extern bool module_payload_allowed(const char *module);
+#else
+static inline bool module_payload_allowed(const char *module) { return true; }
+#endif
 #endif /* __LINUX_KMOD_H__ */
