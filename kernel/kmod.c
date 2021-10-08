@@ -231,6 +231,9 @@ static const char * const ve0_allowed_mod[] = {
 	"nft-set",
 	"nf_tproxy_ipv4",
 	"nf_tproxy_ipv6",
+
+	"fs-binfmt_misc",
+	"fs-overlay",
 };
 
 /*
