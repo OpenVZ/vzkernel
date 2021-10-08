@@ -202,6 +202,35 @@ EXPORT_SYMBOL(__request_module);
 
 /* ve0 allowed modules */
 static const char * const ve0_allowed_mod[] = {
+	"ip_tables",
+	"ip6_tables",
+	"iptable_filter",
+	"iptable_raw",
+	"iptable_nat",
+	"iptable_mangle",
+	"ip6table_filter",
+	"ip6table_nat",
+	"ip6table_mangle",
+
+	"nf-nat",
+	"nf_conncount",
+	"nf_defrag_ipv4",
+	"nf_defrag_ipv6",
+	"nf_dup_ipv4",
+	"nf_dup_ipv6",
+	"nf_dup_netdev",
+	"nf_flow_table",
+	"nf-flowtable-1",
+	"nf_flow_table_inet",
+	"nf_osf",
+	"nf_reject_ipv6",
+	"nf_socket_ipv4",
+	"nf_socket_ipv6",
+	"nf_synproxy_core",
+
+	"nft-set",
+	"nf_tproxy_ipv4",
+	"nf_tproxy_ipv6",
 };
 
 /*
@@ -222,6 +251,23 @@ bool module_payload_allowed(const char *module)
 		if (!strcmp(ve0_allowed_mod[i], module))
 			return true;
 	}
+
+	/* modules allowed by name/alias masks */
+	if (!strncmp("xt_",		module,  3) ||
+	    !strncmp("ip_conntrack",	module, 12) ||
+	    !strncmp("ip_nat_",		module,  7) ||
+	    !strncmp("ipt_",		module,  4) ||
+	    !strncmp("ip6t_",		module,  5) ||
+	    !strncmp("arpt_",		module,  5) ||
+	    !strncmp("ebt",		module,  4) ||
+	    !strncmp("nft-chain-",	module, 10) ||
+	    !strncmp("nft-expr-",	module,  9) ||
+	    !strncmp("nf_nat",		module,  6) ||
+	    !strncmp("nf_log_",		module,  7) ||
+	    !strncmp("nf-logger-",	module, 10) ||
+	    !strncmp("nf_conntrack",	module, 12) ||
+	    !strncmp("nfct-helper-",	module, 12))
+		return true;
 
 	return false;
 }
