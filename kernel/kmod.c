@@ -336,6 +336,10 @@ bool module_payload_allowed(const char *module)
 	    !strncmp("nfct-helper-",	module, 12))
 		return true;
 
+	/* nfct-helper-* modules */
+	if (!strncmp("nfct-helper-", module, 12))
+		return true;
+
 	return false;
 }
 #endif /* CONFIG_VE */
