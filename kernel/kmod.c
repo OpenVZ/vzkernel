@@ -234,6 +234,31 @@ static const char * const ve0_allowed_mod[] = {
 
 	"fs-binfmt_misc",
 	"fs-overlay",
+
+	/* inet_diag, inet6_diag  */
+	"net-pf-16-proto-4-type-2",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_INET */
+	"net-pf-16-proto-4-type-10",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_INET6 */
+
+	/* tcp_diag */
+	"net-pf-16-proto-4-type-2-6",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_INET - IPPROTO_TCP */
+
+	/* udp_diag */
+	"net-pf-16-proto-4-type-2-17",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_INET - IPPROTO_UDP */
+	"net-pf-16-proto-4-type-2-136",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_INET - IPPROTO_UDPLITE */
+
+	/* nfnetlink  */
+	"net-pf-16-proto-12",		/* PF_NETLINK, NETLINK_NETFILTER */
+	"nfnetlink-subsys-1",		/* NFNL_SUBSYS_CTNETLINK */
+	"nfnetlink-subsys-2",		/* NFNL_SUBSYS_CTNETLINK_EXP */
+
+	/* unix_diag */
+	"net-pf-16-proto-4-type-1",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_LOCAL */
+
+	/* af_packet_diag */
+	"net-pf-16-proto-4-type-17",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_PACKET */
+
+	/* netlink_diag */
+	"net-pf-16-proto-4-type-16",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_NETLINK */
 };
 
 /*
