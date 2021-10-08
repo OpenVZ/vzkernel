@@ -209,6 +209,7 @@ static const char * const ve0_allowed_mod[] = {
 	"iptable_nat",
 	"iptable_mangle",
 	"ip6table_filter",
+	"ip6table_raw",
 	"ip6table_nat",
 	"ip6table_mangle",
 
