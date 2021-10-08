@@ -116,6 +116,9 @@ static int __init set_trusted_exec(char *str)
 }
 __setup("trusted_exec", set_trusted_exec);
 
+int ve_allow_module_load = 1;
+EXPORT_SYMBOL(ve_allow_module_load);
+
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
@@ -2147,6 +2150,17 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_doulongvec_minmax,
 	},
+#ifdef CONFIG_VE
+        {
+		.procname       = "ve_allow_module_load",
+		.data           = &ve_allow_module_load,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = &proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+#endif
 	{
 		.procname	= "ngroups_max",
 		.data		= &ngroups_max,
