@@ -253,6 +253,7 @@ static const char * const ve0_allowed_mod[] = {
 	"nfnetlink-subsys-2",		/* NFNL_SUBSYS_CTNETLINK_EXP */
 	"nfnetlink-subsys-3",		/* NFNL_SUBSYS_QUEUE */
 	"nfnetlink-subsys-10",		/* nf_tables */
+	"nfnetlink-subsys-11",		/* nft_compat */
 
 	/* unix_diag */
 	"net-pf-16-proto-4-type-1",	/* PF_NETLINK, NETLINK_SOCK_DIAG, AF_LOCAL */
