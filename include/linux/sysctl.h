@@ -216,6 +216,8 @@ struct ctl_path {
 
 extern int trusted_exec;
 
+extern int ve_allow_module_load;
+
 #ifdef CONFIG_SYSCTL
 
 #define DECLARE_SYSCTL_BASE(_name, _table)				\
