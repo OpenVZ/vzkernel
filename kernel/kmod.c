@@ -232,6 +232,7 @@ static const char * const ve0_allowed_mod[] = {
 	"nf_synproxy_core",
 
 	"nft-set",
+	"nft_fib",
 	"nf_tproxy_ipv4",
 	"nf_tproxy_ipv6",
 
