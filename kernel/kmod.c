@@ -25,6 +25,8 @@
 #include <linux/ptrace.h>
 #include <linux/async.h>
 #include <linux/uaccess.h>
+#include <linux/ve.h>
+#include <linux/sysctl.h>
 
 #include <trace/events/module.h>
 
@@ -127,10 +129,6 @@ int __request_module(bool wait, const char *fmt, ...)
 	char module_name[MODULE_NAME_LEN];
 	int ret;
 
-	/* Don't allow request_module() inside VE. */
-	if (!ve_is_super(get_exec_env()))
-		return -EPERM;
-
 	/*
 	 * We don't allow synchronous module loading from async.  Module
 	 * init may invoke async_synchronize_full() which will end up
@@ -147,6 +145,11 @@ int __request_module(bool wait, const char *fmt, ...)
 	va_end(args);
 	if (ret >= MODULE_NAME_LEN)
 		return -ENAMETOOLONG;
+
+	/* Check that autoload is not prohibited using /proc interface */
+	if (!ve_is_super(get_exec_env()) &&
+	    !ve_allow_module_load)
+		return -EPERM;
 
 	ret = security_kernel_module_request(module_name);
 	if (ret)
