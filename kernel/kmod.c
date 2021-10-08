@@ -254,6 +254,7 @@ static const char * const ve0_allowed_mod[] = {
 	"nfnetlink-subsys-1",		/* NFNL_SUBSYS_CTNETLINK */
 	"nfnetlink-subsys-2",		/* NFNL_SUBSYS_CTNETLINK_EXP */
 	"nfnetlink-subsys-3",		/* NFNL_SUBSYS_QUEUE */
+	"nfnetlink-subsys-4",		/* NFNL_SUBSYS_ULOG */
 	"nfnetlink-subsys-10",		/* nf_tables */
 	"nfnetlink-subsys-11",		/* nft_compat */
 
