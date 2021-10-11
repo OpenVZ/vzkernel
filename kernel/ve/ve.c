@@ -31,6 +31,7 @@
 #include <linux/task_work.h>
 #include <linux/ctype.h>
 #include <linux/tty.h>
+#include <linux/device.h>
 #include <net/net_namespace.h>
 
 #include <uapi/linux/vzcalluser.h>
@@ -697,6 +698,10 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	if (err)
 		goto err_vdso;
 
+	err = ve_mount_devtmpfs(ve);
+	if (err)
+		goto err_vdso; /* The same as above, correct */
+
 do_init:
 	init_rwsem(&ve->op_sem);
 	INIT_LIST_HEAD(&ve->ve_list);
@@ -789,6 +794,7 @@ static void ve_destroy(struct cgroup_subsys_state *css)
 	kmapset_unlink(&ve->sysfs_perms_key, &sysfs_ve_perms_set);
 	ve_log_destroy(ve);
 	ve_free_vdso(ve);
+	mntput(ve->devtmpfs_mnt);
 #if IS_ENABLED(CONFIG_BINFMT_MISC)
 	kfree(ve->binfmt_misc);
 #endif
