@@ -1074,8 +1074,10 @@ bool kill_device(struct device *dev);
 
 #ifdef CONFIG_DEVTMPFS
 int devtmpfs_mount(void);
+extern int ve_mount_devtmpfs(struct ve_struct *ve);
 #else
 static inline int devtmpfs_mount(void) { return 0; }
+static inline int ve_mount_devtmpfs(struct ve_struct *ve) { return 0; }
 #endif
 
 /* drivers/base/power/shutdown.c */
