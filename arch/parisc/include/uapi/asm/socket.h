@@ -120,6 +120,7 @@
 #define SO_BUSY_POLL_BUDGET	0x4044
 
 #define SO_NETNS_COOKIE		0x4045
+#define SO_BUF_LOCK		0x4046
 
 #define SO_TXREHASH		0x4048
 

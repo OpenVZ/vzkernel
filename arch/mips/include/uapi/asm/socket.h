@@ -140,6 +140,7 @@
 
 #define SO_NETNS_COOKIE		71
 
+#define SO_BUF_LOCK		72
 #define SO_TXREHASH		74
 
 #if !defined(__KERNEL__)
