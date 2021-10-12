@@ -855,8 +855,8 @@ static int __init inotify_user_setup(void)
 					       SLAB_PANIC|SLAB_ACCOUNT);
 
 	inotify_max_queued_events = 16384;
-	init_user_ns.ucount_max[UCOUNT_INOTIFY_INSTANCES] = 128;
-	init_user_ns.ucount_max[UCOUNT_INOTIFY_WATCHES] = watches_max;
+	init_user_ns.ucount_max[UCOUNT_INOTIFY_INSTANCES] = INT_MAX;
+	init_user_ns.ucount_max[UCOUNT_INOTIFY_WATCHES] = INT_MAX;
 	inotify_sysctls_init();
 
 	return 0;
