@@ -17,6 +17,7 @@
 #include <linux/rcupdate.h>
 #include <linux/atomic.h>
 #include <linux/sched/task.h>
+#include <linux/ve.h>
 
 #include <net/rtnetlink.h>
 #include <net/pkt_cls.h>
@@ -145,6 +146,7 @@ cgrp_css_alloc(struct cgroup_subsys_state *parent_css)
 static int cgrp_css_online(struct cgroup_subsys_state *css)
 {
 	struct cgroup_subsys_state *parent_css = css->parent;
+	struct ve_struct *ve;
 	struct net_device *dev;
 	int ret = 0;
 
@@ -166,6 +168,38 @@ static int cgrp_css_online(struct cgroup_subsys_state *css)
 		if (ret)
 			break;
 	}
+
+	/* get_exec_env is safe under cgroup_mutex */
+	ve = get_exec_env();
+	/*
+	 * Inherit prios from the parent cgroup in scope of ve init netns.
+	 */
+	if (!ve_is_super(ve)) {
+		struct nsproxy *ve_ns;
+		struct net *net = NULL;
+
+		/*
+		 * Take rcu read lock to check that ve's net is not freed under
+		 * us after we release rcu read lock we still have rtnl lock to
+		 * insure net remains non-freed, pairs with rtnl lock in
+		 * cleanup_net().
+		 */
+		rcu_read_lock();
+		ve_ns = rcu_dereference(ve->ve_ns);
+		if (ve_ns)
+			net = ve_ns->net_ns;
+		rcu_read_unlock();
+
+		if (net && net != &init_net) {
+			for_each_netdev(net, dev) {
+				u32 prio = netprio_prio(parent_css, dev);
+
+				ret = netprio_set_prio(css, dev, prio);
+				if (ret)
+					break;
+			}
+		}
+	}
 	rtnl_unlock();
 	return ret;
 }
@@ -182,19 +216,38 @@ static u64 read_prioidx(struct cgroup_subsys_state *css, struct cftype *cft)
 
 static int read_priomap(struct seq_file *sf, void *v)
 {
+	struct ve_struct *ve;
+	struct net *net, *_net = NULL;
 	struct net_device *dev;
 
+	ve = get_curr_ve();
+	if (!ve_is_super(ve)) {
+		struct nsproxy *ve_ns;
+
+		rcu_read_lock();
+		ve_ns = rcu_dereference(ve->ve_ns);
+		if (ve_ns)
+			_net = get_net(ve_ns->net_ns);
+		rcu_read_unlock();
+	}
+	put_ve(ve);
+
+	net = _net ? : &init_net;
 	rcu_read_lock();
-	for_each_netdev_rcu(&init_net, dev)
+	for_each_netdev_rcu(net, dev)
 		seq_printf(sf, "%s %u\n", dev->name,
 			   netprio_prio(seq_css(sf), dev));
 	rcu_read_unlock();
+	if (_net)
+		put_net(_net);
 	return 0;
 }
 
 static ssize_t write_priomap(struct kernfs_open_file *of,
 			     char *buf, size_t nbytes, loff_t off)
 {
+	struct ve_struct *ve;
+	struct net *net, *_net = NULL;
 	char devname[IFNAMSIZ + 1];
 	struct net_device *dev;
 	u32 prio;
@@ -203,7 +256,22 @@ static ssize_t write_priomap(struct kernfs_open_file *of,
 	if (sscanf(buf, "%"__stringify(IFNAMSIZ)"s %u", devname, &prio) != 2)
 		return -EINVAL;
 
-	dev = dev_get_by_name(&init_net, devname);
+	ve = get_curr_ve();
+	if (!ve_is_super(ve)) {
+		struct nsproxy *ve_ns;
+
+		rcu_read_lock();
+		ve_ns = rcu_dereference(ve->ve_ns);
+		if (ve_ns)
+			_net = get_net(ve_ns->net_ns);
+		rcu_read_unlock();
+	}
+	put_ve(ve);
+
+	net = _net ? : &init_net;
+	dev = dev_get_by_name(net, devname);
+	if (_net)
+		put_net(_net);
 	if (!dev)
 		return -ENODEV;
 
@@ -247,6 +315,7 @@ static struct cftype ss_files[] = {
 	},
 	{
 		.name = "ifpriomap",
+		.flags = CFTYPE_VE_WRITABLE,
 		.seq_show = read_priomap,
 		.write = write_priomap,
 	},
