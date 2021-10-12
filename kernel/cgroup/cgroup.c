@@ -1956,6 +1956,27 @@ static int cgroup_reconfigure(struct fs_context *fc)
 }
 
 #ifdef CONFIG_VE
+/*
+ * This helper is a safe alternative to get_exec_env(), this helper actually
+ * gets reference on current ve so if in other thread we would be moved from
+ * this ve, at least this ve would not be freed under us.
+ */
+struct ve_struct *get_curr_ve(void)
+{
+	struct ve_struct *ve;
+
+	/*
+	 * Under cgroup_mutex both current tasks ve cgroup and ->task_ve
+	 * pointer can't change. Corresponding cgroup_mutex around
+	 * cgroup_attach_task() protects us from it.
+	 */
+	mutex_lock(&cgroup_mutex);
+	ve = get_ve(current->task_ve);
+	mutex_unlock(&cgroup_mutex);
+
+	return ve;
+}
+
 void cgroup_mark_ve_roots(struct ve_struct *ve)
 {
 	struct cgrp_cset_link *link;

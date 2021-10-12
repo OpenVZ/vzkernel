@@ -937,6 +937,7 @@ static inline void cgroup_bpf_put(struct cgroup *cgrp) {}
 
 #ifdef CONFIG_VE
 int ve_hide_cgroups(struct cgroup_root *root);
+struct ve_struct *get_curr_ve(void);
 #endif
 
 #endif /* _LINUX_CGROUP_H */
