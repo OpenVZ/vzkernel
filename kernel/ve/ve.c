@@ -888,7 +888,7 @@ static void ve_attach(struct cgroup_taskset *tset)
 		if (cpuid_override_on())
 			set_tsk_thread_flag(task, TIF_CPUID_OVERRIDE);
 
-		task->task_ve = ve;
+		rcu_assign_pointer(task->task_ve, ve);
 	}
 }
 
