@@ -2038,8 +2038,29 @@ struct ve_struct *get_curr_ve(void)
 	struct ve_struct *ve;
 
 	/*
-	 * Under cgroup_mutex both current tasks ve cgroup and ->task_ve
-	 * pointer can't change. Corresponding cgroup_mutex around
+	 * If first thread loads current->task_ve pointer, and if just after
+	 * that current is moved by other thread from this ve cgroup to some
+	 * other and this ve cgroup gets destroyed, ve pointer gets freed, so
+	 * first thread can't use such ve pointer safely.
+	 */
+
+	/*
+	 * Fast path: Let's make it safe with rcu lock, though current can be
+	 * moved to other ve cgroup and our ve cgroup can start destroying, ve
+	 * pointer would be still valid. As it is freed in ve_destroy. And
+	 * ve_destroy is called from rcu callback after task_ve had changed.
+	 */
+	rcu_read_lock();
+	ve = rcu_dereference(current->task_ve);
+	if (css_tryget(&ve->css)) {
+		rcu_read_unlock();
+		return ve;
+	}
+	rcu_read_unlock();
+
+	/*
+	 * Slow path: Under cgroup_mutex both current tasks ve cgroup and
+	 * task_ve pointer can't change. Corresponding cgroup_mutex around
 	 * cgroup_attach_task() protects us from it.
 	 */
 	mutex_lock(&cgroup_mutex);
