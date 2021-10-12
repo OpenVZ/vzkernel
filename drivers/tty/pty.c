@@ -755,6 +755,7 @@ static void vtty_standard_install(struct tty_driver *driver,
 
 	tty_driver_kref_get(driver);
 	tty_port_init(tty->port);
+	tty_buffer_set_limit(tty->port, 8192);
 	tty->port->itty = tty;
 }
 
@@ -870,13 +871,9 @@ static int vtty_write(struct tty_struct *tty,
 static unsigned int vtty_write_room(struct tty_struct *tty)
 {
 	struct tty_struct *peer = tty->link;
-	int count = (tty->driver == vttym_driver) ? 2 : 1;
 
 	if (tty->flow.stopped)
 		return 0;
-
-	if (peer->count < count)
-		return 2048;
 
 	return tty_buffer_space_avail(peer->port);
 }
@@ -901,7 +898,6 @@ static const struct tty_operations vtty_ops = {
 	.cleanup	= pty_cleanup,
 	.write		= vtty_write,
 	.write_room	= vtty_write_room,
-	.chars_in_buffer= tty_chars_in_buffer,
 	.set_termios	= pty_set_termios,
 	.unthrottle	= pty_unthrottle,
 	.flush_buffer	= pty_flush_buffer,
@@ -988,6 +984,8 @@ static int __init vtty_init(void)
 	/* 38400 boud rate, 8 bit char size, enable receiver */
 	vttym_driver->init_termios.c_cflag	= B38400 | CS8 | CREAD;
 	vttym_driver->init_termios.c_lflag	= 0;
+	vttym_driver->init_termios.c_ispeed	= 38400;
+	vttym_driver->init_termios.c_ospeed	= 38400;
 	tty_set_operations(vttym_driver, &vtty_ops);
 
 	vttys_driver->driver_name		= "vtty_slave";
@@ -999,6 +997,8 @@ static int __init vtty_init(void)
 	vttys_driver->subtype			= PTY_TYPE_SLAVE;
 	vttys_driver->init_termios		= tty_std_termios;
 	vttys_driver->init_termios.c_cflag	= B38400 | CS8 | CREAD;
+	vttys_driver->init_termios.c_ispeed	= 38400;
+	vttys_driver->init_termios.c_ospeed	= 38400;
 	tty_set_operations(vttys_driver, &vtty_ops);
 
 	if (tty_register_driver(vttym_driver))
