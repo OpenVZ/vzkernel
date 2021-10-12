@@ -1207,6 +1207,7 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 						unsigned long *total_scanned);
 
 void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi);
+void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats);
 
 void memcg_neg_dentry_inc(struct dentry *dentry);
 void memcg_neg_dentry_dec(struct dentry *dentry);
@@ -1661,6 +1662,11 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 }
 
 static void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
+{
+}
+
+static inline void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg,
+					  unsigned long *stats)
 {
 }
 
