@@ -1270,6 +1270,7 @@ const struct device_type disk_type = {
  */
 static int diskstats_show(struct seq_file *seqf, void *v)
 {
+	struct ve_struct *ve = get_exec_env();
 	struct gendisk *gp = v;
 	struct block_device *hd;
 	unsigned int inflight;
@@ -1288,6 +1289,11 @@ static int diskstats_show(struct seq_file *seqf, void *v)
 	xa_for_each(&gp->part_tbl, idx, hd) {
 		if (bdev_is_partition(hd) && !bdev_nr_sectors(hd))
 			continue;
+		if (!ve_is_super(ve) &&
+		    devcgroup_device_permission(S_IFBLK, hd->bd_dev,
+						MAY_READ)) {
+			continue;
+		}
 		if (queue_is_mq(gp->queue))
 			inflight = blk_mq_in_flight(gp->queue, hd);
 		else
@@ -1348,7 +1354,7 @@ static const struct seq_operations diskstats_op = {
 
 static int __init proc_genhd_init(void)
 {
-	proc_create_seq("diskstats", 0, NULL, &diskstats_op);
+	proc_create_seq("diskstats", S_ISVTX, NULL, &diskstats_op);
 	proc_create_seq("partitions", S_ISVTX, NULL, &partitions_op);
 	return 0;
 }
