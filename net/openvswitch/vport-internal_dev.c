@@ -154,6 +154,7 @@ static struct vport *internal_dev_create(const struct vport_parms *parms)
 	if (vport->port_no == OVSP_LOCAL)
 		vport->dev->features |= NETIF_F_NETNS_LOCAL;
 
+	dev->ifindex = parms->desired_ifindex;
 	rtnl_lock();
 	err = register_netdevice(vport->dev);
 	if (err)
