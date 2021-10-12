@@ -28,6 +28,8 @@
 #include <linux/mm_inline.h>
 #include <linux/page_ext.h>
 #include <linux/page_owner.h>
+#include <linux/memcontrol.h>
+#include <linux/ve.h>
 
 #include "internal.h"
 
@@ -1752,8 +1754,18 @@ static const struct seq_operations zoneinfo_op = {
 			 (IS_ENABLED(CONFIG_VM_EVENT_COUNTERS) ? \
 			  NR_VM_EVENT_ITEMS : 0))
 
+static void fill_vmstat_ve(unsigned long *stat, struct ve_struct *ve)
+{
+	struct cgroup_subsys_state *css;
+
+	css = ve_get_init_css(ve, memory_cgrp_id);
+	mem_cgroup_fill_vmstat(mem_cgroup_from_css(css), stat);
+	css_put(css);
+}
+
 static void *vmstat_start(struct seq_file *m, loff_t *pos)
 {
+	struct ve_struct *ve;
 	unsigned long *v;
 	int i;
 
@@ -1767,8 +1779,10 @@ static void *vmstat_start(struct seq_file *m, loff_t *pos)
 	if (!v)
 		return ERR_PTR(-ENOMEM);
 
-	if (!ve_is_super(get_exec_env())) {
+	ve = get_exec_env();
+	if (!ve_is_super(ve)) {
 		memset(v, 0, NR_VMSTAT_ITEMS * sizeof(unsigned long));
+		fill_vmstat_ve(v, ve);
 		return (unsigned long *)m->private + *pos;
 	}
 

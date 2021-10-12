@@ -176,6 +176,8 @@ struct mem_cgroup_event {
 
 static void mem_cgroup_threshold(struct mem_cgroup *memcg);
 static void mem_cgroup_oom_notify(struct mem_cgroup *memcg);
+static void accumulate_ooms(struct mem_cgroup *memcg, unsigned long *oom,
+			unsigned long *kill);
 
 /* Stuffs for move charges at task migration. */
 /*
@@ -4025,6 +4027,52 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 
 	/* locked pages are accounted per zone */
 	/* mi->locked = 0; */
+}
+
+void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats)
+{
+	int i;
+	unsigned long limit = READ_ONCE(memcg->memory.max);
+	unsigned long memory = page_counter_read(&memcg->memory);
+	unsigned long *zone_stats = stats;
+	unsigned long *node_stats = stats +
+				    NR_VM_ZONE_STAT_ITEMS +
+				    NR_VM_NUMA_EVENT_ITEMS;
+	unsigned long *vm_stats = node_stats +
+				  NR_VM_NODE_STAT_ITEMS +
+				  NR_VM_WRITEBACK_STAT_ITEMS;
+
+	zone_stats[NR_FREE_PAGES] = memory > limit ? 0 : limit - memory;
+
+	for (i = LRU_BASE; i < NR_LRU_LISTS; i++) {
+		node_stats[NR_LRU_BASE + i] =
+			mem_cgroup_nr_lru_pages(memcg, BIT(i), true);
+	}
+
+	node_stats[NR_ANON_MAPPED] = node_stats[NR_ACTIVE_ANON] +
+				     node_stats[NR_INACTIVE_ANON];
+	node_stats[NR_FILE_PAGES] = node_stats[NR_ACTIVE_FILE] +
+				    node_stats[NR_INACTIVE_FILE];
+
+	node_stats[NR_SLAB_RECLAIMABLE_B] =
+		memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B) >> PAGE_SHIFT;
+	node_stats[NR_SLAB_UNRECLAIMABLE_B] =
+		memcg_page_state(memcg, NR_SLAB_UNRECLAIMABLE_B) >> PAGE_SHIFT;
+	node_stats[NR_FILE_MAPPED] = memcg_page_state(memcg, NR_FILE_MAPPED);
+	node_stats[NR_SHMEM] = memcg_page_state(memcg, NR_SHMEM);
+
+#ifdef CONFIG_VM_EVENT_COUNTERS
+	vm_stats[PSWPIN] = memcg_events(memcg, PSWPIN);
+	vm_stats[PSWPOUT] = memcg_events(memcg, PSWPOUT);
+	vm_stats[PGFAULT] = memcg_events(memcg, PGFAULT);
+	vm_stats[PGMAJFAULT] = memcg_events(memcg, PGMAJFAULT);
+
+	{
+		unsigned long dummy;
+
+		accumulate_ooms(memcg, &dummy, vm_stats + OOM_KILL);
+	}
+#endif
 }
 
 int sysctl_ve_overcommit_memory __read_mostly;
