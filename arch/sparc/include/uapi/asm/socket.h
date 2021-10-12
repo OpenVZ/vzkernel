@@ -121,6 +121,7 @@
 #define SO_BUSY_POLL_BUDGET	 0x0049
 
 #define SO_NETNS_COOKIE          0x0050
+#define SO_BUF_LOCK              0x0051
 
 #define SO_TXREHASH              0x0053
 
