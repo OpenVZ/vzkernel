@@ -506,6 +506,9 @@ struct cgroup {
 	struct bpf_local_storage __rcu  *bpf_cgrp_storage;
 #endif
 
+	/* ve_owner, responsible for running release agent. */
+	struct ve_struct __rcu *ve_owner;
+
 	/* All ancestors including self */
 	struct cgroup *ancestors[];
 };
