@@ -866,6 +866,7 @@ int cgroup_path_ns(struct cgroup *cgrp, char *buf, size_t buflen,
 #ifdef CONFIG_VE
 extern int cgroup_mark_ve_roots(struct ve_struct *ve);
 void cgroup_unmark_ve_roots(struct ve_struct *ve);
+struct ve_struct *cgroup_ve_owner(struct cgroup *cgrp);
 #endif
 
 #else /* !CONFIG_CGROUPS */
