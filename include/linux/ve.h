@@ -169,7 +169,9 @@ extern void vtty_release(struct tty_struct *tty, struct tty_struct *o_tty,
 extern bool vtty_is_master(struct tty_struct *tty);
 #endif /* CONFIG_TTY */
 
-extern struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp);
+extern struct cgroup *cgroup_ve_root1(struct cgroup *cgrp);
+extern struct cgroup_subsys_state *css_ve_root1(
+		struct cgroup_subsys_state *css);
 
 #define ve_uevent_seqnum       (get_exec_env()->_uevent_seqnum)
 
@@ -198,10 +200,16 @@ static inline struct user_namespace *ve_init_user_ns(void)
 	return &init_user_ns;
 }
 
-static inline struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
+static inline struct cgroup *cgroup_ve_root1(struct cgroup *cgrp)
 {
 	return NULL;
 }
+static inline struct cgroup_subsys_state *css_ve_root1(
+		struct cgroup_subsys_state *css)
+{
+	return NULL;
+}
+
 #define ve_uevent_seqnum uevent_seqnum
 
 static inline int vz_security_family_check(struct net *net, int family, int type) { return 0; }

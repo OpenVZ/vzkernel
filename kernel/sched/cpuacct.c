@@ -367,13 +367,13 @@ struct cgroup_subsys cpuacct_cgrp_subsys = {
 extern struct task_group *css_tg(struct cgroup_subsys_state *css);
 
 static struct task_group *ve_root_tg(struct task_group *tg) {
-	struct cgroup *cg;
+	struct cgroup_subsys_state *css;
 
 	if (!tg)
 		return NULL;
 
-	cg = cgroup_get_ve_root1(tg->css.cgroup);
-	return cg ? css_tg(&cg->self) : NULL;
+	css = css_ve_root1(&tg->css);
+	return css ? css_tg(css) : NULL;
 }
 
 unsigned int tg_cpu_rate(struct task_group *tg)
