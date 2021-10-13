@@ -324,6 +324,20 @@ bool cgroup_on_dfl(const struct cgroup *cgrp)
 	return cgrp->root == &cgrp_dfl_root;
 }
 
+/*
+ * The ve returned should be used only while holding rcu_read_lock
+ */
+struct ve_struct *cgroup_ve_owner(struct cgroup *cgrp)
+{
+	struct ve_struct *ve = NULL;
+	struct cgroup *ve_root;
+
+	ve_root = cgroup_get_ve_root1(cgrp);
+	if (ve_root)
+		ve = rcu_dereference(ve_root->ve_owner);
+	return ve;
+}
+
 /* IDR wrappers which synchronize using cgroup_idr_lock */
 static int cgroup_idr_alloc(struct idr *idr, void *ptr, int start, int end,
 			    gfp_t gfp_mask)
@@ -2114,11 +2128,13 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 		if (!is_virtualized_cgroup(cgrp))
 			continue;
 
+		rcu_assign_pointer(cgrp->ve_owner, ve);
 		set_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 
 	link_ve_root_cpu_cgroup(cset->subsys[cpu_cgrp_id]);
 	spin_unlock_irq(&css_set_lock);
+	synchronize_rcu();
 	return 0;
 }
 
@@ -2144,10 +2160,13 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 		if (!is_virtualized_cgroup(cgrp))
 			continue;
 
+		rcu_assign_pointer(cgrp->ve_owner, NULL);
 		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 
 	spin_unlock_irq(&css_set_lock);
+	/* ve_owner == NULL will be visible */
+	synchronize_rcu();
 }
 
 struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
