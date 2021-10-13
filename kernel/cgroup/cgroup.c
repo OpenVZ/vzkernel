@@ -323,7 +323,7 @@ struct ve_struct *cgroup_ve_owner(struct cgroup *cgrp)
 	struct ve_struct *ve = NULL;
 	struct cgroup *ve_root;
 
-	ve_root = cgroup_get_ve_root1(cgrp);
+	ve_root = cgroup_ve_root1(cgrp);
 	if (ve_root)
 		ve = rcu_dereference(ve_root->ve_owner);
 	return ve;
@@ -2057,7 +2057,7 @@ static inline bool ve_check_root_cgroups(struct css_set *cset)
 			return true;
 
 		/* Nested CGRP_VE_ROOT not allowed */
-		if (cgroup_get_ve_root1(link->cgrp))
+		if (cgroup_ve_root1(link->cgrp))
 			return true;
 	}
 	return false;
@@ -2131,19 +2131,32 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	synchronize_rcu();
 }
 
-struct cgroup *cgroup_get_ve_root1(struct cgroup *cgrp)
+struct cgroup_subsys_state *css_ve_root1(struct cgroup_subsys_state *css)
 {
-	struct cgroup *ve_root = NULL;
-
-	do {
-		if (test_bit(CGRP_VE_ROOT, &cgrp->flags)) {
-			ve_root = cgrp;
+	struct cgroup_subsys_state *ve_root = NULL;
+	/*
+	 * Find css for nearest ancestor cgroup marked with CGRP_VE_ROOT
+	 */
+	while (css) {
+		if (test_bit(CGRP_VE_ROOT, &css->cgroup->flags)) {
+			ve_root = css;
 			break;
 		}
-		cgrp = cgroup_parent(cgrp);
-	} while (cgrp);
+		css = css->parent;
+	}
 
 	return ve_root;
+}
+
+struct cgroup *cgroup_ve_root1(struct cgroup *cgrp)
+{
+	struct cgroup_subsys_state *css = &cgrp->self;
+
+	css = css_ve_root1(css);
+	if (!css)
+		return NULL;
+
+	return container_of(css, struct cgroup, self);
 }
 
 static bool subgroup_limit_reached(struct cgroup *cgroup)
@@ -2151,7 +2164,7 @@ static bool subgroup_limit_reached(struct cgroup *cgroup)
 	struct cgroup *ve_root;
 	bool ret = false;
 
-	ve_root = cgroup_get_ve_root1(cgroup);
+	ve_root = cgroup_ve_root1(cgroup);
 	if (ve_root && ve_root->subgroups_limit > 0 &&
 	    ve_root->nr_descendants >= ve_root->subgroups_limit)
 		ret = true;
