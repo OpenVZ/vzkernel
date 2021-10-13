@@ -266,7 +266,10 @@ struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id)
 
 	rcu_read_lock();
 
-	nsproxy = ve->ve_ns ? : &init_nsproxy;
+	nsproxy = rcu_dereference(ve->ve_ns);
+	if (!nsproxy)
+		nsproxy = &init_nsproxy;
+
 	root_cset = nsproxy->cgroup_ns->root_cset;
 	css = root_cset->subsys[subsys_id];
 	/* nsproxy->cgroup_ns must hold root_cset refcnt */
