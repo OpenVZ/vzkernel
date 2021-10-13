@@ -504,7 +504,9 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err < 0)
 		goto err_iterate;
 
-	cgroup_mark_ve_roots(ve);
+	err = cgroup_mark_ve_roots(ve);
+	if (err)
+		goto err_mark_ve;
 
 	ve->is_running = 1;
 
@@ -514,6 +516,8 @@ static int ve_start_container(struct ve_struct *ve)
 
 	return 0;
 
+err_mark_ve:
+	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
 err_iterate:
 	ve_stop_umh(ve);
 err_umh:
