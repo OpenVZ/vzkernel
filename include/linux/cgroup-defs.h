@@ -502,6 +502,9 @@ struct cgroup {
 	/* Used to store internal freezer state */
 	struct cgroup_freezer_state freezer;
 
+	/* ve_owner, responsible for running release agent. */
+	struct ve_struct __rcu *ve_owner;
+
 	/* ids of the ancestors at each level including self */
 	u64 ancestor_ids[];
 };
