@@ -2036,7 +2036,58 @@ struct ve_struct *get_curr_ve(void)
 	return ve;
 }
 
-void cgroup_mark_ve_roots(struct ve_struct *ve)
+/*
+ * Let's skip optional cgroups in Virtuozzo containers. Admin on host can
+ * do "mount -t cgroup cgroup -onone,name=namedcgroup /mnt", and this should
+ * not break containers.
+ */
+static inline bool is_virtualized_cgroup(struct cgroup *cgrp)
+{
+	/* Cgroup v2 */
+	if (cgrp->root == &cgrp_dfl_root)
+		return false;
+
+#if IS_ENABLED(CONFIG_CGROUP_DEBUG)
+	if (cgrp->subsys[debug_cgrp_id])
+		return false;
+#endif
+
+	if (cgrp->root->subsys_mask)
+		return true;
+
+	if (!strcmp(cgrp->root->name, "systemd"))
+		return true;
+
+	return false;
+}
+
+/*
+ * Iterate all cgroups in a given css_set and for all obligatory Virtuozzo
+ * container cgroups check that container has its own cgroup subdirectory:
+ * non-host and non-intersecting with other container subdirectories.
+ */
+static inline bool ve_check_root_cgroups(struct css_set *cset)
+{
+	struct cgrp_cset_link *link;
+
+	lockdep_assert_held(&css_set_lock);
+
+	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
+		if (!is_virtualized_cgroup(link->cgrp))
+			continue;
+
+		/* Host cgroups not allowed */
+		if (!link->cgrp->kn->parent)
+			return true;
+
+		/* Nested CGRP_VE_ROOT not allowed */
+		if (cgroup_get_ve_root1(link->cgrp))
+			return true;
+	}
+	return false;
+}
+
+int cgroup_mark_ve_roots(struct ve_struct *ve)
 {
 	struct cgrp_cset_link *link;
 	struct css_set *cset;
@@ -2052,13 +2103,23 @@ void cgroup_mark_ve_roots(struct ve_struct *ve)
 	cset = rcu_dereference_protected(ve->ve_ns,
 			lockdep_is_held(&ve->op_sem))->cgroup_ns->root_cset;
 
+	if (ve_check_root_cgroups(cset)) {
+		spin_unlock_irq(&css_set_lock);
+		return -EINVAL;
+	}
+
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
 		cgrp = link->cgrp;
+
+		if (!is_virtualized_cgroup(cgrp))
+			continue;
+
 		set_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 
 	link_ve_root_cpu_cgroup(cset->subsys[cpu_cgrp_id]);
 	spin_unlock_irq(&css_set_lock);
+	return 0;
 }
 
 void cgroup_unmark_ve_roots(struct ve_struct *ve)
@@ -2079,6 +2140,10 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
 		cgrp = link->cgrp;
+
+		if (!is_virtualized_cgroup(cgrp))
+			continue;
+
 		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 
