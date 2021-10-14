@@ -633,6 +633,25 @@ out_unlock:
 }
 EXPORT_SYMBOL_GPL(cgroup_get_e_css);
 
+#ifdef CONFIG_VE
+struct cgroup_subsys_state *cgroup_get_e_ve_css(struct cgroup *cgrp,
+						struct cgroup_subsys *ss)
+{
+	struct cgroup_subsys_state *css;
+	struct ve_struct *ve;
+
+	rcu_read_lock();
+
+	ve = cgroup_ve_owner(cgrp);
+	if (!ve)
+		ve = get_ve0();
+	css = ve_get_init_css(ve, ss->id);
+
+	rcu_read_unlock();
+	return css;
+}
+#endif
+
 static void cgroup_get_live(struct cgroup *cgrp)
 {
 	WARN_ON_ONCE(cgroup_is_dead(cgrp));
