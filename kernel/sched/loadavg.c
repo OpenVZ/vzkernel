@@ -109,7 +109,7 @@ long calc_load_fold_active(struct rq *this_rq, long adjust)
 
 #ifdef CONFIG_VE
 extern struct list_head ve_root_list;
-extern spinlock_t load_ve_lock;
+extern raw_spinlock_t load_ve_lock;
 
 void calc_load_ve(void)
 {
@@ -121,7 +121,7 @@ void calc_load_ve(void)
 	 * This is called without jiffies_lock, and here we protect
 	 * against very rare parallel execution on two or more cpus.
 	 */
-	spin_lock(&load_ve_lock);
+	raw_spin_lock(&load_ve_lock);
 	list_for_each_entry(tg, &ve_root_list, ve_root_list) {
 		nr_active = 0;
 		for_each_possible_cpu(i) {
@@ -154,6 +154,7 @@ void calc_load_ve(void)
 		tg->avenrun[1] = calc_load(tg->avenrun[1], EXP_5, nr_active);
 		tg->avenrun[2] = calc_load(tg->avenrun[2], EXP_15, nr_active);
 	}
+	raw_spin_unlock(&load_ve_lock);
 
 	nr_unint = nr_uninterruptible() * FIXED_1;
 
@@ -162,7 +163,6 @@ void calc_load_ve(void)
 	calc_load(kstat_glob.nr_unint_avg[1], EXP_5, nr_unint);
 	calc_load(kstat_glob.nr_unint_avg[2], EXP_15, nr_unint);
 	write_seqcount_end(&kstat_glob.nr_unint_avg_seq);
-	spin_unlock(&load_ve_lock);
 }
 #endif /* CONFIG_VE */
 
