@@ -69,7 +69,7 @@ struct cpu_flags {
 };
 
 static DEFINE_PER_CPU(struct cpu_flags, cpu_flags);
-static DEFINE_SPINLOCK(cpu_flags_lock);
+static DEFINE_RAW_SPINLOCK(cpu_flags_lock);
 
 static void init_cpu_flags(void *dummy)
 {
@@ -107,9 +107,9 @@ static void init_cpu_flags(void *dummy)
 		flags.val[10] &= eax;
 	}
 
-	spin_lock(&cpu_flags_lock);
+	raw_spin_lock(&cpu_flags_lock);
 	memcpy(&per_cpu(cpu_flags, cpu), &flags, sizeof(flags));
-	spin_unlock(&cpu_flags_lock);
+	raw_spin_unlock(&cpu_flags_lock);
 }
 
 static int show_cpuinfo(struct seq_file *m, void *v)
@@ -158,9 +158,9 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	show_cpuinfo_misc(m, c);
 
 	if (!is_super) {
-		spin_lock_irq(&cpu_flags_lock);
+		raw_spin_lock_irq(&cpu_flags_lock);
 		memcpy(&ve_flags, &per_cpu(cpu_flags, cpu), sizeof(ve_flags));
-		spin_unlock_irq(&cpu_flags_lock);
+		raw_spin_unlock_irq(&cpu_flags_lock);
 	}
 
 
