@@ -446,6 +446,22 @@ static void cgwb_remove_from_bdi_list(struct bdi_writeback *wb)
 	spin_unlock_irq(&cgwb_lock);
 }
 
+static inline struct cgroup_subsys_state *
+cgroup_get_e_css_virtialized(struct cgroup *cgroup,
+			     struct cgroup_subsys *ss)
+{
+	struct cgroup_subsys_state *css;
+
+#ifdef CONFIG_VE
+	if (!cgroup_subsys_on_dfl(memory_cgrp_subsys))
+		css = cgroup_get_e_ve_css(cgroup, ss);
+	else
+#endif
+		css = cgroup_get_e_css(cgroup, ss);
+
+	return css;
+}
+
 static int cgwb_create(struct backing_dev_info *bdi,
 		       struct cgroup_subsys_state *memcg_css, gfp_t gfp)
 {
@@ -457,7 +473,8 @@ static int cgwb_create(struct backing_dev_info *bdi,
 	int ret = 0;
 
 	memcg = mem_cgroup_from_css(memcg_css);
-	blkcg_css = cgroup_get_e_css(memcg_css->cgroup, &io_cgrp_subsys);
+	blkcg_css = cgroup_get_e_css_virtialized(memcg_css->cgroup,
+						 &io_cgrp_subsys);
 	memcg_cgwb_list = &memcg->cgwb_list;
 	blkcg_cgwb_list = blkcg_get_cgwb_list(blkcg_css);
 
@@ -576,7 +593,8 @@ struct bdi_writeback *wb_get_lookup(struct backing_dev_info *bdi,
 		struct cgroup_subsys_state *blkcg_css;
 
 		/* see whether the blkcg association has changed */
-		blkcg_css = cgroup_get_e_css(memcg_css->cgroup, &io_cgrp_subsys);
+		blkcg_css = cgroup_get_e_css_virtialized(memcg_css->cgroup,
+							 &io_cgrp_subsys);
 		if (unlikely(wb->blkcg_css != blkcg_css || !wb_tryget(wb)))
 			wb = NULL;
 		css_put(blkcg_css);
