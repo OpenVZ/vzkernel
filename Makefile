@@ -4,7 +4,7 @@ PATCHLEVEL = 14
 SUBLEVEL = 0
 EXTRAVERSION =
 NAME = Opossums on Parade
-# VZVERSION = ovz.10.8
+# VZVERSION = ovz.10.9
 VZVERSION = ovz.custom
 
 ifeq ($(VZVERSION), ovz.custom)
