@@ -255,6 +255,7 @@ struct mem_cgroup {
 	/* Legacy consumer-oriented counters */
 	struct page_counter kmem;		/* v1 only */
 	struct page_counter tcpmem;		/* v1 only */
+	struct page_counter cache;
 
 	/* Range enforcement for interrupt charges */
 	struct work_struct high_work;
@@ -716,6 +717,8 @@ static inline bool mem_cgroup_below_min(struct mem_cgroup *memcg)
 }
 
 int mem_cgroup_charge(struct page *page, struct mm_struct *mm, gfp_t gfp_mask);
+int mem_cgroup_charge_cache(struct page *page, struct mm_struct *mm,
+			    gfp_t gfp_mask);
 int mem_cgroup_swapin_charge_page(struct page *page, struct mm_struct *mm,
 				  gfp_t gfp, swp_entry_t entry);
 void mem_cgroup_swapin_uncharge_swap(swp_entry_t entry);
@@ -1242,6 +1245,12 @@ static inline bool mem_cgroup_below_min(struct mem_cgroup *memcg)
 
 static inline int mem_cgroup_charge(struct page *page, struct mm_struct *mm,
 				    gfp_t gfp_mask)
+{
+	return 0;
+}
+
+static inline int mem_cgroup_charge_cache(struct page *page, struct mm_struct *mm,
+					  gfp_t gfp_mask)
 {
 	return 0;
 }
