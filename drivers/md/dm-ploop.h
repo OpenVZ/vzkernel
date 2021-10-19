@@ -148,6 +148,7 @@ struct ploop {
 	bool falloc_new_clu; /* fallocate() instead of truncate() */
 	u32 nr_bat_entries;
 	unsigned int cluster_log; /* In sectors */
+	sector_t skip_off; /* To cut beginning of ploop device */
 
 	u8 m_Sig[16]; /* Signature */
 	u32 m_Type; /* Disk type */
