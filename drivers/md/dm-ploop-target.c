@@ -389,15 +389,25 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto err;
 	}
 
-	/* Optional parameter */
-	if (strcmp(argv[0], "falloc_new_clu") == 0) {
-		if (argc < 2) {
-			ret = -EINVAL;
-			goto err;
+	ret = -EINVAL;
+	/* Optional parameters */
+	while (argc > 0) {
+		if (strcmp(argv[0], "falloc_new_clu") == 0) {
+			ploop->falloc_new_clu = true;
+			EAT_ARG(argc, argv);
+			continue;
 		}
-		ploop->falloc_new_clu = true;
-		EAT_ARG(argc, argv);
+		if (strncmp(argv[0], "off=", 4) == 0) {
+			if (kstrtou64(argv[0] + 4, 10, &ploop->skip_off) < 0)
+				goto err;
+			EAT_ARG(argc, argv);
+			continue;
+		}
+		break;
 	}
+
+	if (argc <= 0)
+		goto err;
 
 	ret = ploop_add_deltas_stack(ploop, &argv[0], argc);
 	if (ret)
@@ -435,7 +445,7 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 			 unsigned int maxlen)
 {
 	struct ploop *ploop = ti->private;
-	char stat[16] = { 0 }, *p = stat;
+	char stat[32] = { 0 }, *p = stat;
 	ssize_t sz = 0;
 
 	down_read(&ploop->ctl_rwsem);
@@ -447,6 +457,8 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 		p += sprintf(p, "n");
 	if (p == stat)
 		p += sprintf(p, "o");
+	if (ploop->skip_off)
+		p += sprintf(p, " off=%llu", ploop->skip_off);
 	up_read(&ploop->ctl_rwsem);
 
 	BUG_ON(p - stat >= sizeof(stat));

@@ -42,6 +42,11 @@ static unsigned int pio_nr_segs(struct pio *pio)
         return nr_segs;
 }
 
+static sector_t ploop_rq_pos(struct ploop *ploop, struct request *rq)
+{
+	return blk_rq_pos(rq) + ploop->skip_off;
+}
+
 void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop)
 {
 	piwb->ploop = ploop;
@@ -85,7 +90,7 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 /* Get clu related to pio sectors */
 static int ploop_rq_valid(struct ploop *ploop, struct request *rq)
 {
-	sector_t sector = blk_rq_pos(rq);
+	sector_t sector = ploop_rq_pos(ploop, rq);
 	loff_t end_byte;
 	u32 end_clu;
 
@@ -1651,7 +1656,6 @@ static void prepare_one_embedded_pio(struct ploop *ploop, struct pio *pio,
 			goto err_nomem;
 		prq->bvec = bvec;
 skip_bvec:
-		pio->bi_iter.bi_sector = blk_rq_pos(rq);
 		pio->bi_iter.bi_size = blk_rq_bytes(rq);
 		pio->bi_iter.bi_idx = 0;
 		pio->bi_iter.bi_bvec_done = 0;
@@ -1661,6 +1665,7 @@ skip_bvec:
 
 		pio->bi_iter = rq->bio->bi_iter;
 	}
+	pio->bi_iter.bi_sector = ploop_rq_pos(ploop, rq);
 	pio->bi_io_vec = bvec;
 
 	pio->queue_list_id = PLOOP_LIST_DEFERRED;
