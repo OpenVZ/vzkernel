@@ -5,6 +5,7 @@
 #include <linux/types.h>
 #include <linux/stacktrace.h>
 #include <linux/stackdepot.h>
+#include <linux/page_owner.h>
 
 struct pglist_data;
 struct page_ext_operations {
@@ -64,6 +65,28 @@ static inline struct page_ext *page_ext_next(struct page_ext *curr)
 	return next;
 }
 
+extern void _reset_page_vzext(struct page *page, unsigned int order);
+extern void _split_page_vzext(struct page *page, unsigned int nr);
+extern void _copy_page_vzext(struct page *oldpage, struct page *newpage);
+
+static inline void reset_page_ext(struct page *page, unsigned int order)
+{
+	_reset_page_owner(page, order);
+	_reset_page_vzext(page, order);
+}
+
+static inline void split_page_ext(struct page *page, unsigned int nr)
+{
+	_split_page_owner(page, nr);
+	_split_page_vzext(page, nr);
+}
+
+static inline void copy_page_ext(struct page *oldpage, struct page *newpage)
+{
+	_copy_page_owner(oldpage, newpage);
+	_copy_page_vzext(oldpage, newpage);
+}
+
 #else /* !CONFIG_PAGE_EXTENSION */
 struct page_ext;
 
@@ -87,5 +110,18 @@ static inline void page_ext_init_flatmem_late(void)
 static inline void page_ext_init_flatmem(void)
 {
 }
+
+static inline void reset_page_ext(struct page *page, unsigned int order)
+{
+}
+
+static inline void split_page_ext(struct page *page, unsigned int order)
+{
+}
+
+static inline void copy_page_ext(struct page *oldpage, struct page *newpage)
+{
+}
+
 #endif /* CONFIG_PAGE_EXTENSION */
 #endif /* __LINUX_PAGE_EXT_H */

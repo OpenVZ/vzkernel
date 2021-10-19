@@ -46,6 +46,7 @@
 #include <linux/mmu_notifier.h>
 #include <linux/page_idle.h>
 #include <linux/page_owner.h>
+#include <linux/page_vzext.h>
 #include <linux/sched/mm.h>
 #include <linux/ptrace.h>
 #include <linux/oom.h>
@@ -605,7 +606,7 @@ void migrate_page_states(struct page *newpage, struct page *page)
 	if (PageReadahead(page))
 		SetPageReadahead(newpage);
 
-	copy_page_owner(page, newpage);
+	copy_page_ext(page, newpage);
 
 	if (!PageHuge(page))
 		mem_cgroup_migrate(page, newpage);
