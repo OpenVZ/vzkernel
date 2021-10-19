@@ -7,6 +7,7 @@
 #include <linux/vmalloc.h>
 #include <linux/kmemleak.h>
 #include <linux/page_owner.h>
+#include <linux/page_vzext.h>
 #include <linux/page_idle.h>
 
 /*
@@ -75,6 +76,7 @@ static struct page_ext_operations *page_ext_ops[] = {
 #if defined(CONFIG_PAGE_IDLE_FLAG) && !defined(CONFIG_64BIT)
 	&page_idle_ops,
 #endif
+	&page_vzext_ops,
 };
 
 unsigned long page_ext_size = sizeof(struct page_ext);
