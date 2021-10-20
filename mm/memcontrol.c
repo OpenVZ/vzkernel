@@ -1322,6 +1322,16 @@ bool mem_cgroup_cleancache_disabled(struct page *page)
 	if (mem_cgroup_disabled())
 		return false;
 
+	/*
+	 * On all paths to mem_cgroup_cleancache_disabled(), the page in
+	 * question is locked. Calls go from __delete_from_page_cache() or
+	 * from delete_from_page_cache_batch(), in both cases page lock is
+	 * mandatory.
+	 *
+	 * Per comment in the documentation of page_memcg(), holding page lock
+	 * guarantees stability of the value returned from page_memcg().
+	 * Thus using page_memcg() is safe, rcu is not needed.
+	 */
 	memcg = page_memcg(page);
 	return memcg && memcg->cleancache_disabled;
 }
