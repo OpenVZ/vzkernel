@@ -252,7 +252,11 @@ static int nft_nat_init(const struct nft_ctx *ctx, const struct nft_expr *expr,
 			return -EOPNOTSUPP;
 	}
 
-	return nf_ct_netns_get(ctx->net, family);
+	err = nf_ct_netns_get(ctx->net, family);
+	if (err == 0)
+		allow_conntrack_allocation(ctx->net);
+
+	return err;
 }
 
 static int nft_nat_dump(struct sk_buff *skb,
