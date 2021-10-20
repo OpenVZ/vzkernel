@@ -1141,6 +1141,50 @@ enum {
 	VE_CF_CLOCK_BOOTBASED,
 };
 
+static u64 ve_pid_max_read_u64(struct cgroup_subsys_state *css,
+			       struct cftype *cft)
+{
+	struct ve_struct *ve = css_to_ve(css);
+	struct nsproxy *ve_ns;
+	u64 pid_max = 0;
+
+	rcu_read_lock();
+	ve_ns = rcu_dereference(ve->ve_ns);
+	if (ve_ns && ve_ns->pid_ns_for_children)
+		pid_max = ve_ns->pid_ns_for_children->pid_max;
+
+	rcu_read_unlock();
+
+	return pid_max;
+}
+
+extern int pid_max_min, pid_max_max;
+
+static int ve_pid_max_write_running_u64(struct cgroup_subsys_state *css,
+					struct cftype *cft, u64 val)
+{
+	struct ve_struct *ve = css_to_ve(css);
+	struct nsproxy *ve_ns;
+
+	if (!ve_is_super(get_exec_env()) &&
+	    !ve->is_pseudosuper)
+		return -EPERM;
+
+	rcu_read_lock();
+	ve_ns = rcu_dereference(ve->ve_ns);
+	if (!ve_ns || !ve_ns->pid_ns_for_children) {
+		return -EBUSY;
+	}
+	if (pid_max_min > val || pid_max_max < val) {
+		return -EINVAL;
+	}
+
+	ve->ve_ns->pid_ns_for_children->pid_max = val;
+	rcu_read_unlock();
+
+	return 0;
+}
+
 static int ve_ts_read(struct seq_file *sf, void *v)
 {
 	struct ve_struct *ve = css_to_ve(seq_css(sf));
@@ -1476,6 +1520,12 @@ static struct cftype ve_cftypes[] = {
 		.flags			= CFTYPE_NOT_ON_ROOT,
 		.seq_show		= ve_ts_read,
 		.private		= VE_CF_CLOCK_BOOTBASED,
+	},
+	{
+		.name			= "pid_max",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_pid_max_read_u64,
+		.write_u64		= ve_pid_max_write_running_u64,
 	},
 	{
 		.name			= "netns_max_nr",
