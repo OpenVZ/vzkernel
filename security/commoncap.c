@@ -1008,7 +1008,8 @@ int cap_inode_setxattr(struct dentry *dentry, const char *name,
 		return 0;
 
 	if (!ns_capable(user_ns, CAP_SYS_ADMIN))
-		return -EPERM;
+		if (!ve_capable(CAP_SYS_ADMIN))
+			return -EPERM;
 	return 0;
 }
 
@@ -1052,7 +1053,8 @@ int cap_inode_removexattr(struct user_namespace *mnt_userns,
 	}
 
 	if (!ns_capable(user_ns, CAP_SYS_ADMIN))
-		return -EPERM;
+		if (!ve_capable(CAP_SYS_ADMIN))
+			return -EPERM;
 	return 0;
 }
 
