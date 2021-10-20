@@ -2049,7 +2049,7 @@ static inline bool ve_check_root_cgroups(struct css_set *cset)
 	return false;
 }
 
-int cgroup_mark_ve_root(struct ve_struct *ve)
+int cgroup_mark_ve_roots(struct ve_struct *ve)
 {
 	struct cgrp_cset_link *link;
 	struct css_set *cset;
