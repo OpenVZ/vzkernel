@@ -109,6 +109,13 @@ struct ve_struct {
 	struct workqueue_struct	*wq;
 	struct work_struct	release_agent_work;
 
+	/*
+	 * List of data, private for each root cgroup in
+	 * ve's css_set.
+	 */
+	struct list_head	ra_data_list;
+	spinlock_t		ra_data_lock;
+
 	struct vfsmount		*devtmpfs_mnt;
 };
 
@@ -132,6 +139,13 @@ extern unsigned int sysctl_ve_mount_nr;
 #ifdef CONFIG_VE
 void ve_add_to_release_list(struct cgroup *cgrp);
 void ve_rm_from_release_list(struct cgroup *cgrp);
+
+const char *ve_ra_data_get_path_locked(struct ve_struct *ve,
+				       struct cgroup_root *cgroot);
+int ve_ra_data_set(struct ve_struct *ve, struct cgroup_root *cgroot,
+		   const char *release_agent);
+void cgroot_ve_cleanup_ra_data(struct cgroup_root *cgroot);
+
 extern struct ve_struct *get_ve(struct ve_struct *ve);
 extern void put_ve(struct ve_struct *ve);
 
