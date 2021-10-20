@@ -46,6 +46,7 @@ union nf_conntrack_expect_proto {
 struct nf_conntrack_net {
 	/* only used when new connection is allocated: */
 	atomic_t count;
+	unsigned int max;
 	unsigned int expect_count;
 	unsigned int expect_max;
 	u8 sysctl_auto_assign_helper;
@@ -57,6 +58,7 @@ struct nf_conntrack_net {
 	unsigned int users_bridge;
 #ifdef CONFIG_SYSCTL
 	struct ctl_table_header	*sysctl_header;
+	struct ctl_table_header	*parent_sysctl_header;
 #endif
 #ifdef CONFIG_NF_CONNTRACK_EVENTS
 	struct delayed_work ecache_dwork;
@@ -314,7 +316,6 @@ int nf_conntrack_hash_resize(unsigned int hashsize);
 extern struct hlist_nulls_head *nf_conntrack_hash;
 extern unsigned int nf_conntrack_htable_size;
 extern seqcount_spinlock_t nf_conntrack_generation;
-extern unsigned int nf_conntrack_max;
 
 /* must be called with rcu read lock held */
 static inline void
@@ -340,6 +341,7 @@ void nf_ct_tmpl_free(struct nf_conn *tmpl);
 
 u32 nf_ct_get_id(const struct nf_conn *ct);
 u32 nf_conntrack_count(const struct net *net);
+u32 nf_conntrack_max(const struct net *net);
 
 static inline void
 nf_ct_set(struct sk_buff *skb, struct nf_conn *ct, enum ip_conntrack_info info)
