@@ -54,10 +54,15 @@ netmap_tg6(struct sk_buff *skb, const struct xt_action_param *par)
 static int netmap_tg6_checkentry(const struct xt_tgchk_param *par)
 {
 	const struct nf_nat_range2 *range = par->targinfo;
+	int ret;
 
 	if (!(range->flags & NF_NAT_RANGE_MAP_IPS))
 		return -EINVAL;
-	return nf_ct_netns_get(par->net, par->family);
+
+	ret = nf_ct_netns_get(par->net, par->family);
+	if (ret == 0)
+		allow_conntrack_allocation(par->net);
+	return ret;
 }
 
 static void netmap_tg_destroy(const struct xt_tgdtor_param *par)
@@ -104,6 +109,7 @@ netmap_tg4(struct sk_buff *skb, const struct xt_action_param *par)
 static int netmap_tg4_check(const struct xt_tgchk_param *par)
 {
 	const struct nf_nat_ipv4_multi_range_compat *mr = par->targinfo;
+	int ret;
 
 	if (!(mr->range[0].flags & NF_NAT_RANGE_MAP_IPS)) {
 		pr_debug("bad MAP_IPS.\n");
@@ -113,7 +119,11 @@ static int netmap_tg4_check(const struct xt_tgchk_param *par)
 		pr_debug("bad rangesize %u.\n", mr->rangesize);
 		return -EINVAL;
 	}
-	return nf_ct_netns_get(par->net, par->family);
+
+	ret = nf_ct_netns_get(par->net, par->family);
+	if (ret == 0)
+		allow_conntrack_allocation(par->net);
+	return ret;
 }
 
 static struct xt_target netmap_tg_reg[] __read_mostly = {
