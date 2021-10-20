@@ -949,6 +949,7 @@ int create_pipe_files(struct file **res, int flags)
 	stream_open(inode, res[1]);
 	return 0;
 }
+EXPORT_SYMBOL(create_pipe_files);
 
 static int __do_pipe_flags(int *fd, struct file **files, int flags)
 {
