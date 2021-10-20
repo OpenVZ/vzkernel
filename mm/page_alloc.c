@@ -5593,6 +5593,11 @@ static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 	cpu = smp_processor_id();
 	KSTAT_LAT_PCPU_ADD(&kstat_glob.alloc_lat[ind], delta);
 
+	if (in_task()) {
+		current->alloc_lat[ind].totlat += delta;
+		current->alloc_lat[ind].count++;
+	}
+
 	if (!page)
 		kstat_glob.alloc_fails[cpu][ind]++;
 	local_irq_restore(flags);

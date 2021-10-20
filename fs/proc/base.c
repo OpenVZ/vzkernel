@@ -56,6 +56,7 @@
 #include <linux/stat.h>
 #include <linux/task_io_accounting_ops.h>
 #include <linux/init.h>
+#include <linux/kstat.h>
 #include <linux/capability.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
@@ -545,6 +546,78 @@ static const struct file_operations proc_lstats_operations = {
 	.release	= single_release,
 };
 
+#endif
+
+#ifdef CONFIG_VE
+static void lastlat_seq_show(struct seq_file *m,
+		const char *name,
+		struct kstat_lat_snap_struct *snap)
+{
+	seq_printf(m, "%-12s %20Lu %20lu\n", name,
+			snap->totlat, snap->count);
+}
+static const char *alloc_descr[] = {
+	"allocatomic:",
+	"alloc:",
+	"allocmp:",
+};
+static const int alloc_types[] = {
+	KSTAT_ALLOCSTAT_ATOMIC,
+	KSTAT_ALLOCSTAT_LOW,
+	KSTAT_ALLOCSTAT_LOW_MP,
+};
+
+static int proc_tid_vz_lat(struct seq_file *m, struct pid_namespace *ns,
+			struct pid *pid, struct task_struct *task)
+{
+	int i;
+
+	seq_printf(m, "%-12s %20s %20s\n",
+			"Type", "Total_lat", "Calls");
+
+	for (i = 0; i < ARRAY_SIZE(alloc_types); i++)
+		lastlat_seq_show(m, alloc_descr[i],
+				&task->alloc_lat[alloc_types[i]]);
+	return 0;
+}
+
+static int proc_tgid_vz_lat(struct seq_file *m, struct pid_namespace *ns,
+			struct pid *pid, struct task_struct *task)
+{
+	int i;
+	unsigned long flags;
+	u64 lat[ARRAY_SIZE(alloc_types)];
+	u64 count[ARRAY_SIZE(alloc_types)];
+
+	for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
+		lat[i] = task->alloc_lat[alloc_types[i]].totlat;
+		count[i] = task->alloc_lat[alloc_types[i]].count;
+	}
+
+	if (lock_task_sighand(task, &flags)) {
+		struct task_struct *t = task;
+		while_each_thread(task, t) {
+			for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
+				lat[i] += t->alloc_lat[alloc_types[i]].totlat;
+				count[i] += t->alloc_lat[alloc_types[i]].count;
+			}
+		}
+		for (i = 0; i < ARRAY_SIZE(alloc_types); i++) {
+			lat[i] += t->signal->alloc_lat[alloc_types[i]].totlat;
+			count[i] += t->signal->alloc_lat[alloc_types[i]].count;
+		}
+		unlock_task_sighand(task, &flags);
+	}
+
+	seq_printf(m, "%-12s %20s %20s\n",
+			"Type", "Total_lat", "Calls");
+
+	for (i = 0; i < ARRAY_SIZE(alloc_types); i++)
+		seq_printf(m, "%-12s %20Lu %20Lu\n", alloc_descr[i],
+			lat[i], count[i]);
+
+	return 0;
+}
 #endif
 
 static int proc_oom_score(struct seq_file *m, struct pid_namespace *ns,
@@ -3359,6 +3432,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_KSM
 	ONE("ksm_merging_pages",  S_IRUSR, proc_pid_ksm_merging_pages),
 #endif
+#ifdef CONFIG_VE
+	ONE("vz_latency", S_IRUGO, proc_tgid_vz_lat),
+#endif
 };
 
 static int proc_tgid_base_readdir(struct file *file, struct dir_context *ctx)
@@ -3694,6 +3770,9 @@ static const struct pid_entry tid_base_stuff[] = {
 #endif
 #ifdef CONFIG_KSM
 	ONE("ksm_merging_pages",  S_IRUSR, proc_pid_ksm_merging_pages),
+#endif
+#ifdef CONFIG_VE
+	ONE("vz_latency", S_IRUGO, proc_tid_vz_lat),
 #endif
 };
 
