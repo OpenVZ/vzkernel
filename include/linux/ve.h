@@ -98,8 +98,16 @@ struct ve_struct {
 	unsigned long		aio_nr;
 	unsigned long		aio_max_nr;
 #endif
+	/*
+	 * cgroups, that want to notify about becoming
+	 * empty, are linked to this release_list.
+	 */
+	struct list_head	release_list;
+	spinlock_t		release_list_lock;
+
 	/* Should take rcu_read_lock and check ve->is_running before queue */
 	struct workqueue_struct	*wq;
+	struct work_struct	release_agent_work;
 
 	struct vfsmount		*devtmpfs_mnt;
 };
@@ -122,6 +130,8 @@ extern int nr_ve;
 extern unsigned int sysctl_ve_mount_nr;
 
 #ifdef CONFIG_VE
+void ve_add_to_release_list(struct cgroup *cgrp);
+void ve_rm_from_release_list(struct cgroup *cgrp);
 extern struct ve_struct *get_ve(struct ve_struct *ve);
 extern void put_ve(struct ve_struct *ve);
 
