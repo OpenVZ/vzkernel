@@ -69,6 +69,7 @@ struct nf_conntrack_net {
 #ifdef CONFIG_NF_CONNTRACK_EVENTS
 	struct nf_conntrack_net_ecache ecache;
 #endif
+	bool can_alloc;
 };
 
 #include <linux/types.h>
@@ -373,5 +374,17 @@ static inline struct nf_conntrack_net *nf_ct_pernet(const struct net *net)
 
 #define MODULE_ALIAS_NFCT_HELPER(helper) \
         MODULE_ALIAS("nfct-helper-" helper)
+
+static inline void allow_conntrack_allocation(struct net *net)
+{
+#if IS_ENABLED(CONFIG_NF_CONNTRACK)
+	nf_ct_pernet(net)->can_alloc = true;
+#endif
+}
+
+static inline bool conntrack_allocation_allowed(struct net *net)
+{
+	return nf_ct_pernet(net)->can_alloc;
+}
 
 #endif /* _NF_CONNTRACK_H */
