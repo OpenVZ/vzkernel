@@ -23,6 +23,8 @@
 #include <linux/compiler.h>
 #include <linux/audit.h>
 
+#include <uapi/linux/vzcalluser.h>
+
 #include "tick-internal.h"
 #include "ntp_internal.h"
 #include "timekeeping_internal.h"
@@ -2342,11 +2344,12 @@ static int timekeeping_validate_timex(const struct __kernel_timex *txc)
 		if (!(txc->modes & ADJ_OFFSET_SINGLESHOT))
 			return -EINVAL;
 		if (!(txc->modes & ADJ_OFFSET_READONLY) &&
-		    !capable(CAP_SYS_TIME))
+		    !feature_capable(VE_FEATURE_TIME, CAP_SYS_TIME))
 			return -EPERM;
 	} else {
 		/* In order to modify anything, you gotta be super-user! */
-		if (txc->modes && !capable(CAP_SYS_TIME))
+		if (txc->modes &&
+		    !feature_capable(VE_FEATURE_TIME, CAP_SYS_TIME))
 			return -EPERM;
 		/*
 		 * if the quartz is off by more than 10% then
@@ -2360,7 +2363,7 @@ static int timekeeping_validate_timex(const struct __kernel_timex *txc)
 
 	if (txc->modes & ADJ_SETOFFSET) {
 		/* In order to inject time, you gotta be super-user! */
-		if (!capable(CAP_SYS_TIME))
+		if (!feature_capable(VE_FEATURE_TIME, CAP_SYS_TIME))
 			return -EPERM;
 
 		/*
