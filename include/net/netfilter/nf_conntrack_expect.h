@@ -12,7 +12,6 @@
 #include <net/netfilter/nf_conntrack_zones.h>
 
 extern unsigned int nf_ct_expect_hsize;
-extern unsigned int nf_ct_expect_max;
 extern struct hlist_head *nf_ct_expect_hash;
 
 struct nf_conntrack_expect {
