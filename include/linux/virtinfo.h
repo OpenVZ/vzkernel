@@ -19,6 +19,7 @@ struct meminfo {
         unsigned long pages[NR_LRU_LISTS];
         unsigned long cached, dirty_pages, writeback_pages, shmem;
         unsigned long slab_reclaimable, slab_unreclaimable;
+	unsigned long available;
 };
 
 #endif /* __LINUX_VIRTINFO_H */
