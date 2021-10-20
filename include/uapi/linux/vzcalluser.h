@@ -47,6 +47,7 @@ struct vzctl_ve_configure {
 #define VE_FEATURE_IPGRE	(1ULL << 6)
 #define VE_FEATURE_BRIDGE	(1ULL << 7)
 #define VE_FEATURE_NFSD		(1ULL << 8)
+#define VE_FEATURE_TIME		(1ULL << 9)
 
 #define VE_FEATURES_OLD		(VE_FEATURE_SYSFS)
 #define VE_FEATURES_DEF		(VE_FEATURE_SYSFS | VE_FEATURE_DEF_PERMS)
