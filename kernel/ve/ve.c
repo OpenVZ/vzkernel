@@ -446,6 +446,22 @@ static int ve_start_kthreadd(struct ve_struct *ve)
 	return err;
 }
 
+static int ve_workqueue_start(struct ve_struct *ve)
+{
+	ve->wq = alloc_workqueue("ve_wq_%s", WQ_SYSFS|WQ_FREEZABLE|WQ_UNBOUND,
+				 8, ve->ve_name);
+
+	if (!ve->wq)
+		return -ENOMEM;
+	return 0;
+}
+
+static void ve_workqueue_stop(struct ve_struct *ve)
+{
+	destroy_workqueue(ve->wq);
+	ve->wq = NULL;
+}
+
 /* under ve->op_sem write-lock */
 static int ve_start_container(struct ve_struct *ve)
 {
@@ -490,6 +506,10 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_umh;
 
+	err = ve_workqueue_start(ve);
+	if (err)
+		goto err_workqueue;
+
 	err = ve_hook_iterate_init(VE_SS_CHAIN, ve);
 	if (err < 0)
 		goto err_iterate;
@@ -509,6 +529,8 @@ static int ve_start_container(struct ve_struct *ve)
 err_mark_ve:
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
 err_iterate:
+	ve_workqueue_stop(ve);
+err_workqueue:
 	ve_stop_umh(ve);
 err_umh:
 	ve_stop_kthreadd(ve);
@@ -538,6 +560,14 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	 * ve_mutex works as barrier for ve_can_attach().
 	 */
 	ve->is_running = 0;
+	synchronize_rcu();
+
+	/*
+	 * release_agent works on top of umh_worker, so we must make sure, that
+	 * ve workqueue is stopped first.
+	 */
+	ve_workqueue_stop(ve);
+
 	/*
 	 * Neither it can be in pseudosuper state
 	 * anymore, setup it again if needed.
@@ -1569,6 +1599,8 @@ static int __init ve_subsys_init(void)
 {
 	ve_cachep = KMEM_CACHE_USERCOPY(ve_struct, SLAB_PANIC, core_pattern);
 	list_add(&ve0.ve_list, &ve_list_head);
+	ve0.wq = alloc_workqueue("ve0_wq", WQ_FREEZABLE|WQ_UNBOUND, 8);
+	BUG_ON(!ve0.wq);
 	return 0;
 }
 late_initcall(ve_subsys_init);
