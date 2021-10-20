@@ -465,6 +465,7 @@ extern void clear_shadow_from_swap_cache(int type, unsigned long begin,
 				unsigned long end);
 extern void free_page_and_swap_cache(struct page *);
 extern void free_pages_and_swap_cache(struct page **, int);
+extern void free_pages_and_swap_cache_nodrain(struct page **, int);
 extern struct page *lookup_swap_cache(swp_entry_t entry,
 				      struct vm_area_struct *vma,
 				      unsigned long addr);
