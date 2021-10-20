@@ -38,6 +38,7 @@
 #include <linux/rv.h>
 #include <linux/livepatch_sched.h>
 #include <asm/kmap_size.h>
+#include <linux/kstat.h>
 
 #include <linux/rh_kabi.h>
 
@@ -1349,6 +1350,10 @@ struct task_struct {
 #endif
 
 	struct tlbflush_unmap_batch	tlb_ubc;
+
+#ifdef CONFIG_VE
+	struct kstat_lat_snap_struct	alloc_lat[KSTAT_ALLOCSTAT_NR];
+#endif
 
 	union {
 		refcount_t		rcu_users;
