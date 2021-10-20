@@ -98,6 +98,9 @@ struct ve_struct {
 	unsigned long		aio_nr;
 	unsigned long		aio_max_nr;
 #endif
+	/* Should take rcu_read_lock and check ve->is_running before queue */
+	struct workqueue_struct	*wq;
+
 	struct vfsmount		*devtmpfs_mnt;
 };
 
