@@ -11,6 +11,7 @@
 #include <linux/sched/task.h>
 #include <linux/sched/stat.h>
 #include <linux/module.h>
+#include <linux/cpu.h>
 #include <linux/mm.h>
 #include <linux/ve.h>
 #include <linux/ve_proto.h>
@@ -38,7 +39,8 @@ static const char *alloc_descr[KSTAT_ALLOCSTAT_NR] = {
 	"aloclow:",
 	"alochigh:",
 	"aloclowmp:",
-	"alochighmp:"
+	"alochighmp:",
+	"alocirq:"
 };
 
 /*
@@ -181,11 +183,12 @@ static void avglat_seq_show(struct seq_file *m,
 static int latency_seq_show(struct seq_file *m, void *v)
 {
 	int i;
+	int cpu;
 
 	if (!v)
 		return 0;
 
-	seq_puts(m, "Version: 2.5\n");
+	seq_puts(m, "Version: 2.6\n");
 
 	seq_puts(m, "\nLatencies:\n");
 	seq_printf(m, "%-11s %20s %20s %20s\n",
@@ -206,6 +209,20 @@ static int latency_seq_show(struct seq_file *m, void *v)
 				kstat_glob.alloc_lat[i].avg);
 	avglat_seq_show(m, "swap_in:", kstat_glob.swap_in.avg);
 	avglat_seq_show(m, "page_in:", kstat_glob.page_in.avg);
+
+	seq_puts(m, "\nPer-CPU alloc irq:\n");
+	seq_printf(m, "%-11s %20s %20s %20s\n",
+			"Type", "Lat", "Total_lat", "Calls");
+
+	cpus_read_lock();
+	for_each_online_cpu(cpu) {
+		struct kstat_lat_pcpu_snap_struct *snap;
+
+		snap = per_cpu_ptr(kstat_glob.alloc_lat[KSTAT_ALLOCSTAT_IRQ].cur, cpu);
+		seq_printf(m, "cpu%-8d %20Lu %20Lu %20lu\n", cpu,
+			snap->maxlat, snap->totlat, snap->count);
+	}
+	cpus_read_unlock();
 
 	return 0;
 }
