@@ -2264,6 +2264,7 @@ static void init_cgroup_housekeeping(struct cgroup *cgrp)
 	INIT_LIST_HEAD(&cgrp->self.children);
 	INIT_LIST_HEAD(&cgrp->cset_links);
 	INIT_LIST_HEAD(&cgrp->pidlists);
+	INIT_LIST_HEAD(&cgrp->release_list);
 	mutex_init(&cgrp->pidlist_mutex);
 	cgrp->self.cgroup = cgrp;
 	cgrp->self.flags |= CSS_ONLINE;
@@ -2277,7 +2278,6 @@ static void init_cgroup_housekeeping(struct cgroup *cgrp)
 		INIT_LIST_HEAD(&cgrp->e_csets[ssid]);
 
 	init_waitqueue_head(&cgrp->offline_waitq);
-	INIT_WORK(&cgrp->release_agent_work, cgroup1_release_agent);
 }
 
 void init_cgroup_root(struct cgroup_fs_context *ctx)
@@ -5534,7 +5534,6 @@ static void css_free_rwork_fn(struct work_struct *work)
 		/* cgroup free path */
 		atomic_dec(&cgrp->root->nr_cgrps);
 		cgroup1_pidlist_destroy_all(cgrp);
-		cancel_work_sync(&cgrp->release_agent_work);
 		bpf_cgrp_storage_free(cgrp);
 
 		if (cgroup_parent(cgrp)) {
@@ -6079,6 +6078,7 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 	 * the migration path.
 	 */
 	cgrp->self.flags &= ~CSS_ONLINE;
+	ve_rm_from_release_list(cgrp);
 
 	spin_lock_irq(&css_set_lock);
 	list_for_each_entry(link, &cgrp->cset_links, cset_link)
