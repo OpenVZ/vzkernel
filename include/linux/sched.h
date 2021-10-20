@@ -1349,7 +1349,7 @@ struct task_struct {
 	struct tlbflush_unmap_batch	tlb_ubc;
 
 #ifdef CONFIG_VE
-	struct kstat_lat_snap_struct	alloc_lat[KSTAT_ALLOCSTAT_NR];
+	struct kstat_lat_snap_struct	alloc_lat[KSTAT_NR];
 #endif
 
 	union {
