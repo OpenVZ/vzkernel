@@ -75,6 +75,8 @@
 #include <linux/khugepaged.h>
 #include <linux/buffer_head.h>
 #include <linux/delayacct.h>
+#include <linux/vzstat.h>
+#include <linux/sched/clock.h>
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -5569,6 +5571,34 @@ static __always_inline void warn_high_order(int order, gfp_t gfp_mask)
 	}
 }
 
+static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
+		struct page *page, u64 time)
+{
+#ifdef CONFIG_VE
+	unsigned long flags;
+	u64 current_clock, delta;
+	int ind, cpu;
+
+	current_clock = sched_clock();
+	delta = current_clock - time;
+	if (!(gfp_mask & __GFP_RECLAIM))
+		ind = KSTAT_ALLOCSTAT_ATOMIC;
+	else
+		if (order > 0)
+			ind = KSTAT_ALLOCSTAT_LOW_MP;
+		else
+			ind = KSTAT_ALLOCSTAT_LOW;
+
+	local_irq_save(flags);
+	cpu = smp_processor_id();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.alloc_lat[ind], delta);
+
+	if (!page)
+		kstat_glob.alloc_fails[cpu][ind]++;
+	local_irq_restore(flags);
+#endif
+}
+
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
@@ -5579,6 +5609,7 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_gfp; /* The gfp_t that was actually used for allocation */
 	struct alloc_context ac = { };
+	u64 start;
 
 	/*
 	 * There are several places where we assume that the order value is sane
@@ -5610,6 +5641,7 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 	 */
 	alloc_flags |= alloc_flags_nofragment(ac.preferred_zoneref->zone, gfp);
 
+	start = sched_clock();
 	/* First allocation attempt */
 	page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac);
 	if (likely(page))
@@ -5633,6 +5665,7 @@ out:
 		page = NULL;
 	}
 
+	__alloc_collect_stats(alloc_gfp, order, page, start);
 	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype);
 
 	return page;
