@@ -1161,6 +1161,7 @@ out_unlock:
 	spin_unlock(&files->file_lock);
 	return err;
 }
+EXPORT_SYMBOL(replace_fd);
 
 /**
  * __receive_fd() - Install received file into file descriptor table
