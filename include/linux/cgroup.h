@@ -794,6 +794,8 @@ struct cgroup_namespace *copy_cgroup_ns(unsigned long flags,
 int cgroup_path_ns(struct cgroup *cgrp, char *buf, size_t buflen,
 		   struct cgroup_namespace *ns);
 
+void cgroup1_release_agent(struct work_struct *work);
+
 #ifdef CONFIG_VE
 extern int cgroup_mark_ve_roots(struct ve_struct *ve);
 void cgroup_unmark_ve_roots(struct ve_struct *ve);
