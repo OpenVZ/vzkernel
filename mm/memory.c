@@ -83,6 +83,7 @@
 #include <linux/uaccess.h>
 #include <asm/tlb.h>
 #include <asm/tlbflush.h>
+#include <asm/tsc.h>
 
 #include "pgalloc-track.h"
 #include "internal.h"
@@ -3630,6 +3631,8 @@ static vm_fault_t remove_device_exclusive_entry(struct vm_fault *vmf)
 	return 0;
 }
 
+#define CLKS2NSEC(c)	((c) * 1000000 / tsc_khz)
+
 /*
  * We enter with non-exclusive mmap_lock (to exclude vma changes,
  * but allow concurrent faults), and pte mapped but not yet locked.
@@ -3649,7 +3652,9 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 	int exclusive = 0;
 	vm_fault_t ret = 0;
 	void *shadow = NULL;
+	cycles_t start;
 
+	start = get_cycles();
 	if (!pte_unmap_same(vmf))
 		goto out;
 
@@ -3854,6 +3859,12 @@ unlock:
 out:
 	if (si)
 		put_swap_device(si);
+
+	local_irq_disable();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.swap_in,
+			   CLKS2NSEC(get_cycles() - start));
+	local_irq_enable();
+
 	return ret;
 out_nomap:
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
@@ -3865,9 +3876,7 @@ out_release:
 		unlock_page(swapcache);
 		put_page(swapcache);
 	}
-	if (si)
-		put_swap_device(si);
-	return ret;
+	goto out;
 }
 
 /*
@@ -3995,6 +4004,7 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	vm_fault_t ret;
+	cycles_t start;
 
 	/*
 	 * Preallocate pte before we take page_lock because this might lead to
@@ -4018,6 +4028,7 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
 		smp_wmb(); /* See comment in __pte_alloc() */
 	}
 
+	start = get_cycles();
 	ret = vma->vm_ops->fault(vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY |
 			    VM_FAULT_DONE_COW)))
@@ -4035,6 +4046,11 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
 		lock_page(vmf->page);
 	else
 		VM_BUG_ON_PAGE(!PageLocked(vmf->page), vmf->page);
+
+	local_irq_disable();
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.page_in,
+			   CLKS2NSEC(get_cycles() - start));
+	local_irq_enable();
 
 	return ret;
 }
