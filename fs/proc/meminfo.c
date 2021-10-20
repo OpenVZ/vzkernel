@@ -46,6 +46,7 @@ static int meminfo_proc_show_mi(struct seq_file *m, struct meminfo *mi)
 
 	show_val_kb(m, "MemTotal:       ", mi->si->totalram);
 	show_val_kb(m, "MemFree:        ", mi->si->freeram);
+	show_val_kb(m, "MemAvailable:	", mi->available);
 	show_val_kb(m, "Buffers:        ", 0);
 	show_val_kb(m, "Cached:         ", mi->cached);
 
