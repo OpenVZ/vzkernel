@@ -29,6 +29,7 @@ MODULE_PARM_DESC(enable_hooks, "Always enable conntrack hooks");
 module_param(enable_hooks, bool, 0000);
 
 unsigned int nf_conntrack_net_id __read_mostly;
+EXPORT_SYMBOL_GPL(nf_conntrack_net_id);
 
 #ifdef CONFIG_NF_CONNTRACK_PROCFS
 void
