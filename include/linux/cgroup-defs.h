@@ -482,8 +482,12 @@ struct cgroup {
 	/* used to wait for offlining of csses */
 	wait_queue_head_t offline_waitq;
 
-	/* used to schedule release agent */
-	struct work_struct release_agent_work;
+	/*
+	 * Linked list running through all cgroups that can
+	 * potentially be reaped by the release agent. Protected by
+	 * release_list_lock
+	 */
+	struct list_head release_list;
 
 	/* used to track pressure stalls */
 	struct psi_group psi;
