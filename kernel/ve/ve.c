@@ -39,6 +39,16 @@
 #include "../fs/mount.h"
 #include "../cgroup/cgroup-internal.h" /* For cgroup_task_count() */
 
+struct ve_ra_data {
+	struct list_head list;
+	struct rcu_head rcu;
+	/*
+	 * data is related to this cgroup
+	 */
+	struct cgroup_root *cgroot;
+	char *release_agent_path;
+};
+
 extern struct kmapset_set sysfs_ve_perms_set;
 
 static struct kmem_cache *ve_cachep;
@@ -77,6 +87,8 @@ struct ve_struct ve0 = {
 	.release_list		= LIST_HEAD_INIT(ve0.release_list),
 	.release_agent_work	= __WORK_INITIALIZER(ve0.release_agent_work,
 					cgroup1_release_agent),
+	.ra_data_list	= LIST_HEAD_INIT(ve0.ra_data_list),
+	.ra_data_lock	= __SPIN_LOCK_UNLOCKED(ve0.ra_data_lock),
 };
 EXPORT_SYMBOL(ve0);
 
@@ -264,6 +276,125 @@ int nr_threads_ve(struct ve_struct *ve)
         return cgroup_task_count(ve->css.cgroup);
 }
 EXPORT_SYMBOL(nr_threads_ve);
+
+static struct ve_ra_data *alloc_ve_ra_data(struct cgroup_root *cgroot,
+					   const char *str)
+{
+	struct ve_ra_data *data;
+	size_t buflen;
+
+	data = kzalloc(sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return ERR_PTR(-ENOMEM);
+
+	/* Don't allow more than page */
+	buflen = min(strlen(str) + 1, PAGE_SIZE);
+
+	data->release_agent_path = kmalloc(buflen, GFP_KERNEL);
+	if (!data->release_agent_path) {
+		kfree(data);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	INIT_LIST_HEAD(&data->list);
+	data->cgroot = cgroot;
+
+	if (strlcpy(data->release_agent_path, str, buflen) >= buflen) {
+		kfree(data->release_agent_path);
+		kfree(data);
+		return ERR_PTR(-EINVAL);
+	}
+
+	return data;
+}
+
+static void free_ve_ra_data(struct rcu_head *head)
+{
+	struct ve_ra_data *data = container_of(head, struct ve_ra_data, rcu);
+
+	kfree(data->release_agent_path);
+	kfree(data);
+}
+
+/*
+ * Either rcu_read_lock or ve->ra_data_lock
+ * should be held so that data is not freed under us.
+ */
+static struct ve_ra_data *ve_ra_data_find_locked(struct ve_struct *ve,
+						 struct cgroup_root *cgroot)
+{
+	struct list_head *ve_ra_data_list = &ve->ra_data_list;
+	struct ve_ra_data *data;
+
+	list_for_each_entry_rcu(data, ve_ra_data_list, list) {
+		if (data->cgroot == cgroot)
+			return data;
+	}
+
+	return NULL;
+}
+
+const char *ve_ra_data_get_path_locked(struct ve_struct *ve,
+				       struct cgroup_root *cgroot)
+{
+	struct ve_ra_data *data;
+
+	data = ve_ra_data_find_locked(ve, cgroot);
+
+	return data ? data->release_agent_path : NULL;
+}
+
+int ve_ra_data_set(struct ve_struct *ve, struct cgroup_root *cgroot,
+		   const char *release_agent)
+{
+	struct ve_ra_data *data, *other_data;
+	unsigned long flags;
+
+	data = alloc_ve_ra_data(cgroot, release_agent);
+	if (IS_ERR(data))
+		return PTR_ERR(data);
+
+	spin_lock_irqsave(&ve->ra_data_lock, flags);
+	other_data =  ve_ra_data_find_locked(ve, cgroot);
+	if (other_data) {
+		list_del_rcu(&other_data->list);
+		call_rcu(&other_data->rcu, free_ve_ra_data);
+	}
+
+	list_add_rcu(&data->list, &ve->ra_data_list);
+	spin_unlock_irqrestore(&ve->ra_data_lock, flags);
+
+	return 0;
+}
+
+static void ve_cleanup_ra_data(struct ve_struct *ve, struct cgroup_root *cgroot)
+{
+	struct ve_ra_data *data;
+	unsigned long flags;
+
+	spin_lock_irqsave(&ve->ra_data_lock, flags);
+	list_for_each_entry_rcu(data, &ve->ra_data_list, list) {
+		if (cgroot && data->cgroot != cgroot)
+			continue;
+
+		list_del_rcu(&data->list);
+		call_rcu(&data->rcu, free_ve_ra_data);
+	}
+	spin_unlock_irqrestore(&ve->ra_data_lock, flags);
+}
+
+void cgroot_ve_cleanup_ra_data(struct cgroup_root *cgroot)
+{
+	struct cgroup_subsys_state *css;
+	struct ve_struct *ve;
+
+	rcu_read_lock();
+	css_for_each_descendant_pre(css, &ve0.css) {
+		ve = css_to_ve(css);
+		ve_cleanup_ra_data(ve, cgroot);
+	}
+	rcu_read_unlock();
+}
 
 struct cgroup_subsys_state *ve_get_init_css(struct ve_struct *ve, int subsys_id)
 {
@@ -779,6 +910,8 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	INIT_WORK(&ve->release_agent_work, cgroup1_release_agent);
 	spin_lock_init(&ve->release_list_lock);
 	INIT_LIST_HEAD(&ve->release_list);
+	spin_lock_init(&ve->ra_data_lock);
+	INIT_LIST_HEAD(&ve->ra_data_list);
 
 	ve->_randomize_va_space = ve0._randomize_va_space;
 
@@ -867,6 +1000,8 @@ static void ve_offline(struct cgroup_subsys_state *css)
 
 	kfree(ve->ve_name);
 	ve->ve_name = NULL;
+
+	ve_cleanup_ra_data(ve, NULL);
 }
 
 static void ve_devmnt_free(struct ve_devmnt *devmnt)
