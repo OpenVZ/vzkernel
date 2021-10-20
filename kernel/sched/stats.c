@@ -2,6 +2,8 @@
 /*
  * /proc/schedstat implementation
  */
+#include <linux/ve.h>
+#include <linux/vzstat.h>
 
 void __update_stats_wait_start(struct rq *rq, struct task_struct *p,
 			       struct sched_statistics *stats)
@@ -17,10 +19,25 @@ void __update_stats_wait_start(struct rq *rq, struct task_struct *p,
 	__schedstat_set(stats->wait_start, wait_start);
 }
 
+static inline void update_sched_lat(struct task_struct *t, u64 delta, u64 now)
+{
+#ifdef CONFIG_VE
+	KSTAT_LAT_PCPU_ADD(&kstat_glob.sched_lat, delta);
+	KSTAT_LAT_PCPU_ADD(&t->task_ve->sched_lat_ve, delta);
+
+	t->alloc_lat[KSTAT_SCHED].totlat += delta;
+	t->alloc_lat[KSTAT_SCHED].count++;
+	update_maxlat(&t->alloc_lat[KSTAT_SCHED], delta, now);
+#endif
+}
+
 void __update_stats_wait_end(struct rq *rq, struct task_struct *p,
 			     struct sched_statistics *stats)
 {
-	u64 delta = rq_clock(rq) - schedstat_val(stats->wait_start);
+	u64 delta, now;
+
+	now  = rq_clock(rq);
+	delta = now - schedstat_val(stats->wait_start);
 
 	if (p) {
 		if (task_on_rq_migrating(p)) {
@@ -35,7 +52,7 @@ void __update_stats_wait_end(struct rq *rq, struct task_struct *p,
 		}
 
 		trace_sched_stat_wait(p, delta);
-		update_sched_lat(p, delta);
+		update_sched_lat(p, delta, now);
 	}
 
 	__schedstat_set(stats->wait_max,
