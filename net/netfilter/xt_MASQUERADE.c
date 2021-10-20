@@ -19,6 +19,7 @@ MODULE_DESCRIPTION("Xtables: automatic-address SNAT");
 static int masquerade_tg_check(const struct xt_tgchk_param *par)
 {
 	const struct nf_nat_ipv4_multi_range_compat *mr = par->targinfo;
+	int ret;
 
 	if (mr->range[0].flags & NF_NAT_RANGE_MAP_IPS) {
 		pr_debug("bad MAP_IPS.\n");
@@ -28,7 +29,10 @@ static int masquerade_tg_check(const struct xt_tgchk_param *par)
 		pr_debug("bad rangesize %u\n", mr->rangesize);
 		return -EINVAL;
 	}
-	return nf_ct_netns_get(par->net, par->family);
+	ret = nf_ct_netns_get(par->net, par->family);
+	if (ret == 0)
+		allow_conntrack_allocation(par->net);
+	return ret;
 }
 
 static unsigned int

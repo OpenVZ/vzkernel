@@ -327,6 +327,7 @@ static int hmark_tg_check(const struct xt_tgchk_param *par)
 		errmsg = "spi-set and port-set can't be combined";
 		goto err;
 	}
+	allow_conntrack_allocation(par->net);
 	return 0;
 err:
 	pr_info_ratelimited("%s\n", errmsg);
