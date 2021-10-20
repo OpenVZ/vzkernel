@@ -2740,17 +2740,6 @@ int aac_rx_select_comm(struct aac_dev *dev, int comm);
 int aac_rx_deliver_producer(struct fib * fib);
 void aac_reinit_aif(struct aac_dev *aac, unsigned int index);
 
-static inline int aac_is_src(struct aac_dev *dev)
-{
-	u16 device = dev->pdev->device;
-
-	if (device == PMC_DEVICE_S6 ||
-		device == PMC_DEVICE_S7 ||
-		device == PMC_DEVICE_S8)
-		return 1;
-	return 0;
-}
-
 static inline int aac_supports_2T(struct aac_dev *dev)
 {
 	return (dev->adapter_info.options & AAC_OPT_NEW_COMM_64);
