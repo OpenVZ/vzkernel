@@ -1417,6 +1417,7 @@ static void cgroup_destroy_root(struct cgroup_root *root)
 
 	cgroup_rstat_exit(cgrp);
 	kernfs_destroy_root(root->kf_root);
+	cgroot_ve_cleanup_ra_data(root);
 	cgroup_free_root(root);
 }
 
