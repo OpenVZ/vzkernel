@@ -216,8 +216,20 @@ static ssize_t show_cpus_attr(struct device *dev,
 			      char *buf)
 {
 	struct cpu_attr *ca = container_of(attr, struct cpu_attr, attr);
+	const struct cpumask *maskp;
+	struct cpumask mask;
 
-	return cpumap_print_to_pagebuf(true, buf, ca->map);
+	if (!ve_is_super(get_exec_env())) {
+		unsigned num = num_online_vcpus();
+
+		cpumask_clear(&mask);
+		while (num--)
+			cpumask_set_cpu(num, &mask);
+		maskp = &mask;
+	} else
+		maskp = ca->map;
+
+	return cpumap_print_to_pagebuf(true, buf, maskp);
 }
 
 #define _CPU_ATTR(name, map) \
@@ -248,6 +260,9 @@ static ssize_t print_cpus_offline(struct device *dev,
 {
 	int len = 0;
 	cpumask_var_t offline;
+
+	if (!ve_is_super(get_exec_env()))
+		return snprintf(buf, len, "\n");
 
 	/* display offline cpus < nr_cpu_ids */
 	if (!alloc_cpumask_var(&offline, GFP_KERNEL))
