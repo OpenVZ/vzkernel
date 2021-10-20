@@ -1268,6 +1268,12 @@ void kvm_get_kvm(struct kvm *kvm)
 }
 EXPORT_SYMBOL_GPL(kvm_get_kvm);
 
+int kvm_try_get_kvm(struct kvm *kvm)
+{
+	return refcount_inc_not_zero(&kvm->users_count);
+}
+EXPORT_SYMBOL_GPL(kvm_try_get_kvm);
+
 /*
  * Make sure the vm is not during destruction, which is a safe version of
  * kvm_get_kvm().  Return true if kvm referenced successfully, false otherwise.
