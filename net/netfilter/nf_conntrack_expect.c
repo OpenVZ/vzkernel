@@ -40,10 +40,10 @@ EXPORT_SYMBOL_GPL(nf_ct_expect_hsize);
 struct hlist_head *nf_ct_expect_hash __read_mostly;
 EXPORT_SYMBOL_GPL(nf_ct_expect_hash);
 
-unsigned int nf_ct_expect_max __read_mostly;
-
 static struct kmem_cache *nf_ct_expect_cachep __read_mostly;
 static siphash_aligned_key_t nf_ct_expect_hashrnd;
+
+static unsigned int nf_ct_expect_max __ro_after_init;
 
 /* nf_conntrack_expect helper functions */
 void nf_ct_unlink_expect_report(struct nf_conntrack_expect *exp,
@@ -480,7 +480,7 @@ static inline int __nf_ct_expect_check(struct nf_conntrack_expect *expect,
 	}
 
 	cnet = nf_ct_pernet(net);
-	if (cnet->expect_count >= nf_ct_expect_max) {
+	if (cnet->expect_count >= cnet->expect_max) {
 		net_veboth_ratelimited(KERN_WARNING "VE%s "
 					"nf_conntrack: expectation table full\n",
 					net->owner_ve->ve_name);
@@ -710,6 +710,9 @@ module_param_named(expect_hashsize, nf_ct_expect_hsize, uint, 0400);
 
 int nf_conntrack_expect_pernet_init(struct net *net)
 {
+	struct nf_conntrack_net *cnet = nf_ct_pernet(net);
+
+	cnet->expect_max = nf_ct_expect_max;
 	return exp_proc_init(net);
 }
 
