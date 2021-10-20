@@ -108,11 +108,7 @@ bool __tlb_remove_page_size(struct mmu_gather *tlb, struct page *page, int page_
 
 static void __tlb_remove_table_free(struct mmu_table_batch *batch)
 {
-	int i;
-
-	for (i = 0; i < batch->nr; i++)
-		__tlb_remove_table(batch->tables[i]);
-
+	__tlb_remove_tables(batch->tables, batch->nr);
 	free_page((unsigned long)batch);
 }
 
