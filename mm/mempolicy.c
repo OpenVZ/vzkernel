@@ -1504,6 +1504,9 @@ static long kernel_set_mempolicy(int mode, const unsigned long __user *nmask,
 SYSCALL_DEFINE3(set_mempolicy, int, mode, const unsigned long __user *, nmask,
 		unsigned long, maxnode)
 {
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
+
 	return kernel_set_mempolicy(mode, nmask, maxnode);
 }
 
@@ -1599,6 +1602,9 @@ SYSCALL_DEFINE4(migrate_pages, pid_t, pid, unsigned long, maxnode,
 		const unsigned long __user *, old_nodes,
 		const unsigned long __user *, new_nodes)
 {
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
+
 	return kernel_migrate_pages(pid, maxnode, old_nodes, new_nodes);
 }
 
@@ -1637,6 +1643,9 @@ SYSCALL_DEFINE5(get_mempolicy, int __user *, policy,
 		unsigned long __user *, nmask, unsigned long, maxnode,
 		unsigned long, addr, unsigned long, flags)
 {
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
+
 	return kernel_get_mempolicy(policy, nmask, maxnode, addr, flags);
 }
 
