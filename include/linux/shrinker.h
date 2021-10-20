@@ -3,6 +3,8 @@
 #define _LINUX_SHRINKER_H
 
 #include <linux/rh_kabi.h>
+#include <linux/refcount.h>
+#include <linux/wait.h>
 
 /*
  * This struct is used to pass information from page reclaim to the shrinkers.
@@ -81,6 +83,9 @@ struct shrinker {
 	atomic_long_t *nr_deferred;
 	RH_KABI_RESERVE(1)
 	RH_KABI_RESERVE(2)
+
+	refcount_t refcnt;
+	wait_queue_head_t wq;
 };
 #define DEFAULT_SEEKS 2 /* A good number if you don't know better. */
 
