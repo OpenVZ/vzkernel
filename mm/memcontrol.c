@@ -4027,6 +4027,17 @@ void mem_cgroup_fill_meminfo(struct mem_cgroup *memcg, struct meminfo *mi)
 
 	/* locked pages are accounted per zone */
 	/* mi->locked = 0; */
+
+	/*
+	 * The way of calculating 'available' memory repeats behavior of
+	 * si_mem_available(), except 'WMARK_LOW' and 'totalreserve_pages'
+	 * are not taken into account. These values reflect reservation of
+	 * physycal memory and they are not relevant for CT.
+	 */
+	mi->available = mi->si->freeram;
+	mi->available += mi->pages[LRU_ACTIVE_FILE] +
+			 mi->pages[LRU_INACTIVE_FILE];
+	mi->available += mi->slab_reclaimable;
 }
 
 void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats)
