@@ -5422,14 +5422,13 @@ void update_maxlat(struct kstat_lat_snap_struct *alloc_lat,
 }
 
 static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
-		struct page *page, u64 time)
+		struct page *page, u64 time, u64 current_clock)
 {
 #ifdef CONFIG_VE
 	unsigned long flags;
-	u64 current_clock, delta;
+	u64 delta;
 	int ind, cpu;
 
-	current_clock = sched_clock();
 	delta = current_clock - time;
 	if (!(gfp_mask & __GFP_RECLAIM)) {
 		if (in_task())
@@ -5469,7 +5468,7 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_gfp; /* The gfp_t that was actually used for allocation */
 	struct alloc_context ac = { };
-	u64 start;
+	u64 start, current_clock;
 
 	/*
 	 * There are several places where we assume that the order value is sane
@@ -5527,8 +5526,10 @@ out:
 		page = NULL;
 	}
 
-	__alloc_collect_stats(alloc_gfp, order, page, start);
-	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype);
+	current_clock = sched_clock();
+	__alloc_collect_stats(alloc_gfp, order, page, start, current_clock);
+	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype,
+			(current_clock - start));
 
 	return page;
 }
