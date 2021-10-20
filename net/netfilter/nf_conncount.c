@@ -536,6 +536,8 @@ struct nf_conncount_data *nf_conncount_init(struct net *net, unsigned int family
 		return ERR_PTR(ret);
 	}
 
+	allow_conntrack_allocation(net);
+
 	for (i = 0; i < ARRAY_SIZE(data->root); ++i)
 		data->root[i] = RB_ROOT;
 

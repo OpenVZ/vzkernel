@@ -84,6 +84,8 @@ static int synproxy_tg6_check(const struct xt_tgchk_param *par)
 		return err;
 	}
 
+	allow_conntrack_allocation(par->net);
+
 	return err;
 }
 
