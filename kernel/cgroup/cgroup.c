@@ -68,6 +68,8 @@
 /* let's not notify more than 100 times per second */
 #define CGROUP_FILE_NOTIFY_MIN_INTV	DIV_ROUND_UP(HZ, 100)
 
+#define CGROUP_FILENAME_RELEASE_AGENT "release_agent"
+
 /*
  * cgroup_mutex is the master lock.  Any modification to cgroup or its
  * hierarchy must be performed while holding it.
@@ -2050,12 +2052,21 @@ static inline bool ve_check_root_cgroups(struct css_set *cset)
 	return false;
 }
 
+static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
+			   struct cftype *cft, bool activate);
+
 int cgroup_mark_ve_roots(struct ve_struct *ve)
 {
 	struct cgrp_cset_link *link;
 	struct css_set *cset;
 	struct cgroup *cgrp;
+	struct cftype *cft;
+	int err = 0;
 
+	cft = get_cftype_by_name(CGROUP_FILENAME_RELEASE_AGENT);
+	BUG_ON(!cft || cft->file_offset);
+
+	mutex_lock(&cgroup_mutex);
 	spin_lock_irq(&css_set_lock);
 
 	/*
@@ -2068,6 +2079,7 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 
 	if (ve_check_root_cgroups(cset)) {
 		spin_unlock_irq(&css_set_lock);
+		mutex_unlock(&cgroup_mutex);
 		return -EINVAL;
 	}
 
@@ -2079,12 +2091,30 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 
 		rcu_assign_pointer(cgrp->ve_owner, ve);
 		set_bit(CGRP_VE_ROOT, &cgrp->flags);
+
+		/*
+		 * The cgroupns can hold reference on cgroups which are already
+		 * offline with already removed directory on the filesystem. We
+		 * should not add files to them.
+		 */
+		if (!cgroup_is_dead(cgrp)) {
+			err = cgroup_add_file(NULL, cgrp, cft, true);
+			if (err) {
+				pr_warn("failed to add file to VE_ROOT cgroup,"
+					" err:%d\n", err);
+				break;
+			}
+		}
 	}
 
 	link_ve_root_cpu_cgroup(cset->subsys[cpu_cgrp_id]);
 	spin_unlock_irq(&css_set_lock);
+	mutex_unlock(&cgroup_mutex);
 	synchronize_rcu();
-	return 0;
+
+	if (err)
+		cgroup_unmark_ve_roots(ve);
+	return err;
 }
 
 void cgroup_unmark_ve_roots(struct ve_struct *ve)
@@ -2092,7 +2122,11 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	struct cgrp_cset_link *link;
 	struct css_set *cset;
 	struct cgroup *cgrp;
+	struct cftype *cft;
 
+	cft = get_cftype_by_name(CGROUP_FILENAME_RELEASE_AGENT);
+
+	mutex_lock(&cgroup_mutex);
 	spin_lock_irq(&css_set_lock);
 
 	/*
@@ -2109,11 +2143,13 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 		if (!is_virtualized_cgroup(cgrp))
 			continue;
 
+		cgroup_rm_file(cgrp, cft);
 		rcu_assign_pointer(cgrp->ve_owner, NULL);
 		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 
 	spin_unlock_irq(&css_set_lock);
+	mutex_unlock(&cgroup_mutex);
 	/* ve_owner == NULL will be visible */
 	synchronize_rcu();
 }
@@ -2196,7 +2232,7 @@ void init_cgroup_root(struct cgroup_fs_context *ctx)
 
 	root->flags = ctx->flags;
 	if (ctx->release_agent)
-		strscpy(root->release_agent_path, ctx->release_agent, PATH_MAX);
+		ve_ra_data_set(get_exec_env(), root, ctx->release_agent);
 	if (ctx->name)
 		strscpy(root->name, ctx->name, MAX_CGROUP_ROOT_NAMELEN);
 	if (ctx->cpuset_clone_children)
