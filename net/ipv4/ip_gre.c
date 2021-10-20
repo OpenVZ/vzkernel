@@ -45,6 +45,9 @@
 #include <net/dst_metadata.h>
 #include <net/erspan.h>
 
+#include <uapi/linux/vzcalluser.h>
+#include <linux/ve.h>
+
 /*
    Problems & solutions
    --------------------
@@ -1029,6 +1032,12 @@ static const struct gre_protocol ipgre_protocol = {
 
 static int __net_init ipgre_init_net(struct net *net)
 {
+#ifdef CONFIG_VE
+	if (!(net->owner_ve->features & VE_FEATURE_IPGRE)) {
+		net_generic_free(net, ipgre_net_id);
+		return 0;
+	}
+#endif
 	return ip_tunnel_init_net(net, ipgre_net_id, &ipgre_link_ops, NULL);
 }
 
@@ -1346,6 +1355,11 @@ static int
 ipgre_newlink_encap_setup(struct net_device *dev, struct nlattr *data[])
 {
 	struct ip_tunnel_encap ipencap;
+
+#ifdef CONFIG_VE
+	if (!(dev_net(dev)->owner_ve->features & VE_FEATURE_IPGRE))
+		return -EACCES;
+#endif
 
 	if (ipgre_netlink_encap_parms(data, &ipencap)) {
 		struct ip_tunnel *t = netdev_priv(dev);
@@ -1701,6 +1715,12 @@ EXPORT_SYMBOL_GPL(gretap_fb_dev_create);
 
 static int __net_init ipgre_tap_init_net(struct net *net)
 {
+#ifdef CONFIG_VE
+	if (!(net->owner_ve->features & VE_FEATURE_IPGRE)) {
+		net_generic_free(net, gre_tap_net_id);
+		return 0;
+	}
+#endif
 	return ip_tunnel_init_net(net, gre_tap_net_id, &ipgre_tap_ops, "gretap0");
 }
 
