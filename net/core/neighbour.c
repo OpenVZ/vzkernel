@@ -39,6 +39,7 @@
 #include <linux/log2.h>
 #include <linux/inetdevice.h>
 #include <net/addrconf.h>
+#include <linux/ve.h>
 
 #include <trace/events/neigh.h>
 
@@ -222,7 +223,7 @@ bool neigh_remove_one(struct neighbour *ndel, struct neigh_table *tbl)
 	return false;
 }
 
-static int neigh_forced_gc(struct neigh_table *tbl)
+static int neigh_forced_gc(struct neigh_table *tbl, struct ve_struct *ve)
 {
 	int max_clean = atomic_read(&tbl->gc_entries) - tbl->gc_thresh2;
 	unsigned long tref = jiffies - 5 * HZ;
@@ -236,6 +237,7 @@ static int neigh_forced_gc(struct neigh_table *tbl)
 	list_for_each_entry_safe(n, tmp, &tbl->gc_list, gc_list) {
 		if (refcount_read(&n->refcnt) == 1) {
 			bool remove = false;
+			bool same_ve = (dev_net(n->dev)->owner_ve == ve);
 
 			write_lock(&n->lock);
 			if ((n->nud_state == NUD_FAILED) ||
@@ -247,7 +249,8 @@ static int neigh_forced_gc(struct neigh_table *tbl)
 			write_unlock(&n->lock);
 
 			if (remove && neigh_remove_one(n, tbl))
-				shrunk++;
+				if (same_ve)
+					shrunk++;
 			if (shrunk >= max_clean)
 				break;
 		}
@@ -378,22 +381,44 @@ int neigh_ifdown(struct neigh_table *tbl, struct net_device *dev)
 }
 EXPORT_SYMBOL(neigh_ifdown);
 
+static inline atomic_t *get_perve_tbl_entries_counter(struct neigh_table *tbl,
+							struct ve_struct *ve)
+{
+	switch (tbl->family) {
+	case AF_INET:
+		return &ve->arp_neigh_nr;
+	case AF_INET6:
+		return &ve->nd_neigh_nr;
+	}
+	return NULL;
+}
+
 static struct neighbour *neigh_alloc(struct neigh_table *tbl,
 				     struct net_device *dev,
 				     u8 flags, bool exempt_from_gc)
 {
 	struct neighbour *n = NULL;
 	unsigned long now = jiffies;
-	int entries;
+	int entries, glob_entries;
+	atomic_t *cnt;
+	struct ve_struct *ve = dev_net(dev)->owner_ve;
 
 	if (exempt_from_gc)
 		goto do_alloc;
 
-	entries = atomic_inc_return(&tbl->gc_entries) - 1;
+	/* If per-VE counter of neighbour entries exist
+	 * it will be limited by tbl->gc_thresh3
+	 * and according global counter (tbl->entries) become unlimited.
+	 */
+
+	glob_entries = atomic_inc_return(&tbl->entries) - 1;
+	cnt = get_perve_tbl_entries_counter(tbl, ve);
+	entries = cnt ? atomic_inc_return(cnt) - 1 : glob_entries;
+
 	if (entries >= tbl->gc_thresh3 ||
-	    (entries >= tbl->gc_thresh2 &&
+	    (glob_entries >= tbl->gc_thresh2 &&
 	     time_after(now, tbl->last_flush + 5 * HZ))) {
-		if (!neigh_forced_gc(tbl) &&
+		if (!neigh_forced_gc(tbl, ve) &&
 		    entries >= tbl->gc_thresh3) {
 			net_info_ratelimited("%s: neighbor table overflow!\n",
 					     tbl->id);
@@ -429,8 +454,11 @@ out:
 	return n;
 
 out_entries:
-	if (!exempt_from_gc)
+	if (!exempt_from_gc) {
 		atomic_dec(&tbl->gc_entries);
+		if (cnt)
+			atomic_dec(cnt);
+	}
 	goto out;
 }
 
@@ -830,6 +858,8 @@ static inline void neigh_parms_put(struct neigh_parms *parms)
 void neigh_destroy(struct neighbour *neigh)
 {
 	struct net_device *dev = neigh->dev;
+	struct ve_struct *ve = dev_net(dev)->owner_ve;
+	atomic_t *cnt = get_perve_tbl_entries_counter(neigh->tbl, ve);
 
 	NEIGH_CACHE_STAT_INC(neigh->tbl, destroys);
 
@@ -855,6 +885,8 @@ void neigh_destroy(struct neighbour *neigh)
 
 	neigh_dbg(2, "neigh %p is destroyed\n", neigh);
 
+	if (cnt)
+		 atomic_dec(cnt);
 	atomic_dec(&neigh->tbl->entries);
 	kfree_rcu(neigh, rcu);
 }
