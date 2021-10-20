@@ -68,6 +68,8 @@ struct ve_struct {
 
 	int			_randomize_va_space;
 
+	atomic_t		arp_neigh_nr;
+	atomic_t		nd_neigh_nr;
 	unsigned long		meminfo_val;
 
 	atomic_t		mnt_nr; /* number of present VE mounts */
