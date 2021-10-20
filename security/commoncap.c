@@ -25,6 +25,8 @@
 #include <linux/binfmts.h>
 #include <linux/personality.h>
 
+#include <uapi/linux/vzcalluser.h>
+
 /*
  * If a non-root user executes a setuid-root binary in
  * !secure(SECURE_NOROOT) mode, then we raise capabilities.
@@ -110,7 +112,7 @@ int cap_capable(const struct cred *cred, struct user_namespace *targ_ns,
  */
 int cap_settime(const struct timespec64 *ts, const struct timezone *tz)
 {
-	if (!capable(CAP_SYS_TIME))
+	if (!feature_capable(VE_FEATURE_TIME, CAP_SYS_TIME))
 		return -EPERM;
 	return 0;
 }
