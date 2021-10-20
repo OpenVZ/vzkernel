@@ -509,7 +509,7 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err < 0)
 		goto err_iterate;
 
-	err = cgroup_mark_ve_root(ve);
+	err = cgroup_mark_ve_roots(ve);
 	if (err)
 		goto err_mark_ve;
 
