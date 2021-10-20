@@ -2584,7 +2584,7 @@ ctnetlink_stat_ct_fill_info(struct sk_buff *skb, u32 portid, u32 seq, u32 type,
 			    struct net *net)
 {
 	unsigned int flags = portid ? NLM_F_MULTI : 0, event;
-	unsigned int nr_conntracks;
+	unsigned int conntrack_count, conntrack_max;
 	struct nlmsghdr *nlh;
 
 	event = nfnl_msg_type(NFNL_SUBSYS_CTNETLINK, IPCTNL_MSG_CT_GET_STATS);
@@ -2593,11 +2593,12 @@ ctnetlink_stat_ct_fill_info(struct sk_buff *skb, u32 portid, u32 seq, u32 type,
 	if (!nlh)
 		goto nlmsg_failure;
 
-	nr_conntracks = nf_conntrack_count(net);
-	if (nla_put_be32(skb, CTA_STATS_GLOBAL_ENTRIES, htonl(nr_conntracks)))
+	conntrack_count = nf_conntrack_count(net);
+	if (nla_put_be32(skb, CTA_STATS_GLOBAL_ENTRIES, htonl(conntrack_count)))
 		goto nla_put_failure;
 
-	if (nla_put_be32(skb, CTA_STATS_GLOBAL_MAX_ENTRIES, htonl(nf_conntrack_max)))
+	conntrack_max = nf_conntrack_max(net);
+	if (nla_put_be32(skb, CTA_STATS_GLOBAL_MAX_ENTRIES, htonl(conntrack_max)))
 		goto nla_put_failure;
 
 	nlmsg_end(skb, nlh);
