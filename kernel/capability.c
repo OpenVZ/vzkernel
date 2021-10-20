@@ -433,6 +433,13 @@ bool ve_capable_noaudit(int cap)
 	return ret;
 }
 
+bool feature_capable(int feature, int cap)
+{
+	if (get_exec_env()->features & feature)
+		return ve_capable(cap);
+	else
+		return capable(cap);
+}
 #else
 bool ve_capable(int cap)
 {
@@ -442,6 +449,11 @@ bool ve_capable(int cap)
 bool ve_capable_noaudit(int cap)
 {
 	return ns_capable_noaudit(&init_user_ns, cap);
+}
+
+bool feature_capable(int feature, int cap)
+{
+	return capable(cap);
 }
 #endif
 EXPORT_SYMBOL_GPL(ve_capable);
