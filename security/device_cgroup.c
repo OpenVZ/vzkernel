@@ -232,6 +232,7 @@ static void devcgroup_css_free(struct cgroup_subsys_state *css)
 #define DEVCG_ALLOW 1
 #define DEVCG_DENY 2
 #define DEVCG_LIST 3
+#define DEVCG_EXTRA_LIST 32
 
 #define MAJMINLEN 13
 #define ACCLEN 5
@@ -274,6 +275,11 @@ static int devcgroup_seq_show(struct seq_file *m, void *v)
 	struct dev_cgroup *devcgroup = css_to_devcgroup(seq_css(m));
 	struct dev_exception_item *ex;
 	char maj[MAJMINLEN], min[MAJMINLEN], acc[ACCLEN];
+	short type, mask;
+
+	type = (short)seq_cft(m)->private;
+	mask = (type == DEVCG_EXTRA_LIST) ?
+	        DEVCG_ACC_EXTRA_MASK : DEVCG_ACC_MASK;
 
 	rcu_read_lock();
 	/*
@@ -283,14 +289,14 @@ static int devcgroup_seq_show(struct seq_file *m, void *v)
 	 * This way, the file remains as a "whitelist of devices"
 	 */
 	if (devcgroup->behavior == DEVCG_DEFAULT_ALLOW) {
-		set_access(acc, DEVCG_ACC_MASK);
+		set_access(acc, mask);
 		set_majmin(maj, ~0);
 		set_majmin(min, ~0);
 		seq_printf(m, "%c %s:%s %s\n", type_to_char(DEVCG_DEV_ALL),
 			   maj, min, acc);
 	} else {
 		list_for_each_entry_rcu(ex, &devcgroup->exceptions, list) {
-			set_access(acc, ex->access);
+			set_access(acc, ex->access & mask);
 			set_majmin(maj, ex->major);
 			set_majmin(min, ex->minor);
 			seq_printf(m, "%c %s:%s %s\n", type_to_char(ex->type),
@@ -801,6 +807,11 @@ static struct cftype dev_cgroup_files[] = {
 		.name = "list",
 		.seq_show = devcgroup_seq_show,
 		.private = DEVCG_LIST,
+	},
+	{
+		.name = "extra_list",
+		.seq_show = devcgroup_seq_show,
+		.private = DEVCG_EXTRA_LIST,
 	},
 	{ }	/* terminate */
 };
