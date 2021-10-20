@@ -39,9 +39,6 @@ static bool cgroup_no_v1_named;
  */
 static struct workqueue_struct *cgroup_pidlist_destroy_wq;
 
-/* protects cgroup_subsys->release_agent_path */
-static DEFINE_SPINLOCK(release_agent_path_lock);
-
 bool cgroup1_ssid_disabled(int ssid)
 {
 	return cgroup_no_v1_mask & (1 << ssid);
@@ -549,10 +546,11 @@ static ssize_t cgroup1_tasks_write(struct kernfs_open_file *of,
 static ssize_t cgroup_release_agent_write(struct kernfs_open_file *of,
 					  char *buf, size_t nbytes, loff_t off)
 {
+	struct cgroup *root_cgrp;
+	struct ve_struct *ve = NULL;
 	struct cgroup *cgrp;
 	struct cgroup_file_ctx *ctx;
-
-	BUILD_BUG_ON(sizeof(cgrp->root->release_agent_path) < PATH_MAX);
+	int ret;
 
 	/*
 	 * Release agent gets called with all capabilities,
@@ -566,21 +564,54 @@ static ssize_t cgroup_release_agent_write(struct kernfs_open_file *of,
 	cgrp = cgroup_kn_lock_live(of->kn, false);
 	if (!cgrp)
 		return -ENODEV;
-	spin_lock(&release_agent_path_lock);
-	strlcpy(cgrp->root->release_agent_path, strstrip(buf),
-		sizeof(cgrp->root->release_agent_path));
-	spin_unlock(&release_agent_path_lock);
+
+	rcu_read_lock();
+	root_cgrp = cgroup_ve_root1(cgrp);
+	if (!root_cgrp) {
+		if (ve_is_super(get_exec_env()) && cgrp == &cgrp->root->cgrp)
+			ve = &ve0;
+	} else {
+		if (root_cgrp == cgrp)
+			ve = rcu_dereference(root_cgrp->ve_owner);
+	}
+	get_ve(ve);
+	rcu_read_unlock();
+
+	if (ve) {
+		ret = ve_ra_data_set(ve, cgrp->root, strstrip(buf));
+	} else {
+		/* The ve is stopped or we have a bad cgrp */
+		ret = -ENODEV;
+	}
+
+	put_ve(ve);
 	cgroup_kn_unlock(of->kn);
-	return nbytes;
+	return ret ? : nbytes;
 }
 
 static int cgroup_release_agent_show(struct seq_file *seq, void *v)
 {
+	const char *release_agent = NULL;
+	struct cgroup *root_cgrp;
 	struct cgroup *cgrp = seq_css(seq)->cgroup;
+	struct ve_struct *ve = NULL;
 
-	spin_lock(&release_agent_path_lock);
-	seq_puts(seq, cgrp->root->release_agent_path);
-	spin_unlock(&release_agent_path_lock);
+	rcu_read_lock();
+	root_cgrp = cgroup_ve_root1(cgrp);
+	if (!root_cgrp) {
+		if (ve_is_super(get_exec_env()) && cgrp == &cgrp->root->cgrp)
+			ve = &ve0;
+	} else {
+		if (root_cgrp == cgrp)
+			ve = rcu_dereference(root_cgrp->ve_owner);
+	}
+
+	if (ve)
+		release_agent = ve_ra_data_get_path_locked(ve, cgrp->root);
+	if (release_agent)
+		seq_puts(seq, release_agent);
+	rcu_read_unlock();
+
 	seq_putc(seq, '\n');
 	return 0;
 }
@@ -662,7 +693,7 @@ struct cftype cgroup1_base_files[] = {
 	},
 	{
 		.name = "release_agent",
-		.flags = CFTYPE_ONLY_ON_ROOT,
+		.flags = CFTYPE_ONLY_ON_ROOT | CFTYPE_VE_WRITABLE,
 		.seq_show = cgroup_release_agent_show,
 		.write = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX - 1,
@@ -679,6 +710,17 @@ struct cftype cgroup1_base_files[] = {
 	},
 	{ }	/* terminate */
 };
+
+struct cftype *get_cftype_by_name(const char *name)
+{
+	struct cftype *cft;
+
+	for (cft = cgroup1_base_files; cft->name[0] != '\0'; cft++) {
+		if (!strcmp(cft->name, name))
+			return cft;
+	}
+	return NULL;
+}
 
 #define _cg_virtualized(x) ((ve_is_super(get_exec_env())) ? (x) : 1)
 
@@ -829,6 +871,7 @@ void cgroup1_release_agent(struct work_struct *work)
 	spin_lock_irqsave(&ve->release_list_lock, flags);
 	while (!list_empty(&ve->release_list)) {
 		struct cgroup *cgrp;
+		const char *release_agent;
 
 		cgrp = list_entry(ve->release_list.next,
 				  struct cgroup,
@@ -848,15 +891,14 @@ void cgroup1_release_agent(struct work_struct *work)
 
 		spin_unlock_irqrestore(&ve->release_list_lock, flags);
 
-		/* snoop agent path and exit early if empty */
-		if (!cgrp->root->release_agent_path[0])
+		rcu_read_lock();
+		release_agent = ve_ra_data_get_path_locked(ve, cgrp->root);
+		if (!release_agent || !release_agent[0]) {
+			rcu_read_unlock();
 			goto continue_locked;
-
-		spin_lock(&release_agent_path_lock);
-		strlcpy(agentbuf, cgrp->root->release_agent_path, PATH_MAX);
-		spin_unlock(&release_agent_path_lock);
-		if (!agentbuf[0])
-			goto continue_locked;
+		}
+		strlcpy(agentbuf, release_agent, PATH_MAX);
+		rcu_read_unlock();
 
 		ret = cgroup_path_ns(cgrp, pathbuf, PATH_MAX, ve_cgroup_ns);
 		if (ret < 0 || ret >= PATH_MAX)
@@ -929,6 +971,7 @@ static int cgroup1_rename(struct kernfs_node *kn, struct kernfs_node *new_parent
 
 static int cgroup1_show_options(struct seq_file *seq, struct kernfs_root *kf_root)
 {
+	const char *release_agent;
 	struct cgroup_root *root = cgroup_root_from_kf(kf_root);
 	struct cgroup_subsys *ss;
 	int ssid;
@@ -943,12 +986,11 @@ static int cgroup1_show_options(struct seq_file *seq, struct kernfs_root *kf_roo
 	if (root->flags & CGRP_ROOT_CPUSET_V2_MODE)
 		seq_puts(seq, ",cpuset_v2_mode");
 
-	spin_lock(&release_agent_path_lock);
-	if (strlen(root->release_agent_path))
-		seq_show_option(seq, "release_agent",
-				root->release_agent_path);
-	spin_unlock(&release_agent_path_lock);
-
+	rcu_read_lock();
+	release_agent = ve_ra_data_get_path_locked(get_exec_env(), root);
+	if (release_agent && release_agent[0])
+		seq_show_option(seq, "release_agent", release_agent);
+	rcu_read_unlock();
 	if (test_bit(CGRP_CPUSET_CLONE_CHILDREN, &root->cgrp.flags))
 		seq_puts(seq, ",clone_children");
 	if (strlen(root->name))
@@ -1165,11 +1207,8 @@ int cgroup1_reconfigure(struct fs_context *fc)
 
 	WARN_ON(rebind_subsystems(&cgrp_dfl_root, removed_mask));
 
-	if (ctx->release_agent) {
-		spin_lock(&release_agent_path_lock);
-		strcpy(root->release_agent_path, ctx->release_agent);
-		spin_unlock(&release_agent_path_lock);
-	}
+	if (ctx->release_agent)
+		ret = ve_ra_data_set(get_exec_env(), root, ctx->release_agent);
 
 	trace_cgroup_remount(root);
 
