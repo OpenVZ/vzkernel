@@ -372,6 +372,7 @@ static int nft_flow_offload_init(const struct nft_ctx *ctx,
 	struct nft_flow_offload *priv = nft_expr_priv(expr);
 	u8 genmask = nft_genmask_next(ctx->net);
 	struct nft_flowtable *flowtable;
+	int ret;
 
 	if (!tb[NFTA_FLOW_TABLE_NAME])
 		return -EINVAL;
@@ -386,7 +387,10 @@ static int nft_flow_offload_init(const struct nft_ctx *ctx,
 
 	priv->flowtable = flowtable;
 
-	return nf_ct_netns_get(ctx->net, ctx->family);
+	ret = nf_ct_netns_get(ctx->net, ctx->family);
+	if (ret == 0)
+		allow_conntrack_allocation(ctx->net);
+	return ret;
 }
 
 static void nft_flow_offload_deactivate(const struct nft_ctx *ctx,

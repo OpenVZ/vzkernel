@@ -516,6 +516,8 @@ static int nft_ct_get_init(const struct nft_ctx *ctx,
 	    priv->key == NFT_CT_AVGPKT)
 		nf_ct_set_acct(ctx->net, true);
 
+	allow_conntrack_allocation(ctx->net);
+
 	return 0;
 }
 

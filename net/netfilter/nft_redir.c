@@ -74,7 +74,11 @@ static int nft_redir_init(const struct nft_ctx *ctx,
 			return -EINVAL;
 	}
 
-	return nf_ct_netns_get(ctx->net, ctx->family);
+	err = nf_ct_netns_get(ctx->net, ctx->family);
+	if (err == 0)
+		allow_conntrack_allocation(ctx->net);
+
+	return err;
 }
 
 static int nft_redir_dump(struct sk_buff *skb,
