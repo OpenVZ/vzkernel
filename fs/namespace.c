@@ -3567,12 +3567,19 @@ static void dec_mnt_namespaces(struct ucounts *ucounts)
 	dec_ucount(ucounts, UCOUNT_MNT_NAMESPACES);
 }
 
+static LIST_HEAD(all_mntns_list);
+static DEFINE_SPINLOCK(all_mntns_list_lock);
+
 static void free_mnt_ns(struct mnt_namespace *ns)
 {
 	if (!is_anon_ns(ns))
 		ns_free_inum(&ns->ns);
 	dec_mnt_namespaces(ns->ucounts);
 	put_user_ns(ns->user_ns);
+
+	spin_lock(&all_mntns_list_lock);
+	list_del(&ns->mntns_list);
+	spin_unlock(&all_mntns_list_lock);
 	kfree(ns);
 }
 
@@ -3613,6 +3620,10 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns, bool a
 		new_ns->seq = atomic64_add_return(1, &mnt_ns_seq);
 	refcount_set(&new_ns->ns.count, 1);
 	INIT_LIST_HEAD(&new_ns->list);
+	INIT_LIST_HEAD(&new_ns->mntns_list);
+	spin_lock(&all_mntns_list_lock);
+	list_add_tail(&new_ns->mntns_list, &all_mntns_list);
+	spin_unlock(&all_mntns_list_lock);
 	init_waitqueue_head(&new_ns->poll);
 	spin_lock_init(&new_ns->ns_lock);
 	new_ns->user_ns = get_user_ns(user_ns);
@@ -3645,6 +3656,7 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 		return new_ns;
 
 	namespace_lock();
+
 	/* First pass: copy the tree topology */
 	copy_flags = CL_COPY_UNBINDABLE | CL_EXPIRE;
 	if (user_ns != ns->user_ns)
