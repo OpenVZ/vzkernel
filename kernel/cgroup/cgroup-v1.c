@@ -787,7 +787,7 @@ void cgroup1_check_for_release(struct cgroup *cgrp)
 {
 	if (notify_on_release(cgrp) && !cgroup_is_populated(cgrp) &&
 	    !css_has_online_children(&cgrp->self) && !cgroup_is_dead(cgrp))
-		schedule_work(&cgrp->release_agent_work);
+		ve_add_to_release_list(cgrp);
 }
 
 /*
@@ -815,15 +815,21 @@ void cgroup1_check_for_release(struct cgroup *cgrp)
  */
 void cgroup1_release_agent(struct work_struct *work)
 {
-	struct cgroup *cgrp =
-		container_of(work, struct cgroup, release_agent_work);
+	struct ve_struct *ve =
+		container_of(work, struct ve_struct, release_agent_work);
+	/*
+	 * Release agent work can be queued only to running ve (see
+	 * ve_add_to_release_list) and ve waits for all queued works to finish
+	 * (see ve_workqueue_stop) before stopping, so we can safely access
+	 * ve_ns->cgroup_ns here without rcu_read_lock - it won't disappear
+	 * under us.
+	 */
+	struct cgroup_namespace *ve_cgroup_ns =
+		rcu_dereference_protected(ve->ve_ns, 1)->cgroup_ns;
 	char *pathbuf, *agentbuf;
 	char *argv[3], *envp[3];
+	unsigned long flags;
 	int ret;
-
-	/* snoop agent path and exit early if empty */
-	if (!cgrp->root->release_agent_path[0])
-		return;
 
 	/* prepare argument buffers */
 	pathbuf = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -831,26 +837,63 @@ void cgroup1_release_agent(struct work_struct *work)
 	if (!pathbuf || !agentbuf)
 		goto out_free;
 
-	spin_lock(&release_agent_path_lock);
-	strlcpy(agentbuf, cgrp->root->release_agent_path, PATH_MAX);
-	spin_unlock(&release_agent_path_lock);
-	if (!agentbuf[0])
-		goto out_free;
+	spin_lock_irqsave(&ve->release_list_lock, flags);
+	while (!list_empty(&ve->release_list)) {
+		struct cgroup *cgrp;
 
-	ret = cgroup_path_ns(cgrp, pathbuf, PATH_MAX, &init_cgroup_ns);
-	if (ret < 0 || ret >= PATH_MAX)
-		goto out_free;
+		cgrp = list_entry(ve->release_list.next,
+				  struct cgroup,
+				  release_list);
+		list_del_init(&cgrp->release_list);
 
-	argv[0] = agentbuf;
-	argv[1] = pathbuf;
-	argv[2] = NULL;
+		/*
+		 * Once the lock gets released, concurrently running removal
+		 * of the same cgrp via rmdir() won't find the cgrp in
+		 * ve_rm_from_release_list() called from cgroup_destroy_locked()
+		 * and can progress up to end and put the last cgrp reference.
+		 * This can result into cgrp reaching kfree() before this thread
+		 * stops using it.
+		 */
+		if (WARN_ON(!cgroup_tryget(cgrp)))
+			continue;
 
-	/* minimal command environment */
-	envp[0] = "HOME=/";
-	envp[1] = "PATH=/sbin:/bin:/usr/sbin:/usr/bin";
-	envp[2] = NULL;
+		spin_unlock_irqrestore(&ve->release_list_lock, flags);
 
-	call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+		/* snoop agent path and exit early if empty */
+		if (!cgrp->root->release_agent_path[0])
+			goto continue_locked;
+
+		spin_lock(&release_agent_path_lock);
+		strlcpy(agentbuf, cgrp->root->release_agent_path, PATH_MAX);
+		spin_unlock(&release_agent_path_lock);
+		if (!agentbuf[0])
+			goto continue_locked;
+
+		ret = cgroup_path_ns(cgrp, pathbuf, PATH_MAX, ve_cgroup_ns);
+		if (ret < 0 || ret >= PATH_MAX)
+			goto continue_locked;
+
+		argv[0] = agentbuf;
+		argv[1] = pathbuf;
+		argv[2] = NULL;
+
+		/* minimal command environment */
+		envp[0] = "HOME=/";
+		envp[1] = "PATH=/sbin:/bin:/usr/sbin:/usr/bin";
+		envp[2] = NULL;
+
+		ret = call_usermodehelper_ve(ve, argv[0], argv, envp,
+					     UMH_WAIT_EXEC);
+
+		if (ret < 0 && ve == &ve0)
+			pr_warn_ratelimited("cgroup1_release_agent "
+					    "%s %s failed: %d\n",
+					    agentbuf, pathbuf, ret);
+continue_locked:
+		cgroup_put(cgrp);
+		spin_lock_irqsave(&ve->release_list_lock, flags);
+	}
+	spin_unlock_irqrestore(&ve->release_list_lock, flags);
 out_free:
 	kfree(agentbuf);
 	kfree(pathbuf);
