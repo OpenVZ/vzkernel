@@ -2,6 +2,9 @@
 #ifndef _LINUX_SHRINKER_H
 #define _LINUX_SHRINKER_H
 
+#include <linux/refcount.h>
+#include <linux/wait.h>
+
 /*
  * This struct is used to pass information from page reclaim to the shrinkers.
  * We consolidate the values for easier extension later.
@@ -77,6 +80,9 @@ struct shrinker {
 #endif
 	/* objs pending delete, per node */
 	atomic_long_t *nr_deferred;
+
+	refcount_t refcnt;
+	wait_queue_head_t wq;
 };
 #define DEFAULT_SEEKS 2 /* A good number if you don't know better. */
 
