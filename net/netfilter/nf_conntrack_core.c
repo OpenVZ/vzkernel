@@ -1854,6 +1854,9 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	u32 hash, zone_id, rid;
 	struct nf_conn *ct;
 
+	if (!conntrack_allocation_allowed(state->net))
+		return 0;
+
 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
 			     dataoff, state->pf, protonum, state->net,
 			     &tuple)) {
