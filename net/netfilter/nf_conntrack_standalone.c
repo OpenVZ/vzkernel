@@ -524,6 +524,14 @@ u32 nf_conntrack_count(const struct net *net)
 }
 EXPORT_SYMBOL_GPL(nf_conntrack_count);
 
+u32 nf_conntrack_max(const struct net *net)
+{
+	const struct nf_conntrack_net *cnet = nf_ct_pernet(net);
+
+	return cnet->max;
+}
+EXPORT_SYMBOL_GPL(nf_conntrack_max);
+
 /* Sysctl support */
 
 #ifdef CONFIG_SYSCTL
@@ -550,8 +558,6 @@ nf_conntrack_hash_sysctl(struct ctl_table *table, int write,
 	nf_conntrack_htable_size_user = nf_conntrack_htable_size;
 	return ret;
 }
-
-static struct ctl_table_header *nf_ct_netfilter_header;
 
 enum nf_ct_sysctl_index {
 	NF_SYSCTL_CT_MAX,
@@ -633,7 +639,6 @@ static const int two = 2;
 static struct ctl_table nf_ct_sysctl_table[] = {
 	[NF_SYSCTL_CT_MAX] = {
 		.procname	= "nf_conntrack_max",
-		.data		= &nf_conntrack_max,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
@@ -976,10 +981,16 @@ static struct ctl_table nf_ct_sysctl_table[] = {
 	{}
 };
 
-static struct ctl_table nf_ct_netfilter_table[] = {
-	{
+enum nf_ct_parent_sysctl_index {
+	NF_PARENT_SYSCTL_CT_MAX,
+	__NF_PARENT_SYSCTL_CT_LAST_SYSCTL,
+};
+
+#define NF_PARENT_SYSCTL_CT_LAST_SYSCTL (__NF_PARENT_SYSCTL_CT_LAST_SYSCTL + 1)
+
+static struct ctl_table nf_ct_parent_sysctl_table[] = {
+	[NF_PARENT_SYSCTL_CT_MAX] = {
 		.procname	= "nf_conntrack_max",
-		.data		= &nf_conntrack_max,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
@@ -1082,7 +1093,7 @@ static int nf_conntrack_standalone_init_sysctl(struct net *net)
 {
 	struct nf_conntrack_net *cnet = nf_ct_pernet(net);
 	struct nf_udp_net *un = nf_udp_pernet(net);
-	struct ctl_table *table;
+	struct ctl_table *table, *parent_table;
 
 	BUILD_BUG_ON(ARRAY_SIZE(nf_ct_sysctl_table) != NF_SYSCTL_CT_LAST_SYSCTL);
 
@@ -1090,6 +1101,8 @@ static int nf_conntrack_standalone_init_sysctl(struct net *net)
 			GFP_KERNEL);
 	if (!table)
 		return -ENOMEM;
+
+	table[NF_SYSCTL_CT_MAX].data = &cnet->max;
 
 	table[NF_SYSCTL_CT_COUNT].data = &cnet->count;
 	table[NF_SYSCTL_CT_CHECKSUM].data = &net->ct.sysctl_checksum;
@@ -1119,17 +1132,35 @@ static int nf_conntrack_standalone_init_sysctl(struct net *net)
 
 	/* Don't allow non-init_net ns to alter global sysctls */
 	if (!net_eq(&init_net, net)) {
-		table[NF_SYSCTL_CT_MAX].mode = 0444;
 		table[NF_SYSCTL_CT_BUCKETS].mode = 0444;
 	}
 
 	cnet->sysctl_header = register_net_sysctl(net, "net/netfilter", table);
 	if (!cnet->sysctl_header)
-		goto out_unregister_netfilter;
+		goto out_free;
+
+	BUILD_BUG_ON(ARRAY_SIZE(nf_ct_parent_sysctl_table) !=
+			NF_PARENT_SYSCTL_CT_LAST_SYSCTL);
+
+	parent_table = kmemdup(nf_ct_parent_sysctl_table,
+			sizeof(nf_ct_parent_sysctl_table), GFP_KERNEL);
+	if (!parent_table)
+		goto out_unregister;
+
+	parent_table[NF_PARENT_SYSCTL_CT_MAX].data = &cnet->max;
+
+	cnet->parent_sysctl_header = register_net_sysctl(net, "net",
+			parent_table);
+	if (!cnet->parent_sysctl_header)
+		goto out_free_parent;
 
 	return 0;
 
-out_unregister_netfilter:
+out_free_parent:
+	kfree(parent_table);
+out_unregister:
+	unregister_net_sysctl_table(cnet->sysctl_header);
+out_free:
 	kfree(table);
 	return -ENOMEM;
 }
@@ -1137,7 +1168,11 @@ out_unregister_netfilter:
 static void nf_conntrack_standalone_fini_sysctl(struct net *net)
 {
 	struct nf_conntrack_net *cnet = nf_ct_pernet(net);
-	struct ctl_table *table;
+	struct ctl_table *table, *parent_table;
+
+	parent_table = cnet->parent_sysctl_header->ctl_table_arg;
+	unregister_net_sysctl_table(cnet->parent_sysctl_header);
+	kfree(parent_table);
 
 	table = cnet->sysctl_header->ctl_table_arg;
 	unregister_net_sysctl_table(cnet->sysctl_header);
@@ -1224,14 +1259,6 @@ static int __init nf_conntrack_standalone_init(void)
 	BUILD_BUG_ON(NFCT_INFOMASK <= IP_CT_NUMBER);
 
 #ifdef CONFIG_SYSCTL
-	nf_ct_netfilter_header =
-		register_net_sysctl(&init_net, "net", nf_ct_netfilter_table);
-	if (!nf_ct_netfilter_header) {
-		pr_err("nf_conntrack: can't register to sysctl.\n");
-		ret = -ENOMEM;
-		goto out_sysctl;
-	}
-
 	nf_conntrack_htable_size_user = nf_conntrack_htable_size;
 #endif
 
@@ -1244,10 +1271,6 @@ static int __init nf_conntrack_standalone_init(void)
 	return 0;
 
 out_pernet:
-#ifdef CONFIG_SYSCTL
-	unregister_net_sysctl_table(nf_ct_netfilter_header);
-out_sysctl:
-#endif
 	nf_conntrack_cleanup_end();
 out_start:
 	return ret;
@@ -1257,9 +1280,6 @@ static void __exit nf_conntrack_standalone_fini(void)
 {
 	nf_conntrack_cleanup_start();
 	unregister_pernet_subsys(&nf_conntrack_net_ops);
-#ifdef CONFIG_SYSCTL
-	unregister_net_sysctl_table(nf_ct_netfilter_header);
-#endif
 	nf_conntrack_cleanup_end();
 }
 
