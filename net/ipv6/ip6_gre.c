@@ -29,6 +29,7 @@
 #include <linux/hash.h>
 #include <linux/if_tunnel.h>
 #include <linux/ip6_tunnel.h>
+#include <linux/ve.h>
 
 #include <net/sock.h>
 #include <net/ip.h>
@@ -53,6 +54,7 @@
 #include <net/erspan.h>
 #include <net/dst_metadata.h>
 
+#include <uapi/linux/vzcalluser.h>
 
 static bool log_ecn_error = true;
 module_param(log_ecn_error, bool, 0644);
@@ -128,6 +130,11 @@ static struct ip6_tnl *ip6gre_tunnel_lookup(struct net_device *dev,
 		       ARPHRD_ETHER : ARPHRD_IP6GRE;
 	int score, cand_score = 4;
 	struct net_device *ndev;
+
+#ifdef CONFIG_VE
+	if (!ign) /* no VE_FEATURE_IPGRE */
+		return NULL;
+#endif
 
 	for_each_ip_tunnel_rcu(t, ign->tunnels_r_l[h0 ^ h1]) {
 		if (!ipv6_addr_equal(local, &t->parms.laddr) ||
@@ -1566,6 +1573,11 @@ static void ip6gre_destroy_tunnels(struct net *net, struct list_head *head)
 	struct net_device *dev, *aux;
 	int prio;
 
+#ifdef CONFIG_VE
+	if (!ign) /* no VE_FEATURE_IPGRE */
+		return;
+#endif
+
 	for_each_netdev_safe(net, dev, aux)
 		if (dev->rtnl_link_ops == &ip6gre_link_ops ||
 		    dev->rtnl_link_ops == &ip6gre_tap_ops ||
@@ -1597,6 +1609,13 @@ static int __net_init ip6gre_init_net(struct net *net)
 	struct ip6gre_net *ign = net_generic(net, ip6gre_net_id);
 	struct net_device *ndev;
 	int err;
+
+#ifdef CONFIG_VE
+	if (!(net->owner_ve->features & VE_FEATURE_IPGRE)) {
+		net_generic_free(net, ip6gre_net_id);
+		return 0;
+	}
+#endif
 
 	if (!net_has_fallback_tunnels(net))
 		return 0;
@@ -1978,6 +1997,15 @@ static int ip6gre_newlink_common(struct net *src_net, struct net_device *dev,
 	struct ip6_tnl *nt;
 	struct ip_tunnel_encap ipencap;
 	int err;
+#ifdef CONFIG_VE
+	struct net *net = dev_net(dev);
+	struct ip6gre_net *ign;
+
+	ign = net_generic(net, ip6gre_net_id);
+
+	if (!ign) /* no VE_FEATURE_IPGRE */
+		return -EACCES;
+#endif
 
 	nt = netdev_priv(dev);
 
