@@ -16,17 +16,27 @@
 static int xt_nat_checkentry_v0(const struct xt_tgchk_param *par)
 {
 	const struct nf_nat_ipv4_multi_range_compat *mr = par->targinfo;
+	int ret;
 
 	if (mr->rangesize != 1) {
 		pr_info_ratelimited("multiple ranges no longer supported\n");
 		return -EINVAL;
 	}
-	return nf_ct_netns_get(par->net, par->family);
+
+	ret = nf_ct_netns_get(par->net, par->family);
+	if (ret == 0)
+		allow_conntrack_allocation(par->net);
+	return ret;
 }
 
 static int xt_nat_checkentry(const struct xt_tgchk_param *par)
 {
-	return nf_ct_netns_get(par->net, par->family);
+	int ret;
+
+	ret = nf_ct_netns_get(par->net, par->family);
+	if (ret == 0)
+		allow_conntrack_allocation(par->net);
+	return ret;
 }
 
 static void xt_nat_destroy(const struct xt_tgdtor_param *par)
