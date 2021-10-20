@@ -5571,6 +5571,40 @@ static __always_inline void warn_high_order(int order, gfp_t gfp_mask)
 	}
 }
 
+void update_maxlat(struct kstat_lat_snap_struct *alloc_lat,
+				u64 lat, unsigned long time)
+{
+	if (time_before(time, alloc_lat->time[0] +
+				KSTAT_ALLOC_MAX_LAT_PERIOD/2)) {
+		if (alloc_lat->maxlat[0] < lat) {
+			alloc_lat->maxlat[0] = lat;
+			alloc_lat->time[0] = time;
+		}
+	} else if (time_before(time, alloc_lat->time[0] +
+				KSTAT_ALLOC_MAX_LAT_PERIOD)) {
+		if (alloc_lat->maxlat[1] < lat) {
+			alloc_lat->maxlat[1] = lat;
+			alloc_lat->time[1] = time;
+		}
+	} else if (time_before(time, alloc_lat->time[0] +
+				KSTAT_ALLOC_MAX_LAT_PERIOD*3/2)) {
+		if (alloc_lat->maxlat[1] < lat) {
+			alloc_lat->maxlat[0] = lat;
+			alloc_lat->time[0] = time;
+		} else {
+			alloc_lat->maxlat[0] = alloc_lat->maxlat[1];
+			alloc_lat->time[0] = alloc_lat->time[1];
+		}
+		alloc_lat->maxlat[1] = 0;
+		alloc_lat->time[1] = 0;
+	} else {
+		alloc_lat->maxlat[0] = lat;
+		alloc_lat->time[0] = time;
+		alloc_lat->maxlat[1] = 0;
+		alloc_lat->time[1] = 0;
+	}
+}
+
 static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 		struct page *page, u64 time)
 {
@@ -5596,6 +5630,7 @@ static void __alloc_collect_stats(gfp_t gfp_mask, unsigned int order,
 	if (in_task()) {
 		current->alloc_lat[ind].totlat += delta;
 		current->alloc_lat[ind].count++;
+		update_maxlat(&current->alloc_lat[ind], delta, current_clock);
 	}
 
 	if (!page)
