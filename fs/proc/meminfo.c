@@ -88,20 +88,25 @@ void si_meminfo_ve(struct sysinfo *si, struct ve_struct *ve)
 	css = ve_get_init_css(ve, memory_cgrp_id);
 	memcg = mem_cgroup_from_css(css);
 
+	si->sharedram = memcg_page_state(memcg, NR_SHMEM);
+
 	memtotal = READ_ONCE(memcg->memory.max);
 	memused = page_counter_read(&memcg->memory);
 	si->totalram = memtotal;
-	si->freeram = (memtotal > memused ? memtotal - memused : 0);
-
-	si->sharedram = memcg_page_state(memcg, NR_SHMEM);
 
 	swaptotal = READ_ONCE(memcg->memsw.max) - memtotal;
 	swapused = page_counter_read(&memcg->memsw) - memused;
 	si->totalswap = swaptotal;
 	/* Due to global reclaim, memory.memsw.usage can be greater than
 	 * (memory.memsw.max - memory.max). */
-	si->freeswap = (swaptotal > swapused ? swaptotal - swapused : 0);
+	if (swaptotal >= swapused) {
+		si->freeswap = swaptotal - swapused;
+	} else {
+		si->freeswap = 0;
+		memused += swapused - swaptotal;
+	}
 
+	si->freeram = (memtotal > memused ? memtotal - memused : 0);
 	si->mem_unit = PAGE_SIZE;
 
 	css_put(css);
