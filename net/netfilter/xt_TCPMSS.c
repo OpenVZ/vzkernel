@@ -105,7 +105,7 @@ tcpmss_mangle_packet(struct sk_buff *skb,
 		unsigned int min_mtu = min(dst_mtu(skb_dst(skb)), in_mtu);
 
 		if (min_mtu <= minlen) {
-			net_err_ratelimited("unknown or invalid path-MTU (%u)\n",
+			net_velog_ratelimited("unknown or invalid path-MTU (%u)\n",
 					    min_mtu);
 			return -1;
 		}
@@ -270,7 +270,8 @@ static int tcpmss_tg4_check(const struct xt_tgchk_param *par)
 	    (par->hook_mask & ~((1 << NF_INET_FORWARD) |
 			   (1 << NF_INET_LOCAL_OUT) |
 			   (1 << NF_INET_POST_ROUTING))) != 0) {
-		pr_info_ratelimited("path-MTU clamping only supported in FORWARD, OUTPUT and POSTROUTING hooks\n");
+		ve_printk_ratelimited(VE_LOG, "path-MTU clamping only supported in "
+				  "FORWARD, OUTPUT and POSTROUTING hooks\n");
 		return -EINVAL;
 	}
 	if (par->nft_compat)
@@ -279,7 +280,7 @@ static int tcpmss_tg4_check(const struct xt_tgchk_param *par)
 	xt_ematch_foreach(ematch, e)
 		if (find_syn_match(ematch))
 			return 0;
-	pr_info_ratelimited("Only works on TCP SYN packets\n");
+	ve_printk_ratelimited(VE_LOG, "Only works on TCP SYN packets\n");
 	return -EINVAL;
 }
 
@@ -294,7 +295,8 @@ static int tcpmss_tg6_check(const struct xt_tgchk_param *par)
 	    (par->hook_mask & ~((1 << NF_INET_FORWARD) |
 			   (1 << NF_INET_LOCAL_OUT) |
 			   (1 << NF_INET_POST_ROUTING))) != 0) {
-		pr_info_ratelimited("path-MTU clamping only supported in FORWARD, OUTPUT and POSTROUTING hooks\n");
+		ve_printk_ratelimited(VE_LOG, "path-MTU clamping only supported in "
+				  "FORWARD, OUTPUT and POSTROUTING hooks\n");
 		return -EINVAL;
 	}
 	if (par->nft_compat)
@@ -303,7 +305,7 @@ static int tcpmss_tg6_check(const struct xt_tgchk_param *par)
 	xt_ematch_foreach(ematch, e)
 		if (find_syn_match(ematch))
 			return 0;
-	pr_info_ratelimited("Only works on TCP SYN packets\n");
+	ve_printk_ratelimited(VE_LOG, "Only works on TCP SYN packets\n");
 	return -EINVAL;
 }
 #endif
