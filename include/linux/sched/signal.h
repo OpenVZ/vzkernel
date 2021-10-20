@@ -209,7 +209,7 @@ struct signal_struct {
 	struct taskstats *stats;
 #endif
 #ifdef CONFIG_VE
-	struct kstat_lat_snap_struct alloc_lat[KSTAT_ALLOCSTAT_NR];
+	struct kstat_lat_snap_struct alloc_lat[KSTAT_NR];
 #endif
 #ifdef CONFIG_AUDIT
 	unsigned audit_tty;
