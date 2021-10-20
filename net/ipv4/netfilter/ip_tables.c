@@ -388,9 +388,12 @@ mark_source_chains(const struct xt_table_info *newinfo,
 				= (void *)ipt_get_target_c(e);
 			int visited = e->comefrom & (1 << hook);
 
-			if (e->comefrom & (1 << NF_INET_NUMHOOKS))
+			if (e->comefrom & (1 << NF_INET_NUMHOOKS)) {
+				ve_printk(VE_LOG, "iptables: loop hook %u pos "
+						  "%u %08X.\n",
+					  hook, pos, e->comefrom);
 				return 0;
-
+			}
 			e->comefrom |= ((1 << hook) | (1 << NF_INET_NUMHOOKS));
 
 			/* Unconditional return/END. */
