@@ -198,6 +198,7 @@ static int nft_synproxy_do_init(const struct nft_ctx *ctx,
 		break;
 	}
 
+	allow_conntrack_allocation(ctx->net);
 	return 0;
 
 nf_ct_failure:
