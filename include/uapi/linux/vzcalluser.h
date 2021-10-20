@@ -44,7 +44,7 @@ struct vzctl_ve_configure {
 #define VE_FEATURE_SIT          (1ULL << 3)
 #define VE_FEATURE_IPIP         (1ULL << 4)
 #define VE_FEATURE_PPP		(1ULL << 5)
-#define VE_FEATURE_IPGRE	(1ULL << 6)	/* deprecated */
+#define VE_FEATURE_IPGRE	(1ULL << 6)
 #define VE_FEATURE_BRIDGE	(1ULL << 7)
 #define VE_FEATURE_NFSD		(1ULL << 8)
 
