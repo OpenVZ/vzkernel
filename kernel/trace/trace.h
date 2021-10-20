@@ -654,7 +654,7 @@ extern unsigned long tracing_thresh;
 
 /* PID filtering */
 
-extern int pid_max;
+extern struct pid_namespace init_pid_ns;
 
 bool trace_find_filtered_pid(struct trace_pid_list *filtered_pids,
 			     pid_t search_pid);
