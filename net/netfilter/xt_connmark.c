@@ -137,6 +137,8 @@ static int connmark_mt_check(const struct xt_mtchk_param *par)
 	if (ret < 0)
 		pr_info_ratelimited("cannot load conntrack support for proto=%u\n",
 				    par->family);
+	else
+		allow_conntrack_allocation(par->net);
 	return ret;
 }
 
