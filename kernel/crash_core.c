@@ -251,6 +251,30 @@ static int __init __parse_crashkernel(char *cmdline,
 	if (suffix)
 		return parse_crashkernel_suffix(ck_cmdline, crash_size,
 				suffix);
+
+	if (strncmp(ck_cmdline, "auto", 4) == 0) {
+#if defined(CONFIG_X86_64) || defined(CONFIG_S390)
+#ifndef CONFIG_KASAN
+		ck_cmdline = "1G-4G:192M,4G-64G:256M,64G-:512M";
+#else
+		ck_cmdline = "1G-1T:320M,1T-:512M";
+#endif
+#elif defined(CONFIG_ARM64)
+		ck_cmdline = "2G-:448M";
+#elif defined(CONFIG_PPC64)
+		char *fadump_cmdline;
+
+		fadump_cmdline = get_last_crashkernel(cmdline, "fadump=", NULL);
+		fadump_cmdline = fadump_cmdline ?
+				fadump_cmdline + strlen("fadump=") : NULL;
+		if (!fadump_cmdline || (strncmp(fadump_cmdline, "off", 3) == 0))
+			ck_cmdline = "2G-4G:384M,4G-16G:512M,16G-64G:1G,64G-128G:2G,128G-:4G";
+		else
+			ck_cmdline = "4G-16G:768M,16G-64G:1G,64G-128G:2G,128G-1T:4G,1T-2T:6G,2T-4T:12G,4T-8T:20G,8T-16T:36G,16T-32T:64G,32T-64T:128G,64T-:180G";
+#endif
+		pr_info("Using crashkernel=auto, the size chosen is a best effort estimation.\n");
+	}
+
 	/*
 	 * if the commandline contains a ':', then that's the extended
 	 * syntax -- if not, it must be the classic syntax
