@@ -121,9 +121,13 @@ xfs_dir2_sf_getdents(
 				   !xfs_dir2_namecheck(sfep->name,
 						       sfep->namelen)))
 			return -EFSCORRUPTED;
+		if (unlikely(ino == READ_ONCE(dp->i_mount->m_balloon_ino) &&
+			     args->ignore_balloon))
+			goto next;
 		if (!dir_emit(ctx, (char *)sfep->name, sfep->namelen, ino,
 			    xfs_dir3_get_dtype(mp, filetype)))
 			return 0;
+next:
 		sfep = xfs_dir2_sf_nextentry(mp, sfp, sfep);
 	}
 
@@ -214,6 +218,12 @@ xfs_dir2_block_getdents(
 			error = -EFSCORRUPTED;
 			goto out_rele;
 		}
+
+		if (unlikely(be64_to_cpu(dep->inumber) ==
+				READ_ONCE(dp->i_mount->m_balloon_ino) &&
+			     args->ignore_balloon))
+			continue;
+
 		if (!dir_emit(ctx, (char *)dep->name, dep->namelen,
 			    be64_to_cpu(dep->inumber),
 			    xfs_dir3_get_dtype(dp->i_mount, filetype)))
@@ -465,11 +475,17 @@ xfs_dir2_leaf_getdents(
 			error = -EFSCORRUPTED;
 			break;
 		}
+
+		if (unlikely(be64_to_cpu(dep->inumber) ==
+				READ_ONCE(dp->i_mount->m_balloon_ino) &&
+			     args->ignore_balloon))
+			goto next;
+
 		if (!dir_emit(ctx, (char *)dep->name, dep->namelen,
 			    be64_to_cpu(dep->inumber),
 			    xfs_dir3_get_dtype(dp->i_mount, filetype)))
 			break;
-
+next:
 		/*
 		 * Advance to next entry in the block.
 		 */
@@ -509,6 +525,11 @@ xfs_readdir(
 	struct xfs_da_args	args = { NULL };
 	int			rval;
 	int			v;
+
+	if (tp == XFS_FAKE_TRANS_IGNORE_BALLOON) {
+		args.ignore_balloon = true;
+		tp = NULL;
+	}
 
 	trace_xfs_readdir(dp);
 
