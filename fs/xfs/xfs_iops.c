@@ -382,6 +382,10 @@ xfs_vn_unlink(
 	struct xfs_name	name;
 	int		error;
 
+	if (unlikely(d_inode(dentry)->i_ino ==
+			READ_ONCE(XFS_I(dir)->i_mount->m_balloon_ino)))
+		return -EPERM;
+
 	xfs_dentry_to_name(&name, dentry);
 
 	error = xfs_remove(XFS_I(dir), &name, XFS_I(d_inode(dentry)));
