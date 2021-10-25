@@ -1264,7 +1264,7 @@ xfs_file_readdir(
 	 */
 	bufsize = (size_t)min_t(loff_t, XFS_READDIR_BUFSIZE, ip->i_disk_size);
 
-	return xfs_readdir(NULL, ip, ctx, bufsize);
+	return xfs_readdir(XFS_FAKE_TRANS_IGNORE_BALLOON, ip, ctx, bufsize);
 }
 
 STATIC loff_t
