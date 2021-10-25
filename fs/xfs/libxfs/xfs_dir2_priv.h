@@ -184,6 +184,7 @@ void xfs_dir2_sf_put_ftype(struct xfs_mount *mp,
 		struct xfs_dir2_sf_entry *sfep, uint8_t ftype);
 
 /* xfs_dir2_readdir.c */
+#define XFS_FAKE_TRANS_IGNORE_BALLOON ((void *)1)
 extern int xfs_readdir(struct xfs_trans *tp, struct xfs_inode *dp,
 		       struct dir_context *ctx, size_t bufsize);
 
