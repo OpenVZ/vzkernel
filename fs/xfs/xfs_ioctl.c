@@ -1861,6 +1861,63 @@ xfs_fs_eofblocks_from_user(
 	return 0;
 }
 
+static int xfs_open_balloon(struct xfs_mount *mp, struct vfsmount *mnt)
+{
+	u64 balloon_ino = READ_ONCE(mp->m_balloon_ino);
+	struct xfs_inode *ip;
+	struct inode *inode;
+	int err, fd;
+	struct file *filp;
+	struct dentry *de;
+	struct path path;
+	fmode_t mode;
+
+	if (!balloon_ino)
+		return -ENOENT;
+	ip = xfs_balloon_get(mp, balloon_ino, 0);
+	if (IS_ERR(ip))
+		return PTR_ERR(ip);
+	inode = VFS_I(ip);
+
+	err = fd = get_unused_fd_flags(0);
+	if (err < 0)
+		goto err_put_ip;
+
+	__iget(inode);
+	de = d_obtain_alias(inode);
+	err = PTR_ERR(de);
+	if (IS_ERR(de))
+		goto err_put_fd;
+
+	path.dentry = de;
+	path.mnt = mntget(mnt);
+	err = mnt_want_write(path.mnt);
+	if (err)
+		mode = O_RDONLY;
+	else
+		mode = O_RDWR;
+	filp = alloc_file(&path, mode, &xfs_file_operations);
+	if (filp->f_mode & FMODE_WRITE)
+		mnt_drop_write(path.mnt);
+	if (IS_ERR(filp)) {
+		err = PTR_ERR(filp);
+		goto err_put_path;
+	}
+
+	filp->f_flags |= O_LARGEFILE;
+	fd_install(fd, filp);
+	xfs_irele(ip);
+	return fd;
+
+err_put_path:
+	path_put(&path);
+err_put_fd:
+	put_unused_fd(fd);
+err_put_ip:
+	xfs_irele(ip);
+	return err;
+}
+
 /*
  * These long-unused ioctls were removed from the official ioctl API in 5.17,
  * but retain these definitions so that we can log warnings about them.
@@ -2148,6 +2205,12 @@ xfs_file_ioctl(
 		sb_end_write(mp->m_super);
 		return error;
 	}
+
+        case XFS_IOC_OPEN_BALLOON:
+                if (!capable(CAP_SYS_ADMIN))
+                        return -EACCES;
+
+                return xfs_open_balloon(mp, filp->f_path.mnt);
 
 	default:
 		return -ENOTTY;
