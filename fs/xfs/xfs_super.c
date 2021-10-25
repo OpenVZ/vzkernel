@@ -101,6 +101,7 @@ enum {
 	Opt_prjquota, Opt_uquota, Opt_gquota, Opt_pquota,
 	Opt_uqnoenforce, Opt_gqnoenforce, Opt_pqnoenforce, Opt_qnoenforce,
 	Opt_discard, Opt_nodiscard, Opt_dax, Opt_dax_enum,
+	Opt_balloon_ino,
 };
 
 static const struct fs_parameter_spec xfs_fs_parameters[] = {
@@ -145,6 +146,7 @@ static const struct fs_parameter_spec xfs_fs_parameters[] = {
 	fsparam_flag("nodiscard",	Opt_nodiscard),
 	fsparam_flag("dax",		Opt_dax),
 	fsparam_enum("dax",		Opt_dax_enum, dax_param_enums),
+	fsparam_u64("balloon_ino",	Opt_balloon_ino),
 	{}
 };
 
@@ -177,6 +179,7 @@ xfs_fs_show_options(
 	};
 	struct xfs_mount	*mp = XFS_M(root->d_sb);
 	struct proc_xfs_info	*xfs_infop;
+	u64			balloon_ino;
 
 	for (xfs_infop = xfs_info_set; xfs_infop->flag; xfs_infop++) {
 		if (mp->m_features & xfs_infop->flag)
@@ -224,6 +227,9 @@ xfs_fs_show_options(
 	if (!(mp->m_qflags & XFS_ALL_QUOTA_ACCT))
 		seq_puts(m, ",noquota");
 
+	if ((balloon_ino = READ_ONCE(mp->m_balloon_ino)) != 0)
+		seq_printf(m, ",balloon_ino=%llu",
+				balloon_ino);
 	return 0;
 }
 
@@ -793,6 +799,41 @@ xfs_fs_sync_fs(
 	return 0;
 }
 
+struct xfs_inode *
+xfs_balloon_get(struct xfs_mount *mp, u64 balloon_ino, uint flags)
+{
+	struct xfs_inode *ip;
+	struct inode *inode;
+	int error;
+
+	if (!xfs_verify_dir_ino(mp, balloon_ino))
+		return ERR_PTR(-EINVAL);
+
+	error = xfs_iget(mp, NULL, balloon_ino, flags, 0, &ip);
+	if (error)
+		return ERR_PTR(error);
+	inode = VFS_I(ip);
+	if (!S_ISREG(inode->i_mode) || IS_IMMUTABLE(inode))
+		return ERR_PTR(-EINVAL);
+
+	return ip;
+}
+
+STATIC int
+xfs_balloon_check(struct xfs_mount *mp, u64 balloon_ino)
+{
+	struct xfs_inode *ip;
+
+	if (!balloon_ino)
+		return 0;
+
+	ip = xfs_balloon_get(mp, balloon_ino, XFS_IGET_UNTRUSTED);
+	if (IS_ERR(ip))
+		return PTR_ERR(ip);
+	xfs_irele(ip);
+	return 0;
+}
+
 STATIC int
 xfs_fs_statfs(
 	struct dentry		*dentry,
@@ -807,6 +848,7 @@ xfs_fs_statfs(
 	uint64_t		fdblocks;
 	xfs_extlen_t		lsize;
 	int64_t			ffree;
+	u64			balloon_ino;
 
 	/*
 	 * Expedite background inodegc but don't wait. We do not want to block
@@ -864,6 +906,17 @@ xfs_fs_statfs(
 		statp->f_blocks = sbp->sb_rblocks;
 		freertx = percpu_counter_sum_positive(&mp->m_frextents);
 		statp->f_bavail = statp->f_bfree = freertx * sbp->sb_rextsize;
+	}
+
+	if ((balloon_ino = READ_ONCE(mp->m_balloon_ino)) != 0) {
+		struct xfs_inode *ip;
+
+		ip = xfs_balloon_get(mp, balloon_ino, 0);
+		if (ip) {
+			/* Note, i_nblocks also contains metadata blocks */
+			statp->f_blocks -= ip->i_nblocks + ip->i_delayed_blks;
+			xfs_irele(ip);
+		}
 	}
 
 	return 0;
@@ -1362,6 +1415,9 @@ xfs_fs_parse_param(
 		xfs_mount_set_dax_mode(parsing_mp, result.uint_32);
 		return 0;
 #endif
+	case Opt_balloon_ino:
+		parsing_mp->m_balloon_ino = result.uint_64;
+		return 0;
 	/* Following mount options will be removed in September 2025 */
 	case Opt_ikeep:
 		xfs_fs_warn_deprecated(fc, param, XFS_FEAT_IKEEP, true);
@@ -1685,6 +1741,10 @@ xfs_fs_fill_super(
 	if (error)
 		goto out_filestream_unmount;
 
+	error = xfs_balloon_check(mp, mp->m_balloon_ino);
+	if (error)
+		goto out_unmount;
+
 	root = igrab(VFS_I(mp->m_rootip));
 	if (!root) {
 		error = -ENOENT;
@@ -1903,6 +1963,25 @@ xfs_fs_reconfigure(
 		error = xfs_remount_ro(mp);
 		if (error)
 			return error;
+	}
+
+	if (mp->m_balloon_ino != new_mp->m_balloon_ino) {
+		/* We never replace balloon file, so prohibit this */
+		if (mp->m_balloon_ino)
+			return -EBUSY;
+		/*
+		 * Note, that there maybe tasks, which have already
+		 * opened the new balloon file. So, in general this
+		 * is racy (someone even may remove this file)
+		 * though the synchronization here would be too heavy.
+		 * Since the effects of the race are not serious, and
+		 * the race is not possible in process of our normal
+		 * usage, we just ignore it.
+		 */
+		error = xfs_balloon_check(mp, new_mp->m_balloon_ino);
+		if (error)
+			return error;
+		WRITE_ONCE(mp->m_balloon_ino, new_mp->m_balloon_ino);
 	}
 
 	xfs_send_uevent(mp->m_super, FS_UA_REMOUNT);
