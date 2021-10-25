@@ -100,4 +100,6 @@ extern struct workqueue_struct *xfs_discard_wq;
 
 #define XFS_M(sb)		((struct xfs_mount *)((sb)->s_fs_info))
 
+extern struct xfs_inode *xfs_balloon_get(struct xfs_mount *mp,
+					 u64 balloon_ino, uint flags);
 #endif	/* __XFS_SUPER_H__ */
