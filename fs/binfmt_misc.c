@@ -805,39 +805,32 @@ static int bm_fill_super(struct super_block *sb, struct fs_context *fc)
 		/* last one */ {""}
 	};
 
+#ifdef CONFIG_VE
 	struct ve_struct *ve = get_exec_env();
-	struct binfmt_misc *bm_data;
+	struct binfmt_misc *bm_data = ve->binfmt_misc;
+#else
+	static struct binfmt_misc *bm_data = NULL;
+#endif
 
-	/*
-	 * bm_get_tree()
-	 *  get_tree_keyed(fc, bm_fill_super, get_ve(ve))
-	 *   fc->s_fs_info = current VE
-	 *   vfs_get_super(fc, vfs_get_keyed_super, bm_fill_super)
-	 *    sb = sget_fc(fc, test, set_anon_super_fc)
-	 *    if (!sb->s_root) {
-	 *		err = bm_fill_super(sb, fc);
-	 *
-	 * => we should never get here with initialized ve->binfmt_misc.
-	 */
-	if (WARN_ON_ONCE(ve->binfmt_misc))
-		return -EEXIST;
+	if (!bm_data) {
+		bm_data = kzalloc(sizeof(struct binfmt_misc), GFP_KERNEL);
+		if (!bm_data)
+			return -ENOMEM;
 
-	bm_data = kzalloc(sizeof(struct binfmt_misc), GFP_KERNEL);
-	if (!bm_data)
-		return -ENOMEM;
+		INIT_LIST_HEAD(&bm_data->entries);
+		rwlock_init(&bm_data->entries_lock);
 
-	INIT_LIST_HEAD(&bm_data->entries);
-	rwlock_init(&bm_data->entries_lock);
-
-	err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
-	if (err) {
-		kfree(bm_data);
-		return err;
+#ifdef CONFIG_VE
+		ve->binfmt_misc = bm_data;
+		/* this will be cleared by ve_destroy() */
+#endif
 	}
 
-	sb->s_op = &s_ops;
+	err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
+	if (err)
+		return err;
 
-	ve->binfmt_misc = bm_data;
+	sb->s_op = &s_ops;
 	bm_data->enabled = 1;
 
 	return 0;
@@ -909,6 +902,7 @@ static struct file_system_type bm_fs_type = {
 };
 MODULE_ALIAS_FS("binfmt_misc");
 
+#ifdef CONFIG_VE
 static void ve_binfmt_fini(void *data)
 {
 	struct ve_struct *ve = data;
@@ -918,8 +912,17 @@ static void ve_binfmt_fini(void *data)
 		return;
 
 	/*
-	 * XXX: Note we don't take any locks here. This is safe as long as
-	 * nobody uses binfmt_misc outside the owner ve.
+	 * This is called when VE is being destructed, no more processes are
+	 * in VE and thus use of bm_data is unexpected.
+	 *
+	 * Still, there is a possibility for a race, if a host process
+	 * explicitly enters VE's mount namespace and accesses files on
+	 * binfmt_misc mount, while VE is being destructed.
+	 *
+	 * This is extremely unlikely so ignore it for now.
+	 *
+	 * To fix, need to move this to ve_destroy() path that is executed when
+	 * no more references to VE are left.
 	 */
 	while (!list_empty(&bm_data->entries))
 		kill_node(bm_data, list_first_entry(
@@ -931,6 +934,9 @@ static struct ve_hook ve_binfmt_hook = {
 	.priority	= HOOK_PRIO_DEFAULT,
 	.owner		= THIS_MODULE,
 };
+#else
+#define ve_binfmt_hook 0
+#endif
 
 static int __init init_misc_binfmt(void)
 {
