@@ -448,6 +448,13 @@ static void ____ ## name ## _definition(void)				\
 	     : : "g" (offsetof(typeof(inst), memb)));			\
 }									\
 extern typeof(inst.memb) name;
+/*
+ * See dump_log(int msg_flags) function.
+ *
+ * https://github.com/crash-utility/crash/blob/7.3.0/kernel.c#L5040
+ */
+DEFINE_STRUCT_MEMBER_ALIAS(log_buf, init_log_state, buf);
+DEFINE_STRUCT_MEMBER_ALIAS(log_buf_len, init_log_state, buf_len);
 DEFINE_STRUCT_MEMBER_ALIAS(clear_seq, init_log_state, clear_seq);
 DEFINE_STRUCT_MEMBER_ALIAS(prb, init_log_state, prb);
 #undef DEFINE_STRUCT_MEMBER_ALIAS
