@@ -666,6 +666,10 @@ xfs_lookup(
 	if (error)
 		goto out_unlock;
 
+	error = -EPERM;
+	if (unlikely(inum == READ_ONCE(dp->i_mount->m_balloon_ino)))
+		goto out_free_name;
+
 	error = xfs_iget(dp->i_mount, NULL, inum, 0, 0, ipp);
 	if (error)
 		goto out_free_name;
