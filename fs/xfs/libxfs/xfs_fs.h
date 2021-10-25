@@ -839,6 +839,7 @@ struct xfs_scrub_metadata {
 #define XFS_IOC_INUMBERS	     _IOR ('X', 128, struct xfs_inumbers_req)
 /*	XFS_IOC_GETFSUUID ---------- deprecated 140	 */
 
+#define XFS_IOC_OPEN_BALLOON           _IO('X', 255)
 
 #ifndef HAVE_BBMACROS
 /*
