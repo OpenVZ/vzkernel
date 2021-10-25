@@ -1194,6 +1194,9 @@ unsigned long tcache_shrink_count(struct shrinker *shrink,
 	atomic_long_t *nr_pages = &tcache_nodeinfo[sc->nid].nr_pages;
 	long ret;
 
+	if (unlikely(!tcache_nodeinfo))
+		return 0;
+
 	ret = atomic_long_read(nr_pages);
 	WARN_ON(ret < 0);
 	return ret >= 0 ? ret : 0;
