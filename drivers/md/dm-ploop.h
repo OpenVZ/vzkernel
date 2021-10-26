@@ -106,6 +106,7 @@ struct ploop_index_wb {
 	bool completed;
 	blk_status_t bi_status;
 	u32 page_id;
+	struct bio_vec aux_bvec;
 };
 
 /* Metadata page */
