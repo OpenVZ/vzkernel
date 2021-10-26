@@ -717,9 +717,34 @@ static inline void iph_to_flow_copy_v6addrs(struct flow_keys *flow,
 }
 
 #if IS_ENABLED(CONFIG_IPV6)
+static inline __be32 ip6_make_flowlabel(struct net *net, struct sk_buff *skb,
+					__be32 flowlabel, bool autolabel)
+{
+	if (!flowlabel && (autolabel || net->ipv6.sysctl.auto_flowlabels)) {
+		__be32 hash;
+
+		hash = skb_get_hash(skb);
+
+		/* Since this is being sent on the wire obfuscate hash a bit
+		 * to minimize possbility that any useful information to an
+		 * attacker is leaked. Only lower 20 bits are relevant.
+		 */
+		hash ^= hash >> 12;
+
+		flowlabel = hash & IPV6_FLOWLABEL_MASK;
+	}
+
+	return flowlabel;
+}
 #else
 static inline void ip6_set_txhash(struct sock *sk) { }
+static inline __be32 ip6_make_flowlabel(struct net *net, struct sk_buff *skb,
+					__be32 flowlabel, bool autolabel)
+{
+	return flowlabel;
+}
 #endif
+
 
 /*
  *	Header manipulation

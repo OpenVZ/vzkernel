@@ -61,6 +61,13 @@ static struct ctl_table ipv6_table_template[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
 	},
+	{
+		.procname	= "auto_flowlabels",
+		.data		= &init_net.ipv6.sysctl.auto_flowlabels,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec
+	},
 	{ }
 };
 
@@ -101,6 +108,7 @@ static int __net_init ipv6_sysctl_net_init(struct net *net)
 	ipv6_table[3].data = &net->idgen_retries;
 	ipv6_table[4].data = &net->idgen_delay;
 	ipv6_table[5].data = &net->ipv6_sysctl_fwmark_reflect;
+	ipv6_table[6].data = &net->ipv6.sysctl.auto_flowlabels;
 
 	ipv6_route_table = ipv6_route_sysctl_init(net);
 	if (!ipv6_route_table)

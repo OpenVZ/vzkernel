@@ -1197,6 +1197,15 @@ mld_qrv - INTEGER
 	Default: 2 (as specified by RFC3810 9.1)
 	Minimum: 1 (as specified by RFC6636 4.5)
 
+auto_flowlabels - BOOLEAN
+	Automatically generate flow labels based based on a flow hash
+	of the packet. This allows intermediate devices, such as routers,
+	to idenfify packet flows for mechanisms like Equal Cost Multipath
+	Routing (see RFC 6438).
+	TRUE: enabled
+	FALSE: disabled
+	Default: false
+
 anycast_src_echo_reply - BOOLEAN
 	Controls the use of anycast addresses as source addresses for ICMPv6
 	echo reply
