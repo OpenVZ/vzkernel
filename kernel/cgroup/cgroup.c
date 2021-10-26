@@ -2039,28 +2039,33 @@ struct ve_struct *get_curr_ve(void)
  * do "mount -t cgroup cgroup -onone,name=namedcgroup /mnt", and this should
  * not break containers.
  */
-static inline bool is_virtualized_cgroup(struct cgroup *cgrp)
+static inline bool is_virtualized_cgroot(struct cgroup_root *cgroot)
 {
 	/* Cgroup v2 */
-	if (cgrp->root == &cgrp_dfl_root)
+	if (cgroot == &cgrp_dfl_root)
 		return false;
 
 #if IS_ENABLED(CONFIG_CGROUP_DEBUG)
-	if (cgrp->subsys[debug_cgrp_id])
+	if (cgroot->subsys_mask & (1 << debug_cgrp_id))
 		return false;
 #endif
 #if IS_ENABLED(CONFIG_CGROUP_MISC)
-	if (cgrp->subsys[misc_cgrp_id])
+	if (cgroot->subsys_mask & (1 << misc_cgrp_id))
 		return false;
 #endif
 
-	if (cgrp->root->subsys_mask)
+	if (cgroot->subsys_mask)
 		return true;
 
-	if (!strcmp(cgrp->root->name, "systemd"))
+	if (!strcmp(cgroot->name, "systemd"))
 		return true;
 
 	return false;
+}
+
+static inline bool is_virtualized_cgroup(struct cgroup *cgrp)
+{
+	return is_virtualized_cgroot(cgrp->root);
 }
 
 /*
@@ -2469,7 +2474,11 @@ static int cgroup_get_tree(struct fs_context *fc)
 	cgroup_get_live(&cgrp_dfl_root.cgrp);
 	ctx->root = &cgrp_dfl_root;
 
-	ret = cgroup_do_get_tree(fc);
+	if (ve_hide_cgroups(ctx->root))
+		ret = -EPERM;
+
+	if (!ret)
+		ret = cgroup_do_get_tree(fc);
 	if (!ret)
 		apply_cgroup_root_flags(ctx->flags);
 	return ret;
@@ -6308,11 +6317,12 @@ int ve_hide_cgroups(struct cgroup_root *root)
 	unsigned long hidden_mask = (1UL << ve_cgrp_id);
 
 	/*
-	 * Hide ve cgroup in CT for docker,
-	 * still showing it to pseudosuper (criu)
+	 * Hide ve cgroup in CT for docker, still showing it to pseudosuper
+	 * (criu), and also hide non-virtualized cgroups.
 	 */
-	return !ve_is_super(ve) && !ve->is_pseudosuper
-		&& (root->subsys_mask & hidden_mask);
+	return !ve_is_super(ve) && !ve->is_pseudosuper &&
+	       ((root->subsys_mask & hidden_mask) ||
+		!is_virtualized_cgroot(root));
 }
 #endif
 
