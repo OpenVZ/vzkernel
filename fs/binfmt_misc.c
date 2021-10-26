@@ -722,13 +722,12 @@ static int bm_fill_super(struct super_block * sb, void * data, int silent)
 		rwlock_init(&bm_data->entries_lock);
 
 		ve->binfmt_misc = bm_data;
+		/* this will be freed in ve_destroy() */
 	}
 
 	err = simple_fill_super(sb, BINFMTFS_MAGIC, bm_files);
-	if (err) {
-		kfree(bm_data);
+	if (err)
 		return err;
-	}
 
 	sb->s_op = &s_ops;
 
