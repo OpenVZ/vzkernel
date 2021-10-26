@@ -1339,6 +1339,9 @@ int cgroup1_get_tree(struct fs_context *fc)
 
 	cgroup_unlock();
 
+	if (!ret && ve_hide_cgroups(ctx->root))
+		ret = -EPERM;
+
 	if (!ret)
 		ret = cgroup_do_get_tree(fc);
 
