@@ -1594,17 +1594,17 @@ void ploop_index_wb_submit(struct ploop *ploop, struct ploop_index_wb *piwb)
 {
 	loff_t pos = (loff_t)piwb->page_id << PAGE_SHIFT;
 	struct pio *pio = piwb->pio;
-	struct bio_vec bvec = {
-		.bv_page = piwb->bat_page,
-		.bv_len = PAGE_SIZE,
-		.bv_offset = 0,
-	};
+	struct bio_vec *bvec = &piwb->aux_bvec;
+
+	bvec->bv_page = piwb->bat_page;
+	bvec->bv_len = PAGE_SIZE;
+	bvec->bv_offset = 0;
 
 	pio->bi_iter.bi_sector = to_sector(pos);
 	pio->bi_iter.bi_size = PAGE_SIZE;
 	pio->bi_iter.bi_idx = 0;
 	pio->bi_iter.bi_bvec_done = 0;
-	pio->bi_io_vec = &bvec;
+	pio->bi_io_vec = bvec;
 	pio->level = top_level(ploop);
 	pio->endio_cb = md_write_endio;
 	pio->endio_cb_data = piwb;
