@@ -445,22 +445,23 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 			 unsigned int maxlen)
 {
 	struct ploop *ploop = ti->private;
-	char stat[32] = { 0 }, *p = stat;
+	char stat[32], *p = stat;
 	ssize_t sz = 0;
 
 	down_read(&ploop->ctl_rwsem);
 	if (ploop->falloc_new_clu)
-		p += sprintf(p, "f");
+		*p++ = 'f';
 	if (ploop->tracking_bitmap)
-		p += sprintf(p, "t");
+		*p++ = 't';
 	if (READ_ONCE(ploop->noresume))
-		p += sprintf(p, "n");
+		*p++ = 'n';
 	if (READ_ONCE(ploop->event_enospc))
-		p += sprintf(p, "s");
+		*p++ = 's';
 	if (p == stat)
-		p += sprintf(p, "o");
+		*p++ = 'o';
 	if (ploop->skip_off)
 		p += sprintf(p, " off=%llu", ploop->skip_off);
+	*p++ = '\0';
 	up_read(&ploop->ctl_rwsem);
 
 	BUG_ON(p - stat >= sizeof(stat));
