@@ -455,6 +455,8 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 		p += sprintf(p, "t");
 	if (READ_ONCE(ploop->noresume))
 		p += sprintf(p, "n");
+	if (READ_ONCE(ploop->event_enospc))
+		p += sprintf(p, "s");
 	if (p == stat)
 		p += sprintf(p, "o");
 	if (ploop->skip_off)
