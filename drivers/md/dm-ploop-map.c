@@ -169,6 +169,7 @@ static bool ploop_try_delay_enospc(struct ploop_rq *prq, struct pio *pio)
 
 	init_prq_and_embedded_pio(ploop, prq->rq, prq, pio);
 
+	pr_err_once("ploop: underlying disk is almost full\n");
 	ploop->event_enospc = true;
 	list_add_tail(&pio->list, &ploop->enospc_pios);
 unlock:
