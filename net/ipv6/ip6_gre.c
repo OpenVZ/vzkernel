@@ -1043,7 +1043,9 @@ static int ip6gre_header(struct sk_buff *skb, struct net_device *dev,
 	__be16 *p;
 
 	ipv6h = skb_push(skb, t->hlen + sizeof(*ipv6h));
-	ip6_flow_hdr(ipv6h, 0, t->fl.u.ip6.flowlabel);
+	ip6_flow_hdr(ipv6h, 0,
+		     ip6_make_flowlabel(dev_net(dev), skb,
+					t->fl.u.ip6.flowlabel, false));
 	ipv6h->hop_limit = t->parms.hop_limit;
 	ipv6h->nexthdr = NEXTHDR_GRE;
 	ipv6h->saddr = t->parms.laddr;
