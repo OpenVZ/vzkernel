@@ -34,18 +34,23 @@ struct dm_tracking {
 	struct mutex ctl_mutex;
 };
 
+struct treq {
+	sector_t pos;
+	u32 bytes;
+};
+
 static sector_t get_dev_size(struct dm_dev *dev)
 {
 	return i_size_read(dev->bdev->bd_inode) >> SECTOR_SHIFT;
 }
 
-static void track_rq_clus(struct dm_tracking *dmt, struct request *rq)
+static void track_rq_clus(struct dm_tracking *dmt, struct treq *treq)
 {
-	loff_t off = to_bytes(blk_rq_pos(rq));
+	loff_t off = to_bytes(treq->pos);
 	u64 start_clu, end_clu, clu;
 
 	start_clu = off / dmt->clu_size;
-	end_clu = (off + blk_rq_bytes(rq) - 1) / dmt->clu_size;
+	end_clu = (off + treq->bytes - 1) / dmt->clu_size;
 
 	for (clu = start_clu; clu <= end_clu; clu++) {
 		set_bit(clu, dmt->bitmap);
@@ -61,20 +66,25 @@ static int dmt_clone_and_map(struct dm_target *ti, struct request *rq,
 {
 	struct dm_tracking *dmt = ti->private;
 	struct block_device *bdev = dmt->origin_dev->bdev;
+	struct treq *treq = NULL;
 	struct request_queue *q;
 	struct request *clone;
 
+	map_context->ptr = NULL;
 	if (blk_rq_bytes(rq) && op_is_write(req_op(rq))) {
-		spin_lock_irq(&dmt->lock);
-		if (dmt->bitmap)
-			track_rq_clus(dmt, rq);
-		spin_unlock_irq(&dmt->lock);
+		treq = kmalloc(sizeof(*treq), GFP_ATOMIC);
+		if (!treq)
+			return DM_MAPIO_REQUEUE;
+		treq->pos = blk_rq_pos(rq);
+		treq->bytes = blk_rq_bytes(rq);
+		map_context->ptr = treq;
 	}
 
 	q = bdev_get_queue(bdev);
 	clone = blk_mq_alloc_request(q, rq->cmd_flags | REQ_NOMERGE,
 				BLK_MQ_REQ_NOWAIT);
 	if (IS_ERR(clone)) {
+		kfree(treq);
 		/* EBUSY, ENODEV or EWOULDBLOCK: requeue */
 		if (blk_queue_dying(q))
 			return DM_MAPIO_DELAY_REQUEUE;
@@ -90,7 +100,29 @@ static int dmt_clone_and_map(struct dm_target *ti, struct request *rq,
 static void dmt_release_clone(struct request *clone,
 			      union map_info *map_context)
 {
+	if (unlikely(map_context)) {
+		struct treq *treq = map_context->ptr;
+		kfree(treq);
+	}
+
 	blk_mq_free_request(clone);
+}
+
+static int dmt_end_io(struct dm_target *ti, struct request *clone,
+		      blk_status_t error, union map_info *map_context)
+{
+	struct treq *treq = map_context->ptr;
+	struct dm_tracking *dmt = ti->private;
+
+	if (treq) {
+		spin_lock_irq(&dmt->lock);
+		if (dmt->bitmap)
+			track_rq_clus(dmt, treq);
+		spin_unlock_irq(&dmt->lock);
+		kfree(treq);
+	}
+
+	return DM_ENDIO_DONE;
 }
 
 static void dmt_destroy(struct dm_tracking *dmt)
@@ -319,6 +351,7 @@ static struct target_type dmt_target = {
 	.dtr = dmt_dtr,
 	.clone_and_map_rq = dmt_clone_and_map,
 	.release_clone_rq = dmt_release_clone,
+	.rq_end_io = dmt_end_io,
 	.message = dmt_message,
 	.iterate_devices = dmt_iterate_devices,
 	.status = dmt_status,
