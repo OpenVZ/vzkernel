@@ -2088,6 +2088,29 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 		return -EINVAL;
 	}
 
+	/*
+	 * We want to traverse the cset->cgrp_links list and
+	 * call cgroup_add_file() function which will call
+	 * memory allocation functions with GFP_KERNEL flag.
+	 * We can't continue to hold css_set_lock, but it's
+	 * safe to hold cgroup_mutex.
+	 *
+	 * It's safe to hold only cgroup_mutex and traverse
+	 * the cset list just because in all scenarious where
+	 * the ->cgrp_links list is getting modified:
+	 *
+	 * 1. cgroup_destroy_root
+	 * it is holding cgroup_mutex
+	 *
+	 * 2. put_css_set_locked
+	 * here we protected by !refcount_dec_and_test(&cset->refcount)
+	 * check which prevents any list modifications if someone is still
+	 * holding the refcnt to cset.
+	 * See copy_cgroup_ns() function it's taking refcnt's by get_css_set().
+	 *
+	 */
+	spin_unlock_irq(&css_set_lock);
+
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
 		cgrp = link->cgrp;
 
@@ -2113,7 +2136,6 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 	}
 
 	link_ve_root_cpu_cgroup(cset->subsys[cpu_cgrp_id]);
-	spin_unlock_irq(&css_set_lock);
 	mutex_unlock(&cgroup_mutex);
 	synchronize_rcu();
 
