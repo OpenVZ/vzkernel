@@ -572,7 +572,10 @@ static int vlan_dev_init(struct net_device *dev)
 			   NETIF_F_HIGHDMA | NETIF_F_SCTP_CRC |
 			   NETIF_F_ALL_FCOE;
 
-	dev->features |= dev->hw_features | NETIF_F_LLTX | NETIF_F_VIRTUAL;
+	dev->features |= dev->hw_features | NETIF_F_LLTX;
+#ifdef CONFIG_VE
+	dev->ve_features = NETIF_F_VIRTUAL;
+#endif
 	netif_set_gso_max_size(dev, real_dev->gso_max_size);
 	netif_set_gso_max_segs(dev, real_dev->gso_max_segs);
 	if (dev->features & NETIF_F_VLAN_FEATURES)
