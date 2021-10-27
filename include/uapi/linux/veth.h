@@ -10,4 +10,6 @@ enum {
 #define VETH_INFO_MAX	(__VETH_INFO_MAX - 1)
 };
 
+#define SIOCSFIXEDADDR	(SIOCDEVPRIVATE + 0xe)
+
 #endif

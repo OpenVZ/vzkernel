@@ -302,6 +302,34 @@ static int veth_forward_skb(struct net_device *dev, struct sk_buff *skb,
 		__netif_rx(skb);
 }
 
+#ifdef CONFIG_VE
+static int vzethdev_filter(struct sk_buff *skb, struct net_device *dev, struct net_device *rcv)
+{
+	struct ethhdr *eh;
+
+	if (!(dev->ve_features & NETIF_F_FIXED_ADDR))
+		return 1;
+
+	/* Filtering */
+	eh = (struct ethhdr *)skb->data;
+	if (ve_is_super(dev_net(dev)->owner_ve)) {
+		/* from VE0 to VEX */
+		if (ve_is_super(dev_net(rcv)->owner_ve))
+			return 1;
+		if (is_multicast_ether_addr(eh->h_dest))
+			return 1;
+		if (!ether_addr_equal(eh->h_dest, rcv->dev_addr))
+			return 0;
+	} else {
+		/* from VEX to VE0 */
+		if (!ether_addr_equal(eh->h_source, dev->dev_addr))
+			return 0;
+	}
+
+	return 1;
+}
+#endif
+
 /* return true if the specified skb has chances of GRO aggregation
  * Don't strive for accuracy, but try to avoid GRO overhead in the most
  * common scenarios.
@@ -337,6 +365,13 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
 		kfree_skb(skb);
 		goto drop;
 	}
+
+#ifdef CONFIG_VE
+	if (!vzethdev_filter(skb, dev, rcv)) {
+		kfree_skb(skb);
+		goto drop;
+	}
+#endif
 
 	rcv_priv = netdev_priv(rcv);
 	rxq = skb_get_queue_mapping(skb);
@@ -1679,6 +1714,32 @@ static int veth_xdp_rx_hash(const struct xdp_md *ctx, u32 *hash,
 	return 0;
 }
 
+#ifdef CONFIG_VE
+static int veth_mac_addr(struct net_device *dev, void *p)
+{
+	if (dev->ve_features & NETIF_F_FIXED_ADDR)
+		return -EPERM;
+	return eth_mac_addr(dev, p);
+}
+
+static int vzethdev_siocdevprivate(struct net_device *dev, struct ifreq *ifr,
+				   void __user *data, int cmd)
+{
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
+
+	switch (cmd) {
+	case SIOCSFIXEDADDR:
+		if (ifr->ifr_ifru.ifru_flags)
+			dev->ve_features |= NETIF_F_FIXED_ADDR;
+		else
+			dev->ve_features &= ~NETIF_F_FIXED_ADDR;
+		return 0;
+	}
+	return -ENOTTY;
+}
+#endif
+
 static const struct net_device_ops veth_netdev_ops = {
 	.ndo_init            = veth_dev_init,
 	.ndo_open            = veth_open,
@@ -1686,7 +1747,6 @@ static const struct net_device_ops veth_netdev_ops = {
 	.ndo_start_xmit      = veth_xmit,
 	.ndo_get_stats64     = veth_get_stats64,
 	.ndo_set_rx_mode     = veth_set_multicast_list,
-	.ndo_set_mac_address = eth_mac_addr,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= veth_poll_controller,
 #endif
@@ -1698,6 +1758,12 @@ static const struct net_device_ops veth_netdev_ops = {
 	.ndo_bpf		= veth_xdp,
 	.ndo_xdp_xmit		= veth_ndo_xdp_xmit,
 	.ndo_get_peer_dev	= veth_peer_dev,
+#ifdef CONFIG_VE
+	.ndo_set_mac_address	= veth_mac_addr,
+	.ndo_siocdevprivate	= vzethdev_siocdevprivate,
+#else
+	.ndo_set_mac_address	= eth_mac_addr,
+#endif
 };
 
 static const struct xdp_metadata_ops veth_xdp_metadata_ops = {
@@ -1725,6 +1791,9 @@ static void veth_setup(struct net_device *dev)
 	dev->ethtool_ops = &veth_ethtool_ops;
 	dev->features |= NETIF_F_LLTX;
 	dev->features |= VETH_FEATURES;
+#ifdef CONFIG_VE
+	dev->ve_features = NETIF_F_VIRTUAL;
+#endif
 	dev->vlan_features = dev->features &
 			     ~(NETIF_F_HW_VLAN_CTAG_TX |
 			       NETIF_F_HW_VLAN_STAG_TX |
