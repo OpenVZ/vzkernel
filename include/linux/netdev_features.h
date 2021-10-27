@@ -174,10 +174,12 @@ enum {
 enum {
 	NETIF_F_VIRTUAL_BIT,	/* Can be registered inside VE */
 	NETIF_F_VENET_BIT,	/* Device is venet device */
+	NETIF_F_FIXED_ADDR_BIT,	/* Device has fixed mac */
 };
 
 #define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
 #define NETIF_F_VENET		__NETIF_F(VENET)
+#define NETIF_F_FIXED_ADDR	__NETIF_F(FIXED_ADDR)
 #endif
 
 /* Finds the next feature with the highest number of the range of start till 0.
