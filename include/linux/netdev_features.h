@@ -14,7 +14,7 @@ typedef u64 netdev_features_t;
 enum {
 	NETIF_F_SG_BIT,			/* Scatter/gather IO. */
 	NETIF_F_IP_CSUM_BIT,		/* Can checksum TCP/UDP over IPv4. */
-	NETIF_F_VIRTUAL_BIT,		/* Can be registered inside VE */
+	__UNUSED_NETIF_F_1,
 	NETIF_F_HW_CSUM_BIT,		/* Can checksum all the packets. */
 	NETIF_F_IPV6_CSUM_BIT,		/* Can checksum TCP/UDP over IPV6 */
 	NETIF_F_HIGHDMA_BIT,		/* Can DMA to high memory. */
@@ -85,9 +85,6 @@ enum {
 
 	NETIF_F_HW_MACSEC_BIT,		/* Offload MACsec operations */
 	NETIF_F_GRO_UDP_FWD_BIT,	/* Allow UDP GRO for forwarding */
-	/* here goes NETIF_F_HW_MACSEC_BIT in ms, temporarily reverted */
-					/* Offload MACsec operations */
-	NETIF_F_VENET_BIT,		/* Device is venet device */
 
 	NETIF_F_HW_HSR_TAG_INS_BIT,	/* Offload HSR tag insertion */
 	NETIF_F_HW_HSR_TAG_RM_BIT,	/* Offload HSR tag removal */
@@ -172,8 +169,16 @@ enum {
 #define NETIF_F_HW_HSR_FWD	__NETIF_F(HW_HSR_FWD)
 #define NETIF_F_HW_HSR_DUP	__NETIF_F(HW_HSR_DUP)
 
+#ifdef CONFIG_VE
+/* For net_device->ve_features */
+enum {
+	NETIF_F_VIRTUAL_BIT,	/* Can be registered inside VE */
+	NETIF_F_VENET_BIT,	/* Device is venet device */
+};
+
 #define NETIF_F_VIRTUAL		__NETIF_F(VIRTUAL)
 #define NETIF_F_VENET		__NETIF_F(VENET)
+#endif
 
 /* Finds the next feature with the highest number of the range of start till 0.
  */
@@ -258,8 +263,7 @@ static inline int find_next_netdev_feature(u64 feature, unsigned long start)
 				 NETIF_F_HW_VLAN_CTAG_TX | \
 				 NETIF_F_HW_VLAN_STAG_FILTER | \
 				 NETIF_F_HW_VLAN_STAG_RX | \
-				 NETIF_F_HW_VLAN_STAG_TX |	\
-				 NETIF_F_VIRTUAL)
+				 NETIF_F_HW_VLAN_STAG_TX)
 
 #define NETIF_F_GSO_ENCAP_ALL	(NETIF_F_GSO_GRE |			\
 				 NETIF_F_GSO_GRE_CSUM |			\

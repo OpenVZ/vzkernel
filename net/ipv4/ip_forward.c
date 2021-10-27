@@ -151,7 +151,9 @@ int ip_forward(struct sk_buff *skb)
 #ifdef CONFIG_IP_ROUTE_NAT
 	    (rt->rt_flags & RTCF_NAT) == 0 &&	  /* no NAT mangling expected */
 #endif						  /* and */
-	    (skb->dev->features & NETIF_F_VENET) && /* src is VENET device and */
+#ifdef CONFIG_VE
+	    (skb->dev->ve_features & NETIF_F_VENET) && /* src is VENET device and */
+#endif
 	    (skb_headroom(skb) >= hroom)) {	  /* skb has enough headroom */
 		iph = ip_hdr(skb);
 		goto no_ttl_decr;
