@@ -703,8 +703,11 @@ static void venet_setup(struct net_device *dev)
 	 * No other features, as they are:
 	 *  - checksumming is required, and nobody else will done our job
 	 */
-	dev->features |= NETIF_F_VENET | NETIF_F_VIRTUAL | NETIF_F_LLTX |
-	       NETIF_F_HIGHDMA | NETIF_F_VLAN_CHALLENGED;
+	dev->features |= NETIF_F_LLTX | NETIF_F_HIGHDMA |
+			 NETIF_F_VLAN_CHALLENGED;
+#ifdef CONFIG_VE
+	dev->ve_features = NETIF_F_VENET | NETIF_F_VIRTUAL;
+#endif
 
 	dev->netdev_ops = &venet_netdev_ops;
 	dev->ethtool_ops = &venet_ethtool_ops;

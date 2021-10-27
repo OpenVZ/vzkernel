@@ -635,7 +635,10 @@ int ip6_forward(struct sk_buff *skb)
 	 * sufficient to prevent routing loops.
 	 */
 	hroom = dst->dev->hard_header_len;
-	if ((skb->dev->features & NETIF_F_VENET) && /* src is VENET device */
+	if (
+#ifdef CONFIG_VE
+	    (skb->dev->ve_features & NETIF_F_VENET) && /* src is VENET device */
+#endif
 	    (skb_headroom(skb) >= hroom))  /* and skb has enough headroom */
 		goto no_ttl_decr;
 
