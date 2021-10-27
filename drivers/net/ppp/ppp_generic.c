@@ -1634,7 +1634,10 @@ static void ppp_setup(struct net_device *dev)
 	dev->netdev_ops = &ppp_netdev_ops;
 	SET_NETDEV_DEVTYPE(dev, &ppp_type);
 
-	dev->features |= NETIF_F_LLTX | NETIF_F_VIRTUAL;
+	dev->features |= NETIF_F_LLTX;
+#ifdef CONFIG_VE
+	dev->ve_features = NETIF_F_VIRTUAL;
+#endif
 
 	dev->hard_header_len = PPP_HDRLEN;
 	dev->mtu = PPP_MRU;

@@ -983,7 +983,9 @@ static void __gre_tunnel_init(struct net_device *dev)
 		 */
 		dev->features |= NETIF_F_LLTX;
 	}
-	dev->features |= NETIF_F_VIRTUAL;
+#ifdef CONFIG_VE
+	dev->ve_features = NETIF_F_VIRTUAL;
+#endif
 }
 
 static int ipgre_tunnel_init(struct net_device *dev)
