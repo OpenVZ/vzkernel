@@ -60,7 +60,7 @@ nf_nat_redirect_ipv4(struct sk_buff *skb,
 				 * should use first nonloopback ifa in
 				 * the list.
 				 */
-				if (skb->dev->features & NETIF_F_VENET) {
+				if (skb->dev->ve_features & NETIF_F_VENET) {
 					while (IN_LOOPBACK(ntohl(ifa->ifa_local)) &&
 					       ifa->ifa_next)
 						ifa = ifa->ifa_next;
