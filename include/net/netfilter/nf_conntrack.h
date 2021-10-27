@@ -366,7 +366,7 @@ static inline struct nf_conntrack_net *nf_ct_pernet(const struct net *net)
 
 static inline void allow_conntrack_allocation(struct net *net)
 {
-#if IS_ENABLED(NF_CONNTRACK)
+#if IS_ENABLED(CONFIG_NF_CONNTRACK)
 	nf_ct_pernet(net)->can_alloc = true;
 #endif
 }
