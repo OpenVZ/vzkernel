@@ -212,7 +212,7 @@ static int tracking_get_next(struct dm_tracking *dmt, char *result,
 {
 	unsigned int i, sz = 0, nr_clus = dmt->nr_clus, prev = dmt->cursor;
 	void *bitmap = dmt->bitmap;
-	int ret = -EAGAIN;
+	int ret = 0;
 
 	if (WARN_ON_ONCE(prev > nr_clus - 1))
 		prev = 0;
