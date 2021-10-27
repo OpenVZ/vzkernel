@@ -43,7 +43,7 @@ config VE_CALLS
 
 config VE_NETDEV
 	tristate "VE network device"
-	depends on NET
+	depends on VE && NET
 	select VZ_DEV
 	default m
 	help
