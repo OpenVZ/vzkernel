@@ -165,10 +165,6 @@ struct ploop {
 
 	struct list_head wb_batch_list;
 
-	void *tracking_bitmap;
-	unsigned int tb_nr; /* tracking_bitmap size in bits */
-	unsigned int tb_cursor;
-
 	/*
 	 * Hash table to link non-exclusive submitted bios.
 	 * This is needed for discard to check, nobody uses
@@ -488,15 +484,6 @@ static inline void ploop_init_be_iter(struct ploop *ploop, u32 page_id,
 				      u32 *start, u32 *end)
 {
 	init_be_iter(ploop->nr_bat_entries, page_id, start, end);
-}
-
-extern void __track_pio(struct ploop *ploop, struct pio *pio);
-
-static inline void track_pio(struct ploop *ploop, struct pio *pio)
-{
-	/* See comment in process_tracking_start() about visibility */
-	if (unlikely(ploop->tracking_bitmap))
-		__track_pio(ploop, pio);
 }
 
 extern struct pio *find_pio(struct hlist_head head[], u32 clu);
