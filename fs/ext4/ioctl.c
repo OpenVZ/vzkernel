@@ -1147,7 +1147,7 @@ static int ext4_ioctl_getlabel(struct ext4_sb_info *sbi, char __user *user_label
 static int ext4_open_balloon(struct super_block *sb, struct vfsmount *mnt)
 {
 	struct inode *balloon_ino;
-	int err, fd;
+	int err, fd, ro;
 	struct file *filp;
 	struct dentry *de;
 	struct path path;
@@ -1170,13 +1170,13 @@ static int ext4_open_balloon(struct super_block *sb, struct vfsmount *mnt)
 
 	path.dentry = de;
 	path.mnt = mntget(mnt);
-	err = mnt_want_write(path.mnt);
-	if (err)
+	ro = mnt_want_write(path.mnt);
+	if (ro)
 		mode = O_RDONLY;
 	else
 		mode = O_RDWR;
 	filp = alloc_file(&path, mode, &ext4_file_operations);
-	if (filp->f_mode & FMODE_WRITE)
+	if (!ro)
 		mnt_drop_write(path.mnt);
 	if (IS_ERR(filp)) {
 		err = PTR_ERR(filp);
