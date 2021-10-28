@@ -227,9 +227,6 @@ void pio_endio(struct pio *pio)
 {
 	struct ploop *ploop = pio->ploop;
 
-	if (pio->ref_index != PLOOP_REF_INDEX_INVALID)
-		track_pio(ploop, pio);
-
 	handle_cleanup(ploop, pio);
 
 	do_pio_endio(pio);
@@ -383,37 +380,6 @@ static bool delay_if_md_busy(struct ploop *ploop, struct md_page *md,
 	write_unlock_irqrestore(&ploop->bat_rwlock, flags);
 
 	return busy;
-}
-
-void track_dst_cluster(struct ploop *ploop, u32 dst_clu)
-{
-	unsigned long flags;
-
-	if (!ploop->tracking_bitmap)
-		return;
-
-	read_lock_irqsave(&ploop->bat_rwlock, flags);
-	if (ploop->tracking_bitmap && !WARN_ON(dst_clu >= ploop->tb_nr))
-		set_bit(dst_clu, ploop->tracking_bitmap);
-	read_unlock_irqrestore(&ploop->bat_rwlock, flags);
-}
-
-/*
- * Userspace calls dm_suspend() to get changed blocks finally.
- * dm_suspend() waits for dm's inflight bios, so this function
- * must be called after @bio is written and before @bio is ended.
- * The only possible exception is writes driven by "message" ioctl.
- * Thus, userspace mustn't do maintaince operations in parallel
- * with tracking.
- */
-void __track_pio(struct ploop *ploop, struct pio *pio)
-{
-	u32 dst_clu = SEC_TO_CLU(ploop, pio->bi_iter.bi_sector);
-
-	if (!op_is_write(pio->bi_op) || !bvec_iter_sectors((pio)->bi_iter))
-		return;
-
-	track_dst_cluster(ploop, dst_clu);
 }
 
 static void queue_discard_index_wb(struct ploop *ploop, struct pio *pio)
@@ -1574,10 +1540,6 @@ static void md_write_endio(struct pio *pio, void *piwb_ptr, blk_status_t bi_stat
 {
 	struct ploop_index_wb *piwb = piwb_ptr;
 	struct ploop *ploop = piwb->ploop;
-	u32 dst_clu;
-
-	dst_clu = POS_TO_CLU(ploop, (u64)piwb->page_id << PAGE_SHIFT);
-	track_dst_cluster(ploop, dst_clu);
 
 	if (bi_status) {
 		md_fsync_endio(pio, piwb, bi_status);
