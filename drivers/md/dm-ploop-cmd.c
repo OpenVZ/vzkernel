@@ -249,7 +249,6 @@ static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 	if (pio->bi_status)
 		return blk_status_to_errno(pio->bi_status);
 
-	/* track_bio(ploop, bio); */
 	return vfs_fsync(file, 0);
 }
 
@@ -982,166 +981,6 @@ static int ploop_set_falloc_new_clu(struct ploop *ploop, u64 val)
 	return 0;
 }
 
-static int process_tracking_start(struct ploop *ploop, void *tracking_bitmap,
-				  u32 tb_nr)
-{
-	u32 i, nr_pages, end, *bat_entries, dst_clu, nr;
-	struct rb_node *node;
-	struct md_page *md;
-	int ret = 0;
-
-	write_lock_irq(&ploop->bat_rwlock);
-	ploop->tracking_bitmap = tracking_bitmap;
-	ploop->tb_nr = tb_nr;
-
-	for_each_clear_bit(i, ploop->holes_bitmap, ploop->hb_nr)
-		set_bit(i, tracking_bitmap);
-	nr_pages = bat_clu_to_page_nr(ploop->nr_bat_entries - 1) + 1;
-	nr = 0;
-
-	ploop_for_each_md_page(ploop, md, node) {
-		ploop_init_be_iter(ploop, md->id, &i, &end);
-		bat_entries = kmap_atomic(md->page);
-		for (; i <= end; i++) {
-			dst_clu = bat_entries[i];
-			if (dst_clu == BAT_ENTRY_NONE ||
-			    md->bat_levels[i] != top_level(ploop))
-				continue;
-			if (WARN_ON(dst_clu >= tb_nr)) {
-				ret = -EIO;
-				break;
-			}
-			set_bit(dst_clu, tracking_bitmap);
-		}
-		kunmap_atomic(bat_entries);
-		if (ret)
-			break;
-		nr++;
-	}
-	write_unlock_irq(&ploop->bat_rwlock);
-
-	BUG_ON(ret == 0 && nr != nr_pages);
-	return ret;
-}
-
-static int tracking_get_next(struct ploop *ploop, char *result,
-			     unsigned int maxlen)
-{
-	unsigned int i, sz = 0, tb_nr = ploop->tb_nr, prev = ploop->tb_cursor;
-	void *tracking_bitmap = ploop->tracking_bitmap;
-	int ret = -EAGAIN;
-
-	if (WARN_ON_ONCE(prev > tb_nr - 1))
-		prev = 0;
-
-	write_lock_irq(&ploop->bat_rwlock);
-	i = find_next_bit(tracking_bitmap, tb_nr, prev + 1);
-	if (i < tb_nr)
-		goto found;
-	i = find_first_bit(tracking_bitmap, prev + 1);
-	if (i >= prev + 1)
-		goto unlock;
-found:
-	ret = (DMEMIT("%u\n", i)) ? 1 : 0;
-	if (ret)
-		clear_bit(i, tracking_bitmap);
-unlock:
-	write_unlock_irq(&ploop->bat_rwlock);
-	if (ret > 0)
-		ploop->tb_cursor = i;
-	return ret;
-}
-
-static u32 max_dst_clu_in_top_delta(struct ploop *ploop)
-{
-	u32 i, nr_pages, nr = 0, end, *bat_entries, dst_clu = 0;
-	struct rb_node *node;
-	struct md_page *md;
-
-	nr_pages = bat_clu_to_page_nr(ploop->nr_bat_entries - 1) + 1;
-
-	read_lock_irq(&ploop->bat_rwlock);
-	ploop_for_each_md_page(ploop, md, node) {
-		ploop_init_be_iter(ploop, md->id, &i, &end);
-		bat_entries = kmap_atomic(md->page);
-		for (; i <= end; i++) {
-			if (dst_clu < bat_entries[i] &&
-			    md->bat_levels[i] == top_level(ploop))
-				dst_clu = bat_entries[i];
-		}
-		kunmap_atomic(bat_entries);
-		nr++;
-	}
-	read_unlock_irq(&ploop->bat_rwlock);
-
-	BUG_ON(nr != nr_pages);
-	return dst_clu;
-}
-
-static int ploop_tracking_cmd(struct ploop *ploop, const char *suffix,
-			      char *result, unsigned int maxlen)
-{
-	void *tracking_bitmap = NULL;
-	unsigned int tb_nr, size;
-	int ret = 0;
-
-	if (ploop_is_ro(ploop))
-		return -EROFS;
-
-	if (!strcmp(suffix, "get_next")) {
-		if (!ploop->tracking_bitmap)
-			return -ENOENT;
-		return tracking_get_next(ploop, result, maxlen);
-	}
-
-	if (!strcmp(suffix, "start")) {
-		if (ploop->tracking_bitmap)
-			return -EEXIST;
-		if (ploop->maintaince)
-			return -EBUSY;
-		/* max_dst_clu_in_top_delta() may be above hb_nr */
-		tb_nr = max_dst_clu_in_top_delta(ploop) + 1;
-		if (tb_nr < ploop->hb_nr)
-			tb_nr = ploop->hb_nr;
-		/*
-		 * After max_dst_clu_in_top_delta() unlocks the lock,
-		 * new entries above tb_nr can't occur, since we always
-		 * alloc clusters from holes_bitmap (and they nr < hb_nr).
-		 */
-		size = DIV_ROUND_UP(tb_nr, 8 * sizeof(unsigned long));
-		size *= sizeof(unsigned long);
-		tracking_bitmap = kvzalloc(size, GFP_KERNEL);
-		if (!tracking_bitmap)
-			return -ENOMEM;
-		ploop->tb_cursor = tb_nr - 1;
-
-		ret = ploop_suspend_submitting_pios(ploop);
-		if (ret)
-			return ret;
-
-		ploop->maintaince = true;
-		ret = process_tracking_start(ploop, tracking_bitmap, tb_nr);
-
-		ploop_resume_submitting_pios(ploop);
-
-		if (ret)
-			goto stop;
-	} else if (!strcmp(suffix, "stop")) {
-		if (!ploop->tracking_bitmap)
-			return -ENOENT;
-stop:
-		write_lock_irq(&ploop->bat_rwlock);
-		kvfree(ploop->tracking_bitmap);
-		ploop->tracking_bitmap = NULL;
-		write_unlock_irq(&ploop->bat_rwlock);
-		ploop->maintaince = false;
-	} else {
-		return -EINVAL;
-	}
-
-	return ret;
-}
-
 static int ploop_set_noresume(struct ploop *ploop, char *mode)
 {
 	bool noresume;
@@ -1315,10 +1154,6 @@ int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 		if (argc != 2 || kstrtou64(argv[1], 10, &val) < 0)
 			goto unlock;
 		ret = ploop_set_falloc_new_clu(ploop, val);
-	} else if (!strncmp(argv[0], "tracking_", 9)) {
-		if (argc != 1)
-			goto unlock;
-		ret = ploop_tracking_cmd(ploop, argv[0] + 9, result, maxlen);
 	} else if (!strcmp(argv[0], "set_noresume")) {
 		if (argc != 2)
 			goto unlock;
