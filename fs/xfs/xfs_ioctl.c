@@ -1866,7 +1866,7 @@ static int xfs_open_balloon(struct xfs_mount *mp, struct vfsmount *mnt)
 	u64 balloon_ino = READ_ONCE(mp->m_balloon_ino);
 	struct xfs_inode *ip;
 	struct inode *inode;
-	int err, fd;
+	int err, fd, ro;
 	struct file *filp;
 	struct dentry *de;
 	struct path path;
@@ -1891,13 +1891,13 @@ static int xfs_open_balloon(struct xfs_mount *mp, struct vfsmount *mnt)
 
 	path.dentry = de;
 	path.mnt = mntget(mnt);
-	err = mnt_want_write(path.mnt);
-	if (err)
+	ro = mnt_want_write(path.mnt);
+	if (ro)
 		mode = O_RDONLY;
 	else
 		mode = O_RDWR;
 	filp = alloc_file(&path, mode, &xfs_file_operations);
-	if (filp->f_mode & FMODE_WRITE)
+	if (!ro)
 		mnt_drop_write(path.mnt);
 	if (IS_ERR(filp)) {
 		err = PTR_ERR(filp);
