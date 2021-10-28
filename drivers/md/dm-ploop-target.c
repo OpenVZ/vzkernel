@@ -179,7 +179,6 @@ static void ploop_destroy(struct ploop *ploop)
 	mempool_destroy(ploop->prq_pool);
 	kfree(ploop->deltas);
 	kvfree(ploop->holes_bitmap);
-	kvfree(ploop->tracking_bitmap);
 	free_md_pages_tree(&ploop->bat_entries);
 	kfree(ploop);
 }
@@ -451,8 +450,6 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 	down_read(&ploop->ctl_rwsem);
 	if (ploop->falloc_new_clu)
 		*p++ = 'f';
-	if (ploop->tracking_bitmap)
-		*p++ = 't';
 	if (READ_ONCE(ploop->noresume))
 		*p++ = 'n';
 	if (READ_ONCE(ploop->event_enospc))
