@@ -1330,7 +1330,7 @@ static int do_fanotify_mark(int fanotify_fd, unsigned int flags, __u64 mask,
 	 * was initialized by an unprivileged user.
 	 */
 	ret = -EPERM;
-	if ((!capable(CAP_SYS_ADMIN) ||
+	if ((!ve_capable(CAP_SYS_ADMIN) ||
 	     FAN_GROUP_FLAG(group, FANOTIFY_UNPRIV)) &&
 	    mark_type != FAN_MARK_INODE)
 		goto fput_and_out;
