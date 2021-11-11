@@ -78,6 +78,7 @@ extern void ve_hook_register(int chain, struct ve_hook *vh);
 extern void ve_hook_unregister(struct ve_hook *vh);
 extern int nr_threads_ve(struct ve_struct *ve);
 #else /* CONFIG_VE */
+#include <linux/sched/stat.h>
 #define ve_hook_register(ch, vh)	do { } while (0)
 #define ve_hook_unregister(ve)		do { } while (0)
 
