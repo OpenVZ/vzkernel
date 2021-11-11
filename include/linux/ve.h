@@ -223,8 +223,9 @@ int ve_net_hide_sysctl(struct net *net);
 extern struct net *ve_get_net_ns(struct ve_struct* ve);
 
 #else	/* CONFIG_VE */
-#define get_ve(ve)	(NULL)
-#define put_ve(ve)	do { } while (0)
+#include <linux/init_task.h>
+#define get_ve(ve)	((void)(ve), NULL)
+#define put_ve(ve)	do { (void)(ve); } while (0)
 
 static inline void ve_stop_ns(struct pid_namespace *ns) { }
 static inline void ve_exit_ns(struct pid_namespace *ns) { }
