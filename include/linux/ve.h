@@ -221,6 +221,7 @@ int ve_net_hide_sysctl(struct net *net);
 extern struct net *ve_get_net_ns(struct ve_struct* ve);
 
 #else	/* CONFIG_VE */
+#include <linux/init_task.h>
 #define get_ve(ve)	((void)(ve), NULL)
 #define put_ve(ve)	do { (void)(ve); } while (0)
 
