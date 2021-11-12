@@ -2804,6 +2804,9 @@ vm_area_alloc_pages(gfp_t gfp, int nid,
 		struct page *page;
 		int i;
 
+		if (fatal_signal_pending(current))
+			break;
+
 		page = alloc_pages_node(nid, gfp, order);
 		if (unlikely(!page))
 			break;
