@@ -505,7 +505,8 @@ static int qcow2_check_convert_hdr(struct QCowHeader *raw_hdr,
 	if (kernel_sets_dirty_bit !=
 	    !(hdr->incompatible_features & INCOMPATIBLE_FEATURES_DIRTY_BIT))
 		return kernel_sets_dirty_bit ? -EUCLEAN : -ENOLCK;
-	if (hdr->incompatible_features & ~INCOMPATIBLE_FEATURES_EXTL2_BIT)
+	if (hdr->incompatible_features &
+	    ~(INCOMPATIBLE_FEATURES_EXTL2_BIT|INCOMPATIBLE_FEATURES_DIRTY_BIT))
 		return -EOPNOTSUPP;
 	ext_l2 = hdr->incompatible_features & INCOMPATIBLE_FEATURES_EXTL2_BIT;
 
