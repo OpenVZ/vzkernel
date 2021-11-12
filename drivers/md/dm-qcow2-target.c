@@ -451,12 +451,13 @@ out_target:
 	return NULL;
 }
 
-static int qcow2_check_convert_hdr(struct QCowHeader *raw_hdr,
+static int qcow2_check_convert_hdr(struct dm_target *ti,
+				   struct QCowHeader *raw_hdr,
 				   struct QCowHeader *hdr,
 				   u64 min_len, u64 max_len)
 {
+	bool ext_l2, is_ro;
 	u32 clu_size;
-	bool ext_l2;
 
 	hdr->magic = cpu_to_be32(raw_hdr->magic);
 	hdr->version = be32_to_cpu(raw_hdr->version);
@@ -501,7 +502,9 @@ static int qcow2_check_convert_hdr(struct QCowHeader *raw_hdr,
 	hdr->refcount_order = be32_to_cpu(raw_hdr->refcount_order);
 	hdr->header_length = be32_to_cpu(raw_hdr->header_length);
 
-	if (kernel_sets_dirty_bit !=
+	is_ro = !(dm_table_get_mode(ti->table) & FMODE_WRITE);
+
+	if (!is_ro && kernel_sets_dirty_bit !=
 	    !(hdr->incompatible_features & INCOMPATIBLE_FEATURES_DIRTY_BIT))
 		return kernel_sets_dirty_bit ? -EUCLEAN : -ENOLCK;
 	if (hdr->incompatible_features &
@@ -555,8 +558,13 @@ int qcow2_set_image_file_features(struct qcow2 *qcow2, bool dirty)
 	u64 dirty_mask = cpu_to_be64(INCOMPATIBLE_FEATURES_DIRTY_BIT);
 	struct QCowHeader *raw_hdr;
 	struct md_page *md;
+	bool is_ro;
 
 	if (qcow2->hdr.version ==  2)
+		return 0;
+
+	is_ro = !(dm_table_get_mode(qcow2->tgt->ti->table) & FMODE_WRITE);
+	if (is_ro)
 		return 0;
 
 	md = md_page_find(qcow2, 0);
@@ -663,7 +671,7 @@ static int qcow2_parse_header(struct dm_target *ti, struct qcow2 *qcow2,
 		min_len = PAGE_SIZE;
 		max_len = upper->hdr.size;
 	}
-	ret = qcow2_check_convert_hdr(raw_hdr, hdr, min_len, max_len);
+	ret = qcow2_check_convert_hdr(ti, raw_hdr, hdr, min_len, max_len);
 	kunmap(md->page);
 	if (ret < 0)
 		goto out;
