@@ -2227,9 +2227,9 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	struct cftype *cft;
 
 	cft = get_cftype_by_name(CGROUP_FILENAME_RELEASE_AGENT);
+	BUG_ON(!cft || cft->file_offset);
 
 	mutex_lock(&cgroup_mutex);
-	spin_lock_irq(&css_set_lock);
 
 	/*
 	 * We can safely use ve->ve_ns without rcu_read_lock here, as we are
@@ -2238,19 +2238,24 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	 */
 	cset = rcu_dereference_protected(ve->ve_ns,
 			lockdep_is_held(&ve->op_sem))->cgroup_ns->root_cset;
+	BUG_ON(!cset);
 
+	/*
+	 * Traversing @cgrp_links without @css_set_lock is safe here for
+	 * the same reasons as in cgroup_mark_ve_roots().
+	 */
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
 		cgrp = link->cgrp;
 
 		if (!is_virtualized_cgroup(cgrp))
 			continue;
 
-		cgroup_rm_file(cgrp, cft);
+		if (!cgroup_is_dead(cgrp))
+			cgroup_rm_file(cgrp, cft);
 		rcu_assign_pointer(cgrp->ve_owner, NULL);
 		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
 
-	spin_unlock_irq(&css_set_lock);
 	mutex_unlock(&cgroup_mutex);
 	/* ve_owner == NULL will be visible */
 	synchronize_rcu();
