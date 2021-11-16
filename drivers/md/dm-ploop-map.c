@@ -87,7 +87,7 @@ void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio)
 	pio->level = BAT_LEVEL_INVALID;
 }
 
-/* Get clu related to pio sectors */
+/* Check that rq end byte is not behind end of device */
 static int ploop_rq_valid(struct ploop *ploop, struct request *rq)
 {
 	sector_t sector = ploop_rq_pos(ploop, rq);
@@ -450,16 +450,6 @@ static void inc_nr_inflight(struct ploop *ploop, struct pio *pio)
 	}
 }
 
-/*
- * Note, that do_ploop_work() waits final ref dec_nr_inflight()
- * (e.g., on grow), so the code decrementing the counter can't
- * depend on the work or some actions it makes.
- *
- * The only intended usecase is that the counter is decremented
- * from endio of bios submitted to underlined device (loop) or
- * from ki_complete of requests submitted to delta files
- * (while increment occurs just right before the submitting).
- */
 static void dec_nr_inflight(struct ploop *ploop, struct pio *pio)
 {
 	if (pio->ref_index != PLOOP_REF_INDEX_INVALID) {
@@ -1474,19 +1464,13 @@ static int process_one_deferred_bio(struct ploop *ploop, struct pio *pio)
 	u8 level;
 	bool ret;
 
-	/*
-	 * Unlocked, since no one can update BAT in parallel:
-	 * we update BAT only 1)from *this* kwork, and 2)from
-	 * ploop_advance_local_after_bat_wb(), which we start
-	 * and wait synchronously from *this* kwork.
-	 */
 	clu = SEC_TO_CLU(ploop, sector);
-	dst_clu = ploop_bat_entries(ploop, clu, &level, &md);
-
 	if (postpone_if_cluster_locked(ploop, pio, clu))
 		goto out;
 
+	dst_clu = ploop_bat_entries(ploop, clu, &level, &md);
 	if (op_is_discard(pio->bi_op)) {
+		/* FIXME: check there is no parallel alloc */
 		handle_discard_pio(ploop, pio, clu, dst_clu);
 		goto out;
 	}
