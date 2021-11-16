@@ -838,19 +838,26 @@ static void qcow2_status(struct dm_target *ti, status_type_t type,
 			 unsigned int maxlen)
 {
 	struct qcow2_target *tgt = to_qcow2_target(ti);
+	struct QCowHeader *hdr;
 	unsigned int sz = 0;
+	struct qcow2 *qcow2;
+	u8 ref_index;
 
+	qcow2 = qcow2_ref_inc(tgt, &ref_index);
+	hdr = &qcow2->hdr;
 	switch (type) {
 	case STATUSTYPE_INFO:
 		result[0] = '\0';
 		break;
 	case STATUSTYPE_TABLE:
-		DMEMIT("%u", tgt->nr_images);
+		DMEMIT("%u v%u %llu", tgt->nr_images, hdr->version,
+				      to_sector(qcow2->clu_size));
 		break;
 	case STATUSTYPE_IMA:
 		result[0] = '\0';
 		break;
 	}
+	qcow2_ref_dec(tgt, ref_index);
 }
 
 static void qcow2_presuspend(struct dm_target *ti)
