@@ -489,7 +489,7 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 		size_in_clus = POS_TO_CLU(ploop, file_size);
 	}
 
-	ret = -EBADSLT;
+	ret = -EBADSLT; /* Lower delta can't be bigger then upper */
 	if (level != top_level(ploop) &&
 	    size_in_clus > deltas[level + 1].size_in_clus)
 		goto out;
