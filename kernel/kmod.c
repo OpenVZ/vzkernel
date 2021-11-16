@@ -214,6 +214,7 @@ static const char * const ve0_allowed_mod[] = {
 	"ip6table_security",
 	"ip6table_nat",
 	"ip6table_mangle",
+	"arp_tables",
 
 	"nf-nat",
 	"nf_conncount",
@@ -270,6 +271,7 @@ static const char * const ve0_allowed_mod[] = {
 
 	/* ip_set */
 	"nfnetlink-subsys-6",		/* NFNL_SUBSYS_IPSET */
+	"ip_set",
 	"ip_set_bitmap:ip",
 	"ip_set_bitmap:ip,mac",
 	"ip_set_bitmap:port",
@@ -290,6 +292,7 @@ static const char * const ve0_allowed_mod[] = {
 	"nfsv4",
 
 	/* IPVS */
+	"ip_vs"
 	"ip_vs_ftp",
 	"ip_vs_nq",
 	"ip_vs_wlc",
