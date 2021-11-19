@@ -504,9 +504,9 @@ static int qcow2_check_convert_hdr(struct dm_target *ti,
 
 	is_ro = !(dm_table_get_mode(ti->table) & FMODE_WRITE);
 
-	if (!is_ro && kernel_sets_dirty_bit !=
-	    !(hdr->incompatible_features & INCOMPATIBLE_FEATURES_DIRTY_BIT))
-		return kernel_sets_dirty_bit ? -EUCLEAN : -ENOLCK;
+//	if (!is_ro && kernel_sets_dirty_bit !=
+//	    !(hdr->incompatible_features & INCOMPATIBLE_FEATURES_DIRTY_BIT))
+//		return kernel_sets_dirty_bit ? -EUCLEAN : -ENOLCK;
 	if (hdr->incompatible_features &
 	    ~(INCOMPATIBLE_FEATURES_EXTL2_BIT|INCOMPATIBLE_FEATURES_DIRTY_BIT))
 		return -EOPNOTSUPP;
