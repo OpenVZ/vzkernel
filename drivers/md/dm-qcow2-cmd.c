@@ -272,8 +272,10 @@ static int qcow2_get_img_name(struct qcow2_target *tgt, u32 img_id,
 		skip--;
 	}
 
-	if (!qcow2 || skip)
-		return -ENOENT;
+	if (!qcow2 || skip) {
+		result[0] = 0; /* empty output */
+		return 1;
+	}
 
 	p = file_path(qcow2->file, result, maxlen - 1);
 	if (IS_ERR(p)) {
