@@ -759,13 +759,19 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 static int process_update_delta_index(struct ploop *ploop, u8 level,
 				      const char *map)
 {
+	struct ploop_delta *delta = &ploop->deltas[level];
 	u32 clu, dst_clu, n;
 	int ret;
 
 	write_lock_irq(&ploop->bat_rwlock);
 	/* Check all */
 	while (sscanf(map, "%u:%u;%n", &clu, &dst_clu, &n) == 2) {
-		if (clu >= ploop->nr_bat_entries)
+		/*
+		 * Check that userspace-passed BAT entry does not refer
+		 * beyond end of file.
+		 */
+		if (clu >= delta->nr_be ||
+		    dst_clu >= POS_TO_CLU(ploop, delta->file_size))
 			break;
 		if (ploop_bat_entries(ploop, clu, NULL, NULL) == BAT_ENTRY_NONE)
 			break;
