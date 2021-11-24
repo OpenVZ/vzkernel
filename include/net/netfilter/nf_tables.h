@@ -917,7 +917,7 @@ struct nft_table {
 	u32				use;
 	u16				flags:14,
 					genmask:2;
-	char				name[NFT_TABLE_MAXNAMELEN];
+	char				*name;
 };
 
 /**
