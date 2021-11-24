@@ -962,9 +962,14 @@ static int kaio_open(struct ploop_io * io)
 	io->files.inode = io->files.mapping->host;
 	io->files.bdev = io->files.inode->i_sb->s_bdev;
 
+	err = io->ops->sync(io);
+	if (err)
+		return err;
+
 	mutex_lock(&io->files.inode->i_mutex);
-	kaio_invalidate_cache(io);
-	err = ploop_kaio_open(file, delta->flags & PLOOP_FMT_RDONLY);
+	err = kaio_invalidate_cache(io);
+	if (!err)
+		err = ploop_kaio_open(file, delta->flags & PLOOP_FMT_RDONLY);
 	mutex_unlock(&io->files.inode->i_mutex);
 
 	if (err)
