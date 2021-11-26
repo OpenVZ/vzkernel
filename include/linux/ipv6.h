@@ -60,6 +60,7 @@ struct ipv6_devconf {
 	__s32		keep_addr_on_down;
 	__u32		enhanced_dad;
 #endif
+	__s32		disable_policy;
 	void		*sysctl;
 };
 
