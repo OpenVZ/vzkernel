@@ -213,6 +213,7 @@ static struct ipv6_devconf ipv6_devconf __read_mostly = {
 	},
 	.keep_addr_on_down	= 0,
 	.enhanced_dad           = 1,
+	.disable_policy		= 0,
 };
 
 static struct ipv6_devconf ipv6_devconf_dflt __read_mostly = {
@@ -253,6 +254,7 @@ static struct ipv6_devconf ipv6_devconf_dflt __read_mostly = {
 	},
 	.keep_addr_on_down	= 0,
 	.enhanced_dad           = 1,
+	.disable_policy		= 0,
 };
 
 /* Check if link is ready: is it up and is a valid qdisc available */
@@ -837,6 +839,7 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr,
 	      bool can_block)
 {
 	gfp_t gfp_flags = can_block ? GFP_KERNEL : GFP_ATOMIC;
+	struct net *net = dev_net(idev->dev);
 	struct inet6_ifaddr *ifa = NULL;
 	struct rt6_info *rt = NULL;
 	int err = 0;
@@ -886,6 +889,10 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr,
 		rt = NULL;
 		goto out;
 	}
+
+	if (net->ipv6.devconf_all->disable_policy ||
+	    idev->cnf.disable_policy)
+		rt->dst.flags |= DST_NOPOLICY;
 
 	neigh_parms_data_state_setall(idev->nd_parms);
 
@@ -4881,6 +4888,7 @@ static inline void ipv6_store_devconf(struct ipv6_devconf *cnf,
 	/* we omit DEVCONF_STABLE_SECRET for now */
 	array[DEVCONF_KEEP_ADDR_ON_DOWN] = cnf->keep_addr_on_down;
 	array[DEVCONF_ENHANCED_DAD] = cnf->enhanced_dad;
+	array[DEVCONF_DISABLE_POLICY] = cnf->disable_policy;
 }
 
 static inline size_t inet6_ifla6_size(void)
@@ -5582,6 +5590,105 @@ out:
 	return err;
 }
 
+static
+void addrconf_set_nopolicy(struct rt6_info *rt, int action)
+{
+	if (rt) {
+		if (action)
+			rt->dst.flags |= DST_NOPOLICY;
+		else
+			rt->dst.flags &= ~DST_NOPOLICY;
+	}
+}
+
+static
+void addrconf_disable_policy_idev(struct inet6_dev *idev, int val)
+{
+	struct inet6_ifaddr *ifa;
+
+	read_lock_bh(&idev->lock);
+	list_for_each_entry(ifa, &idev->addr_list, if_list) {
+		spin_lock(&ifa->lock);
+		if (ifa->rt) {
+			struct rt6_info *rt = ifa->rt;
+			struct fib6_table *table = rt->rt6i_table;
+			int cpu;
+
+			read_lock(&table->tb6_lock);
+			addrconf_set_nopolicy(ifa->rt, val);
+			if (rt->rt6i_pcpu) {
+				for_each_possible_cpu(cpu) {
+					struct rt6_info **rtp;
+
+					rtp = per_cpu_ptr(rt->rt6i_pcpu, cpu);
+					addrconf_set_nopolicy(*rtp, val);
+				}
+			}
+			read_unlock(&table->tb6_lock);
+		}
+		spin_unlock(&ifa->lock);
+	}
+	read_unlock_bh(&idev->lock);
+}
+
+static
+int addrconf_disable_policy(struct ctl_table *ctl, int *valp, int val)
+{
+	struct inet6_dev *idev;
+	struct net *net;
+
+	if (!rtnl_trylock())
+		return restart_syscall();
+
+	*valp = val;
+
+	net = (struct net *)ctl->extra2;
+	if (valp == &net->ipv6.devconf_dflt->disable_policy) {
+		rtnl_unlock();
+		return 0;
+	}
+
+	if (valp == &net->ipv6.devconf_all->disable_policy)  {
+		struct net_device *dev;
+
+		for_each_netdev(net, dev) {
+			idev = __in6_dev_get(dev);
+			if (idev)
+				addrconf_disable_policy_idev(idev, val);
+		}
+	} else {
+		idev = (struct inet6_dev *)ctl->extra1;
+		addrconf_disable_policy_idev(idev, val);
+	}
+
+	rtnl_unlock();
+	return 0;
+}
+
+static
+int addrconf_sysctl_disable_policy(struct ctl_table *ctl, int write,
+				   void __user *buffer, size_t *lenp,
+				   loff_t *ppos)
+{
+	int *valp = ctl->data;
+	int val = *valp;
+	loff_t pos = *ppos;
+	struct ctl_table lctl;
+	int ret;
+
+	lctl = *ctl;
+	lctl.data = &val;
+	ret = proc_dointvec(&lctl, write, buffer, lenp, ppos);
+
+	if (write && (*valp != val))
+		ret = addrconf_disable_policy(ctl, valp, val);
+
+	if (ret)
+		*ppos = pos;
+
+	return ret;
+}
+
 static struct addrconf_sysctl_table
 {
 	struct ctl_table_header *sysctl_header;
@@ -5853,6 +5960,13 @@ static struct addrconf_sysctl_table
 			.maxlen         = sizeof(int),
 			.mode           = 0644,
 			.proc_handler   = proc_dointvec,
+		},
+		{
+			.procname       = "disable_policy",
+			.data           = &ipv6_devconf.disable_policy,
+			.maxlen         = sizeof(int),
+			.mode           = 0644,
+			.proc_handler   = addrconf_sysctl_disable_policy,
 		},
 		{
 			/* sentinel */
