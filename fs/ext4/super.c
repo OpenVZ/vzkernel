@@ -4540,7 +4540,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	sbi->s_err_report.data = (unsigned long) sb;
 
 	err = percpu_counter_init(&sbi->s_extent_cache_cnt, 0, GFP_KERNEL);
-	if (err)
+	if (!err)
 		err = percpu_counter_init(&sbi->s_csum_partial, 0, GFP_KERNEL);
 	if (!err)
 		err = percpu_counter_init(&sbi->s_csum_complete, 0, GFP_KERNEL);
