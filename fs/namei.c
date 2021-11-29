@@ -1223,7 +1223,8 @@ static int follow_dotdot_rcu(struct nameidata *nd)
 			goto failed;
 	}
 	nd->inode = nd->path.dentry->d_inode;
-	return 0;
+	if (nd->inode)
+		return 0;
 
 failed:
 	nd->flags &= ~LOOKUP_RCU;
