@@ -208,7 +208,6 @@ static int qcow2_merge_backward(struct qcow2_target *tgt)
 			pr_err("dm-qcow2: Can't unuse lower (%d)\n", ret2);
 		goto out;
 	}
-	tgt->nr_images--;
 	tgt->top = lower;
 	smp_wmb(); /* Pairs with qcow2_ref_inc() */
 	qcow2_inflight_ref_switch(tgt); /* Pending qios */
@@ -230,7 +229,7 @@ static struct qcow2 *qcow2_get_img(struct qcow2_target *tgt, u32 img_id)
 
 	lockdep_assert_held(&tgt->ctl_mutex); /* tgt->top */
 
-	skip = tgt->nr_images - 1 - img_id;
+	skip = qcow2->img_id - img_id;
 	while (qcow2 && skip > 0) {
 		qcow2 = qcow2->lower;
 		skip--;
