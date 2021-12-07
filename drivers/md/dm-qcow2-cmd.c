@@ -222,21 +222,19 @@ out:
 	return ret;
 }
 
-static struct qcow2 *qcow2_get_img(struct qcow2_target *tgt, u32 img_id)
+static struct qcow2 *qcow2_get_img(struct qcow2_target *tgt, u32 img_id, u8 *ref_index)
 {
-	struct qcow2 *qcow2 = tgt->top;
-	int skip;
+	struct qcow2 *qcow2;
 
-	lockdep_assert_held(&tgt->ctl_mutex); /* tgt->top */
+	qcow2 = qcow2_ref_inc(tgt, ref_index);
 
-	skip = qcow2->img_id - img_id;
-	while (qcow2 && skip > 0) {
+	while (qcow2->img_id > img_id)
 		qcow2 = qcow2->lower;
-		skip--;
-	}
 
-	if (!qcow2 || skip)
+	if (qcow2->img_id != img_id) {
+		qcow2_ref_dec(tgt, *ref_index);
 		return NULL;
+	}
 	return qcow2;
 }
 
@@ -245,36 +243,42 @@ static int qcow2_get_img_fd(struct qcow2_target *tgt, u32 img_id,
 {
 	struct qcow2 *qcow2;
 	unsigned int sz = 0;
-	int fd;
+	u8 ref_index;
+	int fd, ret;
 
-	qcow2 = qcow2_get_img(tgt, img_id);
+	qcow2 = qcow2_get_img(tgt, img_id, &ref_index);
 	if (!qcow2) {
 		result[0] = 0; /* empty output */
 		return 1;
 	}
 
-	fd = get_unused_fd_flags(0);
+	ret = fd = get_unused_fd_flags(0);
 	if (fd < 0)
-		return fd;
+		goto out_ref_dec;
 
 	if (DMEMIT("%d\n", fd) == 0) {
 		/* Not enough space in @result */
+		ret = 0;
 		put_unused_fd(fd);
-		return 0;
+		goto out_ref_dec;
 	}
 
+	ret = 1;
 	fd_install(fd, get_file(qcow2->file));
-	return 1;
+out_ref_dec:
+	qcow2_ref_dec(tgt, ref_index);
+	return ret;
 }
 
 static int qcow2_get_img_name(struct qcow2_target *tgt, u32 img_id,
 			      char *result, unsigned int maxlen)
 {
 	struct qcow2 *qcow2;
+	u8 ref_index;
 	char *p;
 	int ret;
 
-	qcow2 = qcow2_get_img(tgt, img_id);
+	qcow2 = qcow2_get_img(tgt, img_id, &ref_index);
 	if (!qcow2) {
 		result[0] = 0; /* empty output */
 		return 1;
@@ -282,15 +286,19 @@ static int qcow2_get_img_name(struct qcow2_target *tgt, u32 img_id,
 
 	p = file_path(qcow2->file, result, maxlen - 1);
 	if (IS_ERR(p)) {
+		ret = PTR_ERR(p);
 		if (PTR_ERR(p) == -ENAMETOOLONG)
-			return 0; /* dm should pass bigger buffer */
-		return PTR_ERR(p);
+			ret = 0; /* dm should pass bigger buffer */
+		goto out_ref_dec;
 	}
 
 	ret = strlen(p);
 	memmove(result, p, ret);
 	result[ret] = 0;
-	return 1;
+	ret = 1;
+out_ref_dec:
+	qcow2_ref_dec(tgt, ref_index);
+	return ret;
 }
 
 int qcow2_message(struct dm_target *ti, unsigned int argc, char **argv,
