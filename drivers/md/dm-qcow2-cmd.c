@@ -223,8 +223,8 @@ out:
 	return ret;
 }
 
-static int qcow2_get_fd(struct qcow2_target *tgt, u32 img_id,
-			char *result, unsigned int maxlen)
+static int qcow2_get_img_fd(struct qcow2_target *tgt, u32 img_id,
+			    char *result, unsigned int maxlen)
 {
 	struct qcow2 *qcow2 = tgt->top;
 	unsigned int sz = 0;
@@ -239,8 +239,10 @@ static int qcow2_get_fd(struct qcow2_target *tgt, u32 img_id,
 		skip--;
 	}
 
-	if (!qcow2 || skip)
-		return -ENOENT;
+	if (!qcow2 || skip) {
+		result[0] = 0; /* empty output */
+		return 1;
+	}
 
 	fd = get_unused_fd_flags(0);
 	if (fd < 0)
@@ -315,7 +317,7 @@ int qcow2_message(struct dm_target *ti, unsigned int argc, char **argv,
 			ret = -EINVAL;
 			goto unlock;
 		}
-		ret = qcow2_get_fd(tgt, val, result, maxlen);
+		ret = qcow2_get_img_fd(tgt, val, result, maxlen);
 	} else if (!strcmp(argv[0], "get_img_name")) {
 		if (argc != 2 || kstrtou32(argv[1], 10, &val)) {
 			ret = -EINVAL;
