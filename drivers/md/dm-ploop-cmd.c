@@ -691,7 +691,7 @@ out:
 
 static void notify_delta_merged(struct ploop *ploop, u8 level,
 				struct rb_root *md_root,
-				bool forward, u32 size_in_clus)
+				bool forward, u32 nr_be)
 {
 	u32 i, end, *bat_entries, *d_bat_entries;
 	struct md_page *md, *d_md;
@@ -704,12 +704,12 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
-		init_be_iter(size_in_clus, md->id, &i, &end);
+		init_be_iter(nr_be, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		d_bat_entries = kmap_atomic(d_md->page);
 		for (; i <= end; i++) {
 			clu = page_clu_idx_to_bat_clu(md->id, i);
-			if (clu == size_in_clus - 1)
+			if (clu == nr_be - 1)
 				stop = true;
 
 			/* deltas above @level become renumbered */
@@ -793,8 +793,8 @@ static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 	struct rb_root md_root = RB_ROOT;
 	struct file *file;
 	loff_t file_size;
-	u32 size_in_clus;
 	u8 changed_level;
+	u32 nr_be;
 	int ret;
 
 	/* Reread BAT of deltas[@level + 1] (or [@level - 1]) */
@@ -805,24 +805,24 @@ static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 	if (ret)
 		goto out;
 
-	ret = ploop_read_delta_metadata(ploop, file, &md_root, &size_in_clus);
+	ret = ploop_read_delta_metadata(ploop, file, &md_root, &nr_be);
 	if (ret)
 		goto out;
 
 	ret = -EFBIG;
 	if (changed_level != top_level(ploop) &&
-	    size_in_clus > deltas[changed_level + 1].size_in_clus)
+	    nr_be > deltas[changed_level + 1].nr_be)
 		goto out;
 
 	ret = ploop_suspend_submitting_pios(ploop);
 	if (ret)
 		goto out;
 
-	notify_delta_merged(ploop, level, &md_root, forward, size_in_clus);
+	notify_delta_merged(ploop, level, &md_root, forward, nr_be);
 
 	deltas[changed_level].file_size = file_size;
 	deltas[changed_level].file_preallocated_area_start = file_size;
-	deltas[changed_level].size_in_clus = size_in_clus;
+	deltas[changed_level].nr_be = nr_be;
 
 	ploop_resume_submitting_pios(ploop);
 	ret = 0;
@@ -1003,14 +1003,13 @@ static int ploop_check_delta_before_flip(struct ploop *ploop, struct file *file)
 {
 	int ret = 0;
 #ifdef PLOOP_DEBUG
-	u32 i, end, *d_bat_entries, clu, size_in_clus;
+	u32 i, end, *d_bat_entries, clu, nr_be;
 	struct rb_root md_root = RB_ROOT;
 	struct md_page *md, *d_md;
 	struct rb_node *node;
 	bool stop = false;
 
-	ret = ploop_read_delta_metadata(ploop, file, &md_root,
-					&size_in_clus);
+	ret = ploop_read_delta_metadata(ploop, file, &md_root, &nr_be);
 	if (ret) {
 		pr_err("Error reading metadata\n");
 		goto out;
@@ -1021,7 +1020,7 @@ static int ploop_check_delta_before_flip(struct ploop *ploop, struct file *file)
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
-		init_be_iter(size_in_clus, md->id, &i, &end);
+		init_be_iter(nr_be, md->id, &i, &end);
 		d_bat_entries = kmap_atomic(d_md->page);
 		for (; i <= end; i++) {
 			if (md_page_cluster_is_in_top_delta(ploop, md, i) &&
@@ -1033,7 +1032,7 @@ static int ploop_check_delta_before_flip(struct ploop *ploop, struct file *file)
 		}
 
 		clu = page_clu_idx_to_bat_clu(md->id, i);
-		if (clu == size_in_clus - 1) {
+		if (clu == nr_be - 1) {
 			stop = true;
 			goto unmap;
 		}
