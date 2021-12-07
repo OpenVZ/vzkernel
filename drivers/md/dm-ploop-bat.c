@@ -390,7 +390,7 @@ static void ploop_set_not_hole(struct ploop *ploop, u32 dst_clu)
  * n)add oldest delta
  */
 static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
-				 u32 level, struct rb_root *md_root, u64 size_in_clus)
+				 u32 level, struct rb_root *md_root, u64 nr_be)
 {
 	map_index_t *bat_entries, *d_bat_entries = NULL;
 	bool is_top_level, is_raw, stop = false;
@@ -416,11 +416,11 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 			       sizeof(struct ploop_pvd_header));
 		}
 
-		init_be_iter(size_in_clus, md->id, &i, &end);
+		init_be_iter(nr_be, md->id, &i, &end);
 
 		for (; i <= end; i++) {
 			clu = page_clu_idx_to_bat_clu(md->id, i);
-			if (clu == size_in_clus - 1)
+			if (clu == nr_be - 1)
 				stop = true;
 
 			if (bat_entries[i] != BAT_ENTRY_NONE) {
@@ -473,7 +473,7 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 	struct ploop_delta *deltas = ploop->deltas;
 	struct rb_root md_root = RB_ROOT;
 	loff_t file_size;
-	u32 size_in_clus;
+	u32 nr_be;
 	int ret;
 
 	ret = ploop_check_delta_length(ploop, file, &file_size);
@@ -481,25 +481,23 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 		goto out;
 
 	if (!is_raw) {
-		ret = ploop_read_delta_metadata(ploop, file, &md_root,
-						&size_in_clus);
+		ret = ploop_read_delta_metadata(ploop, file, &md_root, &nr_be);
 		if (ret)
 			goto out;
 	} else {
-		size_in_clus = POS_TO_CLU(ploop, file_size);
+		nr_be = POS_TO_CLU(ploop, file_size);
 	}
 
 	ret = -EBADSLT; /* Lower delta can't be bigger then upper */
-	if (level != top_level(ploop) &&
-	    size_in_clus > deltas[level + 1].size_in_clus)
+	if (level != top_level(ploop) && nr_be > deltas[level + 1].nr_be)
 		goto out;
 
-	apply_delta_mappings(ploop, deltas, level, &md_root, size_in_clus);
+	apply_delta_mappings(ploop, deltas, level, &md_root, nr_be);
 
 	deltas[level].file = file;
 	deltas[level].file_size = file_size;
 	deltas[level].file_preallocated_area_start = file_size;
-	deltas[level].size_in_clus = size_in_clus;
+	deltas[level].nr_be = nr_be;
 	deltas[level].is_raw = is_raw;
 	ret = 0;
 out:
