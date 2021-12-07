@@ -285,7 +285,7 @@ void md_page_erase(struct qcow2 *qcow2, struct md_page *md);
 void free_md_page(struct md_page *md);
 void zero_fill_page_from(struct page *page, unsigned int from);
 int rw_page_sync(unsigned int rw, struct qcow2 *qcow2, u64 index, struct page *page);
-void call_rw_iter(struct file *file, loff_t pos, unsigned int rw,
+void call_rw_iter(struct qcow2 *qcow2, loff_t pos, unsigned int rw,
 		  struct iov_iter *iter, struct qio *qio);
 void calc_cached_parameters(struct qcow2 *qcow2, struct QCowHeader *hdr);
 void slow_wb_timer_fn(struct timer_list *t);
