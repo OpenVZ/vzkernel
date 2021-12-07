@@ -223,13 +223,10 @@ out:
 	return ret;
 }
 
-static int qcow2_get_img_fd(struct qcow2_target *tgt, u32 img_id,
-			    char *result, unsigned int maxlen)
+static struct qcow2 *qcow2_get_img(struct qcow2_target *tgt, u32 img_id)
 {
 	struct qcow2 *qcow2 = tgt->top;
-	unsigned int sz = 0;
-	struct file *file;
-	int skip, fd;
+	int skip;
 
 	lockdep_assert_held(&tgt->ctl_mutex); /* tgt->top */
 
@@ -239,7 +236,20 @@ static int qcow2_get_img_fd(struct qcow2_target *tgt, u32 img_id,
 		skip--;
 	}
 
-	if (!qcow2 || skip) {
+	if (!qcow2 || skip)
+		return NULL;
+	return qcow2;
+}
+
+static int qcow2_get_img_fd(struct qcow2_target *tgt, u32 img_id,
+			    char *result, unsigned int maxlen)
+{
+	struct qcow2 *qcow2;
+	unsigned int sz = 0;
+	int fd;
+
+	qcow2 = qcow2_get_img(tgt, img_id);
+	if (!qcow2) {
 		result[0] = 0; /* empty output */
 		return 1;
 	}
@@ -254,27 +264,19 @@ static int qcow2_get_img_fd(struct qcow2_target *tgt, u32 img_id,
 		return 0;
 	}
 
-	file = qcow2->file;
-	fd_install(fd, get_file(file));
+	fd_install(fd, get_file(qcow2->file));
 	return 1;
 }
 
 static int qcow2_get_img_name(struct qcow2_target *tgt, u32 img_id,
 			      char *result, unsigned int maxlen)
 {
-	struct qcow2 *qcow2 = tgt->top;
-	int skip, ret;
+	struct qcow2 *qcow2;
 	char *p;
+	int ret;
 
-	lockdep_assert_held(&tgt->ctl_mutex); /* tgt->top */
-
-	skip = tgt->nr_images - 1 - img_id;
-	while (qcow2 && skip > 0) {
-		qcow2 = qcow2->lower;
-		skip--;
-	}
-
-	if (!qcow2 || skip) {
+	qcow2 = qcow2_get_img(tgt, img_id);
+	if (!qcow2) {
 		result[0] = 0; /* empty output */
 		return 1;
 	}
