@@ -301,12 +301,30 @@ out_ref_dec:
 	return ret;
 }
 
+static int qcow2_set_fault_injection(struct qcow2_target *tgt,
+				     u32 img_id, u32 ratio)
+{
+	struct qcow2 *qcow2;
+	u8 ref_index;
+
+	if (ratio > 100 * QCOW2_FAULT_RATIO)
+		return -EINVAL;
+
+	qcow2 = qcow2_get_img(tgt, img_id, &ref_index);
+	if (!qcow2)
+		return -ENOENT;
+
+	qcow2->fault_injection = ratio; /* Unlocked */
+	qcow2_ref_dec(tgt, ref_index);
+	return 0;
+}
+
 int qcow2_message(struct dm_target *ti, unsigned int argc, char **argv,
 		  char *result, unsigned int maxlen)
 {
 	struct qcow2_target *tgt = to_qcow2_target(ti);
 	int ret = -EPERM;
-	u32 val;
+	u32 val, val2;
 
 	if (!capable(CAP_SYS_ADMIN))
 		goto out;
@@ -328,6 +346,14 @@ int qcow2_message(struct dm_target *ti, unsigned int argc, char **argv,
 			goto out;
 		}
 		ret = qcow2_get_img_name(tgt, val, result, maxlen);
+		goto out;
+	} else if (!strcmp(argv[0], "set_fault_injection")) {
+		if (argc != 3 || kstrtou32(argv[1], 10, &val) ||
+				 kstrtou32(argv[2], 10, &val2)) {
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = qcow2_set_fault_injection(tgt, val, val2);
 		goto out;
 	}
 

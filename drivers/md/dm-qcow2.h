@@ -175,6 +175,9 @@ struct qcow2 {
 	/* File size covered by single page of block entries */
 	loff_t r2_page_covered_file_size;
 
+#define QCOW2_FAULT_RATIO 1000
+	u32 fault_injection; /* In 1%/QCOW2_FAULT_RATIO */
+
 	spinlock_t deferred_lock ____cacheline_aligned;
 	spinlock_t md_pages_lock;
 
