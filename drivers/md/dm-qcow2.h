@@ -122,8 +122,6 @@ struct qcow2_target {
 	bool md_writeback_error;
 	bool truncate_error;
 
-	unsigned int nr_images;
-
 	atomic_t service_qios;
 	struct wait_queue_head service_wq;
 
@@ -160,6 +158,7 @@ struct qcow2 {
 	/* Position to search next unused cluster */
 	loff_t free_cluster_search_pos;
 
+	u32 img_id;
 	struct qcow2 *lower; /* Lower delta (backing file) */
 
 	struct rb_root md_pages; /* Metadata pages */
