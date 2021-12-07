@@ -1245,7 +1245,7 @@ static void __submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio, u32 nr_segs
 	iov_iter_bvec(&iter, rw, bvec, nr_segs, qio->bi_iter.bi_size);
 	iter.iov_offset = qio->bi_iter.bi_bvec_done;
 
-	call_rw_iter(qcow2->file, pos, rw, &iter, qio);
+	call_rw_iter(qcow2, pos, rw, &iter, qio);
 }
 
 static void submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio)

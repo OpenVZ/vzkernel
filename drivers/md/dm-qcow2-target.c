@@ -95,10 +95,11 @@ static void qcow2_aio_complete(struct kiocb *iocb, long ret, long ret2)
 	qcow2_aio_do_completion(qio);
 }
 
-void call_rw_iter(struct file *file, loff_t pos, unsigned int rw,
+void call_rw_iter(struct qcow2 *qcow2, loff_t pos, unsigned int rw,
 		  struct iov_iter *iter, struct qio *qio)
 {
 	struct kiocb *iocb = &qio->iocb;
+	struct file *file = qcow2->file;
 	int ret;
 
 	iocb->ki_pos = pos;
