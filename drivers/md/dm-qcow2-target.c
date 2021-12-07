@@ -700,7 +700,7 @@ out:
 
 static int qcow2_parse_metadata(struct dm_target *ti, struct qcow2_target *tgt)
 {
-	unsigned int i, nr_images = tgt->nr_images;
+	unsigned int i, nr_images = tgt->top->img_id + 1;
 	struct qcow2 *qcow2, *upper = NULL;
 	int ret;
 
@@ -753,6 +753,7 @@ static int qcow2_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 			ret = PTR_ERR(qcow2);
 			goto err;
 		}
+		qcow2->img_id = i;
 
 		ret = qcow2_attach_file(ti, tgt, qcow2, fd);
 		if (ret) {
@@ -762,8 +763,6 @@ static int qcow2_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 		upper = qcow2;
 	}
-
-	tgt->nr_images = argc;
 
 	ret = qcow2_parse_metadata(ti, tgt);
 	if (ret)
@@ -849,7 +848,7 @@ static void qcow2_status(struct dm_target *ti, status_type_t type,
 		result[0] = '\0';
 		break;
 	case STATUSTYPE_TABLE:
-		DMEMIT("%u v%u %llu", tgt->nr_images, hdr->version,
+		DMEMIT("%u v%u %llu", qcow2->img_id + 1, hdr->version,
 				      to_sector(qcow2->clu_size));
 		break;
 	case STATUSTYPE_IMA:
