@@ -315,24 +315,28 @@ int qcow2_message(struct dm_target *ti, unsigned int argc, char **argv,
 	if (argc < 1)
 		goto out;
 
+	if (!strcmp(argv[0], "get_img_fd")) {
+		if (argc != 2 || kstrtou32(argv[1], 10, &val)) {
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = qcow2_get_img_fd(tgt, val, result, maxlen);
+		goto out;
+	} else if (!strcmp(argv[0], "get_img_name")) {
+		if (argc != 2 || kstrtou32(argv[1], 10, &val)) {
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = qcow2_get_img_name(tgt, val, result, maxlen);
+		goto out;
+	}
+
 	ret = mutex_lock_killable(&tgt->ctl_mutex);
 	if (ret)
 		goto out;
 
 	if (!strcmp(argv[0], "get_errors")) {
 		ret = qcow2_get_errors(tgt, result, maxlen);
-	} else if (!strcmp(argv[0], "get_img_fd")) {
-		if (argc != 2 || kstrtou32(argv[1], 10, &val)) {
-			ret = -EINVAL;
-			goto unlock;
-		}
-		ret = qcow2_get_img_fd(tgt, val, result, maxlen);
-	} else if (!strcmp(argv[0], "get_img_name")) {
-		if (argc != 2 || kstrtou32(argv[1], 10, &val)) {
-			ret = -EINVAL;
-			goto unlock;
-		}
-		ret = qcow2_get_img_name(tgt, val, result, maxlen);
 	} else if (!tgt->service_operations_allowed) {
 		ret = -EBUSY; /* Suspended */
 		/* Service operations goes below: */
@@ -343,7 +347,7 @@ int qcow2_message(struct dm_target *ti, unsigned int argc, char **argv,
 	} else {
 		ret = -ENOTTY;
 	}
-unlock:
+
 	mutex_unlock(&tgt->ctl_mutex);
 out:
 	return ret;
