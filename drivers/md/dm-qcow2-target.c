@@ -2,6 +2,7 @@
 /*
  *  Copyright (C) 2021 Virtuozzo International GmbH. All rights reserved.
  */
+#include <linux/prandom.h>
 #include <linux/uio.h>
 #include <linux/file.h>
 
@@ -80,6 +81,17 @@ int rw_page_sync(unsigned int rw, struct qcow2 *qcow2,
 	return rw_pages_sync(rw, qcow2, index, pages, 1);
 }
 
+static bool should_fail_rw(struct qcow2 *qcow2)
+{
+	u32 fault_injection = data_race(qcow2->fault_injection);
+
+	if (likely(!fault_injection))
+		return false;
+	if (fault_injection < prandom_u32() % (100 * QCOW2_FAULT_RATIO))
+		return false;
+	return true;
+}
+
 static void qcow2_aio_do_completion(struct qio *qio)
 {
 	if (!atomic_dec_and_test(&qio->aio_ref))
@@ -111,7 +123,9 @@ void call_rw_iter(struct qcow2 *qcow2, loff_t pos, unsigned int rw,
 
 	atomic_set(&qio->aio_ref, 2);
 
-	if (rw == WRITE)
+	if (unlikely(should_fail_rw(qcow2)))
+		ret = -EIO;
+	else if (rw == WRITE)
 		ret = call_write_iter(file, iocb, iter);
 	else
 		ret = call_read_iter(file, iocb, iter);
