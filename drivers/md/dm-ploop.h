@@ -464,16 +464,20 @@ static inline bool md_page_cluster_is_in_top_delta(struct ploop *ploop,
 static inline void init_be_iter(u32 nr_be, u32 page_id,
 				u32 *start, u32 *end)
 {
-	u32 last_page = bat_clu_to_page_nr(nr_be - 1);
 	unsigned int count = PAGE_SIZE / sizeof(map_index_t);
+	u32 rem, last_page = bat_clu_to_page_nr(nr_be - 1);
 
 	*start = 0;
 	if (page_id == 0)
 		*start = PLOOP_MAP_OFFSET;
 
 	*end = count - 1;
-	if (page_id == last_page)
-		*end = ((nr_be + PLOOP_MAP_OFFSET) % count) - 1;
+	if (page_id == last_page) {
+		rem = (nr_be + PLOOP_MAP_OFFSET) % count;
+		/* Adjust *end only in case last page is not full. */
+		if (rem)
+			*end = rem - 1;
+	}
 }
 
 static inline void ploop_init_be_iter(struct ploop *ploop, u32 page_id,
