@@ -43,7 +43,7 @@ struct ploop_delta {
 	struct file *file;
 	loff_t file_size;
 	loff_t file_preallocated_area_start;
-	u32 size_in_clus;
+	u32 nr_be; /* nr BAT entries (or file length in clus if RAW) */
 	bool is_raw;
 };
 
