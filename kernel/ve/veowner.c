@@ -7,7 +7,6 @@
  *
  */
 
-#include <linux/ve.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/proc_fs.h>
@@ -66,13 +65,6 @@ static struct ctl_table vz_fs_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &ve_mount_nr_min,
 		.extra2		= &ve_mount_nr_max,
-	},
-	{
-		.procname	= "fsync-enable",
-		.data		= &ve0.fsync_enable,
-		.maxlen		= sizeof(int),
-		.mode		= 0644 | S_ISVTX,
-		.proc_handler	= &proc_dointvec_virtual,
 	},
 	{ }
 };

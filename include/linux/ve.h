@@ -61,8 +61,6 @@ struct ve_struct {
 	struct kstat_lat_pcpu_struct    sched_lat_ve;
 	int			odirect_enable;
 
-	int			fsync_enable;
-
 #if IS_ENABLED(CONFIG_BINFMT_MISC)
 	struct binfmt_misc	*binfmt_misc;
 #endif
