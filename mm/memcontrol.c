@@ -176,6 +176,8 @@ struct mem_cgroup_event {
 
 static void mem_cgroup_threshold(struct mem_cgroup *memcg);
 static void mem_cgroup_oom_notify(struct mem_cgroup *memcg);
+static void accumulate_ooms(struct mem_cgroup *memcg, unsigned long *oom,
+			unsigned long *kill);
 
 /* Stuffs for move charges at task migration. */
 /*
@@ -4200,6 +4202,12 @@ void mem_cgroup_fill_vmstat(struct mem_cgroup *memcg, unsigned long *stats)
 	vm_stats[PSWPOUT] = memcg_events(memcg, PSWPOUT);
 	vm_stats[PGFAULT] = memcg_events(memcg, PGFAULT);
 	vm_stats[PGMAJFAULT] = memcg_events(memcg, PGMAJFAULT);
+
+	{
+		unsigned long dummy;
+
+		accumulate_ooms(memcg, &dummy, vm_stats + OOM_KILL);
+	}
 #endif
 }
 
