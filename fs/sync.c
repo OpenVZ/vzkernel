@@ -17,6 +17,7 @@
 #include <linux/pagemap.h>
 #include <linux/quotaops.h>
 #include <linux/backing-dev.h>
+#include <linux/ve.h>
 #include "internal.h"
 
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \
@@ -78,6 +79,17 @@ static void sync_fs_one_sb(struct super_block *sb, void *arg)
 		sb->s_op->sync_fs(sb, *(int *)arg);
 }
 
+int ve_fsync_behavior(void)
+{
+	struct ve_struct *ve;
+
+	ve = get_exec_env();
+	if (ve_is_super(ve))
+		return FSYNC_ALWAYS;
+	else
+		return ve->fsync_enable;
+}
+
 /*
  * Sync everything. We start by waking flusher threads so that most of
  * writeback runs on all devices in parallel. Then we sync all inodes reliably
@@ -91,6 +103,9 @@ static void sync_fs_one_sb(struct super_block *sb, void *arg)
 void ksys_sync(void)
 {
 	int nowait = 0, wait = 1;
+
+	if (ve_fsync_behavior() == FSYNC_NEVER)
+		return;
 
 	wakeup_flusher_threads(WB_REASON_SYNC);
 	iterate_supers(sync_inodes_one_sb, NULL);
@@ -144,11 +159,14 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 {
 	struct fd f = fdget(fd);
 	struct super_block *sb;
-	int ret, ret2;
+	int ret = 0, ret2 = 0;
 
 	if (!f.file)
 		return -EBADF;
 	sb = f.file->f_path.dentry->d_sb;
+
+	if (ve_fsync_behavior() == FSYNC_NEVER)
+		goto fdput;
 
 	down_read(&sb->s_umount);
 	ret = sync_filesystem(sb);
@@ -156,6 +174,7 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 
 	ret2 = errseq_check_and_advance(&sb->s_wb_err, &f.file->f_sb_err);
 
+fdput:
 	fdput(f);
 	return ret ? ret : ret2;
 }
@@ -203,7 +222,10 @@ static int do_fsync(unsigned int fd, int datasync)
 	int ret = -EBADF;
 
 	if (f.file) {
-		ret = vfs_fsync(f.file, datasync);
+		if (ve_fsync_behavior() != FSYNC_NEVER)
+			ret = vfs_fsync(f.file, datasync);
+		else
+			ret = 0;
 		fdput(f);
 	}
 	return ret;
