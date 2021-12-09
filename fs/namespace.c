@@ -2830,6 +2830,23 @@ static inline void ve_mount_nr_dec(struct mount *mnt)
 	mnt->ve_owner = NULL;
 }
 
+bool is_sb_ve_accessible(struct ve_struct *ve, struct super_block *sb)
+{
+	struct mount *mnt;
+	bool ret = false;
+
+	lock_mount_hash();
+	list_for_each_entry(mnt, &sb->s_mounts, mnt_instance) {
+		if (mnt->ve_owner == ve) {
+			ret = true;
+			break;
+		}
+	}
+	unlock_mount_hash();
+
+	return ret;
+}
+
 #else /* CONFIG_VE */
 
 static inline int ve_mount_allowed(void) { return 1; }
