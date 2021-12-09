@@ -3042,6 +3042,18 @@ extern bool path_is_under(const struct path *, const struct path *);
 
 extern char *file_path(struct file *, char *, int);
 
+#define FSYNC_NEVER	0	/* ve syncs are ignored    */
+#define FSYNC_ALWAYS	1	/* ve syncs work as ususal */
+
+#ifdef CONFIG_VE
+int ve_fsync_behavior(void);
+#else
+static inline int ve_fsync_behavior(void)
+{
+	return FSYNC_ALWAYS;
+}
+#endif
+
 enum fs_event_type {
 	FS_UA_MOUNT,
 	FS_UA_UMOUNT,

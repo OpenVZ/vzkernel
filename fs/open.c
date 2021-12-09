@@ -807,6 +807,9 @@ static int do_dentry_open(struct file *f,
 	if (!may_use_odirect())
 		f->f_flags &= ~O_DIRECT;
 
+	if (ve_fsync_behavior() == FSYNC_NEVER)
+		f->f_flags &= ~O_SYNC;
+
 	if (unlikely(f->f_flags & O_PATH)) {
 		f->f_mode = FMODE_PATH | FMODE_OPENED;
 		f->f_op = &empty_fops;
