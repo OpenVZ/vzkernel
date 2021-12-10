@@ -112,7 +112,7 @@ static void sync_fs_one_sb(struct super_block *sb, void *arg)
 			sb->s_op->sync_fs(sb, sarg->wait);
 
 		/* See comment in ksys_sync() bellow */
-		if (sarg->ve) {
+		if (sarg->ve && sb->s_bdev) {
 			fdatawrite_one_bdev(sb->s_bdev, NULL);
 			fdatawait_one_bdev(sb->s_bdev, NULL);
 		}
