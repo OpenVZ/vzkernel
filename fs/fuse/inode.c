@@ -123,11 +123,17 @@ static void fuse_free_inode(struct inode *inode)
 	kfree(fi->dax);
 #endif
 
+	kmem_cache_free(fuse_inode_cachep, fi);
+}
+
+static void fuse_destroy_inode(struct inode *inode)
+{
+	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_conn *fc = get_fuse_conn(inode);
+
 	/* TODO: Probably kio context should be released inside fuse forget */
 	if (fc->kio.cached_op && fc->kio.cached_op->inode_release)
 		fc->kio.cached_op->inode_release(fi);
-
-	kmem_cache_free(fuse_inode_cachep, fi);
 }
 
 static void fuse_evict_inode(struct inode *inode)
@@ -1169,6 +1175,7 @@ static const struct export_operations fuse_export_operations = {
 static const struct super_operations fuse_super_operations = {
 	.alloc_inode    = fuse_alloc_inode,
 	.free_inode     = fuse_free_inode,
+	.destroy_inode  = fuse_destroy_inode,
 	.evict_inode	= fuse_evict_inode,
 	.write_inode	= fuse_write_inode,
 	.drop_inode	= generic_delete_inode,
@@ -1335,7 +1342,7 @@ static void process_init_reply(struct fuse_mount *fm, struct fuse_args *args,
 		fc->conn_init = 1;
 
 		if (fc->kio.cached_op) {
-			if (!fc->kio.cached_op->conn_init(fc)) {
+			if (!fc->kio.cached_op->conn_init(fm)) {
 				kfree(ia);
 				return;
 			}
@@ -1712,6 +1719,7 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->destroy = ctx->destroy || ctx->umount_wait;
 	fc->no_control = ctx->no_control;
 	fc->no_force_umount = ctx->no_force_umount;
+	fc->kdirect_io = ctx->kdirect_io;
 
 	if (fc->kdirect_io) {
 		err = -EINVAL;
@@ -1899,7 +1907,7 @@ void fuse_conn_destroy(struct fuse_mount *fm)
 	struct fuse_conn *fc = fm->fc;
 
 	if (fc->kio.op) { /* At this point all pending kio must be completed. */
-		fc->kio.op->conn_fini(fc);
+		fc->kio.op->conn_fini(fm);
 		fc->kio.ctx = NULL;
 	}
 
