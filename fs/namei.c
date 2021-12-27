@@ -2809,8 +2809,7 @@ static int may_delete(struct user_namespace *mnt_userns, struct inode *dir,
 
 	if (check_sticky(mnt_userns, dir, inode) || IS_APPEND(inode) ||
 	    IS_IMMUTABLE(inode) || IS_SWAPFILE(inode) ||
-	    HAS_UNMAPPED_ID(mnt_userns, inode) ||
-	    (IS_SWAPFILE(inode) && inode->i_nlink == 1))
+	    HAS_UNMAPPED_ID(mnt_userns, inode))
 		return -EPERM;
 	if (isdir) {
 		if (!d_is_dir(victim))
