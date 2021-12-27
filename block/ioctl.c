@@ -529,6 +529,7 @@ static int blkdev_common_ioctl(struct block_device *bdev, fmode_t mode,
 	case BLKCBTGET:
 	case BLKCBTSET:
 	case BLKCBTCLR:
+	case BLKCBTMISC:
 		return blk_cbt_ioctl(bdev, cmd, (char __user *)arg);
 	default:
 		return -ENOIOCTLCMD;
