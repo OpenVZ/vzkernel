@@ -449,15 +449,15 @@ static int __ref devtmpfsd(void *p)
 int ve_mount_devtmpfs(struct ve_struct *ve)
 {
 	char opts[] = "mode=0755";
-	struct vfsmount *mnt;
+	struct vfsmount *ve_mnt;
 
-	mnt = vfs_kern_mount(&internal_fs_type, 0, "devtmpfs", opts);
-	if (IS_ERR(mnt)) {
+	ve_mnt = vfs_kern_mount(&internal_fs_type, 0, "devtmpfs", opts);
+	if (IS_ERR(ve_mnt)) {
 		printk(KERN_ERR "CT#%s: devtmpfs: unable to create devtmpfs %ld\n",
-		       ve_name(ve), PTR_ERR(mnt));
-		return PTR_ERR(mnt);
+		       ve_name(ve), PTR_ERR(ve_mnt));
+		return PTR_ERR(ve_mnt);
 	}
-	ve->devtmpfs_mnt = mnt;
+	ve->devtmpfs_mnt = ve_mnt;
 
 	return 0;
 }
