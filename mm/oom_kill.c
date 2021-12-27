@@ -1063,7 +1063,7 @@ static void oom_berserker(struct oom_control *oc)
 		}
 
 		count_vm_event(OOM_KILL);
-		memcg_memory_event(memcg, MEMCG_OOM_KILL);
+		memcg_memory_event_mm(p->mm, MEMCG_OOM_KILL);
 
 		do_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_TGID);
 
