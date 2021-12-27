@@ -1911,5 +1911,5 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 out_reset:
 	ploop_break_bat_update(ploop, md);
 out_error:
-	return errno_to_blk_status(err);
+	return err;
 }
