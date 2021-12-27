@@ -875,6 +875,18 @@ void cgroup1_release_agent(struct work_struct *work)
 				  struct cgroup,
 				  release_list);
 		list_del_init(&cgrp->release_list);
+
+		/*
+		 * Once the lock gets released, concurrently running removal
+		 * of the same cgrp via rmdir() won't find the cgrp in
+		 * ve_rm_from_release_list() called from cgroup_destroy_locked()
+		 * and can progress up to end and put the last cgrp reference.
+		 * This can result into cgrp reaching kfree() before this thread
+		 * stops using it.
+		 */
+		if (WARN_ON(!cgroup_tryget(cgrp)))
+			continue;
+
 		spin_unlock_irqrestore(&ve->release_list_lock, flags);
 
 		rcu_read_lock();
@@ -907,6 +919,7 @@ void cgroup1_release_agent(struct work_struct *work)
 					    "%s %s failed: %d\n",
 					    agentbuf, pathbuf, ret);
 continue_locked:
+		cgroup_put(cgrp);
 		spin_lock_irqsave(&ve->release_list_lock, flags);
 	}
 	spin_unlock_irqrestore(&ve->release_list_lock, flags);
