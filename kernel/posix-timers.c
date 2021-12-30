@@ -146,6 +146,10 @@ void monotonic_abs_to_ve(clockid_t which_clock, struct timespec *tp)
 		set_normalized_timespec(tp,
 				tp->tv_sec - ve->start_timespec.tv_sec,
 				tp->tv_nsec - ve->start_timespec.tv_nsec);
+	else if (which_clock == CLOCK_BOOTTIME)
+		set_normalized_timespec(tp,
+				tp->tv_sec - ve->real_start_timespec.tv_sec,
+				tp->tv_nsec - ve->real_start_timespec.tv_nsec);
 }
 
 void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp)
@@ -156,6 +160,10 @@ void monotonic_ve_to_abs(clockid_t which_clock, struct timespec *tp)
 		set_normalized_timespec(tp,
 				tp->tv_sec + ve->start_timespec.tv_sec,
 				tp->tv_nsec + ve->start_timespec.tv_nsec);
+	else if (which_clock == CLOCK_BOOTTIME)
+		set_normalized_timespec(tp,
+				tp->tv_sec + ve->real_start_timespec.tv_sec,
+				tp->tv_nsec + ve->real_start_timespec.tv_nsec);
 	if (timespec_compare(tp, &zero_time) <= 0) {
 		tp->tv_sec =  0;
 		tp->tv_nsec = 1;
