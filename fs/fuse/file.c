@@ -2808,8 +2808,17 @@ static int fuse_file_lock(struct file *file, int cmd, struct file_lock *fl)
 	} else {
 		if (fc->no_lock)
 			err = posix_lock_file(file, fl, NULL);
-		else
+		else {
+			bool async = (fl->fl_flags & FL_SLEEP) && IS_SETLK(cmd);
+
+			if (async)
+				fl->fl_flags &= ~FL_SLEEP;
+
 			err = fuse_setlk(file, fl, 0);
+
+			if (async)
+				fl->fl_flags |= FL_SLEEP;
+		}
 	}
 	return err;
 }
