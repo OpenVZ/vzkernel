@@ -2511,8 +2511,14 @@ static long proc_aio_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 	return ret;
 }
 
+ssize_t proc_aio_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
+{
+	return 0;
+}
+
 static const struct file_operations proc_aio_operations = {
 	.unlocked_ioctl		= proc_aio_ioctl,
+	.read			= proc_aio_read,
 };
 #endif /* CONFIG_VE */
 
