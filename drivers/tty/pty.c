@@ -1054,6 +1054,7 @@ static int vtty_install(struct tty_driver *driver, struct tty_struct *tty)
 	tty->link = peer;
 	peer->link = tty;
 
+	tty_set_lock_subclass(tty);
 	vtty_map_set(map, tty);
 	return 0;
 
@@ -1307,7 +1308,6 @@ int vtty_open_master(envid_t veid, int idx)
 		}
 		tty->count--;
 		tty_unlock(tty);
-		tty_set_lock_subclass(tty);
 		tty = tty->link;
 	}
 
