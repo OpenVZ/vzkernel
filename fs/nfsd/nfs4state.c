@@ -5991,8 +5991,10 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	}
 
 	if (fl_flags & FL_SLEEP) {
+		nbl->nbl_time = get_seconds();
 		spin_lock(&nn->blocked_locks_lock);
 		list_add_tail(&nbl->nbl_list, &lock_sop->lo_blocked);
+		list_add_tail(&nbl->nbl_lru, &nn->blocked_locks_lru);
 		spin_unlock(&nn->blocked_locks_lock);
 	}
 
@@ -6003,10 +6005,6 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		status = 0;
 		break;
 	case FILE_LOCK_DEFERRED:
-		nbl->nbl_time = get_seconds();
-		spin_lock(&nn->blocked_locks_lock);
-		list_add_tail(&nbl->nbl_lru, &nn->blocked_locks_lru);
-		spin_unlock(&nn->blocked_locks_lock);
 		nbl = NULL;
 		/* Fallthrough */
 	case -EAGAIN:		/* conflock holds conflicting lock */
