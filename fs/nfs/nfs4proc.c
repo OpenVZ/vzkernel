@@ -6896,7 +6896,9 @@ static void nfs4_locku_done(struct rpc_task *task, void *data)
 	switch (task->tk_status) {
 		case 0:
 			renew_lease(calldata->server, calldata->timestamp);
-			locks_lock_inode_wait(calldata->lsp->ls_state->inode, &calldata->fl);
+			if (!(calldata->fl.fl_flags & FL_ACCESS))
+				locks_lock_inode_wait(calldata->lsp->ls_state->inode,
+						      &calldata->fl);
 			if (nfs4_update_lock_stateid(calldata->lsp,
 					&calldata->res.stateid))
 				break;
