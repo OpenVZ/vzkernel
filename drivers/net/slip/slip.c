@@ -154,14 +154,14 @@ static int sl_alloc_bufs(struct slip *sl, int mtu)
 	 */
 	if (len < 576 * 2)
 		len = 576 * 2;
-	rbuff = kmalloc(len + 4, GFP_KERNEL);
+	rbuff = kmalloc(len + 4, GFP_KERNEL | __GFP_ORDER_NOWARN);
 	if (rbuff == NULL)
 		goto err_exit;
-	xbuff = kmalloc(len + 4, GFP_KERNEL);
+	xbuff = kmalloc(len + 4, GFP_KERNEL | __GFP_ORDER_NOWARN);
 	if (xbuff == NULL)
 		goto err_exit;
 #ifdef SL_INCLUDE_CSLIP
-	cbuff = kmalloc(len + 4, GFP_KERNEL);
+	cbuff = kmalloc(len + 4, GFP_KERNEL | __GFP_ORDER_NOWARN);
 	if (cbuff == NULL)
 		goto err_exit;
 	slcomp = slhc_init(16, 16);
@@ -236,10 +236,10 @@ static int sl_realloc_bufs(struct slip *sl, int mtu)
 	if (len < 576 * 2)
 		len = 576 * 2;
 
-	xbuff = kmalloc(len + 4, GFP_ATOMIC);
-	rbuff = kmalloc(len + 4, GFP_ATOMIC);
+	xbuff = kmalloc(len + 4, GFP_ATOMIC | __GFP_ORDER_NOWARN);
+	rbuff = kmalloc(len + 4, GFP_ATOMIC | __GFP_ORDER_NOWARN);
 #ifdef SL_INCLUDE_CSLIP
-	cbuff = kmalloc(len + 4, GFP_ATOMIC);
+	cbuff = kmalloc(len + 4, GFP_ATOMIC | __GFP_ORDER_NOWARN);
 #endif
 
 
