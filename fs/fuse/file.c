@@ -2483,11 +2483,6 @@ static int fuse_setlk(struct file *file, struct file_lock *fl, int flock)
 	pid_t pid_nr = pid_nr_ns(pid, fm->fc->pid_ns);
 	int err;
 
-	if (fl->fl_lmops && fl->fl_lmops->lm_grant) {
-		/* NLM needs asynchronous locks, which we don't support yet */
-		return -ENOLCK;
-	}
-
 	/* Unlock on close is handled by the flush method */
 	if ((fl->fl_flags & FL_CLOSE_POSIX) == FL_CLOSE_POSIX)
 		return 0;
