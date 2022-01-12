@@ -104,7 +104,7 @@ slhc_init(int rslots, int tslots)
 
 	if (rslots > 0) {
 		size_t rsize = rslots * sizeof(struct cstate);
-		comp->rstate = kzalloc(rsize, GFP_KERNEL);
+		comp->rstate = kzalloc(rsize, GFP_KERNEL | __GFP_ORDER_NOWARN);
 		if (! comp->rstate)
 			goto out_free;
 		comp->rslot_limit = rslots - 1;
@@ -112,7 +112,7 @@ slhc_init(int rslots, int tslots)
 
 	if (tslots > 0) {
 		size_t tsize = tslots * sizeof(struct cstate);
-		comp->tstate = kzalloc(tsize, GFP_KERNEL);
+		comp->tstate = kzalloc(tsize, GFP_KERNEL | __GFP_ORDER_NOWARN);
 		if (! comp->tstate)
 			goto out_free2;
 		comp->tslot_limit = tslots - 1;
