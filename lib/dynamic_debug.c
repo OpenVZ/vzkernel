@@ -8,6 +8,7 @@
  * By Greg Banks <gnb@melbourne.sgi.com>
  * Copyright (c) 2008 Silicon Graphics Inc.  All Rights Reserved.
  * Copyright (C) 2011 Bart Van Assche.  All Rights Reserved.
+ * Copyright (C) 2013 Du, Changbin <changbin.du@gmail.com>
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
@@ -24,6 +25,7 @@
 #include <linux/sysctl.h>
 #include <linux/ctype.h>
 #include <linux/string.h>
+#include <linux/parser.h>
 #include <linux/string_helpers.h>
 #include <linux/uaccess.h>
 #include <linux/dynamic_debug.h>
@@ -147,7 +149,8 @@ static int ddebug_change(const struct ddebug_query *query,
 	list_for_each_entry(dt, &ddebug_tables, link) {
 
 		/* match against the module name */
-		if (query->module && strcmp(query->module, dt->mod_name))
+		if (query->module &&
+		    !match_wildcard(query->module, dt->mod_name))
 			continue;
 
 		for (i = 0; i < dt->num_ddebugs; i++) {
@@ -155,14 +158,16 @@ static int ddebug_change(const struct ddebug_query *query,
 
 			/* match against the source filename */
 			if (query->filename &&
-			    strcmp(query->filename, dp->filename) &&
-			    strcmp(query->filename, kbasename(dp->filename)) &&
-			    strcmp(query->filename, trim_prefix(dp->filename)))
+			    !match_wildcard(query->filename, dp->filename) &&
+			    !match_wildcard(query->filename,
+					   kbasename(dp->filename)) &&
+			    !match_wildcard(query->filename,
+					   trim_prefix(dp->filename)))
 				continue;
 
 			/* match against the function */
 			if (query->function &&
-			    strcmp(query->function, dp->function))
+			    !match_wildcard(query->function, dp->function))
 				continue;
 
 			/* match against the format */
@@ -578,7 +583,7 @@ int __dynamic_dev_dbg(struct _ddebug *descriptor,
 	} else {
 		char buf[PREFIX_SIZE];
 
-		res = dev_printk_emit(7, dev, "%s%s %s: %pV",
+		res = dev_printk_emit(LOGLEVEL_DEBUG, dev, "%s%s %s: %pV",
 				      dynamic_emit_prefix(descriptor, buf),
 				      dev_driver_string(dev), dev_name(dev),
 				      &vaf);
@@ -610,14 +615,16 @@ int __dynamic_netdev_dbg(struct _ddebug *descriptor,
 	if (dev && dev->dev.parent) {
 		char buf[PREFIX_SIZE];
 
-		res = dev_printk_emit(7, dev->dev.parent,
-				      "%s%s %s %s: %pV",
+		res = dev_printk_emit(LOGLEVEL_DEBUG, dev->dev.parent,
+				      "%s%s %s %s%s: %pV",
 				      dynamic_emit_prefix(descriptor, buf),
 				      dev_driver_string(dev->dev.parent),
 				      dev_name(dev->dev.parent),
-				      netdev_name(dev), &vaf);
+				      netdev_name(dev), netdev_reg_state(dev),
+				      &vaf);
 	} else if (dev) {
-		res = printk(KERN_DEBUG "%s: %pV", netdev_name(dev), &vaf);
+		res = printk(KERN_DEBUG "%s%s: %pV", netdev_name(dev),
+			     netdev_reg_state(dev), &vaf);
 	} else {
 		res = printk(KERN_DEBUG "(NULL net_device): %pV", &vaf);
 	}

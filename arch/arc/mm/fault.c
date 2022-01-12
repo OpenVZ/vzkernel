@@ -16,7 +16,7 @@
 #include <linux/kdebug.h>
 #include <asm/pgalloc.h>
 
-static int handle_vmalloc_fault(struct mm_struct *mm, unsigned long address)
+static int handle_vmalloc_fault(unsigned long address)
 {
 	/*
 	 * Synchronize this task's top level page-table
@@ -26,7 +26,7 @@ static int handle_vmalloc_fault(struct mm_struct *mm, unsigned long address)
 	pud_t *pud, *pud_k;
 	pmd_t *pmd, *pmd_k;
 
-	pgd = pgd_offset_fast(mm, address);
+	pgd = pgd_offset_fast(current->active_mm, address);
 	pgd_k = pgd_offset_k(address);
 
 	if (!pgd_present(*pgd_k))
@@ -72,7 +72,7 @@ void do_page_fault(struct pt_regs *regs, int write, unsigned long address,
 	 * nothing more.
 	 */
 	if (address >= VMALLOC_START && address <= VMALLOC_END) {
-		ret = handle_vmalloc_fault(mm, address);
+		ret = handle_vmalloc_fault(address);
 		if (unlikely(ret))
 			goto bad_area_nosemaphore;
 		else
@@ -85,7 +85,7 @@ void do_page_fault(struct pt_regs *regs, int write, unsigned long address,
 	 * If we're in an interrupt or have no user
 	 * context, we must not take the fault..
 	 */
-	if (in_atomic() || !mm)
+	if (faulthandler_disabled() || !mm)
 		goto no_context;
 
 retry:
@@ -126,7 +126,7 @@ survive:
 	 * make sure we exit gracefully rather than endlessly redo
 	 * the fault.
 	 */
-	fault = handle_mm_fault(mm, vma, address, flags);
+	fault = handle_mm_fault(vma, address, flags);
 
 	/* If Pagefault was interrupted by SIGKILL, exit page fault "early" */
 	if (unlikely(fatal_signal_pending(current))) {

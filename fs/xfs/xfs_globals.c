@@ -43,3 +43,13 @@ xfs_param_t xfs_params = {
 	.fstrm_timer	= {	1,		30*100,		3600*100},
 	.eofb_timer	= {	1,		300,		3600*24},
 };
+
+struct xfs_globals xfs_globals = {
+	.log_recovery_delay	=	0,	/* no delay by default */
+	.mount_delay		=	0,	/* no delay by default */
+#ifdef XFS_ASSERT_FATAL
+	.bug_on_assert		=	true,	/* assert failures BUG() */
+#else
+	.bug_on_assert		=	false,	/* assert failures WARN() */
+#endif
+};

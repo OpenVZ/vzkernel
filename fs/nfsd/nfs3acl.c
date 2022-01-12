@@ -38,7 +38,7 @@ static __be32 nfsd3_proc_getacl(struct svc_rqst * rqstp,
 	if (nfserr)
 		RETURN_STATUS(nfserr);
 
-	if (argp->mask & ~(NFS_ACL|NFS_ACLCNT|NFS_DFACL|NFS_DFACLCNT))
+	if (argp->mask & ~NFS_ACL_MASK)
 		RETURN_STATUS(nfserr_inval);
 	resp->mask = argp->mask;
 
@@ -124,7 +124,8 @@ static __be32 nfsd3_proc_setacl(struct svc_rqst * rqstp,
 static int nfs3svc_decode_getaclargs(struct svc_rqst *rqstp, __be32 *p,
 		struct nfsd3_getaclargs *args)
 {
-	if (!(p = nfs3svc_decode_fh(p, &args->fh)))
+	p = nfs3svc_decode_fh(p, &args->fh);
+	if (!p)
 		return 0;
 	args->mask = ntohl(*p); p++;
 
@@ -139,10 +140,11 @@ static int nfs3svc_decode_setaclargs(struct svc_rqst *rqstp, __be32 *p,
 	unsigned int base;
 	int n;
 
-	if (!(p = nfs3svc_decode_fh(p, &args->fh)))
+	p = nfs3svc_decode_fh(p, &args->fh);
+	if (!p)
 		return 0;
 	args->mask = ntohl(*p++);
-	if (args->mask & ~(NFS_ACL|NFS_ACLCNT|NFS_DFACL|NFS_DFACLCNT) ||
+	if (args->mask & ~NFS_ACL_MASK ||
 	    !xdr_argsize_check(rqstp, p))
 		return 0;
 
@@ -262,6 +264,5 @@ struct svc_version	nfsd_acl_version3 = {
 		.vs_proc	= nfsd_acl_procedures3,
 		.vs_dispatch	= nfsd_dispatch,
 		.vs_xdrsize	= NFS3_SVC_XDRSIZE,
-		.vs_hidden	= 0,
 };
 

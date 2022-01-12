@@ -326,10 +326,10 @@ static int posix_cpu_clock_get(const clockid_t which_clock, struct timespec *tp)
 			error = cpu_clock_sample(which_clock,
 						 current, &rtn);
 		} else {
-			read_lock(&tasklist_lock);
+			qread_lock(&tasklist_lock);
 			error = cpu_clock_sample_group(which_clock,
 						       current, &rtn);
-			read_unlock(&tasklist_lock);
+			qread_unlock(&tasklist_lock);
 		}
 	} else {
 		/*
@@ -346,13 +346,11 @@ static int posix_cpu_clock_get(const clockid_t which_clock, struct timespec *tp)
 								 p, &rtn);
 				}
 			} else {
-				read_lock(&tasklist_lock);
 				if (thread_group_leader(p) && p->sighand) {
 					error =
 					    cpu_clock_sample_group(which_clock,
 							           p, &rtn);
 				}
-				read_unlock(&tasklist_lock);
 			}
 		}
 		rcu_read_unlock();
@@ -422,7 +420,7 @@ static int posix_cpu_timer_del(struct k_itimer *timer)
 	int ret = 0;
 
 	if (likely(p != NULL)) {
-		read_lock(&tasklist_lock);
+		qread_lock(&tasklist_lock);
 		if (unlikely(p->sighand == NULL)) {
 			/*
 			 * We raced with the reaping of the task.
@@ -437,7 +435,7 @@ static int posix_cpu_timer_del(struct k_itimer *timer)
 				list_del(&timer->it.cpu.entry);
 			spin_unlock(&p->sighand->siglock);
 		}
-		read_unlock(&tasklist_lock);
+		qread_unlock(&tasklist_lock);
 
 		if (!ret)
 			put_task_struct(p);
@@ -647,7 +645,7 @@ static int cpu_timer_sample_group(const clockid_t which_clock,
 		cpu->cpu = cputime.utime;
 		break;
 	case CPUCLOCK_SCHED:
-		cpu->sched = cputime.sum_exec_runtime + task_delta_exec(p);
+		cpu->sched = cputime.sum_exec_runtime;
 		break;
 	}
 	return 0;
@@ -667,7 +665,8 @@ static DECLARE_WORK(nohz_kick_work, nohz_kick_work_fn);
  */
 static void posix_cpu_timer_kick_nohz(void)
 {
-	schedule_work(&nohz_kick_work);
+	if (static_key_false(&context_tracking_enabled))
+		schedule_work(&nohz_kick_work);
 }
 
 bool posix_cpu_timers_can_stop_tick(struct task_struct *tsk)
@@ -706,14 +705,14 @@ static int posix_cpu_timer_set(struct k_itimer *timer, int flags,
 
 	new_expires = timespec_to_sample(timer->it_clock, &new->it_value);
 
-	read_lock(&tasklist_lock);
+	qread_lock(&tasklist_lock);
 	/*
 	 * We need the tasklist_lock to protect against reaping that
 	 * clears p->sighand.  If p has just been reaped, we can no
 	 * longer get any information about it at all.
 	 */
 	if (unlikely(p->sighand == NULL)) {
-		read_unlock(&tasklist_lock);
+		qread_unlock(&tasklist_lock);
 		put_task_struct(p);
 		timer->it.cpu.task = NULL;
 		return -ESRCH;
@@ -787,7 +786,7 @@ static int posix_cpu_timer_set(struct k_itimer *timer, int flags,
 		 * it as an overrun (thanks to bump_cpu_timer above).
 		 */
 		spin_unlock(&p->sighand->siglock);
-		read_unlock(&tasklist_lock);
+		qread_unlock(&tasklist_lock);
 		goto out;
 	}
 
@@ -807,7 +806,7 @@ static int posix_cpu_timer_set(struct k_itimer *timer, int flags,
 	}
 
 	spin_unlock(&p->sighand->siglock);
-	read_unlock(&tasklist_lock);
+	qread_unlock(&tasklist_lock);
 
 	/*
 	 * Install the new reload setting, and
@@ -882,7 +881,7 @@ static void posix_cpu_timer_get(struct k_itimer *timer, struct itimerspec *itp)
 		cpu_clock_sample(timer->it_clock, p, &now);
 		clear_dead = p->exit_state;
 	} else {
-		read_lock(&tasklist_lock);
+		qread_lock(&tasklist_lock);
 		if (unlikely(p->sighand == NULL)) {
 			/*
 			 * The process has been reaped.
@@ -892,14 +891,14 @@ static void posix_cpu_timer_get(struct k_itimer *timer, struct itimerspec *itp)
 			put_task_struct(p);
 			timer->it.cpu.task = NULL;
 			timer->it.cpu.expires.sched = 0;
-			read_unlock(&tasklist_lock);
+			qread_unlock(&tasklist_lock);
 			goto dead;
 		} else {
 			cpu_timer_sample_group(timer->it_clock, p, &now);
 			clear_dead = (unlikely(p->exit_state) &&
 				      thread_group_empty(p));
 		}
-		read_unlock(&tasklist_lock);
+		qread_unlock(&tasklist_lock);
 	}
 
 	if (unlikely(clear_dead)) {
@@ -1194,10 +1193,10 @@ void posix_cpu_timer_schedule(struct k_itimer *timer)
 			clear_dead_task(timer, now);
 			goto out;
 		}
-		read_lock(&tasklist_lock); /* arm_timer needs it.  */
+		qread_lock(&tasklist_lock); /* arm_timer needs it.  */
 		spin_lock(&p->sighand->siglock);
 	} else {
-		read_lock(&tasklist_lock);
+		qread_lock(&tasklist_lock);
 		if (unlikely(p->sighand == NULL)) {
 			/*
 			 * The process has been reaped.
@@ -1230,7 +1229,7 @@ void posix_cpu_timer_schedule(struct k_itimer *timer)
 	spin_unlock(&p->sighand->siglock);
 
 out_unlock:
-	read_unlock(&tasklist_lock);
+	qread_unlock(&tasklist_lock);
 
 out:
 	timer->it_overrun_last = timer->it_overrun;

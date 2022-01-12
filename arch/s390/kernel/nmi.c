@@ -20,6 +20,8 @@
 #include <asm/cputime.h>
 #include <asm/nmi.h>
 #include <asm/crw.h>
+#include <asm/switch_to.h>
+#include <asm/ctl_reg.h>
 
 struct mcck_struct {
 	int kill_task;
@@ -98,6 +100,7 @@ static int notrace s390_revalidate_registers(struct mci *mci)
 	int kill_task;
 	u64 zero;
 	void *fpt_save_area, *fpt_creg_save_area;
+	struct mcesa *mcesa;
 
 	kill_task = 0;
 	zero = 0;
@@ -163,6 +166,27 @@ static int notrace s390_revalidate_registers(struct mci *mci)
 			"	ld	15,120(%0)\n"
 			: : "a" (fpt_save_area));
 	}
+
+#ifdef CONFIG_64BIT
+	/* Revalidate vector registers */
+	mcesa = (struct mcesa *)(S390_lowcore.mcesad & MCESA_ORIGIN_MASK);
+	if (MACHINE_HAS_VX) {
+		union ctlreg0 cr0;
+
+		if (!mci->vr) {
+			/*
+			 * Vector registers can't be restored and therefore
+			 * the process needs to be terminated.
+			 */
+			kill_task = 1;
+		}
+		cr0.val = S390_lowcore.cregs_save_area[0];
+		cr0.afp = cr0.vx = 1;
+		__ctl_load(cr0.val, 0, 0);
+		restore_vx_regs((__vector128 *) &mcesa->vector_save_area);
+		__ctl_load(S390_lowcore.cregs_save_area[0], 0, 0);
+	}
+#endif
 	/* Revalidate access registers */
 	asm volatile(
 		"	lam	0,15,0(%0)"
@@ -191,6 +215,19 @@ static int notrace s390_revalidate_registers(struct mci *mci)
 			"	lctl	0,15,0(%0)"
 			: : "a" (&S390_lowcore.cregs_save_area));
 #endif
+	}
+	/* Validate guarded storage registers */
+	if (MACHINE_HAS_GS && (S390_lowcore.cregs_save_area[2] & (1UL << 4))) {
+		if (!mci->gs)
+			/*
+			 * Guarded storage register can't be restored and
+			 * the current processes uses guarded storage.
+			 * It has to be terminated.
+			 */
+			kill_task = 1;
+		else
+			load_gs_cb((struct gs_cb *)
+				   mcesa->guarded_storage_save_area);
 	}
 	/*
 	 * We don't even try to revalidate the TOD register, since we simply
