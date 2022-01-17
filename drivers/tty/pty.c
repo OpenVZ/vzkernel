@@ -1021,6 +1021,16 @@ static int __init vtty_init(void)
 	return 0;
 }
 
+void vtty_alloc_tty_struct(const struct tty_driver *driver,
+			   struct tty_struct *o_tty)
+{
+	if (driver != vttys_driver)
+		return;
+
+	tty_set_lock_subclass(o_tty);
+	lockdep_set_subclass(&o_tty->termios_rwsem, TTY_LOCK_SLAVE);
+}
+
 int vtty_open_master(envid_t veid, int idx)
 {
 	struct tty_struct *tty;
@@ -1071,7 +1081,6 @@ int vtty_open_master(envid_t veid, int idx)
 		}
 		tty->count--;
 		tty_unlock(tty);
-		tty_set_lock_subclass(tty);
 		tty = tty->link;
 	}
 
