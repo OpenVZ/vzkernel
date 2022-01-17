@@ -198,6 +198,8 @@ extern int vtty_open_master(envid_t veid, int idx);
 extern void vtty_release(struct tty_struct *tty, struct tty_struct *o_tty,
 			int *tty_closing, int *o_tty_closing);
 extern bool vtty_is_master(struct tty_struct *tty);
+extern void vtty_alloc_tty_struct(const struct tty_driver *driver,
+				  struct tty_struct *o_tty);
 #endif /* CONFIG_TTY */
 
 extern struct cgroup *cgroup_ve_root1(struct cgroup *cgrp);
