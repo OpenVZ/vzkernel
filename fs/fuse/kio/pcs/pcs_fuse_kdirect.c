@@ -27,6 +27,7 @@
 #include <linux/socket.h>
 #include <linux/net.h>
 #include <linux/debugfs.h>
+#include <linux/fiemap.h>
 
 #include "pcs_ioctl.h"
 #include "pcs_cluster.h"
