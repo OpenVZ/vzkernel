@@ -42,8 +42,10 @@ static int nullio_probe(struct fuse_conn *fc, char *name)
 	return 0;
 }
 
-static int nullio_conn_init(struct fuse_conn *fc)
+static int nullio_conn_init(struct fuse_mount *fm)
 {
+	struct fuse_conn *fc = fm->fc;
+
 	/* Just for sanity checks */
 	fc->kio.ctx = nullio_req_cachep;
 	pr_debug("nullio_conn_init\n");
@@ -55,9 +57,9 @@ static int nullio_conn_init(struct fuse_conn *fc)
 	return 0;
 }
 
-static void nullio_conn_fini(struct fuse_conn *fc)
+static void nullio_conn_fini(struct fuse_mount *fm)
 {
-	BUG_ON(fc->kio.ctx != nullio_req_cachep);
+	BUG_ON(fm->fc->kio.ctx != nullio_req_cachep);
 	pr_debug("nullio_conn_fini\n");
 
 }
@@ -69,25 +71,25 @@ static void nullio_conn_abort(struct fuse_conn *fc)
 }
 
 /* Request hooks */
-static struct fuse_req *nullio_req_alloc(struct fuse_conn *fc, gfp_t flags)
+static struct fuse_req *nullio_req_alloc(struct fuse_mount *fm, gfp_t flags)
 {
 	struct nullio_req *r;
 	struct fuse_req *req;
 
-	req = fuse_generic_request_alloc(nullio_req_cachep, flags);
+	req = fuse_generic_request_alloc(fm, nullio_req_cachep, flags);
 	r = nullreq_from_fuse(req);
 	memset(r->payload, 0, payload_sz);
 	return req;
 }
 
-static int nullio_req_send(struct fuse_conn *fc, struct fuse_req *req, bool bg,
-			   bool locked)
+static void nullio_req_send(struct fuse_req *req, struct fuse_file *ff, bool bg)
 {
+	struct fuse_conn *fc = req->fm->fc;
 	struct fuse_io_args *ia = container_of(req->args, typeof(*ia), ap.args);
 
 	/* pass though all requests on uninitalized connection */
 	if (!fc->initialized)
-		return 1;
+		return;
 
 	BUG_ON(fc->kio.ctx != nullio_req_cachep);
 	BUG_ON(req->cache != nullio_req_cachep);
@@ -97,19 +99,19 @@ static int nullio_req_send(struct fuse_conn *fc, struct fuse_req *req, bool bg,
 		struct fuse_write_out *out = &ia->write.out;
 
 		if (!fake_write)
-			return 1;
+			return;
 		/* Fake complete */
 		out->size = in->size;
 		break;
 	}
 	case FUSE_READ: {
 		if (!fake_read)
-			return 1;
+			return;
 		break;
 	}
 	default:
 		/* fall back to generic fuse io-flow */
-		return 1;
+		return ;
 	}
 	/* Simulate immidiate completion path. */
 	__clear_bit(FR_BACKGROUND, &req->flags);
@@ -120,14 +122,15 @@ static int nullio_req_send(struct fuse_conn *fc, struct fuse_req *req, bool bg,
 
 	/* Finally complete */
 	req->out.h.error = 0;
-	fuse_request_end(fc, req);
-	return 0;
+	fuse_request_end(req);
+	return;
 }
 
 /* Inode scope hooks */
-static int nullio_file_open(struct fuse_conn *fc, struct file *file,
-			    struct inode *inode)
+static int nullio_file_open(struct file *file, struct inode *inode)
 {
+	struct fuse_conn *fc = get_fuse_conn(inode);
+
 	BUG_ON(fc->kio.ctx != nullio_req_cachep);
 
 	if (S_ISREG(inode->i_mode)) {
