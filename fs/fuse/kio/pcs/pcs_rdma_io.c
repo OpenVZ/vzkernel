@@ -771,6 +771,8 @@ static void rio_handle_tx(struct pcs_rdmaio *rio, struct rio_tx *tx, int ok)
 		case TX_WAIT_FOR_READ_ACK:
 			if (++tx->tx_state != TX_MSG_DONE)
 				return;
+			rio_put_tx(rio->dev, tx);
+			break;
 		case TX_MSG_DONE:
 			rio_put_tx(rio->dev, tx);
 			break;
