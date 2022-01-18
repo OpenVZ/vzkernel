@@ -11,6 +11,7 @@
 #include <linux/types.h>
 #include <linux/rbtree.h>
 #include <linux/highmem.h>
+#include <linux/fiemap.h>
 
 #include "pcs_types.h"
 #include "pcs_sock_io.h"
