@@ -13,6 +13,8 @@
 #include "../../fuse_i.h"
 struct fuse_conn;
 
+#define PCS_MAX_CS_CNT	32
+
 /* Try to follows pcs/client/fused structure style */
 struct pcs_fuse_exec_ctx {
 	struct pcs_int_request	ireq;
