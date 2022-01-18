@@ -54,7 +54,10 @@ static struct pcs_cs_list *cs_link_to_cs_list(struct pcs_cs_link *csl)
 
 abs_time_t get_real_time_ms(void)
 {
-	struct timespec tv = current_kernel_time();
+	struct timespec64 tv;
+
+	ktime_get_coarse_real_ts64(&tv);
+
 	return (abs_time_t)tv.tv_sec * 1000 + tv.tv_nsec / 1000000;
 }
 
