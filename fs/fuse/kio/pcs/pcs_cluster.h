@@ -34,7 +34,7 @@ struct pcs_fuse_exec_ctx {
 
 struct pcs_fuse_req {
 	struct fuse_req req;
-	void (*end)(struct fuse_conn *fc, struct fuse_args *args, int error);
+	void (*end)(struct fuse_mount *fm, struct fuse_args *args, int error);
 	struct pcs_fuse_exec_ctx exec;	/* Zero initialized context */
 };
 
