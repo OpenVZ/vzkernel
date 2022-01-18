@@ -169,7 +169,7 @@ static struct rio_tx *rio_alloc_tx(struct pcs_rdma_device *dev,
 	if (!tx)
 		return NULL;
 
-	tx->buf = RE_NULL(ib_dma_alloc_coherent(dev->ib_dev, RIO_MSG_SIZE,
+	tx->buf = RE_NULL(dma_alloc_coherent(dev->ib_dev->dma_device, RIO_MSG_SIZE,
 						&tx->dma_addr,
 						GFP_NOIO | __GFP_NOWARN));
 	if (!tx->buf) {
@@ -184,7 +184,7 @@ static struct rio_tx *rio_alloc_tx(struct pcs_rdma_device *dev,
 
 static void rio_free_tx(struct pcs_rdma_device *dev, struct rio_tx *tx)
 {
-	ib_dma_free_coherent(dev->ib_dev, RIO_MSG_SIZE, tx->buf, tx->dma_addr);
+	dma_free_coherent(dev->ib_dev->dma_device, RIO_MSG_SIZE, tx->buf, tx->dma_addr);
 	kfree(tx);
 }
 
@@ -226,7 +226,7 @@ static void rio_put_tx(struct pcs_rdma_device *dev, struct rio_tx *tx)
 
 static bool rio_init_rx(struct rio_rx *rx, struct ib_device *dev)
 {
-	rx->buf = RE_NULL(ib_dma_alloc_coherent(dev, RIO_MSG_SIZE,
+	rx->buf = RE_NULL(dma_alloc_coherent(dev->dma_device, RIO_MSG_SIZE,
 						&rx->dma_addr,
 						GFP_NOIO | __GFP_NOWARN));
 	return rx->buf;
@@ -234,7 +234,7 @@ static bool rio_init_rx(struct rio_rx *rx, struct ib_device *dev)
 
 static void rio_fini_rx(struct rio_rx *rx, struct ib_device *dev)
 {
-	ib_dma_free_coherent(dev, RIO_MSG_SIZE, rx->buf, rx->dma_addr);
+	dma_free_coherent(dev->dma_device, RIO_MSG_SIZE, rx->buf, rx->dma_addr);
 }
 
 enum {
