@@ -33,13 +33,7 @@ static void sio_push(struct pcs_sockio * sio)
 {
 	TRACE(PEER_FMT" flush \n", PEER_ARGS(sio->netio.parent));
 	if (sio->flags & PCS_SOCK_F_CORK) {
-		int optval = 1;
-		int ret;
-		ret = kernel_setsockopt(sio->socket, SOL_TCP, TCP_NODELAY,
-					(char *)&optval, sizeof(optval));
-		if (ret)
-			TRACE("kernel_setsockopt(TCP_NODELAY) failed: %d",  ret);
-
+		tcp_sock_set_nodelay(sio->socket->sk);
 	}
 }
 
