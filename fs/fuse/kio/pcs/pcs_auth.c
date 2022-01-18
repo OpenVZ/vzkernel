@@ -85,7 +85,6 @@ static int pcs_generate_hmac(u8 *key, size_t key_sz, u8 *in, size_t in_sz,
 	}
 
 	shash->tfm = hmacalg;
-	shash->flags = CRYPTO_TFM_REQ_MAY_SLEEP;
 
 	ret = crypto_shash_digest(shash, in, in_sz, out);
 	if (ret)
@@ -132,7 +131,6 @@ static int pcs_md5_hash(char *result, char *data, size_t len)
 	}
 
 	desc->tfm = tfm;
-	desc->flags = 0;
 
 	err = crypto_shash_init(desc);
 	if (err)
