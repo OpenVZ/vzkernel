@@ -10,6 +10,7 @@
 #include <linux/kthread.h>
 #include <linux/types.h>
 #include <linux/pagemap.h>
+#include <linux/fiemap.h>
 
 #include "pcs_types.h"
 #include "pcs_sock_io.h"
