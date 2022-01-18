@@ -497,7 +497,6 @@ static void pcs_fuse_reply_handle(struct fuse_mount *fm, struct fuse_args *args,
 	queue_work(pcs_wq, &work->work);
 }
 
-#define MAX_CS_CNT 32
 static void fuse_complete_map_work(struct work_struct *w)
 {
 	struct pcs_fuse_work *work = container_of(w, struct pcs_fuse_work, work);
@@ -509,7 +508,7 @@ static void fuse_complete_map_work(struct work_struct *w)
 
 	if (pcs_if_error(&work->status)) {
 		pcs_copy_error(&omap->error, &work->status);
-	} else if (omap->cs_cnt > MAX_CS_CNT) {
+	} else if (omap->cs_cnt > PCS_MAX_CS_CNT) {
 		printk("Corrupted cs_cnt from userspace");
 		pcs_set_local_error(&omap->error, PCS_ERR_PROTOCOL);
 	}
@@ -547,7 +546,7 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 
 	spin_unlock(&m->lock);
 
-	map_sz = sizeof(*map_ioc) + MAX_CS_CNT * sizeof(struct pcs_cs_info);
+	map_sz = sizeof(*map_ioc) + PCS_MAX_CS_CNT * sizeof(struct pcs_cs_info);
 	map_ioc = kzalloc(map_sz, GFP_NOIO);
 	if (!map_ioc)
 		return -ENOMEM;
@@ -568,7 +567,7 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 	inarg = &ia->ioctl.in;
 	outarg = &ia->ioctl.out;
 	inarg->cmd = PCS_IOC_GETMAP;
-	map_ioc->cs_max = MAX_CS_CNT;
+	map_ioc->cs_max = PCS_MAX_CS_CNT;
 
 	/* fill ioc_map struct */
 	if (pcs_map_encode_req(m, map_ioc, direction) != 0) {
