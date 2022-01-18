@@ -107,9 +107,10 @@ struct workqueue_struct *pcs_cleanup_wq;
 static struct fuse_kio_ops kio_pcs_ops;
 static struct dentry *fuse_trace_root;
 
-static void process_pcs_init_reply(struct fuse_conn *fc, struct fuse_args *args,
+static void process_pcs_init_reply(struct fuse_mount *fm, struct fuse_args *args,
 				   int error)
 {
+	struct fuse_conn *fc = fm->fc;
 	struct fuse_io_args *ia = container_of(args, typeof(*ia), ap.args);
 	struct pcs_fuse_cluster *pfc;
 	struct fuse_ioctl_out *arg = &ia->ioctl.out;
@@ -180,8 +181,9 @@ out:
 
 }
 
-int kpcs_conn_init(struct fuse_conn *fc)
+int kpcs_conn_init(struct fuse_mount *fm)
 {
+	struct fuse_conn *fc = fm->fc;
 	struct fuse_io_args *ia;
 	struct fuse_ioctl_in *inarg;
 	struct fuse_ioctl_out *outarg;
@@ -223,15 +225,17 @@ int kpcs_conn_init(struct fuse_conn *fc)
 	ia->ap.args.force = true;
 	ia->ap.args.nocreds = true;
 
-	err = fuse_simple_background(fc, &ia->ap.args, GFP_NOIO);
+	err = fuse_simple_background(fm, &ia->ap.args, GFP_NOIO);
 	if (err)
-		process_pcs_init_reply(fc, &ia->ap.args, err);
+		process_pcs_init_reply(fm, &ia->ap.args, err);
 
 	return 0;
 }
 
-void kpcs_conn_fini(struct fuse_conn *fc)
+void kpcs_conn_fini(struct fuse_mount *fm)
 {
+	struct fuse_conn *fc = fm->fc;
+
 	if (fc->ktrace)
 		fuse_ktrace_remove(fc);
 
@@ -255,8 +259,7 @@ static int kpcs_probe(struct fuse_conn *fc, char *name)
 }
 
 
-static int fuse_pcs_getfileinfo(struct fuse_conn *fc, struct file *file,
-				struct pcs_mds_fileinfo *info)
+static int fuse_pcs_getfileinfo(struct file *file, struct pcs_mds_fileinfo *info)
 {
 	struct fuse_file *ff = file->private_data;
 	struct fuse_io_args ia = {};
@@ -286,7 +289,7 @@ static int fuse_pcs_getfileinfo(struct fuse_conn *fc, struct file *file,
 	ia.ap.args.out_args[1].size = sizeof(ioc_info);
 	ia.ap.args.out_args[1].value = &ioc_info;
 
-	err = fuse_simple_request(fc, &ia.ap.args);
+	err = fuse_simple_request(ff->fm, &ia.ap.args);
 	if (err || outarg->result) {
 		TRACE("%s:%d h.err:%d result:%d\n", __FUNCTION__, __LINE__,
 		      err, outarg->result);
@@ -298,8 +301,7 @@ static int fuse_pcs_getfileinfo(struct fuse_conn *fc, struct file *file,
 	return 0;
 }
 
-static int fuse_pcs_kdirect_claim_op(struct fuse_conn *fc, struct file *file,
-				     bool claim)
+static int fuse_pcs_kdirect_claim_op(struct file *file, bool claim)
 {
 	struct fuse_file *ff = file->private_data;
 	struct fuse_io_args ia = {};
@@ -328,7 +330,7 @@ static int fuse_pcs_kdirect_claim_op(struct fuse_conn *fc, struct file *file,
 	ia.ap.args.out_numargs = 1;
 	ia.ap.args.out_args[0].size = sizeof(*outarg);
 	ia.ap.args.out_args[0].value = outarg;
-	err = fuse_simple_request(fc, &ia.ap.args);
+	err = fuse_simple_request(ff->fm, &ia.ap.args);
 	if (err || outarg->result) {
 		TRACE("%s:%d h.err:%d result:%d\n", __FUNCTION__, __LINE__,
 		      err, outarg->result);
@@ -339,15 +341,16 @@ static int fuse_pcs_kdirect_claim_op(struct fuse_conn *fc, struct file *file,
 }
 static void  fuse_size_grow_work(struct work_struct *w);
 
-static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
+static int kpcs_do_file_open(struct file *file, struct inode *inode)
 {
 	struct pcs_mds_fileinfo info;
+	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
 	struct pcs_dentry_info *di = NULL;
 	int ret;
 
-	ret = fuse_pcs_getfileinfo(fc, file, &info);
+	ret = fuse_pcs_getfileinfo(file, &info);
 	if (ret)
 		return ret == -EOPNOTSUPP ? 0 : ret;
 
@@ -397,7 +400,7 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 	      fi->nodeid, di->fileinfo.sys.chunk_size_lo,
 	      di->fileinfo.sys.stripe_depth, di->fileinfo.sys.strip_width);
 
-	ret = fuse_pcs_kdirect_claim_op(fc, file, true);
+	ret = fuse_pcs_kdirect_claim_op(file, true);
 	if (ret) {
 		pcs_mapping_invalidate(&di->mapping);
 		pcs_mapping_deinit(&di->mapping);
@@ -410,7 +413,7 @@ static int kpcs_do_file_open(struct fuse_conn *fc, struct file *file, struct ino
 	return 0;
 }
 
-int kpcs_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
+int kpcs_file_open(struct file *file, struct inode *inode)
 {
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct pcs_dentry_info *di = fi->private;
@@ -426,7 +429,7 @@ int kpcs_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
 	/* Already initialized. Update file size etc */
 	if (di) {
 		/*TODO: propper refcount for claim_cnt should be here */
-		ret = fuse_pcs_getfileinfo(fc, file, &info);
+		ret = fuse_pcs_getfileinfo(file, &info);
 		if (ret)
 			return ret;
 		spin_lock(&di->lock);
@@ -436,7 +439,7 @@ int kpcs_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
 	}
 
 	if (!test_bit(FUSE_I_KIO_OPEN_TRY_MADE, &fi->state)) {
-		ret = kpcs_do_file_open(fc, file, inode);
+		ret = kpcs_do_file_open(file, inode);
 		if (!ret)
 			set_bit(FUSE_I_KIO_OPEN_TRY_MADE, &fi->state);
 	}
@@ -444,8 +447,7 @@ int kpcs_file_open(struct fuse_conn *fc, struct file *file, struct inode *inode)
 	return ret;
 }
 
-static void kpcs_file_close(struct fuse_conn *fc, struct file *file,
-			    struct inode *inode)
+static void kpcs_file_close(struct file *file, struct inode *inode)
 {
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct pcs_dentry_info *di = fi->private;
@@ -478,7 +480,7 @@ void kpcs_inode_release(struct fuse_inode *fi)
 	kfree(di);
 }
 
-static void pcs_fuse_reply_handle(struct fuse_conn *fc, struct fuse_args *args,
+static void pcs_fuse_reply_handle(struct fuse_mount *fm, struct fuse_args *args,
 				  int error)
 {
 	struct fuse_io_args *ia = container_of(args, typeof(*ia), ap.args);
@@ -519,7 +521,7 @@ static void fuse_complete_map_work(struct work_struct *w)
 int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 {
 	struct pcs_dentry_info *di;
-	struct fuse_conn *fc;
+	struct fuse_mount *fm;
 	struct fuse_io_args *ia;
 	struct fuse_ioctl_in *inarg;
 	struct fuse_ioctl_out *outarg;
@@ -536,7 +538,7 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 		return 0;
 	}
 	di = pcs_dentry_from_mapping(m->mapping);
-	fc = pcs_cluster_from_cc(di->cluster)->fc;
+	fm = get_fuse_mount(&di->inode->inode);
 
 	DTRACE("enter m: " MAP_FMT ", dir:%d \n", MAP_ARGS(m),	direction);
 
@@ -601,16 +603,16 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 	ia->ap.args.end = pcs_fuse_reply_handle;
 	ia->ap.args.nonblocking = true;
 
-	err = fuse_simple_background(fc, &ia->ap.args, GFP_NOIO);
+	err = fuse_simple_background(fm, &ia->ap.args, GFP_NOIO);
 	if (err)
-		pcs_fuse_reply_handle(fc, &ia->ap.args, err);
+		pcs_fuse_reply_handle(fm, &ia->ap.args, err);
 
 	return 0;
 }
 
-struct fuse_req *kpcs_req_alloc(struct fuse_conn *fc, gfp_t flags)
+struct fuse_req *kpcs_req_alloc(struct fuse_mount *fm, gfp_t flags)
 {
-	return fuse_generic_request_alloc(pcs_fuse_req_cachep, flags);
+	return fuse_generic_request_alloc(fm, pcs_fuse_req_cachep, flags);
 }
 
 /* IOHOOKS */
@@ -626,7 +628,7 @@ void ireq_destroy(struct pcs_int_request *ireq)
 
 static int submit_size_grow(struct inode *inode, unsigned long long size)
 {
-	struct fuse_conn *fc = get_fuse_conn(inode);
+	struct fuse_mount *fm = get_fuse_mount(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct fuse_file *ff;
 	struct fuse_setattr_in inarg;
@@ -647,7 +649,7 @@ static int submit_size_grow(struct inode *inode, unsigned long long size)
 	inarg.valid |= FATTR_SIZE;
 	inarg.size = size;
 
-	ff = __fuse_write_file_get(fc, get_fuse_inode(inode));
+	ff = __fuse_write_file_get(fm->fc, get_fuse_inode(inode));
 	if (ff) {
 		inarg.valid |= FATTR_FH;
 		inarg.fh = ff->fh;
@@ -662,7 +664,7 @@ static int submit_size_grow(struct inode *inode, unsigned long long size)
 	args.out_args[0].size = sizeof(outarg);
 	args.out_args[0].value = &outarg;
 
-	err = fuse_simple_request(fc, &args);
+	err = fuse_simple_request(fm, &args);
 	fuse_release_ff(inode, ff);
 
 	return err;
@@ -760,7 +762,7 @@ static void wait_shrink(struct pcs_fuse_req *r, struct pcs_dentry_info *di)
 	list_add_tail(&r->exec.ireq.list, &di->size.queue);
 }
 
-static void _pcs_ff_free_end(struct fuse_conn *fc, struct fuse_args *args, int error)
+static void _pcs_ff_free_end(struct fuse_mount *fm, struct fuse_args *args, int error)
 {
 	struct fuse_req *req = args->req;
 	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
@@ -771,7 +773,7 @@ static void _pcs_ff_free_end(struct fuse_conn *fc, struct fuse_args *args, int e
 	fuse_release_ff(args->inode, req_ff);
 
 	if (r->end)
-		r->end(fc, args, error);
+		r->end(fm, args, error);
 }
 
 static bool kqueue_insert(struct pcs_dentry_info *di, struct fuse_file *ff,
@@ -1032,14 +1034,14 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 error:
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", req, req->in.h.opcode, req->out.h.error);
 
-	__fuse_request_end(pfc->fc, req, false);
+	__fuse_request_end(req, false);
 	return;
 
 submit:
 	ireq_process(ireq);
 }
 
-static void kpcs_setattr_end(struct fuse_conn *fc, struct fuse_args *args, int error)
+static void kpcs_setattr_end(struct fuse_mount *fm, struct fuse_args *args, int error)
 {
 	struct fuse_req *req = args->req;
 	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
@@ -1070,17 +1072,18 @@ static void kpcs_setattr_end(struct fuse_conn *fc, struct fuse_args *args, int e
 
 fail:
 	if(r->end)
-		r->end(fc, args, error);
+		r->end(fm, args, error);
 }
 
-static void _pcs_shrink_end(struct fuse_conn *fc, struct fuse_args *args, int error)
+static void _pcs_shrink_end(struct fuse_mount *fm, struct fuse_args *args, int error)
 {
+	struct fuse_conn *fc = fm->fc;
 	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
 	struct fuse_inode *fi = get_fuse_inode(args->io_inode);
 	struct pcs_dentry_info *di = fi->private;
 	LIST_HEAD(dispose);
 
-	kpcs_setattr_end(fc, args, error);
+	kpcs_setattr_end(fm, args, error);
 
 	spin_lock(&di->lock);
 	BUG_ON(di->size.op != PCS_SIZE_SHRINK);
@@ -1103,9 +1106,9 @@ static void _pcs_shrink_end(struct fuse_conn *fc, struct fuse_args *args, int er
 	}
 }
 
-static void _pcs_grow_end(struct fuse_conn *fc, struct fuse_args *args, int error)
+static void _pcs_grow_end(struct fuse_mount *fm, struct fuse_args *args, int error)
 {
-	kpcs_setattr_end(fc, args, error);
+	kpcs_setattr_end(fm, args, error);
 }
 
 static void pcs_kio_setattr_handle(struct fuse_inode *fi, struct fuse_req *req)
@@ -1137,8 +1140,9 @@ static void pcs_kio_setattr_handle(struct fuse_inode *fi, struct fuse_req *req)
 		args->end = _pcs_grow_end;
 }
 
-static int pcs_kio_classify_req(struct fuse_conn *fc, struct fuse_req *req, bool lk)
+static int pcs_kio_classify_req(struct fuse_req *req, bool lk)
 {
+	struct fuse_conn *fc = req->fm->fc;
 	struct fuse_args *args = req->args;
 	struct fuse_inode *fi = get_fuse_inode(args->io_inode);
 
@@ -1204,9 +1208,9 @@ fail:
 	return -EINVAL;
 }
 
-static int kpcs_req_classify(struct fuse_conn* fc, struct fuse_req *req,
-			     bool bg, bool lk)
+static int kpcs_req_classify(struct fuse_req *req, bool bg, bool lk)
 {
+	struct fuse_conn* fc = req->fm->fc;
 	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
 	int ret;
 
@@ -1216,7 +1220,7 @@ static int kpcs_req_classify(struct fuse_conn* fc, struct fuse_req *req,
 	BUG_ON(!pfc);
 	DTRACE("Classify req:%p op:%d end:%p bg:%d lk:%d\n", req, req->in.h.opcode,
 							  req->args->end, bg, lk);
-	ret = pcs_kio_classify_req(fc, req, lk);
+	ret = pcs_kio_classify_req(req, lk);
 	if (likely(!ret))
 		return 0;
 
@@ -1227,7 +1231,7 @@ static int kpcs_req_classify(struct fuse_conn* fc, struct fuse_req *req,
 		req->out.h.error = ret;
 		if (lk)
 			spin_unlock(&fc->bg_lock);
-		__fuse_request_end(fc, req, false);
+		__fuse_request_end(req, false);
 		if (lk)
 			spin_lock(&fc->bg_lock);
 		return ret;
@@ -1235,9 +1239,9 @@ static int kpcs_req_classify(struct fuse_conn* fc, struct fuse_req *req,
 	return 1;
 }
 
-static void kpcs_req_send(struct fuse_conn* fc, struct fuse_req *req,
-			  struct fuse_file *ff, bool bg)
+static void kpcs_req_send(struct fuse_req *req, struct fuse_file *ff, bool bg)
 {
+	struct fuse_conn *fc = req->fm->fc;
 	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
 
 	/* At this point request can not belongs to any list
@@ -1636,7 +1640,7 @@ static void kpcs_kill_lreq_itr(struct fuse_file *ff, struct pcs_dentry_info *di,
 	struct inode *inode = ctx;
 
 	spin_lock(&di->kq_lock);
-	fuse_kill_requests(ff->fc, inode, &di->kq);
+	fuse_kill_requests(ff->fm->fc, inode, &di->kq);
 	spin_unlock(&di->kq_lock);
 }
 
