@@ -99,28 +99,6 @@ static void rcv_msg_done(struct pcs_msg *msg)
 		msg->done(msg);
 }
 
-struct kernel_sendmsg_context
-{
-	struct socket *sock;
-	int flags;
-	int sent;
-	int ret;
-};
-
-static int kernel_sendmsg_callback(struct kvec *vec, void *context)
-{
-	struct kernel_sendmsg_context *ctx =  context;
-	struct msghdr msg = { .msg_flags = ctx->flags};
-
-	if (!ctx->ret) {
-		ctx->ret = kernel_sendmsg(ctx->sock, &msg, vec, 1, vec->iov_len);
-		if (ctx->ret > 0)
-			ctx->sent += ctx->ret;
-	}
-
-	return ctx->ret;
-}
-
 #ifdef CONFIG_DEBUG_KERNEL
 static bool pcs_should_fail_sock_io(void)
 {
@@ -138,28 +116,41 @@ static bool pcs_should_fail_sock_io(void)
 }
 #endif
 
-static int do_send_one_seg(struct socket *sock, struct iov_iter *it, size_t size,
-		bool more)
+static int do_send_one_seg(struct socket *sock, struct iov_iter *it, size_t left)
 {
 	int ret = -EIO;
-	size_t offset;
-	ssize_t len;
-	struct page *page;
+	size_t size = iov_iter_single_seg_count(it);
+	bool more = (size < left);
 	int flags = (MSG_DONTWAIT | MSG_NOSIGNAL) | (more ? MSG_MORE : MSG_EOR);
 
 	DTRACE("sock(%p)  len:%ld, more:%d\n", sock, iov_iter_count(it), more);
 
+	if (unlikely(!size))
+		return 0;
+
 	if (pcs_should_fail_sock_io())
 		goto out;
 
-	len = iov_iter_get_pages(it, &page, size, 1, &offset);
-	if (len <= 0) {
-		/* No page, fallback to memcopy */
-		struct kernel_sendmsg_context ctx = { .sock = sock, .flags = flags, .sent = 0, .ret = 0 };
-		iov_iter_for_each_range(it, size, kernel_sendmsg_callback, &ctx);
-		ret = ctx.sent ? : ctx.ret;
-	} else {
+	if (iov_iter_is_kvec(it)) {
+		/* Must fallback to memcopy */
+		struct kvec kv;
+		struct msghdr msg = { .msg_flags = flags };
+
+		iov_iter_get_kvec(it, &kv);
+		BUG_ON(kv.iov_len != size);
+
+		ret = kernel_sendmsg(sock, &msg, &kv, 1, size);
+	}
+
+	if (iov_iter_is_bvec(it)) {
 		/* Zerocopy */
+		size_t offset;
+		ssize_t len;
+		struct page *page;
+
+		len = iov_iter_get_pages(it, &page, size, 1, &offset);
+		BUG_ON(len <= 0);
+
 		ret = kernel_sendpage(sock, page, offset, len, flags);
 		put_page(page);
 	}
@@ -196,10 +187,38 @@ out:
 	return ret;
 }
 
-static int do_sock_recv_callback(struct kvec *vec, void *context)
+static int do_recv_one_seg(struct socket *sock, struct iov_iter *it, size_t left)
 {
-	struct socket *sock = context;
-	return do_sock_recv(sock, vec->iov_base, vec->iov_len);
+	int ret = -EINVAL;
+	size_t size = min(iov_iter_single_seg_count(it), left);
+
+	if (unlikely(!size))
+		return 0;
+
+	if (iov_iter_is_kvec(it)) {
+		struct kvec kv;
+
+		iov_iter_get_kvec(it, &kv);
+		if (kv.iov_len > size)
+			kv.iov_len = size;
+
+		ret = do_sock_recv(sock, kv.iov_base, kv.iov_len);
+	}
+
+	if (iov_iter_is_bvec(it)) {
+		size_t offset;
+		ssize_t len;
+		struct page* page;
+
+		len = iov_iter_get_pages(it, &page, size, 1, &offset);
+		BUG_ON(len <=0);
+
+		ret = do_sock_recv(sock, kmap(page) + offset, len);
+		kunmap(page);
+		put_page(page);
+	}
+
+	return ret;
 }
 
 static void pcs_sockio_recv(struct pcs_sockio *sio)
@@ -275,9 +294,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 				if (msg != PCS_TRASH_MSG)
 					BUG_ON(iov_iter_count(it) > msg_size - sio->read_offset);
 
-				n = iov_iter_for_each_range(it, min(iov_iter_single_seg_count(it),
-							(size_t)(msg_size - sio->read_offset)), do_sock_recv_callback,
-						sio->socket);
+				n = do_recv_one_seg(sio->socket, it, (size_t)(msg_size - sio->read_offset));
 				if (n > 0) {
 					sio->read_offset += n;
 					iov_iter_advance(it, n);
@@ -344,8 +361,7 @@ static void pcs_sockio_send(struct pcs_sockio *sio)
 				msg->get_iter(msg, sio->write_offset, it, WRITE);
 			}
 			BUG_ON(iov_iter_count(it) > left);
-			n = do_send_one_seg(sio->socket, it, iov_iter_single_seg_count(it),
-					    iov_iter_single_seg_count(it) < left);
+			n = do_send_one_seg(sio->socket, it, left);
 			if (n > 0) {
 				sio->write_offset += n;
 				iov_iter_advance(it, n);

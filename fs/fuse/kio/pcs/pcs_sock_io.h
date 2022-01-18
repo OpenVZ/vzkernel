@@ -164,20 +164,18 @@ void pcs_free_msg(struct pcs_msg * msg);
 void pcs_get_iter_inline(struct pcs_msg * msg, int offset, struct iov_iter*it,
 			 unsigned int direction);
 
-static inline int iov_iter_get_kvec_callback(struct kvec *vec, void *context)
-{
-	*((struct kvec*)context) = *vec;
-	return 0;
-}
 
 static inline void iov_iter_get_kvec(struct iov_iter *i, struct kvec *vec)
 {
 	BUG_ON(!iov_iter_is_kvec(i));
 
-	vec->iov_base = NULL;
-	vec->iov_len = 0;
-	iov_iter_for_each_range(i, iov_iter_single_seg_count(i),
-			iov_iter_get_kvec_callback, vec);
+	/*
+	 * The following should hold true at all time:
+	 * if i->nr_segs == 1,  then  i->count <= i->kevc->iov_len - i->iov_offset;
+	 * if i->nr_segs > 1, then i->count > i->kvec->iov_len - i->iov_offset,
+	 */
+	vec->iov_base = i->kvec->iov_base + i->iov_offset;
+	vec->iov_len = min(i->count, i->kvec->iov_len - i->iov_offset);
 }
 void pcs_sock_ioconn_destruct(struct pcs_ioconn *ioconn);
 void pcs_msg_sent(struct pcs_msg * msg);
