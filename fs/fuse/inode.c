@@ -1779,6 +1779,7 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->destroy = ctx->destroy || ctx->umount_wait;
 	fc->no_control = ctx->no_control;
 	fc->no_force_umount = ctx->no_force_umount;
+	fc->kdirect_io = ctx->kdirect_io;
 
 	if (fc->kdirect_io) {
 		err = -EINVAL;
