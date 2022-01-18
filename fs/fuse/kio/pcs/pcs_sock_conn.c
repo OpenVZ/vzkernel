@@ -20,36 +20,17 @@
 
 static inline void pcs_sock_keepalive(struct socket *sock)
 {
-	int val;
-
-	val = 1;
-	kernel_setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE,
-			  (char *)&val, sizeof(val));
-	val = 60;
-	kernel_setsockopt(sock, SOL_TCP, TCP_KEEPIDLE,
-			  (char *)&val, sizeof(val));
-	val = 5;
-	kernel_setsockopt(sock, SOL_TCP, TCP_KEEPCNT,
-			  (char *)&val, sizeof(val));
-	val = 5;
-	kernel_setsockopt(sock, SOL_TCP, TCP_KEEPINTVL,
-			  (char *)&val, sizeof(val));
+	sock_set_keepalive(sock->sk);
+	if (sock->sk->sk_family == PF_INET || sock->sk->sk_family == PF_INET6) {
+		tcp_sock_set_keepidle(sock->sk, 60);
+		tcp_sock_set_keepcnt(sock->sk, 5);
+		tcp_sock_set_keepintvl(sock->sk, 5);
+	}
 }
 
-static inline int pcs_sock_cork(struct socket *sock)
+static inline void pcs_sock_cork(struct socket *sock)
 {
-	int val = 1;
-	if (kernel_setsockopt(sock, SOL_TCP, TCP_CORK, (char *)&val,
-			      sizeof(val)) == 0)
-		return 0;
-	return -1;
-}
-
-static inline void pcs_sock_nodelay(struct socket *sock)
-{
-	int val = 1;
-	kernel_setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *)&val,
-			  sizeof(val));
+	tcp_sock_set_cork(sock->sk, true);
 }
 
 int pcs_netaddr2sockaddr(PCS_NET_ADDR_T const* addr, struct sockaddr *sa, int *salen)
@@ -112,10 +93,10 @@ void pcs_sockconnect_start(struct pcs_rpc *ep)
 		goto fail2;
 	}
 	pcs_sock_keepalive(sock);
-	if (!pcs_sock_cork(sock))
+	if (sa->sa_family == PF_INET || sa->sa_family == PF_INET6) {
+		pcs_sock_cork(sock);
 		sio->flags |= PCS_SOCK_F_CORK;
-	else
-		pcs_sock_nodelay(sock);
+	}
 
 	TRACE(PEER_FMT " ->state:%d sock:%p\n", PEER_ARGS(ep), ep->state, sock);
 	cancel_delayed_work(&ep->timer_work);
