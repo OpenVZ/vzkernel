@@ -2057,7 +2057,7 @@ static int ireq_queue_tokens(struct pcs_int_request * ireq, struct pcs_cs_list *
        int i;
        int queued = 0;
        struct list_head drop;
-       struct pcs_int_request * toks[csl->nsrv];
+       struct pcs_int_request * toks[PCS_MAX_CS_CNT];
 
        INIT_LIST_HEAD(&drop);
 
