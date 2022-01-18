@@ -21,8 +21,10 @@ static int noop_probe(struct fuse_conn *fc, char *name)
 	return 0;
 }
 
-static int noop_conn_init(struct fuse_conn *fc)
+static int noop_conn_init(struct fuse_mount *fm)
 {
+	struct fuse_conn *fc = fm->fc;
+
 	/* Just for sanity checks */
 	fc->kio.ctx = noop_req_cachep;
 	pr_debug("fuse_kio_noop: init");
@@ -34,9 +36,9 @@ static int noop_conn_init(struct fuse_conn *fc)
 	return 0;
 }
 
-static void noop_conn_fini(struct fuse_conn *fc)
+static void noop_conn_fini(struct fuse_mount *fm)
 {
-	BUG_ON(fc->kio.ctx != noop_req_cachep);
+	BUG_ON(fm->fc->kio.ctx != noop_req_cachep);
 	pr_debug("fuse_kio_noop: fini");
 
 }
@@ -48,23 +50,24 @@ static void noop_conn_abort(struct fuse_conn *fc)
 }
 
 /* Request hooks */
-static struct fuse_req *noop_req_alloc(struct fuse_conn *fc, gfp_t flags)
+static struct fuse_req *noop_req_alloc(struct fuse_mount *fm, gfp_t flags)
 {
-	return fuse_generic_request_alloc(noop_req_cachep, flags);
+	return fuse_generic_request_alloc(fm, noop_req_cachep, flags);
 }
 
-static int noop_req_send(struct fuse_conn *fc, struct fuse_req *req, bool bg,
-			 bool locked)
+static void noop_req_send(struct fuse_req *req, struct fuse_file *ff, bool bg)
 {
+	struct fuse_conn *fc = req->fm->fc;
+
 	/* Do not intercept request for unconnected channel */
 	if (!fc->initialized)
-		return 1;
+		return;
 
 	BUG_ON(fc->kio.ctx != noop_req_cachep);
 	BUG_ON(req->cache != noop_req_cachep);
 
 	/* fall back to generic fuse io-flow */
-	return 1;
+	return;
 }
 
 /* Optional inode scope hooks
