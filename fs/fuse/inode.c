@@ -116,6 +116,7 @@ out_free:
 static void fuse_free_inode(struct inode *inode)
 {
 	struct fuse_inode *fi = get_fuse_inode(inode);
+	struct fuse_conn *fc = get_fuse_conn(inode);
 
 	mutex_destroy(&fi->mutex);
 	kfree(fi->forget);
@@ -1330,7 +1331,7 @@ static void process_init_reply(struct fuse_mount *fm, struct fuse_args *args,
 		fc->conn_init = 1;
 
 		if (fc->kio.cached_op) {
-			if (!fc->kio.cached_op->conn_init(fc)) {
+			if (!fc->kio.cached_op->conn_init(fm)) {
 				kfree(ia);
 				return;
 			}
@@ -1923,7 +1924,7 @@ void fuse_conn_destroy(struct fuse_mount *fm)
 	struct fuse_conn *fc = fm->fc;
 
 	if (fc->kio.op) { /* At this point all pending kio must be completed. */
-		fc->kio.op->conn_fini(fc);
+		fc->kio.op->conn_fini(fm);
 		fc->kio.ctx = NULL;
 	}
 
