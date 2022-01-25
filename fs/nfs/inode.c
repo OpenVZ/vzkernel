@@ -2047,7 +2047,7 @@ static int nfs_net_init(struct net *net)
 static void nfs_net_exit(struct net *net)
 {
 	nfs_fs_proc_net_exit(net);
-	nfs_cleanup_cb_ident_idr(net);
+	nfs_clients_exit(net);
 }
 
 static struct pernet_operations nfs_net_ops = {
