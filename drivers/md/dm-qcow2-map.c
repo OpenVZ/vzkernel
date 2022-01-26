@@ -1928,7 +1928,7 @@ static int parse_metadata(struct qcow2 *qcow2, struct qio **qio,
 {
 	struct md_page *md;
 	u64 pos;
-	int ret;
+	s64 ret;
 
 	WARN_ON_ONCE(map->data_clu_pos != 0);
 	if (calc_cluster_map(qcow2, *qio, map) < 0)
@@ -1942,9 +1942,9 @@ static int parse_metadata(struct qcow2 *qcow2, struct qio **qio,
 	map->level = L1_LEVEL;
 
 	/* Find L2 cluster (from L1 page) */
-	pos = parse_l1(qcow2, map, qio, write);
-	if (pos <= 0) /* Err, delayed, L2 is not allocated, or zero read */
-		return pos;
+	pos = ret = parse_l1(qcow2, map, qio, write);
+	if (ret <= 0) /* Err, delayed, L2 is not allocated, or zero read */
+		return ret;
 
 	/* pos is start of cluster */
 	pos += map->l2.index * sizeof(u64);
@@ -1958,9 +1958,9 @@ static int parse_metadata(struct qcow2 *qcow2, struct qio **qio,
 	map->level |= L2_LEVEL;
 
 	/* Find DATA cluster (from L2 page) */
-	pos = parse_l2(qcow2, map, qio, write);
-	if (pos <= 0) /* Err, delayed, DATA is not allocated, or zero read */
-		return pos;
+	pos = ret = parse_l2(qcow2, map, qio, write);
+	if (ret <= 0) /* Err, delayed, DATA is not allocated, or zero read */
+		return ret;
 
 	map->data_clu_pos = pos;
 	if (!write || !map->clu_is_cow)
