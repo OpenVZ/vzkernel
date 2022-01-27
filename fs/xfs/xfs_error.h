@@ -6,6 +6,8 @@
 #ifndef	__XFS_ERROR_H__
 #define	__XFS_ERROR_H__
 
+#include <linux/fs.h>
+
 struct xfs_mount;
 
 extern void xfs_error_report(const char *tag, int level, struct xfs_mount *mp,
@@ -24,6 +26,7 @@ extern void xfs_verifier_error(struct xfs_buf *bp, int error,
 extern void xfs_inode_verifier_error(struct xfs_inode *ip, int error,
 			const char *name, const void *buf, size_t bufsz,
 			xfs_failaddr_t failaddr);
+extern void xfs_send_uevent(struct super_block *sb, enum fs_event_type event);
 
 #define	XFS_ERROR_REPORT(e, lvl, mp)	\
 	xfs_error_report(e, lvl, mp, __FILE__, __LINE__, __return_address)
