@@ -1887,6 +1887,10 @@ void fs_send_uevent(struct super_block *sb, struct kobject *kobj,
 
 	if (!fs_events_wq)
 		return;
+	if (action == FS_UA_ERROR && xchg(&sb->s_err_event_sent, 1))
+		return;
+	if (action == FS_UA_ABORT && xchg(&sb->s_abrt_event_sent, 1))
+		return;
 
 	e = kzalloc(sizeof(*e), GFP_NOIO);
 	if (!e)
