@@ -1817,6 +1817,90 @@ EXPORT_SYMBOL(thaw_super);
 struct workqueue_struct *fs_events_wq;
 EXPORT_SYMBOL(fs_events_wq);
 
+void fs_send_uevent_work(struct work_struct *w)
+{
+	struct fs_uevent *e = container_of(w, struct fs_uevent, work);
+	struct super_block *sb = e->sb;
+	struct kobj_uevent_env *env;
+	const uuid_t *uuid = &sb->s_uuid;
+	enum kobject_action kaction = KOBJ_CHANGE;
+	int ret;
+
+	env = kzalloc(sizeof(struct kobj_uevent_env), GFP_KERNEL);
+	if (!env){
+		kfree(e);
+		return;
+	}
+	ret = add_uevent_var(env, "FS_TYPE=%s", sb->s_type->name);
+	if (ret)
+		goto out;
+	ret = add_uevent_var(env, "FS_NAME=%s", sb->s_id);
+	if (ret)
+		goto out;
+
+	if (!uuid_is_null(uuid)) {
+		ret = add_uevent_var(env, "UUID=%pUB", uuid);
+		if (ret)
+			goto out;
+	}
+
+	switch (e->action) {
+	case FS_UA_MOUNT:
+		kaction = KOBJ_ONLINE;
+		ret = add_uevent_var(env, "FS_ACTION=%s", "MOUNT");
+		break;
+	case FS_UA_UMOUNT:
+		kaction = KOBJ_OFFLINE;
+		ret = add_uevent_var(env, "FS_ACTION=%s", "UMOUNT");
+		break;
+	case FS_UA_REMOUNT:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "REMOUNT");
+		break;
+	case FS_UA_ERROR:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "ERROR");
+		break;
+	case FS_UA_ABORT:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "ABORT");
+		break;
+	case FS_UA_FREEZE:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "FREEZE");
+		break;
+	case FS_UA_UNFREEZE:
+		ret = add_uevent_var(env, "FS_ACTION=%s", "UNFREEZE");
+		break;
+	default:
+		ret = -EINVAL;
+	}
+	if (ret)
+		goto out;
+	ret = kobject_uevent_env(e->kobject, kaction, env->envp);
+out:
+	kfree(env);
+	kfree(e);
+}
+
+/* fs_send_uevent - prepare and schedule event submission */
+void fs_send_uevent(struct super_block *sb, struct kobject *kobj,
+		    enum fs_event_type action)
+{
+	struct fs_uevent *e;
+
+	if (!fs_events_wq)
+		return;
+
+	e = kzalloc(sizeof(*e), GFP_NOIO);
+	if (!e)
+		return;
+
+	/* Do not forget to flush fs_events_wq before you kill sb */
+	e->sb = sb;
+	e->action = action;
+	e->kobject = kobj;
+	INIT_WORK(&e->work, fs_send_uevent_work);
+	queue_work(fs_events_wq, &e->work);
+}
+EXPORT_SYMBOL(fs_send_uevent);
+
 static int __init fs_events_init(void)
 {
 	fs_events_wq = alloc_workqueue("fs_events", 0, 0);
