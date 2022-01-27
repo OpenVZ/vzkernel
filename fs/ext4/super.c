@@ -446,7 +446,7 @@ static void ext4_send_uevent_work(struct work_struct *w)
 	struct fs_uevent *e = container_of(w, struct fs_uevent, work);
 	struct super_block *sb = e->sb;
 	struct kobj_uevent_env *env;
-	const u8 *uuid = EXT4_SB(sb)->s_es->s_uuid;
+	const uuid_t *uuid = &sb->s_uuid;
 	enum kobject_action kaction = KOBJ_CHANGE;
 	int ret;
 
