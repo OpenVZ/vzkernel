@@ -1689,9 +1689,6 @@ struct ext4_sb_info {
 	/* Precomputed FS UUID checksum for seeding other checksums */
 	__u32 s_csum_seed;
 
-	bool s_err_event_sent;
-	bool s_abrt_event_sent;
-
 	/* Reclaim extents from extent status tree */
 	struct shrinker s_es_shrinker;
 	struct list_head s_es_list;	/* List of inodes with reclaimable extents */

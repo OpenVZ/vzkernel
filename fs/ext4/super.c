@@ -658,16 +658,14 @@ static void ext4_handle_error(struct super_block *sb, bool force_ro, int error,
 	journal_t *journal = EXT4_SB(sb)->s_journal;
 	bool continue_fs = !force_ro && test_opt(sb, ERRORS_CONT);
 
-	if (!xchg(&EXT4_SB(sb)->s_err_event_sent, 1))
-		ext4_send_uevent(sb, FS_UA_ERROR);
+	ext4_send_uevent(sb, FS_UA_ERROR);
 
 	EXT4_SB(sb)->s_mount_state |= EXT4_ERROR_FS;
 	if (test_opt(sb, WARN_ON_ERROR))
 		WARN_ON_ONCE(1);
 
 	if (!continue_fs && !sb_rdonly(sb)) {
-		if (!xchg(&EXT4_SB(sb)->s_abrt_event_sent, 1))
-			ext4_send_uevent(sb, FS_UA_ABORT);
+		ext4_send_uevent(sb, FS_UA_ABORT);
 
 		ext4_set_mount_flag(sb, EXT4_MF_FS_ABORTED);
 		if (journal)
