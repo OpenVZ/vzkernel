@@ -37,6 +37,7 @@
 #include "xfs_reflink.h"
 #include "xfs_pwork.h"
 #include "xfs_ag.h"
+#include "xfs_error.h"
 
 #include <linux/magic.h>
 #include <linux/fs_context.h>
@@ -894,6 +895,8 @@ xfs_fs_freeze(
 	xfs_save_resvblks(mp);
 	ret = xfs_log_quiesce(mp);
 	memalloc_nofs_restore(flags);
+	if (!ret)
+		xfs_send_uevent(sb, FS_UA_FREEZE);
 	return ret;
 }
 
@@ -906,6 +909,7 @@ xfs_fs_unfreeze(
 	xfs_restore_resvblks(mp);
 	xfs_log_work_queue(mp);
 	xfs_blockgc_start(mp);
+	xfs_send_uevent(sb, FS_UA_UNFREEZE);
 	return 0;
 }
 
@@ -1040,6 +1044,9 @@ xfs_fs_put_super(
 	/* if ->fill_super failed, we have no mount to tear down */
 	if (!sb->s_fs_info)
 		return;
+
+	xfs_send_uevent(sb, FS_UA_UMOUNT);
+	flush_workqueue(fs_events_wq);
 
 	xfs_notice(mp, "Unmounting Filesystem");
 	xfs_filestream_unmount(mp);
@@ -1616,6 +1623,7 @@ xfs_fs_fill_super(
 		goto out_unmount;
 	}
 
+	xfs_send_uevent(sb, FS_UA_MOUNT);
 	return 0;
 
  out_filestream_unmount:
@@ -1811,6 +1819,7 @@ xfs_fs_reconfigure(
 			return error;
 	}
 
+	xfs_send_uevent(mp->m_super, FS_UA_REMOUNT);
 	return 0;
 }
 
