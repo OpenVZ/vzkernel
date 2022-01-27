@@ -434,106 +434,6 @@ static time64_t __ext4_get_tstamp(__le32 *lo, __u8 *hi)
 #define ext4_get_tstamp(es, tstamp) \
 	__ext4_get_tstamp(&(es)->tstamp, &(es)->tstamp ## _hi)
 
-/**
- * ext4_send_uevent - prepare and send uevent
- *
- * @sb:		super_block
- * @action:		action type
- *
- */
-static void ext4_send_uevent_work(struct work_struct *w)
-{
-	struct fs_uevent *e = container_of(w, struct fs_uevent, work);
-	struct super_block *sb = e->sb;
-	struct kobj_uevent_env *env;
-	const uuid_t *uuid = &sb->s_uuid;
-	enum kobject_action kaction = KOBJ_CHANGE;
-	int ret;
-
-	env = kzalloc(sizeof(struct kobj_uevent_env), GFP_KERNEL);
-	if (!env){
-		kfree(e);
-		return;
-	}
-	ret = add_uevent_var(env, "FS_TYPE=%s", sb->s_type->name);
-	if (ret)
-		goto out;
-	ret = add_uevent_var(env, "FS_NAME=%s", sb->s_id);
-	if (ret)
-		goto out;
-
-	if (!uuid_is_null(uuid)) {
-		ret = add_uevent_var(env, "UUID=%pUB", uuid);
-		if (ret)
-			goto out;
-	}
-
-	switch (e->action) {
-	case FS_UA_MOUNT:
-		kaction = KOBJ_ONLINE;
-		ret = add_uevent_var(env, "FS_ACTION=%s", "MOUNT");
-		break;
-	case FS_UA_UMOUNT:
-		kaction = KOBJ_OFFLINE;
-		ret = add_uevent_var(env, "FS_ACTION=%s", "UMOUNT");
-		break;
-	case FS_UA_REMOUNT:
-		ret = add_uevent_var(env, "FS_ACTION=%s", "REMOUNT");
-		break;
-	case FS_UA_ERROR:
-		ret = add_uevent_var(env, "FS_ACTION=%s", "ERROR");
-		break;
-	case FS_UA_ABORT:
-		ret = add_uevent_var(env, "FS_ACTION=%s", "ABORT");
-		break;
-	case FS_UA_FREEZE:
-		ret = add_uevent_var(env, "FS_ACTION=%s", "FREEZE");
-		break;
-	case FS_UA_UNFREEZE:
-		ret = add_uevent_var(env, "FS_ACTION=%s", "UNFREEZE");
-		break;
-	default:
-		ret = -EINVAL;
-	}
-	if (ret)
-		goto out;
-	ret = kobject_uevent_env(e->kobject, kaction, env->envp);
-out:
-	kfree(env);
-	kfree(e);
-}
-
-/**
- * ext4_send_uevent - prepare and schedule event submission
- *
- * @sb:		super_block
- * @action:		action type
- *
- */
-void ext4_send_uevent(struct super_block *sb, enum fs_event_type action)
-{
-	struct fs_uevent *e;
-
-	/*
-	 * May happen if called from ext4_put_super() -> __ext4_abort()
-	 * -> ext4_send_uevent()
-	 */
-	if (!fs_events_wq)
-		return;
-
-	e = kzalloc(sizeof(*e), GFP_NOIO);
-	if (!e)
-		return;
-
-	/* Do not forget to flush fs_events_wq before you kill sb */
-	e->sb = sb;
-	e->action = action;
-	e->kobject = &EXT4_SB(sb)->s_kobj;
-	INIT_WORK(&e->work, ext4_send_uevent_work);
-	queue_work(fs_events_wq, &e->work);
-}
-
-
 /*
  * The del_gendisk() function uninitializes the disk-specific data
  * structures, including the bdi structure, without telling anyone
@@ -725,6 +625,11 @@ static void save_error_info(struct super_block *sb, int error,
 		sbi->s_first_error_time = sbi->s_last_error_time;
 	}
 	spin_unlock(&sbi->s_error_lock);
+}
+
+static void ext4_send_uevent(struct super_block *sb, enum fs_event_type action)
+{
+	fs_send_uevent(sb, &EXT4_SB(sb)->s_kobj, action);
 }
 
 /* Deal with the reporting of failure conditions on a filesystem such as
