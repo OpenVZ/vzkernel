@@ -513,3 +513,10 @@ xfs_inode_verifier_error(
 	if (xfs_error_level >= XFS_ERRLEVEL_HIGH)
 		xfs_stack_trace();
 }
+
+void xfs_send_uevent(struct super_block *sb, enum fs_event_type event)
+{
+	struct xfs_mount *mp = XFS_M(sb);
+
+	fs_send_uevent(sb, &mp->m_kobj.kobject, event);
+}
