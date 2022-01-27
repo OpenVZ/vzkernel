@@ -3034,6 +3034,22 @@ extern bool path_is_under(const struct path *, const struct path *);
 
 extern char *file_path(struct file *, char *, int);
 
+enum fs_event_type {
+	FS_UA_MOUNT,
+	FS_UA_UMOUNT,
+	FS_UA_REMOUNT,
+	FS_UA_ERROR,
+	FS_UA_ABORT,
+	FS_UA_FREEZE,
+	FS_UA_UNFREEZE,
+};
+
+struct fs_uevent {
+	struct super_block *sb;
+	enum fs_event_type action;
+	struct work_struct work;
+};
+
 #include <linux/err.h>
 
 /* needed for stackable file system support */
