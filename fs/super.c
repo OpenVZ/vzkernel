@@ -1813,3 +1813,15 @@ int thaw_super(struct super_block *sb)
 	return thaw_super_locked(sb);
 }
 EXPORT_SYMBOL(thaw_super);
+
+struct workqueue_struct *fs_events_wq;
+EXPORT_SYMBOL(fs_events_wq);
+
+static int __init fs_events_init(void)
+{
+	fs_events_wq = alloc_workqueue("fs_events", 0, 0);
+	if (!fs_events_wq)
+		return -ENOMEM;
+	return 0;
+}
+fs_initcall(fs_events_init);
