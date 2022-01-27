@@ -62,8 +62,14 @@ xfs_uuid_mount(
 	/* Publish UUID in struct super_block */
 	uuid_copy(&mp->m_super->s_uuid, uuid);
 
-	if (mp->m_flags & XFS_MOUNT_NOUUID)
+	if (mp->m_flags & XFS_MOUNT_NOUUID) {
+		/*
+		 * mp->m_super->s_uuid is not used in xfs and generic fs code,
+		 * so we safely zero it for determinity in fs event code.
+		 */
+		uuid_copy(&mp->m_super->s_uuid, &uuid_null);
 		return 0;
+	}
 
 	if (uuid_is_null(uuid)) {
 		xfs_warn(mp, "Filesystem has null UUID - can't mount");
