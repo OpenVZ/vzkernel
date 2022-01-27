@@ -1022,13 +1022,13 @@ static int __init vtty_init(void)
 }
 
 void vtty_alloc_tty_struct(const struct tty_driver *driver,
-			   struct tty_struct *tty)
+			   struct tty_struct *o_tty)
 {
 	if (driver != vttys_driver)
 		return;
 
-	tty_set_lock_subclass(tty);
-	lockdep_set_subclass(&tty->termios_rwsem, TTY_LOCK_SLAVE);
+	tty_set_lock_subclass(o_tty);
+	lockdep_set_subclass(&o_tty->termios_rwsem, TTY_LOCK_SLAVE);
 }
 
 int vtty_open_master(envid_t veid, int idx)
