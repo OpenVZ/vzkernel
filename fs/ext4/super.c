@@ -445,12 +445,6 @@ static int ext4_uuid_valid(const u8 *uuid)
 	return 0;
 }
 
-struct ext4_uevent {
-	struct super_block *sb;
-	enum ext4_event_type action;
-	struct work_struct work;
-};
-
 /**
  * ext4_send_uevent - prepare and send uevent
  *
@@ -460,7 +454,7 @@ struct ext4_uevent {
  */
 static void ext4_send_uevent_work(struct work_struct *w)
 {
-	struct ext4_uevent *e = container_of(w, struct ext4_uevent, work);
+	struct fs_uevent *e = container_of(w, struct fs_uevent, work);
 	struct super_block *sb = e->sb;
 	struct kobj_uevent_env *env;
 	const u8 *uuid = EXT4_SB(sb)->s_es->s_uuid;
@@ -486,27 +480,27 @@ static void ext4_send_uevent_work(struct work_struct *w)
 	}
 
 	switch (e->action) {
-	case EXT4_UA_MOUNT:
+	case FS_UA_MOUNT:
 		kaction = KOBJ_ONLINE;
 		ret = add_uevent_var(env, "FS_ACTION=%s", "MOUNT");
 		break;
-	case EXT4_UA_UMOUNT:
+	case FS_UA_UMOUNT:
 		kaction = KOBJ_OFFLINE;
 		ret = add_uevent_var(env, "FS_ACTION=%s", "UMOUNT");
 		break;
-	case EXT4_UA_REMOUNT:
+	case FS_UA_REMOUNT:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "REMOUNT");
 		break;
-	case EXT4_UA_ERROR:
+	case FS_UA_ERROR:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "ERROR");
 		break;
-	case EXT4_UA_ABORT:
+	case FS_UA_ABORT:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "ABORT");
 		break;
-	case EXT4_UA_FREEZE:
+	case FS_UA_FREEZE:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "FREEZE");
 		break;
-	case EXT4_UA_UNFREEZE:
+	case FS_UA_UNFREEZE:
 		ret = add_uevent_var(env, "FS_ACTION=%s", "UNFREEZE");
 		break;
 	default:
@@ -527,9 +521,9 @@ out:
  * @action:		action type
  *
  */
-void ext4_send_uevent(struct super_block *sb, enum ext4_event_type action)
+void ext4_send_uevent(struct super_block *sb, enum fs_event_type action)
 {
-	struct ext4_uevent *e;
+	struct fs_uevent *e;
 
 	/*
 	 * May happen if called from ext4_put_super() -> __ext4_abort()
@@ -770,7 +764,7 @@ static void ext4_handle_error(struct super_block *sb, bool force_ro, int error,
 	bool continue_fs = !force_ro && test_opt(sb, ERRORS_CONT);
 
 	if (!xchg(&EXT4_SB(sb)->s_err_event_sent, 1))
-		ext4_send_uevent(sb, EXT4_UA_ERROR);
+		ext4_send_uevent(sb, FS_UA_ERROR);
 
 	EXT4_SB(sb)->s_mount_state |= EXT4_ERROR_FS;
 	if (test_opt(sb, WARN_ON_ERROR))
@@ -778,7 +772,7 @@ static void ext4_handle_error(struct super_block *sb, bool force_ro, int error,
 
 	if (!continue_fs && !sb_rdonly(sb)) {
 		if (!xchg(&EXT4_SB(sb)->s_abrt_event_sent, 1))
-			ext4_send_uevent(sb, EXT4_UA_ABORT);
+			ext4_send_uevent(sb, FS_UA_ABORT);
 
 		ext4_set_mount_flag(sb, EXT4_MF_FS_ABORTED);
 		if (journal)
@@ -1308,7 +1302,7 @@ static void ext4_put_super(struct super_block *sb)
 	int aborted = 0;
 	int i, err;
 
-	ext4_send_uevent(sb, EXT4_UA_UMOUNT);
+	ext4_send_uevent(sb, FS_UA_UMOUNT);
 	/*
 	 * Unregister sysfs before destroying jbd2 journal.
 	 * Since we could still access attr_journal_task attribute via sysfs
@@ -5756,7 +5750,7 @@ static int __ext4_fill_super(struct fs_context *fc, struct super_block *sb)
 	atomic_set(&sbi->s_warning_count, 0);
 	atomic_set(&sbi->s_msg_count, 0);
 
-	ext4_send_uevent(sb, EXT4_UA_MOUNT);
+	ext4_send_uevent(sb, FS_UA_MOUNT);
 	return 0;
 
 failed_mount9:
@@ -6500,7 +6494,7 @@ static int ext4_freeze(struct super_block *sb)
 	journal_t *journal;
 
 	if (sb_rdonly(sb)) {
-		ext4_send_uevent(sb, EXT4_UA_FREEZE);
+		ext4_send_uevent(sb, FS_UA_FREEZE);
 		return 0;
 	}
 
@@ -6531,7 +6525,7 @@ out:
 		jbd2_journal_unlock_updates(journal);
 
 	if (!error)
-		ext4_send_uevent(sb, EXT4_UA_FREEZE);
+		ext4_send_uevent(sb, FS_UA_FREEZE);
 
 	return error;
 }
@@ -6542,7 +6536,7 @@ out:
  */
 static int ext4_unfreeze(struct super_block *sb)
 {
-	ext4_send_uevent(sb, EXT4_UA_UNFREEZE);
+	ext4_send_uevent(sb, FS_UA_UNFREEZE);
 
 	if (sb_rdonly(sb) || ext4_forced_shutdown(EXT4_SB(sb)))
 		return 0;
@@ -6859,7 +6853,7 @@ restore_opts:
 #endif
 	if (!ext4_has_feature_mmp(sb) || sb_rdonly(sb))
 		ext4_stop_mmpd(sbi);
-	ext4_send_uevent(sb, EXT4_UA_REMOUNT);
+	ext4_send_uevent(sb, FS_UA_REMOUNT);
 	return err;
 }
 
