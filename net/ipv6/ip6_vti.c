@@ -47,6 +47,8 @@
 #include <net/netns/generic.h>
 #include <linux/etherdevice.h>
 
+#include <linux/ve.h>
+
 #define IP6_VTI_HASH_SIZE_SHIFT  5
 #define IP6_VTI_HASH_SIZE (1 << IP6_VTI_HASH_SIZE_SHIFT)
 
@@ -93,6 +95,9 @@ vti6_tnl_lookup(struct net *net, const struct in6_addr *remote,
 	struct ip6_tnl *t;
 	struct vti6_net *ip6n = net_generic(net, vti6_net_id);
 	struct in6_addr any;
+
+	if (!ip6n)
+		return NULL;
 
 	for_each_vti6_tunnel_rcu(ip6n->tnls_r_l[hash]) {
 		if (ipv6_addr_equal(local, &t->parms.laddr) &&
@@ -1013,6 +1018,9 @@ static int vti6_newlink(struct net *src_net, struct net_device *dev,
 	struct net *net = dev_net(dev);
 	struct ip6_tnl *nt;
 
+	if (!net_generic(net, vti6_net_id))
+		return -EACCES;
+
 	nt = netdev_priv(dev);
 	vti6_netlink_parms(data, &nt->parms);
 
@@ -1139,10 +1147,16 @@ static void __net_exit vti6_destroy_tunnels(struct vti6_net *ip6n,
 
 static int __net_init vti6_init_net(struct net *net)
 {
-	struct vti6_net *ip6n = net_generic(net, vti6_net_id);
+	struct vti6_net *ip6n;
 	struct ip6_tnl *t = NULL;
 	int err;
 
+	if (!ve_is_super(net->owner_ve)) {
+		net_generic_free(net, vti6_net_id);
+		return 0;
+	}
+
+	ip6n = net_generic(net, vti6_net_id);
 	ip6n->tnls[0] = ip6n->tnls_wc;
 	ip6n->tnls[1] = ip6n->tnls_r_l;
 
@@ -1185,7 +1199,8 @@ static void __net_exit vti6_exit_batch_net(struct list_head *net_list)
 	rtnl_lock();
 	list_for_each_entry(net, net_list, exit_list) {
 		ip6n = net_generic(net, vti6_net_id);
-		vti6_destroy_tunnels(ip6n, &list);
+		if (ip6n)
+			vti6_destroy_tunnels(ip6n, &list);
 	}
 	unregister_netdevice_many(&list);
 	rtnl_unlock();
