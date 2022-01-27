@@ -4613,6 +4613,8 @@ static void accumulate_ooms(struct mem_cgroup *memcg, unsigned long *oom,
 	*kill = total_oom_kill;
 }
 
+extern atomic_t global_oom;
+
 static int memcg_stat_show(struct seq_file *m, void *v)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
@@ -4645,11 +4647,10 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 
 	/*
 	 * For root_mem_cgroup we want to account global ooms as well.
-	 * The diff between all MEMCG_OOM_KILL and MEMCG_OOM events
-	 * should give us the glogbal ooms count.
 	 */
 	if (memcg == root_mem_cgroup)
-		seq_printf(m, "oom %lu\n", total_oom_kill - total_oom);
+		seq_printf(m, "oom %lu\n", atomic_read(&global_oom) +
+			atomic_long_read(&memcg->memory_events[MEMCG_OOM]));
 	else
 		seq_printf(m, "oom %lu\n",
 			atomic_long_read(&memcg->memory_events[MEMCG_OOM]));
@@ -4689,7 +4690,7 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 			   (u64)memcg_events(memcg, memcg1_events[i]));
 
 	if (memcg == root_mem_cgroup)
-		seq_printf(m, "total_oom %lu\n", total_oom_kill);
+		seq_printf(m, "total_oom %lu\n", total_oom + atomic_read(&global_oom));
 	else
 		seq_printf(m, "total_oom %lu\n", total_oom);
 
