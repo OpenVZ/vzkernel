@@ -508,7 +508,7 @@ static void ext4_send_uevent_work(struct work_struct *w)
 	}
 	if (ret)
 		goto out;
-	ret = kobject_uevent_env(&(EXT4_SB(sb)->s_kobj), kaction, env->envp);
+	ret = kobject_uevent_env(e->kobject, kaction, env->envp);
 out:
 	kfree(env);
 	kfree(e);
@@ -539,6 +539,7 @@ void ext4_send_uevent(struct super_block *sb, enum fs_event_type action)
 	/* Do not forget to flush fs_events_wq before you kill sb */
 	e->sb = sb;
 	e->action = action;
+	e->kobject = &EXT4_SB(sb)->s_kobj;
 	INIT_WORK(&e->work, ext4_send_uevent_work);
 	queue_work(fs_events_wq, &e->work);
 }
