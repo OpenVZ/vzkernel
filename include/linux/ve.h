@@ -66,6 +66,9 @@ struct ve_struct {
 	atomic_t		netns_avail_nr;
 	int			netns_max_nr;
 
+	atomic_t		netif_avail_nr;
+	int			netif_max_nr;
+
 	u64			_uevent_seqnum;
 
 	int			_randomize_va_space;
@@ -135,6 +138,7 @@ struct ve_devmnt {
 extern int nr_ve;
 
 #define NETNS_MAX_NR_DEFAULT	256	/* number of net-namespaces per-VE */
+#define NETIF_MAX_NR_DEFAULT	256	/* number of net-interfaces per-VE */
 
 extern unsigned int sysctl_ve_mount_nr;
 
