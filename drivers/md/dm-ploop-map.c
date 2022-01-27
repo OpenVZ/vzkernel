@@ -1052,8 +1052,10 @@ static int allocate_cluster(struct ploop *ploop, u32 *dst_clu)
 		 * in background.
 		 */
 		ret = vfs_fsync(file, 0);
-		if (ret)
+		if (ret) {
+			pr_err("ploop: fsync: %d\n", ret);
 			return ret;
+		}
 	}
 
 	if (end > top->file_preallocated_area_start)
@@ -1884,11 +1886,14 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 	if (dst_clu)
 		type = PIWB_TYPE_RELOC;
 
-	if ((md->status & (MD_DIRTY|MD_WRITEBACK)) ||
-	    ploop_prepare_bat_update(ploop, md, type)) {
-		err = -EIO;
+	err = -EIO;
+	if ((md->status & (MD_DIRTY|MD_WRITEBACK))) {
+		pr_err("ploop: Unexpected md status: %x\n", md->status);
 		goto out_error;
 	}
+	err = ploop_prepare_bat_update(ploop, md, type);
+	if (err)
+		goto out_error;
 
 	piwb = md->piwb;
 
