@@ -3176,6 +3176,8 @@ struct fs_uevent {
 	struct work_struct work;
 };
 
+extern struct workqueue_struct *fs_events_wq;
+
 #include <linux/err.h>
 
 /* needed for stackable file system support */

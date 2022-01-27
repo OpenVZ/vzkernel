@@ -519,17 +519,18 @@ void ext4_send_uevent(struct super_block *sb, enum fs_event_type action)
 	 * May happen if called from ext4_put_super() -> __ext4_abort()
 	 * -> ext4_send_uevent()
 	 */
-	if (!EXT4_SB(sb)->rsv_conversion_wq)
+	if (!fs_events_wq)
 		return;
 
 	e = kzalloc(sizeof(*e), GFP_NOIO);
 	if (!e)
 		return;
 
+	/* Do not forget to flush fs_events_wq before you kill sb */
 	e->sb = sb;
 	e->action = action;
 	INIT_WORK(&e->work, ext4_send_uevent_work);
-	queue_work(EXT4_SB(sb)->rsv_conversion_wq, &e->work);
+	queue_work(fs_events_wq, &e->work);
 }
 
 
@@ -1287,6 +1288,7 @@ static void ext4_put_super(struct super_block *sb)
 	int i, err;
 
 	ext4_send_uevent(sb, FS_UA_UMOUNT);
+	flush_workqueue(fs_events_wq);
 	ext4_unregister_li_request(sb);
 	ext4_quota_off_umount(sb);
 
