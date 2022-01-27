@@ -434,17 +434,6 @@ static time64_t __ext4_get_tstamp(__le32 *lo, __u8 *hi)
 #define ext4_get_tstamp(es, tstamp) \
 	__ext4_get_tstamp(&(es)->tstamp, &(es)->tstamp ## _hi)
 
-static int ext4_uuid_valid(const u8 *uuid)
-{
-	int i;
-
-	for (i = 0; i < 16; i++) {
-		if (uuid[i])
-			return 1;
-	}
-	return 0;
-}
-
 /**
  * ext4_send_uevent - prepare and send uevent
  *
@@ -473,7 +462,7 @@ static void ext4_send_uevent_work(struct work_struct *w)
 	if (ret)
 		goto out;
 
-	if (ext4_uuid_valid(uuid)) {
+	if (!uuid_is_null(uuid)) {
 		ret = add_uevent_var(env, "UUID=%pUB", uuid);
 		if (ret)
 			goto out;
