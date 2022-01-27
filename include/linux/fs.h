@@ -3051,6 +3051,9 @@ struct fs_uevent {
 
 extern struct workqueue_struct *fs_events_wq;
 
+extern void fs_send_uevent(struct super_block *sb, struct kobject *kobj,
+			   enum fs_event_type action);
+
 #include <linux/err.h>
 
 /* needed for stackable file system support */
