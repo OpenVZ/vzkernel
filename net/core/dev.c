@@ -9872,17 +9872,26 @@ int register_netdevice(struct net_device *dev)
 	if (ret)
 		return ret;
 
+	ret = -ENOMEM;
+	if (atomic_dec_if_positive(&net->owner_ve->netif_avail_nr) < 0) {
+		ve_pr_warn_ratelimited(VE_LOG_BOTH,
+			"CT%s: hits max number of network devices, "
+			"increase ve::netif_max_nr parameter\n",
+			net->owner_ve->ve_name);
+		return ret;
+	}
+
 	spin_lock_init(&dev->addr_list_lock);
 	netdev_set_addr_lockdep_class(dev);
 
 	ret = dev_get_valid_name(net, dev, dev->name);
 	if (ret < 0)
-		goto out;
+		goto out_inc;
 
 	ret = -ENOMEM;
 	dev->name_node = netdev_name_node_head_alloc(dev);
 	if (!dev->name_node)
-		goto out;
+		goto out_inc;
 
 	/* Init, if this function is available */
 	if (dev->netdev_ops->ndo_init) {
@@ -10023,6 +10032,8 @@ err_uninit:
 		dev->priv_destructor(dev);
 err_free_name:
 	netdev_name_node_free(dev->name_node);
+out_inc:
+	atomic_inc(&net->owner_ve->netif_avail_nr);
 	goto out;
 }
 EXPORT_SYMBOL(register_netdevice);
@@ -10274,6 +10285,8 @@ void netdev_run_todo(void)
 			dev->priv_destructor(dev);
 		if (dev->needs_free_netdev)
 			free_netdev(dev);
+
+		atomic_inc(&dev_net(dev)->owner_ve->netif_avail_nr);
 
 		/* Report a network device has been unregistered */
 		rtnl_lock();
@@ -10891,6 +10904,16 @@ int __dev_change_net_namespace(struct net_device *dev, struct net *net,
 	err = -EBUSY;
 	if (new_ifindex && __dev_get_by_index(net, new_ifindex))
 		goto out;
+
+	err = -ENOMEM;
+	if (atomic_dec_if_positive(&net->owner_ve->netif_avail_nr) < 0) {
+		ve_pr_warn_ratelimited(VE_LOG_BOTH,
+			"CT%s: hits max number of network devices, "
+			"increase ve::netif_max_nr parameter\n",
+			net->owner_ve->ve_name);
+		goto out;
+	}
+	atomic_inc(&dev_net(dev)->owner_ve->netif_avail_nr);
 
 	/*
 	 * And now a mini version of register_netdevice unregister_netdevice.
