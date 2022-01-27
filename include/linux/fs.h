@@ -3021,6 +3021,7 @@ enum fs_event_type {
 struct fs_uevent {
 	struct super_block *sb;
 	enum fs_event_type action;
+	struct kobject *kobject;
 	struct work_struct work;
 };
 
