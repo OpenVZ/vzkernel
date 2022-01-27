@@ -69,6 +69,8 @@ struct ve_struct ve0 = {
 	.sched_lat_ve.cur	= &ve0_lat_stats,
 	.netns_avail_nr		= ATOMIC_INIT(INT_MAX),
 	.netns_max_nr		= INT_MAX,
+	.netif_avail_nr		= ATOMIC_INIT(INT_MAX),
+	.netif_max_nr		= INT_MAX,
 	.fsync_enable		= FSYNC_FILTERED,
 	._randomize_va_space	=
 #ifdef CONFIG_COMPAT_BRK
@@ -925,6 +927,9 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	atomic_set(&ve->netns_avail_nr, NETNS_MAX_NR_DEFAULT);
 	ve->netns_max_nr = NETNS_MAX_NR_DEFAULT;
 
+	atomic_set(&ve->netif_avail_nr, NETIF_MAX_NR_DEFAULT);
+	ve->netif_max_nr = NETIF_MAX_NR_DEFAULT;
+
 	err = ve_log_init(ve);
 	if (err)
 		goto err_log;
@@ -1307,6 +1312,35 @@ static int ve_netns_max_nr_write(struct cgroup_subsys_state *css, struct cftype 
 static u64 ve_netns_avail_nr_read(struct cgroup_subsys_state *css, struct cftype *cft)
 {
 	return atomic_read(&css_to_ve(css)->netns_avail_nr);
+}
+
+static u64 ve_netif_max_nr_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return css_to_ve(css)->netif_max_nr;
+}
+
+static int ve_netif_max_nr_write(struct cgroup_subsys_state *css, struct cftype *cft, u64 val)
+{
+	struct ve_struct *ve = css_to_ve(css);
+	int delta;
+
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
+	if (val > INT_MAX)
+		return -EOVERFLOW;
+
+	down_write(&ve->op_sem);
+	delta = val - ve->netif_max_nr;
+	ve->netif_max_nr = val;
+	atomic_add(delta, &ve->netif_avail_nr);
+	up_write(&ve->op_sem);
+	return 0;
+}
+
+static s64 ve_netif_avail_nr_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return atomic_read(&css_to_ve(css)->netif_avail_nr);
 }
 
 static int ve_os_release_read(struct seq_file *sf, void *v)
@@ -1765,6 +1799,16 @@ static struct cftype ve_cftypes[] = {
 	{
 		.name			= "netns_avail_nr",
 		.read_u64		= ve_netns_avail_nr_read,
+	},
+	{
+		.name			= "netif_max_nr",
+		.flags			= CFTYPE_NOT_ON_ROOT,
+		.read_u64		= ve_netif_max_nr_read,
+		.write_u64		= ve_netif_max_nr_write,
+	},
+	{
+		.name			= "netif_avail_nr",
+		.read_s64		= ve_netif_avail_nr_read,
 	},
 	{
 		.name			= "os_release",
