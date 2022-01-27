@@ -1574,6 +1574,10 @@ struct super_block {
 	/* per-sb errseq_t for reporting writeback errors via syncfs */
 	errseq_t s_wb_err;
 
+	/* For fs_send_uevent() */
+	bool s_err_event_sent;
+	bool s_abrt_event_sent;
+
 	/* AIO completions deferred from interrupt context */
 	struct workqueue_struct *s_dio_done_wq;
 	struct hlist_head s_pins;
