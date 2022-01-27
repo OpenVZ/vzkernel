@@ -381,6 +381,7 @@ xfs_corruption_error(
 		xfs_hex_dump(buf, bufsize);
 	xfs_error_report(tag, level, mp, filename, linenum, failaddr);
 	xfs_alert(mp, "Corruption detected. Unmount and run xfs_repair");
+	xfs_send_uevent(mp->m_super, FS_UA_ERROR);
 }
 
 /*
@@ -405,6 +406,7 @@ xfs_buf_corruption_error(
 
 	if (xfs_error_level >= XFS_ERRLEVEL_HIGH)
 		xfs_stack_trace();
+	xfs_send_uevent(mp->m_super, FS_UA_ERROR);
 }
 
 /*
@@ -443,6 +445,7 @@ xfs_buf_verifier_error(
 
 	if (xfs_error_level >= XFS_ERRLEVEL_HIGH)
 		xfs_stack_trace();
+	xfs_send_uevent(mp->m_super, FS_UA_ERROR);
 }
 
 /*
@@ -493,6 +496,7 @@ xfs_inode_verifier_error(
 
 	if (xfs_error_level >= XFS_ERRLEVEL_HIGH)
 		xfs_stack_trace();
+	xfs_send_uevent(mp->m_super, FS_UA_ERROR);
 }
 
 void xfs_send_uevent(struct super_block *sb, enum fs_event_type event)
