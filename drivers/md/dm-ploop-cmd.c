@@ -304,17 +304,22 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 
 	/* Read full clu sync */
 	ret = ploop_read_cluster_sync(ploop, pio, dst_clu);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("ploop: reloc: failed read: %d\n", ret);
 		goto out;
+	}
 
 	ret = ploop_prepare_reloc_index_wb(ploop, &md, clu, &new_dst);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("ploop: reloc: can't prepare it: %d\n", ret);
 		goto out;
+	}
 	piwb = md->piwb;
 
 	/* Write clu to new destination */
 	ret = ploop_write_cluster_sync(ploop, pio, new_dst);
 	if (ret) {
+		pr_err("ploop: reloc: failed write: %d\n", ret);
 		ploop_break_bat_update(ploop, md);
 		goto out;
 	}
@@ -328,8 +333,10 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	wait_for_completion(&comp);
 
 	ret = blk_status_to_errno(bi_status);
-	if (ret)
+	if (ret) {
+		pr_err("ploop: reloc: failed md page write: %d\n", ret);
 		goto out;
+	}
 
 	/* Update local BAT copy */
 	write_lock_irq(&ploop->bat_rwlock);
@@ -345,6 +352,8 @@ not_occupied:
 
 	/* Zero new BAT entries on disk. */
 	ret = ploop_write_zero_cluster_sync(ploop, pio, dst_clu);
+	if (ret)
+		pr_err("ploop: reloc: failed zero: %d\n", ret);
 out:
 	return ret;
 }
@@ -395,6 +404,8 @@ static int ploop_grow_update_header(struct ploop *ploop,
 		hdr->m_SizeInSectors_v2 = sectors;
 		hdr->m_FirstBlockOffset = offset;
 		kunmap_atomic(hdr);
+	} else {
+		pr_err("ploop: Failed to update hdr: %d\n", ret);
 	}
 
 	return ret;
