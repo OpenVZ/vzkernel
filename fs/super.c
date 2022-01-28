@@ -1828,6 +1828,7 @@ int thaw_super(struct super_block *sb)
 EXPORT_SYMBOL(thaw_super);
 
 struct workqueue_struct *fs_events_wq;
+EXPORT_SYMBOL(fs_events_wq);
 
 void fs_send_uevent_work(struct work_struct *w)
 {
