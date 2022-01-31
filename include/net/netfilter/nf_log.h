@@ -97,5 +97,5 @@ struct nf_log_buf;
 
 struct nf_log_buf *nf_log_buf_open(void);
 __printf(2, 3) int nf_log_buf_add(struct nf_log_buf *m, const char *f, ...);
-void nf_log_buf_close(struct nf_log_buf *m);
+void nf_log_buf_close(struct nf_log_buf *m, struct net *net);
 #endif /* _NF_LOG_H */
