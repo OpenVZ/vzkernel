@@ -2568,6 +2568,32 @@ asmlinkage int ve_printk(int dst, const char *fmt, ...)
 }
 EXPORT_SYMBOL(ve_printk);
 
+asmlinkage int ve_log_vprintk(struct ve_struct *ve, const char *fmt, va_list args)
+{
+	int r = 0;
+
+	if (ve_is_super(ve))
+		r = vprintk(fmt, args);
+	else
+		r = vprintk_emit_log(ve->log_state, 0, LOGLEVEL_DEFAULT, NULL,
+				     fmt, args);
+
+	return r;
+}
+
+asmlinkage int ve_log_printk(struct ve_struct *ve, const char *fmt, ...)
+{
+	va_list args;
+	int r;
+
+	va_start(args, fmt);
+	r = ve_log_vprintk(ve, fmt, args);
+	va_end(args);
+
+	return r;
+}
+EXPORT_SYMBOL(ve_log_printk);
+
 asmlinkage __visible int _printk(const char *fmt, ...)
 {
 	va_list args;
