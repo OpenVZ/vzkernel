@@ -151,7 +151,7 @@ static void nf_log_arp_packet(struct net *net, u_int8_t pf,
 				  prefix);
 	dump_arp_packet(m, loginfo, skb, skb_network_offset(skb));
 
-	nf_log_buf_close(m);
+	nf_log_buf_close(m, net);
 }
 
 static struct nf_logger nf_arp_logger __read_mostly = {
@@ -852,7 +852,7 @@ static void nf_log_ip_packet(struct net *net, u_int8_t pf,
 
 	dump_ipv4_packet(net, m, loginfo, skb, skb_network_offset(skb));
 
-	nf_log_buf_close(m);
+	nf_log_buf_close(m, net);
 }
 
 static struct nf_logger nf_ip_logger __read_mostly = {
@@ -887,7 +887,7 @@ static void nf_log_ip6_packet(struct net *net, u_int8_t pf,
 
 	dump_ipv6_packet(net, m, loginfo, skb, skb_network_offset(skb), 1);
 
-	nf_log_buf_close(m);
+	nf_log_buf_close(m, net);
 }
 
 static struct nf_logger nf_ip6_logger __read_mostly = {
@@ -920,7 +920,7 @@ static void nf_log_unknown_packet(struct net *net, u_int8_t pf,
 
 	dump_mac_header(m, loginfo, skb);
 
-	nf_log_buf_close(m);
+	nf_log_buf_close(m, net);
 }
 
 static void nf_log_netdev_packet(struct net *net, u_int8_t pf,
