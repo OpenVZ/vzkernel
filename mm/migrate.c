@@ -1941,6 +1941,9 @@ SYSCALL_DEFINE6(move_pages, pid_t, pid, unsigned long, nr_pages,
 		const int __user *, nodes,
 		int __user *, status, int, flags)
 {
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
+
 	return kernel_move_pages(pid, nr_pages, pages, nodes, status, flags);
 }
 
@@ -1953,6 +1956,9 @@ COMPAT_SYSCALL_DEFINE6(move_pages, pid_t, pid, compat_ulong_t, nr_pages,
 {
 	const void __user * __user *pages;
 	int i;
+
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
 
 	pages = compat_alloc_user_space(nr_pages * sizeof(void *));
 	for (i = 0; i < nr_pages; i++) {

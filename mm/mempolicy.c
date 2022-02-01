@@ -1491,9 +1491,6 @@ static long kernel_set_mempolicy(int mode, const unsigned long __user *nmask,
 	int lmode = mode;
 	int err;
 
-	if (!ve_is_super(get_exec_env()))
-		return -ENOSYS;
-
 	err = sanitize_mpol_flags(&lmode, &mode_flags);
 	if (err)
 		return err;
@@ -1508,6 +1505,9 @@ static long kernel_set_mempolicy(int mode, const unsigned long __user *nmask,
 SYSCALL_DEFINE3(set_mempolicy, int, mode, const unsigned long __user *, nmask,
 		unsigned long, maxnode)
 {
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
+
 	return kernel_set_mempolicy(mode, nmask, maxnode);
 }
 
@@ -1641,6 +1641,9 @@ SYSCALL_DEFINE5(get_mempolicy, int __user *, policy,
 		unsigned long __user *, nmask, unsigned long, maxnode,
 		unsigned long, addr, unsigned long, flags)
 {
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
+
 	return kernel_get_mempolicy(policy, nmask, maxnode, addr, flags);
 }
 
@@ -1685,6 +1688,9 @@ COMPAT_SYSCALL_DEFINE3(set_mempolicy, int, mode, compat_ulong_t __user *, nmask,
 	unsigned long __user *nm = NULL;
 	unsigned long nr_bits, alloc_size;
 	DECLARE_BITMAP(bm, MAX_NUMNODES);
+
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
 
 	nr_bits = min_t(unsigned long, maxnode-1, MAX_NUMNODES);
 	alloc_size = ALIGN(nr_bits, BITS_PER_LONG) / 8;
@@ -1735,6 +1741,9 @@ COMPAT_SYSCALL_DEFINE4(migrate_pages, compat_pid_t, pid,
 	nodemask_t tmp_mask;
 	unsigned long nr_bits;
 	unsigned long size;
+
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
 
 	nr_bits = min_t(unsigned long, maxnode - 1, MAX_NUMNODES);
 	size = ALIGN(nr_bits, BITS_PER_LONG) / 8;
