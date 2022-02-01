@@ -1699,6 +1699,7 @@ static void cleanup_mapped_device(struct mapped_device *md)
 	if (md->queue)
 		dm_queue_destroy_keyslot_manager(md->queue);
 
+	dm_cleanup_zoned_dev(md);
 	if (md->disk)
 		blk_cleanup_disk(md->disk);
 
@@ -1710,7 +1711,6 @@ static void cleanup_mapped_device(struct mapped_device *md)
 	mutex_destroy(&md->swap_bios_lock);
 
 	dm_mq_cleanup_mapped_device(md);
-	dm_cleanup_zoned_dev(md);
 }
 
 /*
