@@ -274,6 +274,25 @@ int ve_net_hide_sysctl(struct net *net)
 }
 EXPORT_SYMBOL(ve_net_hide_sysctl);
 
+bool is_ve_init_net(struct net *net)
+{
+	struct ve_struct *ve = net->owner_ve;
+	struct nsproxy *ve_ns;
+	bool ret = false;
+
+	if (ve_is_super(ve))
+		return net_eq(net, &init_net);
+
+	rcu_read_lock();
+	ve_ns = rcu_dereference(ve->ve_ns);
+	if (ve_ns)
+		ret = net_eq(ve_ns->net_ns, net);
+	rcu_read_unlock();
+
+	return ret;
+}
+EXPORT_SYMBOL(is_ve_init_net);
+
 int nr_threads_ve(struct ve_struct *ve)
 {
         return cgroup_task_count(ve->css.cgroup);
