@@ -16,6 +16,7 @@
 #include <net/udp.h>
 #include <net/tcp.h>
 #include <net/route.h>
+#include <linux/ve.h>
 
 #include <linux/netfilter.h>
 #include <linux/netfilter_bridge.h>
@@ -134,7 +135,7 @@ static void nf_log_arp_packet(struct net *net, u_int8_t pf,
 	struct nf_log_buf *m;
 
 	/* FIXME: Disabled from containers until syslog ns is supported */
-	if (!net_eq(net, &init_net) && !sysctl_nf_log_all_netns)
+	if (!is_ve_init_net(net) && !sysctl_nf_log_all_netns)
 		return;
 
 	m = nf_log_buf_open();
@@ -815,7 +816,7 @@ static void nf_log_ip_packet(struct net *net, u_int8_t pf,
 	struct nf_log_buf *m;
 
 	/* FIXME: Disabled from containers until syslog ns is supported */
-	if (!net_eq(net, &init_net) && !sysctl_nf_log_all_netns)
+	if (!is_ve_init_net(net) && !sysctl_nf_log_all_netns)
 		return;
 
 	m = nf_log_buf_open();
@@ -909,7 +910,7 @@ static void nf_log_ip6_packet(struct net *net, u_int8_t pf,
 	struct nf_log_buf *m;
 
 	/* FIXME: Disabled from containers until syslog ns is supported */
-	if (!net_eq(net, &init_net) && !sysctl_nf_log_all_netns)
+	if (!is_ve_init_net(net) && !sysctl_nf_log_all_netns)
 		return;
 
 	m = nf_log_buf_open();
