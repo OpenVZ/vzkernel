@@ -16,6 +16,7 @@
 #include <net/udp.h>
 #include <net/tcp.h>
 #include <net/route.h>
+#include <linux/ve.h>
 
 #include <linux/netfilter.h>
 #include <linux/netfilter_bridge.h>
@@ -44,6 +45,11 @@ struct arppayload {
 static bool nf_log_allowed(const struct net *net)
 {
 	return net_eq(net, &init_net) || sysctl_nf_log_all_netns;
+}
+
+static bool nf_log_allowed_ve(const struct net *net)
+{
+	return is_ve_init_net(net) || sysctl_nf_log_all_netns;
 }
 
 static void nf_log_dump_vlan(struct nf_log_buf *m, const struct sk_buff *skb)
@@ -139,7 +145,8 @@ static void nf_log_arp_packet(struct net *net, u_int8_t pf,
 {
 	struct nf_log_buf *m;
 
-	if (!nf_log_allowed(net))
+	/* Enabled from init net ns of Containers */
+	if (!nf_log_allowed_ve(net))
 		return;
 
 	m = nf_log_buf_open();
@@ -836,7 +843,8 @@ static void nf_log_ip_packet(struct net *net, u_int8_t pf,
 {
 	struct nf_log_buf *m;
 
-	if (!nf_log_allowed(net))
+	/* Enabled from init net ns of Containers */
+	if (!nf_log_allowed_ve(net))
 		return;
 
 	m = nf_log_buf_open();
@@ -871,7 +879,8 @@ static void nf_log_ip6_packet(struct net *net, u_int8_t pf,
 {
 	struct nf_log_buf *m;
 
-	if (!nf_log_allowed(net))
+	/* Enabled from init net ns of Containers */
+	if (!nf_log_allowed_ve(net))
 		return;
 
 	m = nf_log_buf_open();

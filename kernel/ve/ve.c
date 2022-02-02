@@ -289,7 +289,7 @@ struct net *ve_get_net_ns(struct ve_struct* ve)
 }
 EXPORT_SYMBOL(ve_get_net_ns);
 
-bool is_ve_init_net(struct net *net)
+bool is_ve_init_net(const struct net *net)
 {
 	struct ve_struct *ve = net->owner_ve;
 	struct nsproxy *ve_ns;
