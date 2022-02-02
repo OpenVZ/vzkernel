@@ -274,7 +274,7 @@ int ve_net_hide_sysctl(struct net *net)
 }
 EXPORT_SYMBOL(ve_net_hide_sysctl);
 
-bool is_ve_init_net(struct net *net)
+bool is_ve_init_net(const struct net *net)
 {
 	struct ve_struct *ve = net->owner_ve;
 	struct nsproxy *ve_ns;
