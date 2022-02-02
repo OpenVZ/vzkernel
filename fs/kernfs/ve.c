@@ -101,15 +101,10 @@ void kernfs_put_ve_perms(struct kernfs_node *kn)
 
 bool kernfs_d_visible(struct kernfs_node *kn, struct kernfs_super_info *info)
 {
-	struct ve_struct *ve = info->ve;
 	struct kernfs_node *tmp_kn = kn;
 
-	/* Non-containerized fs */
-	if (!ve)
-		return true;
 
-	/* Host sees anything */
-	if (ve_is_super(ve))
+	if (kernfs_ve_allowed(kn))
 		return true;
 
 	/* Entries with namespace tag and their sub-entries always visible */
@@ -122,15 +117,6 @@ bool kernfs_d_visible(struct kernfs_node *kn, struct kernfs_super_info *info)
 	/* Symlinks are visible if target kn is visible */
 	if (kernfs_type(kn) == KERNFS_LINK)
 		kn = kn->symlink.target_kn;
-
-	/*
-	 * Some systems that are built on top of kernfs might
-	 * not want to use ve_perms_map (cgroup is an example)
-	 * so they leave ve_perms_map uninitialized.
-	 * For them we just true.
-	 */
-	if (!kn->ve_perms_map)
-		return true;
 
 	return !!kmapset_get_value(kn->ve_perms_map,
 				   kernfs_info_perms_key(info));
