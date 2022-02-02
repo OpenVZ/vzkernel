@@ -217,6 +217,8 @@ extern int vz_security_protocol_check(struct net *net, int protocol);
 
 int ve_net_hide_sysctl(struct net *net);
 
+extern bool is_ve_init_net(struct net *net);
+
 #else	/* CONFIG_VE */
 #include <linux/init_task.h>
 #define get_ve(ve)	((void)(ve), NULL)
@@ -235,6 +237,11 @@ static inline bool current_user_ns_initial(void)
 static inline struct user_namespace *ve_init_user_ns(void)
 {
 	return &init_user_ns;
+}
+
+static inline bool is_ve_init_net(struct net *net)
+{
+	return net_eq(net, &init_net);
 }
 
 static inline struct cgroup *cgroup_ve_root1(struct cgroup *cgrp)
