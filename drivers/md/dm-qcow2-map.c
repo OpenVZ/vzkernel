@@ -1527,7 +1527,7 @@ static int submit_read_md_page(struct qcow2 *qcow2, struct qio **qio,
 	ret = alloc_and_insert_md_page(qcow2, page_id, &md);
 	if (ret < 0) {
 		pr_err("Can't alloc: ret=%d, page_id=%llu\n", ret, page_id);
-		return -EIO;
+		return ret;
 	}
 
 	spin_lock_irq(&qcow2->md_pages_lock);
@@ -1994,7 +1994,7 @@ static int place_r2(struct qcow2 *qcow2, struct qcow2_map_item *r1,
 	ret = alloc_and_insert_md_page(qcow2, page_id, &r2->md);
 	if (ret < 0) {
 		pr_err("Can't alloc: ret=%d, page_id=%llu\n", ret, page_id);
-		return -EIO;
+		return ret;
 	}
 
 	zero_fill_page_from(r2->md->page, 0);
