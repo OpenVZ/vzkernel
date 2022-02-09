@@ -1624,7 +1624,7 @@ skip_bvec:
 
 	return;
 err_nomem:
-	pio->bi_status = BLK_STS_IOERR;
+	pio->bi_status = BLK_STS_RESOURCE;
 	pio_endio(pio);
 }
 
