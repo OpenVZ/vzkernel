@@ -6,6 +6,8 @@
 
 /* Kernel module for IP set management */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -2362,8 +2364,11 @@ static struct pernet_operations ip_set_net_ops = {
 static int __init
 ip_set_init(void)
 {
-	int ret = register_pernet_subsys(&ip_set_net_ops);
+	int ret;
 
+	mark_driver_deprecated("ipset");
+
+	ret = register_pernet_subsys(&ip_set_net_ops);
 	if (ret) {
 		pr_err("ip_set: cannot register pernet_subsys.\n");
 		return ret;

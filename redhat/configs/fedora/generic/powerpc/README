@@ -1,2 +1,0 @@
-This directory contains options specific for all powerpc variants. This includes
-the terribly named 'powerpc64', powerpc64le, powerpc64p7.

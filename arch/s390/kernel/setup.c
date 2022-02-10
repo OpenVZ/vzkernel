@@ -627,8 +627,9 @@ static void __init reserve_crashkernel(void)
 			return;
 		}
 		low = crash_base ?: low;
-		crash_base = memblock_find_in_range(low, high, crash_size,
-						    KEXEC_CRASH_MEM_ALIGN);
+		crash_base = memblock_phys_alloc_range(crash_size,
+						       KEXEC_CRASH_MEM_ALIGN,
+						       low, high);
 	}
 
 	if (!crash_base) {
@@ -637,8 +638,10 @@ static void __init reserve_crashkernel(void)
 		return;
 	}
 
-	if (register_memory_notifier(&kdump_mem_nb))
+	if (register_memory_notifier(&kdump_mem_nb)) {
+		memblock_free(crash_base, crash_size);
 		return;
+	}
 
 	if (!OLDMEM_BASE && MACHINE_IS_VM)
 		diag10_range(PFN_DOWN(crash_base), PFN_DOWN(crash_size));
@@ -855,11 +858,15 @@ static int __init setup_hwcaps(void)
 			elf_hwcap |= HWCAP_S390_VXRS_EXT2;
 		if (test_facility(152))
 			elf_hwcap |= HWCAP_S390_VXRS_PDE;
+		if (test_facility(192))
+			elf_hwcap |= HWCAP_S390_VXRS_PDE2;
 	}
 	if (test_facility(150))
 		elf_hwcap |= HWCAP_S390_SORT;
 	if (test_facility(151))
 		elf_hwcap |= HWCAP_S390_DFLT;
+	if (test_facility(165))
+		elf_hwcap |= HWCAP_S390_NNPA;
 
 	/*
 	 * Guarded storage support HWCAP_S390_GS is bit 12.

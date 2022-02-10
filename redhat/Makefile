@@ -141,6 +141,7 @@ dist-configs-check: dist-configs-prep
 	cd $(REDHAT)/configs; ./process_configs.sh $(PROCESS_CONFIGS_CHECK_OPTS) $(PACKAGE_NAME)
 
 dist-configs-prep: dist-clean-configs dist-buildreq-check
+	cd $(REDHAT)/configs; ./build_configs.sh "partial" "$(ARCH_MACH)" "snip"
 	cd $(REDHAT)/configs; ./build_configs.sh "$(PACKAGE_NAME)" "$(ARCH_MACH)" "$(FLAVOR)"
 
 dist-configs-arch: ARCH_MACH = $(MACH)
@@ -236,7 +237,7 @@ setup-source: dist-git-version-check dist-clean-sources
 		cp $(REDHAT)/$(CHANGELOG_PREV) $(REDHAT)/$(CHANGELOG); \
 	fi
 	@cp $(REDHAT)/$(CHANGELOG) $(SOURCES)/$(CHANGELOG)
-	@$(REDHAT)/genspec.sh $(SOURCES) $(SOURCES)/$(SPECFILE) $(SOURCES)/$(CHANGELOG) $(PKGRELEASE) $(RPMKVERSION) $(RPMKPATCHLEVEL) $(RPMKSUBLEVEL) $(DISTRO_BUILD) $(RELEASED_KERNEL) $(SPECRELEASE) $(__ZSTREAM) "$(BUILDOPTS)" $(MARKER) `cat $(REDHAT)/marker` $(SINGLE_TARBALL) $(TARFILE_RELEASE) $(SNAPSHOT) $(UPSTREAM_BRANCH) $(BUILDID)
+	@$(REDHAT)/genspec.sh $(SOURCES) $(SOURCES)/$(SPECFILE) $(SOURCES)/$(CHANGELOG) $(PKGRELEASE) $(RPMKVERSION) $(RPMKPATCHLEVEL) $(RPMKSUBLEVEL) $(DISTRO_BUILD) $(RELEASED_KERNEL) $(SPECRELEASE) $(__ZSTREAM) "$(BUILDOPTS)" $(MARKER) `cat $(REDHAT)/marker` $(SINGLE_TARBALL) $(TARFILE_RELEASE) $(SNAPSHOT) $(UPSTREAM_BRANCH) $(INCLUDE_FEDORA_FILES) $(INCLUDE_RHEL_FILES) $(BUILDID)
 	@cp $(SOURCES)/$(SPECFILE) $(SOURCES)/../SPECS/
 
 generate-testpatch-tmp:
@@ -254,12 +255,12 @@ sources-rh: $(TARBALL) generate-testpatch-tmp setup-source dist-configs-check
 		echo "WARNING: There are uncommitted changes in your tree or the changes are not in sync with linux-kernel-test.patch.  Either commit the changes or run 'make dist-test-patch'"
 	@rm $(TESTPATCH).tmp
 	@cp $(TESTPATCH) $(SOURCES)/linux-kernel-test.patch
-	@cp fedora_files/* $(SOURCES);
-	@cp rhel_files/* $(SOURCES);
+	@cat configs/flavors | while read flavor; do echo "Copying sources for $${flavor}"; [ -e $${flavor}_files ] && cp $${flavor}_files/* $(SOURCES); done
 	@cp cpupower.* \
 		keys/rhel*.x509 \
 		kabi/check-kabi \
 		configs/$(PACKAGE_NAME)-*.config \
+		configs/partial*.config \
 		gating.yaml \
 		rpminspect.yaml \
 		update_scripts.sh \
@@ -275,12 +276,12 @@ sources-rh: $(TARBALL) generate-testpatch-tmp setup-source dist-configs-check
 		generate_crashkernel_default.sh \
 		../Makefile.rhelver \
 		README.rst \
+		kernel-local \
 		$(SOURCES)/
 	@if [ "$(RELEASED_KERNEL)" -ne 0 ]; then \
-		cp keys/redhatsecureboot{301,501,ca5,ca1}.cer $(SOURCES)/; \
-		cp keys/secureboot_{ppc,s390}.cer $(SOURCES)/; \
+		cp keys/redhatsecureboot{302,501,601,ca3,ca5,ca6}.cer $(SOURCES)/; \
 	else \
-		cp keys/redhatsecureboot{003,401,ca2,ca4}.cer $(SOURCES)/; \
+		cp keys/redhatsecureboot{401,ca4}.cer $(SOURCES)/; \
 	fi
 	@for KABIARCH in $(ARCH_LIST); do \
 		cp kabi/Module.kabi_$$KABIARCH $(SOURCES)/; \
@@ -306,9 +307,9 @@ dist-all-rpms: dist-sources do-rpmbuild
 dist-srpm: RPMBUILDOPTS=--nodeps -bs
 dist-srpm: dist-sources do-rpmbuild
 
-dist-srpm-gcov:
-	make dist-sources BUILDID=".gcov" BUILDOPTS="+gcov"
-	RPMBUILDOPTS="--nodeps -bs" make do-rpmbuild
+dist-srpm-gcov: BUILDID=".gcov"
+dist-srpm-gcov: BUILDOPTS+="+gcov"
+dist-srpm-gcov: dist-srpm
 
 dist-rpms: RPMBUILDOPTS=--target $(MACH) -bb
 dist-rpms: dist-sources do-rpmbuild
@@ -330,7 +331,7 @@ dist-release-finish: setup-source
 	@cp $(SOURCES)/$(CHANGELOG) $(REDHAT)/$(CHANGELOG)
 	@$(GIT) add $(REDHAT)/$(CHANGELOG)
 	@$(GIT) add $(REDHAT)/marker
-	@$(GIT) commit -s ../Makefile.rhelver $(REDHAT)/marker $(REDHAT)/$(CHANGELOG) $(PACKAGE_NAME).spec.template -m "[redhat] $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PREBUILD)$(BUILD)$(BUILDID)"
+	@$(GIT) commit -s ../Makefile.rhelver $(REDHAT)/marker $(REDHAT)/$(CHANGELOG) $(PACKAGE_NAME).spec.template -m "[redhat] $(PACKAGE_NAME)-$(STAMP_VERSION)-$(PREBUILD)$(BUILD)$(SOURCE_DIST)$(BUILDID)"
 dist-release-changed: setup-source
 	@cp $(SOURCES)/$(CHANGELOG) $(REDHAT)/$(CHANGELOG)
 	@echo $(MARKER) > $(REDHAT)/marker
@@ -386,10 +387,10 @@ distg-brew: BUILD_FLAGS ?= $(BREW_FLAGS) $(TEST_FLAGS)
 distg-koji: BUILD_FLAGS ?= $(KOJI_FLAGS) $(TEST_FLAGS)
 
 dist-brew dist-koji: dist-%: dist-srpm
-	$* build $(BUILD_FLAGS) $(BUILD_TARGET) $(SRPMS)/$(PACKAGE_NAME)-$(KVERSION)-$(PKGRELEASE)$(DIST).src.rpm $(OUTPUT_FILE)
+	$* $(BUILD_PROFILE) build $(BUILD_FLAGS) $(BUILD_TARGET) $(SRPMS)/$(PACKAGE_NAME)-$(KVERSION)-$(PKGRELEASE)$(SRPM_DIST).src.rpm $(OUTPUT_FILE)
 
 distg-brew distg-koji: distg-%:
-	$* build $(BUILD_FLAGS) $(BUILD_TARGET) "$(RHGITURL)?redhat/koji#$(RHGITCOMMIT)"
+	$* $(BUILD_PROFILE) build $(BUILD_FLAGS) $(BUILD_TARGET) "$(RHGITURL)?redhat/koji#$(RHGITCOMMIT)"
 
 .PHONY: $(REDHAT)/rpm/SOURCES/$(PACKAGE_NAME).spec
 $(REDHAT)/rpm/SOURCES/$(PACKAGE_NAME).spec:
@@ -403,13 +404,13 @@ dist-git: dist-srpm $(KABI_TARBALL) $(KABIDW_TARBALL)
 ifeq ("$(RHDISTGIT_BRANCH)", "")
  $(error RHDISTGIT_BRANCH unset)
 endif
-	if [ "$(DISTRO)" == "centos" ]; then \
+	@if [ "$(DISTRO)" == "centos" ]; then \
 	if [ -z "$(GL_DISTGIT_USER)" ]; then \
-		echo "Error: please Please provide your gitlab username with GL_DISTGIT_USER"; \
+		echo "Error: please provide your gitlab username with GL_DISTGIT_USER"; \
 		exit 1; \
 	fi; \
 	fi
-	$(REDHAT)/scripts/rh-dist-git.sh "$(RHDISTGIT_BRANCH)" "$(RHDISTGIT_CACHE)" "$(RHDISTGIT_TMP)" "$(RHDISTGIT)" "$(TARBALL)" "$(KABI_TARBALL)" "$(KABIDW_TARBALL)" "$(__ZSTREAM)" "$(PACKAGE_NAME)" "$(RHEL_MAJOR)" "$(RHPKG_BIN)" "$(SRPMS)/$(PACKAGE_NAME)-$(KVERSION)-$(PKGRELEASE)$(DIST).src.rpm"
+	$(REDHAT)/scripts/rh-dist-git.sh "$(RHDISTGIT_BRANCH)" "$(RHDISTGIT_CACHE)" "$(RHDISTGIT_TMP)" "$(RHDISTGIT)" "$(TARBALL)" "$(KABI_TARBALL)" "$(KABIDW_TARBALL)" "$(__ZSTREAM)" "$(PACKAGE_NAME)" "$(RHEL_MAJOR)" "$(RHPKG_BIN)" "$(SRPMS)/$(PACKAGE_NAME)-$(KVERSION)-$(PKGRELEASE)$(SRPM_DIST).src.rpm"
 
 dist-rtg: dist-release
 	@$(MAKE) dist-release-tag

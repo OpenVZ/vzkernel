@@ -7,7 +7,6 @@
 #include "dm-core.h"
 #include "dm-rq.h"
 
-#include <linux/elevator.h> /* for rq_end_sector() */
 #include <linux/blk-mq.h>
 
 #define DM_MSG_PREFIX "core-rq"
@@ -559,7 +558,6 @@ int dm_mq_init_request_queue(struct mapped_device *md, struct dm_table *t)
 	err = blk_mq_init_allocated_queue(md->tag_set, md->queue);
 	if (err)
 		goto out_tag_set;
-	elevator_init_mq(md->queue);
 	return 0;
 
 out_tag_set:

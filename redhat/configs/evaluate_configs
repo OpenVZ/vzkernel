@@ -25,6 +25,7 @@ numorder=
 longheader=
 weightorig=
 weight=
+declare -A toplevel_order
 
 tempdir=$(mktemp -d)
 
@@ -125,7 +126,7 @@ get_subdirs() { # uses $cfgvariants and $toplevels
 	do
 		max=0
 		count=0
-		OLDIFS=$IFS; IFS=$'\n'; for LINE in "$cfgvariants"
+		OLDIFS=$IFS; IFS=$'\n'; for LINE in $cfgvariants
 		do
 			LINE=$(echo "$LINE" | cut -d "|" -f 2)
 			count=0
@@ -141,9 +142,35 @@ get_subdirs() { # uses $cfgvariants and $toplevels
 	done
 }
 
+# Walk through cfgvariants and give each toplevel dir an ordering number.
+# This number is later used to insert EMPTY tags at correct place.
+create_toplevel_order() { # uses toplevel_order
+
+while read -r cfgvariant
+do
+	local i
+	local max
+	local order
+	local topname
+
+	LINE=$(echo "$cfgvariant" | cut -d "|" -f 2)
+
+	for i in $LINE; do
+		topname="${i%%-*}"
+		order=${toplevel_order[$topname]}
+		if [ -z "$order" ]; then
+			max=$(echo "${toplevel_order[@]}" | wc -w)
+			max=$((max + 1))
+			toplevel_order[$topname]=$max
+			$DEBUG && echo "toplevel_order[$topname] = $max"
+		fi
+	done
+done <<< "$cfgvariants"
+}
+
 # For each config-variant, find missing sub-directories and mark them as "EMPTY"
 # This is very helpful for stage 3.
-fix_config_variants() { # uses $toplevels, $subdirs, $cfgvariants
+fix_config_variants() { # uses $toplevels, $subdirs, $cfgvariants, $toplevel_order
 
 for toplevel in $toplevels
 do
@@ -157,6 +184,8 @@ do
 	local found
 	local dashcount
 	local new
+	local topname
+	local new_topname
 
 	subdircnt=$(echo "$subdirs" | grep "$toplevel" | awk -F "subdirs" ' { print $2 } ')
 	linenum=0
@@ -218,12 +247,25 @@ do
 		if echo "$LINE" | grep -q "$toplevel"; then
 			new=${cfgvariant//$oldentry/$newentry}
 		else
-			# Assuming that there is always a generic entry
-			# followed by a debug entry.  If a debug only config
-			# variant exists, there is a possibility that this
-			# screws up badly because the EMPTY tags are always
-			# added the end of the string. #FIXME
-			new="$cfgvariant $newentry"
+			# Find out toplevel name of new EMPTY entries and use
+			# toplevel_order to figure out where to insert those.
+			found=0
+			new_topname="${newentry%%-*}"
+			new="$(echo "$cfgvariant" | cut -d "|" -f 1)|"
+			LINE=$(echo "$cfgvariant" | cut -d "|" -f 2)
+
+			for i in $LINE; do
+				topname="${i%%-*}"
+				if [ $found -eq 1 -o ${toplevel_order[$topname]} -lt ${toplevel_order[$new_topname]} ]; then
+					new="$new $i"
+				else
+					found=1
+					new="$new $newentry $i"
+				fi
+			done
+			if [ $found -eq 0 ]; then
+				new="$new $newentry"
+			fi
 		fi
 
 		$DEBUG && echo "REPLACED:"
@@ -729,6 +771,40 @@ map_configs_to_array() { #uses CONFIG, configmap, cfgs
 	return 0
 }
 
+generate_finalconfiglist() {
+	awk '
+		/is not set/ {
+			split ($0, a, "#");
+			split(a[2], b);
+			print b[1] ;
+		}
+		/=/ {
+			split ($0, a, "=");
+			print a[1];
+		}
+	' *.config | sort -u >> .finalconfiglist
+}
+
+find_dead_configs() {
+	echo > .finalconfiglist
+	echo > .configlist
+
+	grep -q "rhel" flavors && (cd ..; make rh-configs) && generate_finalconfiglist
+	grep -q "fedora" flavors && (cd ..; make fedora-configs) && generate_finalconfiglist
+	sort -o .finalconfiglist -u .finalconfiglist
+
+	find ./ -name CONFIG_* | sed 's!.*/!!' | sort -u > .configlist
+
+	echo "These CONFIGS defined in redhat/configs but not the final .configs have been deleted:"
+	comm .configlist .finalconfiglist -2 -3 | while read FILENAME
+	do
+		echo $FILENAME
+		find ./ -name $FILENAME | xargs rm -f
+	done
+
+	rm -f .configlist .finalconfiglist
+}
+
 #
 #
 # MAIN
@@ -739,13 +815,17 @@ map_configs_to_array() { #uses CONFIG, configmap, cfgs
 FINDFIXES=false
 FIXCOMMON=false
 configs=
-while getopts "c:dfhjp:" opt; do
+while getopts "c:dDfhjp:" opt; do
 	case ${opt} in
 	c )
 		configs=$OPTARG
 		;;
 	d )
 		DEBUG=true
+		;;
+	D )
+		find_dead_configs
+		exit 0
 		;;
 	f )
 		# Find fixes per config-variant
@@ -817,6 +897,9 @@ $DEBUG && echo "Top level directories in priority file: $toplevels"
 subdirs=$(get_subdirs)
 $DEBUG && echo "Top-level sub-directories:"
 $DEBUG && echo "$subdirs"
+
+# Create ordering for toplevel dirs
+create_toplevel_order
 
 # Add EMPTY entries for each missing subdirectory level in the config
 # variants

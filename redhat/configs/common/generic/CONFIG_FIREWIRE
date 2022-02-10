@@ -1,1 +1,1 @@
-CONFIG_FIREWIRE=m
+# CONFIG_FIREWIRE is not set

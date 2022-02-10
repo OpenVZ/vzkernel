@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#! /usr/bin/python3 -s
 # SPDX-License-Identifier: GPL-2.0
 # libxed.py: Python wrapper for libxed.so
 # Copyright (c) 2014-2021, Intel Corporation.

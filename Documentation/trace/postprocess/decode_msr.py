@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#! /usr/bin/python3 -s
 # add symbolic names to read_msr / write_msr in trace
 # decode_msr msr-index.h < trace
 import sys

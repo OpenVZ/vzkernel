@@ -91,3 +91,19 @@ void mark_driver_unsupported(const char *name)
 	        name ? name : "kernel");
 }
 EXPORT_SYMBOL(mark_driver_unsupported);
+
+/**
+ * mark_driver_deprecated() - Mark drivers as deprecated.
+ * @name: the name of the driver
+ *
+ * Called to minimize the support status of a previously supported driver in
+ * a minor release. This does not TAINT the kernel. Future
+ * RHEL major releases may not include this driver. Driver updates and fixes
+ * will be limited to critical issues in future minor releases.
+ */
+void mark_driver_deprecated(const char *name)
+{
+	pr_crit("Warning: %s - this driver is not recommended for new deployments. It continues to be supported in this RHEL release, but it is likely to be removed in the next major release. Driver updates and fixes will be limited to critical issues. Please contact Red Hat Support for additional information.\n",
+	        name ? name : "kernel");
+}
+EXPORT_SYMBOL(mark_driver_deprecated);

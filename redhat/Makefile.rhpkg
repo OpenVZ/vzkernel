@@ -21,11 +21,11 @@ RHDISTGIT_BRANCH:=${RHPRODUCT}
 
 # load configuration, starting with home directory then local
 ifeq ("$(RHDISTGIT_CACHE)", "")
- ifneq ("$(wildcard ${HOME}/.rhel8git.mk)", "")
-  include ${HOME}/.rhel8git.mk
+ ifneq ("$(wildcard ${HOME}/.rhel9git.mk)", "")
+  include ${HOME}/.rhel9git.mk
  endif
- ifneq ("$(wildcard $(TOPDIR)/.rhel8git.mk)", "")
-  include $(TOPDIR)/.rhel8git.mk
+ ifneq ("$(wildcard $(TOPDIR)/.rhel9git.mk)", "")
+  include $(TOPDIR)/.rhel9git.mk
  endif
 endif
 

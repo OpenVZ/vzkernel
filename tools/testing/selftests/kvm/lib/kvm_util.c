@@ -309,6 +309,12 @@ struct kvm_vm *vm_create(enum vm_guest_mode mode, uint64_t phy_pages, int perm)
 	/* Limit physical addresses to PA-bits. */
 	vm->max_gfn = ((1ULL << vm->pa_bits) >> vm->page_shift) - 1;
 
+#ifdef __x86_64__
+	/* Avoid reserved HyperTransport region on AMD processors.  */
+	if (vm->pa_bits == 48)
+		vm->max_gfn = 0xfffcfffff;
+#endif
+
 	/* Allocate and setup memory for guest. */
 	vm->vpages_mapped = sparsebit_alloc();
 	if (phy_pages != 0)
@@ -1792,7 +1798,7 @@ void vcpu_sregs_get(struct kvm_vm *vm, uint32_t vcpuid, struct kvm_sregs *sregs)
 void vcpu_sregs_set(struct kvm_vm *vm, uint32_t vcpuid, struct kvm_sregs *sregs)
 {
 	int ret = _vcpu_sregs_set(vm, vcpuid, sregs);
-	TEST_ASSERT(ret == 0, "KVM_RUN IOCTL failed, "
+	TEST_ASSERT(ret == 0, "KVM_SET_SREGS IOCTL failed, "
 		"rc: %i errno: %i", ret, errno);
 }
 

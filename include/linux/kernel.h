@@ -88,7 +88,7 @@
 struct completion;
 struct user;
 
-#ifdef CONFIG_PREEMPT_VOLUNTARY
+#ifdef CONFIG_PREEMPT_VOLUNTARY_BUILD
 
 extern int __cond_resched(void);
 # define might_resched() __cond_resched()
@@ -538,11 +538,13 @@ void mark_hardware_unsupported(const char *msg);
 void mark_hardware_deprecated(const char *msg);
 void mark_tech_preview(const char *msg, struct module *mod);
 void mark_driver_unsupported(const char *name);
+void mark_driver_deprecated(const char *name);
 #else
 static inline void mark_hardware_unsupported(const char *msg) { }
 static inline void mark_hardware_deprecated(const char *msg) { }
 static inline void mark_tech_preview(const char *msg, struct module *mod) { }
 static inline void mark_driver_unsupported(const char *name) { }
+static inline void mark_driver_deprecated(const char *name) { }
 #endif
 
 #endif

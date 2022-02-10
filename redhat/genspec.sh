@@ -22,8 +22,10 @@ SINGLE_TARBALL=${15}
 TARFILE_RELEASE=${16}
 SNAPSHOT=${17}
 UPSTREAM_BRANCH=${18}
-BUILDID=${19}
-RPMVERSION=${KVERSION}.${KPATCHLEVEL}
+INCLUDE_FEDORA_FILES=${19}
+INCLUDE_RHEL_FILES=${20}
+BUILDID=${21}
+RPMVERSION=${KVERSION}.${KPATCHLEVEL}.${KSUBLEVEL}
 clogf="$SOURCES/changelog"
 # hide [redhat] entries from changelog
 HIDE_REDHAT=1;
@@ -137,6 +139,8 @@ test -n "$SPECFILE" &&
 	s/%%DISTRO_BUILD%%/$DISTRO_BUILD/
 	s/%%RELEASED_KERNEL%%/$RELEASED_KERNEL/
 	s/%%DEBUG_BUILDS_ENABLED%%/$DEBUG_BUILDS_ENABLED/
+	s/%%INCLUDE_FEDORA_FILES%%/$INCLUDE_FEDORA_FILES/
+	s/%%INCLUDE_RHEL_FILES%%/$INCLUDE_RHEL_FILES/
 	s/%%TARBALL_VERSION%%/$TARFILE_RELEASE/" "$SPECFILE"
 
 echo "MARKER is $MARKER"
@@ -160,21 +164,7 @@ else
 	touch "$SOURCES"/patch-"$RPMVERSION"-redhat.patch
 fi
 
-# generate Patchlist.changelog file that holds the shas and commits not
-# included upstream and git commit url.
-ARK_COMMIT_URL="https://gitlab.com/cki-project/kernel-ark/-/commit"
-
-# sed convert
-# <sha> <description>
-# to
-# <ark_commit_url>/<sha>
-#  <sha> <description>
-#
-# May need to preserve word splitting in EXCLUDE_FILES
-# shellcheck disable=SC2086
-git log --no-merges --pretty=oneline --no-decorate ${UPSTREAM}.. $EXCLUDE_FILES | \
-	sed "s!^\([^ ]*\)!$ARK_COMMIT_URL/\1\n &!; s!\$!\n!" \
-	> "$SOURCES"/Patchlist.changelog
+# don't generate Patchlist.changelog file for RHEL
 
 # We depend on work splitting of BUILDOPTS
 # shellcheck disable=SC2086

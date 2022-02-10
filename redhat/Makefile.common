@@ -32,11 +32,22 @@ else
   PREBUILD:=
 endif
 
-DIST ?= $(shell $(RPMBUILD) --eval '%{?dist}')
+DIST ?= .el9
 ifneq ($(findstring .fc,$(DIST)),)
   DISTRO ?= fedora
 else
   DISTRO ?= rhel
+endif
+
+# If USE_DIST_IN_SOURCE == 1, dist tag is added to PKGRELEASE
+# and we don't need to add it to SRPM. If it's 0 versions used
+# in sources don't carry dist tag and we have to add it to SRPM.
+ifeq ($(USE_DIST_IN_SOURCE),1)
+  SOURCE_DIST:=$(DIST)
+  SRPM_DIST:=
+else
+  SOURCE_DIST:=
+  SRPM_DIST:=$(DIST)
 endif
 
 # If VERSION_ON_UPSTREAM is set, the versioning of the rpm package is based
@@ -126,7 +137,7 @@ else
   $(info BUILDID is "$(BUILDID)".)
 endif
 
-PKGRELEASE:=$(PREBUILD)$(BUILD)$(BUILDID)
+PKGRELEASE:=$(PREBUILD)$(BUILD)$(BUILDID)$(SOURCE_DIST)
 SPECRELEASE:=$(PREBUILD)$(BUILD)%{?buildid}%{?dist}
 
 ifeq ("$(SINGLE_TARBALL)", "0")
@@ -160,6 +171,7 @@ ifeq ("$(DIST)", ".elrdy")
 else ifeq ("$(DISTRO)", "fedora")
   BUILD_SCRATCH_TARGET ?= temp-ark-rhel-8-test
 else ifeq ("$(DISTRO)", "centos")
+  BUILD_PROFILE ?= -p stream
   BUILD_SCRATCH_TARGET ?= c$(RHEL_MAJOR)s-candidate
 else
   BUILD_SCRATCH_TARGET ?= rhel-$(RHEL_MAJOR).$(RHEL_MINOR).0-test-pesign

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#! /usr/bin/python3 -s
 #
 # Copyright (C) 2019 Tejun Heo <tj@kernel.org>
 # Copyright (C) 2019 Andy Newell <newella@fb.com>
