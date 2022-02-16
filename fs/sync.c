@@ -73,11 +73,17 @@ int sync_filesystem(struct super_block *sb)
 EXPORT_SYMBOL(sync_filesystem);
 
 struct sync_arg {
+	struct ve_struct *ve;
 	int wait;
 };
 
 static void sync_inodes_one_sb(struct super_block *sb, void *arg)
 {
+	struct sync_arg *sarg = arg;
+
+	if (sarg->ve && !is_sb_ve_accessible(sarg->ve, sb))
+		return;
+
 	if (!sb_rdonly(sb))
 		sync_inodes_sb(sb);
 }
@@ -86,9 +92,36 @@ static void sync_fs_one_sb(struct super_block *sb, void *arg)
 {
 	struct sync_arg *sarg = arg;
 
-	if (!sb_rdonly(sb) && !(sb->s_iflags & SB_I_SKIP_SYNC) &&
-	    sb->s_op->sync_fs)
-		sb->s_op->sync_fs(sb, sarg->wait);
+	if (sarg->ve && !is_sb_ve_accessible(sarg->ve, sb))
+		return;
+
+	if (!sb_rdonly(sb) && !(sb->s_iflags & SB_I_SKIP_SYNC)) {
+		if (sb->s_op->sync_fs)
+			sb->s_op->sync_fs(sb, sarg->wait);
+
+		/* See comment in ksys_sync() bellow */
+		if (sarg->ve && sb->s_bdev) {
+			if (!sarg->wait)
+				sync_blockdev_nowait(sb->s_bdev);
+			else
+				sync_blockdev(sb->s_bdev);
+		}
+	}
+}
+
+static int __ve_fsync_behavior(struct ve_struct *ve)
+{
+	/*
+	 * - __ve_fsync_behavior() is not called for ve0
+	 * - FSYNC_FILTERED for veX does NOT mean "filtered" behavior
+	 * - FSYNC_FILTERED for veX means "get value from ve0"
+	 */
+	if (ve->fsync_enable == FSYNC_FILTERED)
+		return get_ve0()->fsync_enable;
+	else if (ve->fsync_enable)
+		return FSYNC_FILTERED; /* sync forced by ve is always filtered */
+	else
+		return 0;
 }
 
 int ve_fsync_behavior(void)
@@ -99,7 +132,7 @@ int ve_fsync_behavior(void)
 	if (ve_is_super(ve))
 		return FSYNC_ALWAYS;
 	else
-		return ve->fsync_enable;
+		return __ve_fsync_behavior(ve);
 }
 
 /*
@@ -114,21 +147,80 @@ int ve_fsync_behavior(void)
  */
 void ksys_sync(void)
 {
+	struct ve_struct *ve = get_exec_env();
 	struct sync_arg sarg;
 
-	if (ve_fsync_behavior() == FSYNC_NEVER)
-		return;
+	sarg.ve = NULL;
+	if (!ve_is_super(ve)) {
+		int fsb;
+		/*
+		 * init can't sync during VE stop. Rationale:
+		 *  - NFS with -o hard will block forever as network is down
+		 *  - no useful job is performed as VE0 will call umount/sync
+		 *    by his own later
+		 *  Den
+		 */
+		if (is_child_reaper(task_pid(current)))
+			return;
+
+		fsb = __ve_fsync_behavior(ve);
+		if (fsb == FSYNC_NEVER)
+			return;
+		if (fsb == FSYNC_FILTERED)
+			sarg.ve = ve;
+	}
 
 	wakeup_flusher_threads(WB_REASON_SYNC);
-	iterate_supers(sync_inodes_one_sb, NULL);
+
+	/*
+	 * Sync consists of 3 steps:
+	 * - sync inodes for mounted filesystems, to write any dirty file pages,
+	 * - call per-filesystem sync operation, to write filesystem-specific
+	 *   data structures that could be maintained in memory while fs is
+	 *   mounted,
+	 * - sync block devices, to flush any data written at the previous step,
+	 *   as well as any data written to raw block devices by userdspace.
+	 *
+	 * To make use of available i/o parallelism, all writeback operations
+	 * are first issued without waiting for completion. Then a second pass
+	 * is executed, this time with waiting, to ensure that all i/o completes
+	 * before return from sync().
+	 *
+	 * To do a VE-local sync, need to execute the same steps, but only for
+	 * filesystems and block devices accessible from VE.
+	 *
+	 * It is possible to quickly determine if a superblock shall be included
+	 * into VE-local sync, by iterating superblock's mounts and checking
+	 * owner VE for each mount. This is what is_sb_ve_accessible() does.
+	 *
+	 * Since currently raw block device access in VE is not allowed, a bdev
+	 * shall be included into sync if and only if it holds a superblock that
+	 * is included into that sync. Searching for such a superblock is linear
+	 * against number of superblocks on the host, and doing that for each
+	 * bdev turns into square complexity on number of mounted bdevs on the
+	 * host. To avoid that square complexity, syncing bdevs while doing
+	 * VE-local sync is moved into sync_fs_one_sb() called from
+	 * iterate_supers().
+	 *
+	 * WARNING: this will have to be revised if ever allowing raw bdev
+	 * access inside VE.
+	 *
+	 * Note: although the operation looks similar to iterating over
+	 * VE-accessible filesystems and doing syncfs operation for each, it
+	 * still shall perform better due to trying writeback on different
+	 * filesystems in parallel.
+	 */
+	iterate_supers(sync_inodes_one_sb, &sarg);
 	sarg.wait = 0;
 	iterate_supers(sync_fs_one_sb, &sarg);
 	sarg.wait = 1;
 	iterate_supers(sync_fs_one_sb, &sarg);
-	sync_bdevs(false);
-	sync_bdevs(true);
-	if (unlikely(laptop_mode))
-		laptop_sync_completion();
+	if (!sarg.ve) {
+		sync_bdevs(false);
+		sync_bdevs(true);
+		if (unlikely(laptop_mode))
+			laptop_sync_completion();
+	}
 }
 
 SYSCALL_DEFINE0(sync)
@@ -141,6 +233,7 @@ static void do_sync_work(struct work_struct *work)
 {
 	struct sync_arg sarg;
 
+	sarg.ve = NULL;
 	sarg.wait = 0;
 
 	/*
@@ -176,13 +269,33 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 	struct fd f = fdget(fd);
 	struct super_block *sb;
 	int ret = 0, ret2 = 0;
+	struct ve_struct *ve;
 
 	if (!f.file)
 		return -EBADF;
 	sb = f.file->f_path.dentry->d_sb;
 
-	if (ve_fsync_behavior() == FSYNC_NEVER)
-		goto fdput;
+	ve = get_exec_env();
+
+	if (!ve_is_super(ve)) {
+		int fsb;
+		/*
+		 * init can't sync during VE stop. Rationale:
+		 *  - NFS with -o hard will block forever as network is down
+		 *  - no useful job is performed as VE0 will call umount/sync
+		 *    by his own later
+		 *  Den
+		 */
+		if (is_child_reaper(task_pid(current)))
+			goto fdput;
+
+		fsb = __ve_fsync_behavior(ve);
+		if (fsb == FSYNC_NEVER)
+			goto fdput;
+
+		if ((fsb == FSYNC_FILTERED) && !is_sb_ve_accessible(ve, sb))
+			goto fdput;
+	}
 
 	down_read(&sb->s_umount);
 	ret = sync_filesystem(sb);
