@@ -3044,6 +3044,8 @@ extern char *file_path(struct file *, char *, int);
 
 #define FSYNC_NEVER	0	/* ve syncs are ignored    */
 #define FSYNC_ALWAYS	1	/* ve syncs work as ususal */
+#define FSYNC_FILTERED	2	/* ve syncs only its files */
+/* For non-ve0 FSYNC_FILTERED value means "get value from ve0". */
 
 #ifdef CONFIG_VE
 int ve_fsync_behavior(void);
