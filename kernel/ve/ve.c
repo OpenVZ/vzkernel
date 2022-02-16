@@ -70,7 +70,7 @@ struct ve_struct ve0 = {
 	.sched_lat_ve.cur	= &ve0_lat_stats,
 	.netns_avail_nr		= ATOMIC_INIT(INT_MAX),
 	.netns_max_nr		= INT_MAX,
-	.fsync_enable		= FSYNC_ALWAYS,
+	.fsync_enable		= FSYNC_FILTERED,
 	._randomize_va_space	=
 #ifdef CONFIG_COMPAT_BRK
 					1,
@@ -931,7 +931,8 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	ve->meminfo_val = VE_MEMINFO_DEFAULT;
 
 	ve->odirect_enable = 2;
-	ve->fsync_enable = FSYNC_ALWAYS;
+	/* for veX FSYNC_FILTERED means "get value from ve0 */
+	ve->fsync_enable = FSYNC_FILTERED;
 
 	atomic_set(&ve->netns_avail_nr, NETNS_MAX_NR_DEFAULT);
 	ve->netns_max_nr = NETNS_MAX_NR_DEFAULT;
