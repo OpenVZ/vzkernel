@@ -10314,10 +10314,6 @@ int register_netdevice(struct net_device *dev)
 	BUG_ON(dev->reg_state != NETREG_UNINITIALIZED);
 	BUG_ON(!net);
 
-	ret = -EPERM;
-	if (!ve_is_super(net->owner_ve) && ve_is_dev_movable(dev))
-		return ret;
-
 	ret = ethtool_check_ops(dev->ethtool_ops);
 	if (ret)
 		return ret;
@@ -10351,6 +10347,12 @@ int register_netdevice(struct net_device *dev)
 				ret = -EIO;
 			goto err_free_name;
 		}
+	}
+
+	/* Keep the check after .ndo_init() call. */
+	if (!ve_is_super(net->owner_ve) && ve_is_dev_movable(dev)) {
+		ret = -EPERM;
+		goto err_uninit;
 	}
 
 	if (((dev->hw_features | dev->features) &
