@@ -332,6 +332,9 @@ struct fuse_args {
 
 	/** Request will be handled by fud pointing to this fiq */
 	struct fuse_iqueue *fiq;
+
+	/** Fuse file used in the request or NULL*/
+	struct fuse_file *ff;
 };
 
 struct fuse_args_pages {
@@ -620,7 +623,7 @@ struct fuse_kio_ops {
 	/* Request handling hooks */
 	struct fuse_req *(*req_alloc)(struct fuse_mount *fm, gfp_t flags);
 	int (*req_classify)(struct fuse_req *req, bool bg, bool locked);
-	void (*req_send)(struct fuse_req *req, struct fuse_file *ff, bool bg);
+	void (*req_send)(struct fuse_req *req, bool bg);
 
 	/* Inode scope hooks */
 	int  (*file_open)(struct file *file, struct inode *inode);
@@ -1195,18 +1198,12 @@ void fuse_dev_cleanup(void);
 int fuse_ctl_init(void);
 void __exit fuse_ctl_cleanup(void);
 
-bool fuse_has_req_ff(struct fuse_req *req);
-struct fuse_file* fuse_get_req_ff(struct fuse_req *req);
-bool fuse_set_req_ff(struct fuse_req *req, struct fuse_file *ff);
-
 /**
  * Simple request sending that does request allocation and freeing
  */
 ssize_t fuse_simple_request(struct fuse_mount *fm, struct fuse_args *args);
 int fuse_simple_background(struct fuse_mount *fm, struct fuse_args *args,
 			   gfp_t gfp_flags);
-ssize_t fuse_simple_check_request(struct fuse_mount *fm, struct fuse_args *args,
-				  struct fuse_file *ff);
 
 /**
  * End a finished request
