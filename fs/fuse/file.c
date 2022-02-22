@@ -805,6 +805,7 @@ void fuse_read_args_fill(struct fuse_io_args *ia, struct file *file, loff_t pos,
 		if (fiq->handled_by_fud)
 			args->fiq = fiq;
 		args->inode = file->f_path.dentry->d_inode;
+		args->ff = ff;
 	}
 }
 
@@ -1032,7 +1033,7 @@ static ssize_t fuse_send_read(struct fuse_io_args *ia, loff_t pos, size_t count,
 	if (ia->io->async)
 		return fuse_async_req_send(fm, ia, count);
 
-	return fuse_simple_check_request(fm, &ia->ap.args, ff);
+	return fuse_simple_request(fm, &ia->ap.args);
 }
 
 static void fuse_read_update_size(struct inode *inode, loff_t size,
@@ -1309,6 +1310,7 @@ static void fuse_write_args_fill(struct fuse_io_args *ia, struct fuse_file *ff,
 	args->out_args[0].size = sizeof(ia->write.out);
 	args->out_args[0].value = &ia->write.out;
 	args->io_inode = inode;
+	args->ff = ff;
 }
 
 static unsigned int fuse_write_flags(struct kiocb *iocb)
