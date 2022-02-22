@@ -1871,28 +1871,37 @@ out:
 /*
  * This may be called with @qio == NULL, in case of we sure
  * that R1/R2 are already cached and up to date.
+ * Returned R1 is *unstable* if we are not in main kwork,
+ * since relocate_refcount_table() may move it right after
+ * md_pages_lock release.
  */
 static int __handle_r1r2_maps(struct qcow2 *qcow2, loff_t pos, struct qio **qio,
 			   struct qcow2_map_item *r1, struct qcow2_map_item *r2)
 {
-	int ret;
-
+	int ret = -EIO;
+	/*
+	 * We hold the lock while dereferencing both of R1 and R2
+	 * to close the race with relocate_refcount_table().
+	 */
+	spin_lock_irq(&qcow2->md_pages_lock);
 	if (calc_refcounters_map(qcow2, pos, r1, r2) < 0)
-		return -EIO;
+		goto unlock;
 
 	/* Check R1 table */
-	ret = handle_md_page(qcow2, r1->page_id, qio, &r1->md);
+	ret = __handle_md_page(qcow2, r1->page_id, qio, &r1->md);
 	if (ret <= 0)
-		return ret;
+		goto unlock;
 
 	ret = calc_r2_page_id(qcow2, r1, r2);
 	if (ret < 0)
-		return ret;
+		goto unlock;
 
-	ret = handle_md_page(qcow2, r2->page_id, qio, &r2->md);
+	/* Check R2 table */
+	ret = __handle_md_page(qcow2, r2->page_id, qio, &r2->md);
+unlock:
+	spin_unlock_irq(&qcow2->md_pages_lock);
 	if (ret <= 0)
 		return ret;
-
 	/*
 	 * XXX: we do not care about R1 or R2 may be under writeback,
 	 * since the most actual version of them is cached in memory.
@@ -2286,6 +2295,11 @@ static int relocate_refcount_table(struct qcow2 *qcow2, struct qio **qio)
 		goto err_free_r2_pages;
 	}
 
+	/*
+	 * __handle_r1r2_maps() want to get consistent values:
+	 * refcount_table_offset must match correct md pages.
+	 */
+	spin_lock_irq(&qcow2->md_pages_lock);
 	/* Update cached values */
 	qcow2->hdr.refcount_table_offset = pos;
 	qcow2->hdr.refcount_table_clusters = clus;
@@ -2295,14 +2309,15 @@ static int relocate_refcount_table(struct qcow2 *qcow2, struct qio **qio)
 	index = old_pos / PAGE_SIZE;
 	delta = (pos - old_pos) / PAGE_SIZE;
 	for (i = 0; i < nr_pages; i++, index++) {
-		spin_lock_irq(&qcow2->md_pages_lock);
 		md = md_page_renumber(qcow2, index, index + delta);
 		if (!WARN_ON_ONCE(!md))
 			md_make_dirty(qcow2, md, true);
-		spin_unlock_irq(&qcow2->md_pages_lock);
 		if (!md)
-			goto err_free_r2_pages;
+			break; /* goto err_free_r2_pages */
 	}
+	spin_unlock_irq(&qcow2->md_pages_lock);
+	if (i != nr_pages)
+		goto err_free_r2_pages;
 
 	/* Connect new R2 to new R1 */
 	for (i = end; i < r2_end; i += clu_size) {
