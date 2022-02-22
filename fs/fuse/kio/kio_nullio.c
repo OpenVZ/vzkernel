@@ -82,7 +82,7 @@ static struct fuse_req *nullio_req_alloc(struct fuse_mount *fm, gfp_t flags)
 	return req;
 }
 
-static void nullio_req_send(struct fuse_req *req, struct fuse_file *ff, bool bg)
+static void nullio_req_send(struct fuse_req *req, bool bg)
 {
 	struct fuse_conn *fc = req->fm->fc;
 	struct fuse_io_args *ia = container_of(req->args, typeof(*ia), ap.args);
