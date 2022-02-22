@@ -764,23 +764,10 @@ static void wait_shrink(struct pcs_fuse_req *r, struct pcs_dentry_info *di)
 	list_add_tail(&r->exec.ireq.list, &di->size.queue);
 }
 
-static void _pcs_ff_free_end(struct fuse_mount *fm, struct fuse_args *args, int error)
+static bool kqueue_insert(struct pcs_dentry_info *di, struct fuse_req *req)
 {
-	struct fuse_req *req = args->req;
-	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
-	struct fuse_file *req_ff = fuse_get_req_ff(req);
+	struct fuse_file *ff = req->args->ff;
 
-	BUG_ON(!req_ff);
-	BUG_ON(args->inode);
-	fuse_release_ff(args->inode, req_ff);
-
-	if (r->end)
-		r->end(fm, args, error);
-}
-
-static bool kqueue_insert(struct pcs_dentry_info *di, struct fuse_file *ff,
-			  struct fuse_req *req)
-{
 	spin_lock(&di->kq_lock);
 	if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
 		spin_unlock(&di->kq_lock);
@@ -791,14 +778,12 @@ static bool kqueue_insert(struct pcs_dentry_info *di, struct fuse_file *ff,
 	return true;
 }
 
-static inline int req_wait_grow_queue(struct pcs_fuse_req *r,
-				      struct fuse_file *ff,
-				      off_t offset, size_t size)
+static inline int req_wait_grow_queue(struct pcs_fuse_req *r, off_t offset, size_t size)
 {
 	struct pcs_dentry_info *di = get_pcs_inode(r->req.args->io_inode);
 	struct fuse_inode *fi = get_fuse_inode(r->req.args->io_inode);
 
-	if (!kqueue_insert(di, ff, &r->req))
+	if (!kqueue_insert(di, &r->req))
 		return -EIO;
 
 	BUG_ON(r->req.in.h.opcode != FUSE_WRITE && r->req.in.h.opcode != FUSE_FALLOCATE);
@@ -816,7 +801,7 @@ static inline int req_wait_grow_queue(struct pcs_fuse_req *r,
  * -EPERM: Nope
  * 1: request placed to pended queue
 */
-static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
+static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 {
 	struct fuse_req *req = &r->req;
 	struct fuse_args *args = req->args;
@@ -828,13 +813,6 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 	spin_lock(&di->lock);
 	/* Deffer all requests if shrink requested to prevent livelock */
 	if (di->size.op == PCS_SIZE_SHRINK) {
-		if (ff && fuse_has_req_ff(&r->req) &&
-		    !fuse_get_req_ff(&r->req)) {
-			r->end = r->req.args->end;
-			fuse_set_req_ff(&r->req, fuse_file_get(ff));
-			__set_bit(FR_ASYNC, &r->req.flags);
-			r->req.args->end = _pcs_ff_free_end;
-		}
 		wait_shrink(r, di);
 		ret = 1;
 		goto out;
@@ -864,7 +842,7 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 		if (in->offset + in->size > di->fileinfo.attr.size) {
 			pcs_fuse_prep_io(r, PCS_REQ_T_WRITE, in->offset,
 					 in->size, 0);
-			ret = req_wait_grow_queue(r, ff, in->offset, in->size);
+			ret = req_wait_grow_queue(r, in->offset, in->size);
 			goto out;
 		}
 
@@ -909,7 +887,7 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 						 in->length, 0);
 			else
 				pcs_fuse_prep_fallocate(r);
-			ret = req_wait_grow_queue(r, ff, in->offset, in->length);
+			ret = req_wait_grow_queue(r, in->offset, in->length);
 			goto out;
 		}
 
@@ -929,7 +907,7 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r, struct fuse_file *ff)
 		BUG();
 	}
 
-	if (!kqueue_insert(di, ff, req))
+	if (!kqueue_insert(di, req))
 		ret = -EIO;
 	else if (req->in.h.opcode == FUSE_READ || req->in.h.opcode == FUSE_FSYNC || req->in.h.opcode == FUSE_FLUSH)
 		fuse_read_dio_begin(fi);
@@ -941,8 +919,7 @@ out:
 	return ret;
 }
 
-static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
-			    struct fuse_file *ff)
+static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req)
 {
 	struct pcs_fuse_req *r = pcs_req_from_fuse(req);
 	struct fuse_args *args = req->args;
@@ -965,7 +942,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 	case FUSE_READ:
 	case FUSE_FSYNC:
 	case FUSE_FLUSH:
-		ret = pcs_fuse_prep_rw(r, ff);
+		ret = pcs_fuse_prep_rw(r);
 		if (likely(!ret))
 			goto submit;
 		if (ret > 0)
@@ -1004,7 +981,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 				inarg->length = di->fileinfo.attr.size - inarg->offset;
 		}
 
-		ret = pcs_fuse_prep_rw(r, ff);
+		ret = pcs_fuse_prep_rw(r);
 		if (likely(!ret))
 			goto submit;
 		if (ret > 0)
@@ -1021,7 +998,7 @@ static void pcs_fuse_submit(struct pcs_fuse_cluster *pfc, struct fuse_req *req,
 			goto error;
 		}
 
-		ret = pcs_fuse_prep_rw(r, ff);
+		ret = pcs_fuse_prep_rw(r);
 		if (likely(!ret))
 			goto submit;
 		if (ret > 0)
@@ -1104,7 +1081,7 @@ static void _pcs_shrink_end(struct fuse_mount *fm, struct fuse_args *args, int e
 
 		TRACE("resubmit %p\n", &r->req);
 		list_del_init(&ireq->list);
-		pcs_fuse_submit(pfc, &r->req, fuse_get_req_ff(&r->req));
+		pcs_fuse_submit(pfc, &r->req);
 	}
 }
 
@@ -1241,7 +1218,7 @@ static int kpcs_req_classify(struct fuse_req *req, bool bg, bool lk)
 	return 1;
 }
 
-static void kpcs_req_send(struct fuse_req *req, struct fuse_file *ff, bool bg)
+static void kpcs_req_send(struct fuse_req *req, bool bg)
 {
 	struct fuse_conn *fc = req->fm->fc;
 	struct pcs_fuse_cluster *pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
@@ -1259,7 +1236,7 @@ static void kpcs_req_send(struct fuse_req *req, struct fuse_file *ff, bool bg)
 		refcount_inc(&req->count);
 	__clear_bit(FR_PENDING, &req->flags);
 
-	pcs_fuse_submit(pfc, req, ff ? : fuse_get_req_ff(req));
+	pcs_fuse_submit(pfc, req);
 	if (!bg)
 		wait_event(req->waitq,
 			   test_bit(FR_FINISHED, &req->flags) && !req->args->end);
