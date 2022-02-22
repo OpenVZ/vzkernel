@@ -55,7 +55,7 @@ static struct fuse_req *noop_req_alloc(struct fuse_mount *fm, gfp_t flags)
 	return fuse_generic_request_alloc(fm, noop_req_cachep, flags);
 }
 
-static void noop_req_send(struct fuse_req *req, struct fuse_file *ff, bool bg)
+static void noop_req_send(struct fuse_req *req, bool bg)
 {
 	struct fuse_conn *fc = req->fm->fc;
 

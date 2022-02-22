@@ -295,7 +295,7 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 	spin_unlock(&fc->bg_lock);
 	list_for_each_entry_safe(req, next, &kio_reqs, list) {
 		list_del_init(&req->list);
-		fc->kio.op->req_send(req, NULL, true);
+		fc->kio.op->req_send(req, true);
 	}
 	spin_lock(&fc->bg_lock);
 }
@@ -450,18 +450,19 @@ static void request_wait_answer(struct fuse_req *req)
 	wait_event(req->waitq, test_bit(FR_FINISHED, &req->flags) && !req->args->end);
 }
 
-static void __fuse_request_send(struct fuse_req *req, struct fuse_file *ff)
+static void __fuse_request_send(struct fuse_req *req)
 {
 	struct fuse_mount *fm = req->fm;
 	struct fuse_conn *fc = fm->fc;
 	struct fuse_iqueue *fiq = req->args->fiq;
+	struct fuse_file *ff = req->args->ff;
 
 	BUG_ON(test_bit(FR_BACKGROUND, &req->flags));
 
 	if (fc->kio.op) {
 		int ret = fc->kio.op->req_classify(req, false, false);
 		if (likely(!ret))
-			return fc->kio.op->req_send(req, ff, false);
+			return fc->kio.op->req_send(req, false);
 		else if (ret < 0)
 			return;
 	}
@@ -548,8 +549,7 @@ static void fuse_args_to_req(struct fuse_req *req, struct fuse_args *args)
 		__set_bit(FR_KIO_INTERNAL, &req->flags);
 }
 
-ssize_t fuse_simple_check_request(struct fuse_mount *fm, struct fuse_args *args,
-				  struct fuse_file *ff)
+ssize_t fuse_simple_request(struct fuse_mount *fm, struct fuse_args *args)
 {
 	struct fuse_conn *fc = fm->fc;
 	struct fuse_req *req;
@@ -578,7 +578,7 @@ ssize_t fuse_simple_check_request(struct fuse_mount *fm, struct fuse_args *args,
 
 	if (!args->noreply)
 		__set_bit(FR_ISREPLY, &req->flags);
-	__fuse_request_send(req, ff);
+	__fuse_request_send(req);
 	ret = req->out.h.error;
 	if (!ret && args->out_argvar) {
 		BUG_ON(args->out_numargs == 0);
@@ -588,59 +588,13 @@ ssize_t fuse_simple_check_request(struct fuse_mount *fm, struct fuse_args *args,
 
 	return ret;
 }
-
-ssize_t fuse_simple_request(struct fuse_mount *fm, struct fuse_args *args)
-{
-	return fuse_simple_check_request(fm, args, NULL);
-}
 EXPORT_SYMBOL_GPL(fuse_simple_request);
-
-bool fuse_has_req_ff(struct fuse_req *req)
-{
-	switch (req->in.h.opcode) {
-	case FUSE_WRITE:
-	case FUSE_READ:
-		return true;
-	default:
-		return false;
-	}
-}
-EXPORT_SYMBOL_GPL(fuse_has_req_ff);
-
-struct fuse_file* fuse_get_req_ff(struct fuse_req *req)
-{
-	switch (req->in.h.opcode) {
-	case FUSE_WRITE:
-	case FUSE_READ: {
-		struct fuse_io_args *ia = container_of(req->args, typeof(*ia), ap.args);
-		return ia->ff;
-	}
-	default:
-		return NULL;
-	}
-}
-EXPORT_SYMBOL_GPL(fuse_get_req_ff);
-
-bool fuse_set_req_ff(struct fuse_req *req, struct fuse_file *ff)
-{
-	switch (req->in.h.opcode) {
-	case FUSE_WRITE:
-	case FUSE_READ: {
-		struct fuse_io_args *ia = container_of(req->args, typeof(*ia), ap.args);
-		ia->ff = ff;
-		return true;
-	}
-	default:
-		return false;
-	}
-}
-EXPORT_SYMBOL_GPL(fuse_set_req_ff);
 
 static int fuse_request_queue_background(struct fuse_req *req)
 {
 	struct fuse_mount *fm = req->fm;
 	struct fuse_conn *fc = fm->fc;
-	struct fuse_file *ff = fuse_get_req_ff(req);
+	struct fuse_file *ff = req->args->ff;
 	struct fuse_iqueue *fiq = req->args->fiq;
 	int ret = -ENOTCONN;
 
@@ -653,7 +607,6 @@ static int fuse_request_queue_background(struct fuse_req *req)
 	__set_bit(FR_ISREPLY, &req->flags);
 	spin_lock(&fc->bg_lock);
 	if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
-		BUG_ON(req->in.h.opcode != FUSE_READ);
 		ret = -EIO;
 	} else if (likely(fc->connected)) {
 		fc->num_background++;
