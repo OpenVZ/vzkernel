@@ -219,6 +219,13 @@ struct ploop {
 
 	/* Maintaince in process */
 	bool maintaince;
+	/*
+	 * Don't associate kthread with @pio's
+	 * block cgroup. This allows to distinguish
+	 * and limit IO traffic from swap and ploop
+	 * when they are sharing a physical disk.
+	 */
+	bool nokblkcg;
 
 	struct timer_list enospc_timer;
 	bool event_enospc;

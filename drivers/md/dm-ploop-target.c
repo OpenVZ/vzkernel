@@ -402,6 +402,11 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 			EAT_ARG(argc, argv);
 			continue;
 		}
+		if (strcmp(argv[0], "nokblkcg") == 0) {
+			ploop->nokblkcg = true;
+			EAT_ARG(argc, argv);
+			continue;
+		}
 		break;
 	}
 
