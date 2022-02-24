@@ -1118,11 +1118,6 @@ static struct dentry *kernfs_iop_lookup(struct inode *dir,
 
 	kn = kernfs_find_ns(parent, dentry->d_name.name, ns);
 
-	if(!kernfs_d_visible(kn, kernfs_info(dentry->d_sb))) {
-		up_read(&kernfs_rwsem);
-		return NULL;
-	}
-
 	/* attach dentry and inode */
 	if (kn) {
 		/* Inactive nodes are invisible to the VFS so don't
@@ -1132,6 +1127,12 @@ static struct dentry *kernfs_iop_lookup(struct inode *dir,
 			up_read(&kernfs_rwsem);
 			return NULL;
 		}
+
+		if (!kernfs_d_visible(kn, kernfs_info(dentry->d_sb))) {
+			up_read(&kernfs_rwsem);
+			return NULL;
+		}
+
 		inode = kernfs_get_inode(dir->i_sb, kn);
 		if (!inode)
 			inode = ERR_PTR(-ENOMEM);
