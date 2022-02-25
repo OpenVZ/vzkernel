@@ -1570,7 +1570,8 @@ static int veth_mac_addr(struct net_device *dev, void *p)
 	return eth_mac_addr(dev, p);
 }
 
-static int vzethdev_net_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+static int vzethdev_siocdevprivate(struct net_device *dev, struct ifreq *ifr,
+				   void __user *data, int cmd)
 {
 	if (!capable(CAP_NET_ADMIN))
 		return -EPERM;
@@ -1621,7 +1622,7 @@ static const struct net_device_ops veth_netdev_ops = {
 	.ndo_get_peer_dev	= veth_peer_dev,
 #ifdef CONFIG_VE
 	.ndo_set_mac_address	= veth_mac_addr,
-	.ndo_do_ioctl		= vzethdev_net_ioctl,
+	.ndo_siocdevprivate	= vzethdev_siocdevprivate,
 #else
 	.ndo_set_mac_address	= eth_mac_addr,
 #endif
