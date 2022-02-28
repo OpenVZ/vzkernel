@@ -89,7 +89,7 @@ struct ipc_proc_iface {
  */
 static int __init ipc_init(void)
 {
-	proc_mkdir("sysvipc", NULL);
+	proc_mkdir_mode("sysvipc", S_ISVTX | S_IRUGO | S_IXUGO, NULL);
 	sem_init();
 	msg_init();
 	shm_init();
