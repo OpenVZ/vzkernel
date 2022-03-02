@@ -23,6 +23,14 @@ static void qcow2_set_service_operations(struct dm_target *ti, bool allowed)
 	tgt->service_operations_allowed = allowed;
 	mutex_unlock(&tgt->ctl_mutex);
 }
+static void qcow2_set_wants_suspend(struct dm_target *ti, bool wants)
+{
+	struct qcow2_target *tgt = to_qcow2_target(ti);
+
+	spin_lock_irq(&tgt->event_lock);
+	tgt->wants_suspend = wants;
+	spin_unlock_irq(&tgt->event_lock);
+}
 
 static int rw_pages_sync(unsigned int rw, struct qcow2 *qcow2,
 			 u64 index, struct page *pages[], int nr)
@@ -411,6 +419,26 @@ static void inflight_ref_exit1(struct percpu_ref *ref)
 	complete(&tgt->inflight_ref_comp);
 }
 
+void ploop_enospc_timer(struct timer_list *timer)
+{
+	struct qcow2_target *tgt = from_timer(tgt, timer, enospc_timer);
+	unsigned long flags;
+	LIST_HEAD(list);
+
+	spin_lock_irqsave(&tgt->event_lock, flags);
+	list_splice_init(&tgt->enospc_qios, &list);
+	spin_unlock_irqrestore(&tgt->event_lock, flags);
+
+	submit_embedded_qios(tgt, &list);
+}
+
+static void qcow2_event_work(struct work_struct *ws)
+{
+	struct qcow2_target *tgt = container_of(ws, struct qcow2_target, event_work);
+
+	dm_table_event(tgt->ti->table);
+}
+
 static struct qcow2_target *alloc_qcow2_target(struct dm_target *ti)
 {
 	percpu_ref_func_t *release;
@@ -448,8 +476,12 @@ static struct qcow2_target *alloc_qcow2_target(struct dm_target *ti)
 	}
 
 	init_completion(&tgt->inflight_ref_comp);
+	spin_lock_init(&tgt->event_lock);
 	mutex_init(&tgt->ctl_mutex);
 	init_waitqueue_head(&tgt->service_wq);
+	INIT_WORK(&tgt->event_work, qcow2_event_work);
+	INIT_LIST_HEAD(&tgt->enospc_qios);
+	timer_setup(&tgt->enospc_timer, ploop_enospc_timer, 0);
 	ti->private = tgt;
 	tgt->ti = ti;
 	qcow2_set_service_operations(ti, false);
@@ -874,10 +906,16 @@ static void qcow2_status(struct dm_target *ti, status_type_t type,
 
 static void qcow2_presuspend(struct dm_target *ti)
 {
+	struct qcow2_target *tgt = to_qcow2_target(ti);
+
 	qcow2_set_service_operations(ti, false);
+	qcow2_set_wants_suspend(ti, true);
+	del_timer_sync(&tgt->enospc_timer);
+	ploop_enospc_timer(&tgt->enospc_timer);
 }
 static void qcow2_presuspend_undo(struct dm_target *ti)
 {
+	qcow2_set_wants_suspend(ti, false);
 	qcow2_set_service_operations(ti, true);
 }
 static void qcow2_postsuspend(struct dm_target *ti)
@@ -923,6 +961,8 @@ static int qcow2_preresume(struct dm_target *ti)
 		if (ret)
 			pr_err("qcow2: Can't set features\n");
 	}
+	if (!ret)
+		qcow2_set_wants_suspend(ti, false);
 
 	return ret;
 }
