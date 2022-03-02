@@ -41,12 +41,10 @@ static void service_qio_endio(struct qcow2_target *tgt, struct qio *qio,
 			      void *data, blk_status_t status)
 {
 	blk_status_t *status_ptr = data;
-	unsigned long flags;
 
 	if (unlikely(status)) {
-		spin_lock_irqsave(&tgt->err_status_lock, flags);
-		*status_ptr = status;
-		spin_unlock_irqrestore(&tgt->err_status_lock, flags);
+		WRITE_ONCE(*status_ptr, status);
+		smp_wmb(); /* Pairs with smp_rmb() in qcow2_service_iter() */
 	}
 
 	atomic_dec(&tgt->service_qios);
@@ -99,9 +97,8 @@ static int qcow2_service_iter(struct qcow2_target *tgt, struct qcow2 *qcow2,
 
 	wait_event(tgt->service_wq, !atomic_read(&tgt->service_qios));
 	if (!ret) {
-		spin_lock_irq(&tgt->err_status_lock);
-		ret = blk_status_to_errno(service_status);
-		spin_unlock_irq(&tgt->err_status_lock);
+		smp_rmb(); /* Pairs with smp_wmb() in service_qio_endio() */
+		ret = blk_status_to_errno(READ_ONCE(service_status));
 	}
 
 	return ret;
