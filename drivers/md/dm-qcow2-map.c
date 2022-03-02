@@ -3995,7 +3995,33 @@ void do_qcow2_fsync_work(struct work_struct *ws)
 	current_restore_flags(pflags, PF_LOCAL_THROTTLE|PF_MEMALLOC_NOIO);
 }
 
-static void qrq_endio(struct qcow2_target *tgt, struct qio *unused,
+static bool qcow2_try_delay_enospc(struct qcow2_target *tgt, struct qcow2_rq *qrq, struct qio *qio)
+{
+	bool delayed = true;
+	unsigned long flags;
+
+	spin_lock_irqsave(&tgt->event_lock, flags);
+	if (unlikely(tgt->wants_suspend)) {
+		delayed = false;
+		goto unlock;
+	}
+
+	init_qrq_and_embedded_qio(tgt, qrq->rq, qrq, qio);
+
+	pr_err_once("qcow2: underlying disk is almost full\n");
+	tgt->event_enospc = true;
+	list_add_tail(&qio->link, &tgt->enospc_qios);
+unlock:
+	spin_unlock_irqrestore(&tgt->event_lock, flags);
+
+	if (delayed)
+		mod_timer(&tgt->enospc_timer, jiffies + ENOSPC_TIMEOUT_JI);
+	schedule_work(&tgt->event_work);
+
+	return delayed;
+}
+
+static void qrq_endio(struct qcow2_target *tgt, struct qio *qio,
 		      void *qrq_ptr, blk_status_t bi_status)
 {
 	struct qcow2_rq *qrq = qrq_ptr;
@@ -4003,6 +4029,19 @@ static void qrq_endio(struct qcow2_target *tgt, struct qio *unused,
 
 	if (qrq->bvec)
 		kfree(qrq->bvec);
+	/*
+	 * Here is exit point for rq, and here we handle ENOSPC.
+	 * Embedded qios will be reinitialized like they've just
+	 * came from upper dm level, and later resubmitted after
+	 * timeout. Note, that we do not handle merge here: merge
+	 * callers receive -ENOSPC synchronous without intermediaries.
+	 */
+	if (unlikely(bi_status == BLK_STS_NOSPC)) {
+		WARN_ON_ONCE(!op_is_write(qio->bi_op));
+		if (qcow2_try_delay_enospc(tgt, qrq, qio))
+			return;
+	}
+
 	mempool_free(qrq, tgt->qrq_pool);
 	dm_complete_request(rq, bi_status);
 }
