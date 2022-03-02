@@ -448,7 +448,6 @@ static struct qcow2_target *alloc_qcow2_target(struct dm_target *ti)
 	}
 
 	init_completion(&tgt->inflight_ref_comp);
-	spin_lock_init(&tgt->err_status_lock);
 	mutex_init(&tgt->ctl_mutex);
 	init_waitqueue_head(&tgt->service_wq);
 	ti->private = tgt;
