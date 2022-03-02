@@ -18,6 +18,7 @@
 
 #define MIN_QIOS 512
 #define WB_TIMEOUT_JI (60 * HZ)
+#define ENOSPC_TIMEOUT_JI (20 * HZ)
 #define PREALLOC_SIZE (128ULL * 1024 * 1024)
 
 struct QCowHeader {
@@ -119,12 +120,19 @@ struct qcow2_target {
 	unsigned int inflight_ref_index:1;
 
 	bool service_operations_allowed;
+	bool wants_suspend;
 	bool md_writeback_error;
 	bool truncate_error;
+	bool event_enospc;
 
 	atomic_t service_qios;
 	struct wait_queue_head service_wq;
 
+	struct list_head enospc_qios; /* Delayed after ENOSPC */
+	struct timer_list enospc_timer;
+
+	struct work_struct event_work;
+	spinlock_t event_lock;
 	struct mutex ctl_mutex;
 };
 
