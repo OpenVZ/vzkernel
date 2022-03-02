@@ -125,7 +125,6 @@ struct qcow2_target {
 	atomic_t service_qios;
 	struct wait_queue_head service_wq;
 
-	spinlock_t err_status_lock;
 	struct mutex ctl_mutex;
 };
 
