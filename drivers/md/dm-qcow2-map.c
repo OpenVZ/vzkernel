@@ -83,6 +83,8 @@ static int punch_hole(struct file *file, loff_t pos, loff_t len);
 static void handle_cleanup_mask(struct qio *qio);
 static void process_read_qio(struct qcow2 *qcow2, struct qio *qio,
 			     struct qcow2_map *map);
+static void init_qrq_and_embedded_qio(struct qcow2_target *tgt, struct request *rq,
+				      struct qcow2_rq *qrq, struct qio *qio);
 
 static loff_t bytes_off_in_cluster(struct qcow2 *qcow2, struct qio *qio)
 {
@@ -4011,6 +4013,16 @@ static void init_qrq(struct qcow2_rq *qrq, struct request *rq)
 	qrq->bvec = NULL;
 }
 
+static void init_qrq_and_embedded_qio(struct qcow2_target *tgt, struct request *rq,
+				      struct qcow2_rq *qrq, struct qio *qio)
+{
+	init_qrq(qrq, rq);
+	init_qio(qio, req_op(rq), NULL);
+
+	qio->endio_cb = qrq_endio;
+	qio->endio_cb_data = qrq;
+}
+
 void submit_embedded_qio(struct qcow2_target *tgt, struct qio *qio)
 {
 	struct qcow2_rq *qrq = qio->endio_cb_data;
@@ -4067,12 +4079,9 @@ int qcow2_clone_and_map(struct dm_target *ti, struct request *rq,
 	qrq = mempool_alloc(tgt->qrq_pool, GFP_ATOMIC);
 	if (!qrq)
 		return DM_MAPIO_KILL;
-	init_qrq(qrq, rq);
-
 	qio = (void *)qrq + sizeof(*qrq);
-	init_qio(qio, req_op(rq), NULL);
-	qio->endio_cb = qrq_endio;
-	qio->endio_cb_data = qrq;
+	init_qrq_and_embedded_qio(tgt, rq, qrq, qio);
+
 	/*
 	 * Note, this qcow2_clone_and_map() may be called from atomic
 	 * context, so here we just delegate qio splitting to kwork.
