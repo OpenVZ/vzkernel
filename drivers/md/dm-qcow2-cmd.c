@@ -316,6 +316,22 @@ static int qcow2_set_fault_injection(struct qcow2_target *tgt,
 	return 0;
 }
 
+static int qcow2_get_event(struct qcow2_target *tgt, char *result, unsigned int maxlen)
+{
+	unsigned int sz = 0;
+	int ret = 0;
+
+	spin_lock_irq(&tgt->event_lock);
+	if (tgt->event_enospc) {
+		ret = (DMEMIT("event_ENOSPC\n")) ? 1 : 0;
+		if (ret)
+			tgt->event_enospc = false;
+	}
+	spin_unlock_irq(&tgt->event_lock);
+
+	return ret;
+}
+
 int qcow2_message(struct dm_target *ti, unsigned int argc, char **argv,
 		  char *result, unsigned int maxlen)
 {
@@ -351,6 +367,13 @@ int qcow2_message(struct dm_target *ti, unsigned int argc, char **argv,
 			goto out;
 		}
 		ret = qcow2_set_fault_injection(tgt, val, val2);
+		goto out;
+	} else if (!strcmp(argv[0], "get_event")) {
+		if (argc != 1) {
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = qcow2_get_event(tgt, result, maxlen);
 		goto out;
 	}
 
