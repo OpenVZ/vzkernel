@@ -511,11 +511,15 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 		return -ENOENT;
 
 	fi = get_fuse_inode(inode);
+
 	spin_lock(&fi->lock);
 	list_for_each_entry(ff, &fi->rw_files, rw_entry) {
 		set_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state);
 	}
 	spin_unlock(&fi->lock);
+
+	/* Mark that invalidate files is in progress */
+	set_bit(FUSE_I_INVAL_FILES, &fi->state);
 
 	/* let them see FUSE_S_FAIL_IMMEDIATELY */
 	wake_up_all(&fc->blocked_waitq);
@@ -552,6 +556,7 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 	if (!err)
 		fuse_invalidate_attr(inode);
 
+	clear_bit(FUSE_I_INVAL_FILES, &fi->state);
 	iput(inode);
 	return err;
 }
