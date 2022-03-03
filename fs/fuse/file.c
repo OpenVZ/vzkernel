@@ -594,6 +594,16 @@ static bool fuse_range_is_writeback(struct inode *inode, pgoff_t idx_from,
 	found = fuse_find_writeback(fi, idx_from, idx_to);
 	spin_unlock(&fi->lock);
 
+	/*
+	* Return false if invalidate files is in progress, which makes
+	* sense in that page cache will be invalidated and all pending
+	* write requests will be discarded anyway.
+	*
+	* This can make fuse_wait_on_page_writeback() return when
+	* FUSE_NOTIFY_INVAL_FILES is in progress.
+	*/
+	found = found && !test_bit(FUSE_I_INVAL_FILES, &fi->state);
+
 	return found;
 }
 
@@ -613,20 +623,6 @@ static void fuse_wait_on_page_writeback(struct inode *inode, pgoff_t index)
 	struct fuse_inode *fi = get_fuse_inode(inode);
 
 	wait_event(fi->page_waitq, !fuse_page_is_writeback(inode, index));
-}
-
-/*
- * Can be woken up by FUSE_NOTIFY_INVAL_FILES
- */
-static void fuse_wait_on_page_writeback_or_invalidate(struct inode *inode,
-						      struct file *file,
-						      pgoff_t index)
-{
-	struct fuse_inode *fi = get_fuse_inode(inode);
-	struct fuse_file *ff = file->private_data;
-
-	wait_event(fi->page_waitq, !fuse_page_is_writeback(inode, index) ||
-		   test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state));
 }
 
 /*
@@ -1090,10 +1086,11 @@ static int fuse_do_readpage(struct file *file, struct page *page,
 	 * Page writeback can extend beyond the lifetime of the
 	 * page-cache page, so make sure we read a properly synced
 	 * page.
-	 *
-	 * But we can't wait if FUSE_NOTIFY_INVAL_FILES is in progress.
 	 */
-	fuse_wait_on_page_writeback_or_invalidate(inode, file, page->index);
+	fuse_wait_on_page_writeback(inode, page->index);
+
+	if (fuse_file_fail_immediately(file))
+		return -EIO;
 
 	attr_ver = fuse_get_attr_version(fm->fc);
 
@@ -1258,8 +1255,7 @@ static void fuse_readahead(struct readahead_control *rac)
 		ap = &ia->ap;
 		nr_pages = __readahead_batch(rac, ap->pages, nr_pages);
 		for (i = 0; i < nr_pages; i++) {
-			/* we can't wait if FUSE_NOTIFY_INVAL_FILES is in progress */
-			fuse_wait_on_page_writeback_or_invalidate(inode, rac->file,
+			fuse_wait_on_page_writeback(inode,
 						    readahead_index(rac) + i);
 			ap->descs[i].length = PAGE_SIZE;
 		}
@@ -2471,21 +2467,8 @@ static inline bool fuse_blocked_for_wb(struct inode *inode)
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
-	bool blocked = false;
 
-	if (!fc->blocked)
-		return false;
-
-	spin_lock(&fi->lock);
-	if (!list_empty(&fi->rw_files)) {
-		struct fuse_file *ff = list_entry(fi->rw_files.next,
-						  struct fuse_file, rw_entry);
-		if (!test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state))
-			blocked = true;
-	}
-	spin_unlock(&fi->lock);
-
-	return blocked;
+	return fc->blocked && !test_bit(FUSE_I_INVAL_FILES, &fi->state);
 }
 
 void fuse_release_ff(struct inode *inode, struct fuse_file *ff);
@@ -2504,6 +2487,15 @@ static int fuse_writepages_fill(struct page *page,
 	int check_for_blocked = 0;
 
 	BUG_ON(wpa && !data->ff);
+
+	/* More than optimization: writeback pages to /dev/null; fused would
+	 * drop our FUSE_WRITE requests anyway, but it will be blocked while
+	 * sending NOTIFY_INVAL_FILES until we return!
+	 */
+	if (!wpa && test_bit(FUSE_I_INVAL_FILES, &fi->state)) {
+		unlock_page(page);
+		return 0;
+	}
 
 	if (wpa && fuse_writepage_need_send(fc, page, ap, data)) {
 		fuse_writepages_send(data);
@@ -2585,7 +2577,6 @@ static int fuse_writepages_fill(struct page *page,
 		end_page_writeback(page);
 		fuse_release_ff(inode, data->ff);
 		data->ff = NULL;
-		goto out_unlock;
 	}
 out_unlock:
 	unlock_page(page);
@@ -2594,14 +2585,6 @@ out_unlock:
 		wait_event(fc->blocked_waitq, !fuse_blocked_for_wb(inode));
 
 	return err;
-}
-
-static int fuse_dummy_writepage(struct page *page,
-				struct writeback_control *wbc,
-				void *data)
-{
-	unlock_page(page);
-	return 0;
 }
 
 static int fuse_writepages(struct address_space *mapping,
@@ -2624,29 +2607,9 @@ static int fuse_writepages(struct address_space *mapping,
 	if (wbc->sync_mode != WB_SYNC_NONE)
 		wait_event(fc->blocked_waitq, !fuse_blocked_for_wb(inode));
 
-	/* More than optimization: writeback pages to /dev/null; fused would
-	 * drop our FUSE_WRITE requests anyway, but it will be blocked while
-	 * sending NOTIFY_INVAL_FILES until we return!
-	 *
-	 * NB: We can't wait till fuse_send_writepages() because
-	 * fuse_writepages_fill() would possibly deadlock on
-	 * fuse_page_is_writeback().
-	 */
- 	data.ff = __fuse_write_file_get(fc, get_fuse_inode(inode));
-	if (data.ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &data.ff->ff_state)) {
-		err = write_cache_pages(mapping, wbc, fuse_dummy_writepage,
-					mapping);
-		fuse_release_ff(inode, data.ff);
-		data.ff = NULL;
-		goto out;
-	}
-	if (data.ff) {
-		fuse_release_ff(inode, data.ff);
-		data.ff = NULL;
-	}
-
 	data.inode = inode;
 	data.wpa = NULL;
+	data.ff = NULL;
 
 	err = -ENOMEM;
 	data.orig_pages = kcalloc(fc->max_pages,
@@ -2670,12 +2633,7 @@ out:
 	return err;
 }
 
-static inline bool fuse_file_fail_immediately(struct file *file)
-{
-	struct fuse_file *ff = file->private_data;
 
-	return test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state);
-}
 
 /*
  * It's worthy to make sure that space is reserved on disk for the write,
@@ -2697,12 +2655,12 @@ static int fuse_write_begin(struct file *file, struct address_space *mapping,
 	if (!page)
 		goto error;
 
+	fuse_wait_on_page_writeback(mapping->host, page->index);
+
 	if (fuse_file_fail_immediately(file)) {
 		err = -EIO;
 		goto cleanup;
 	}
-
-	fuse_wait_on_page_writeback(mapping->host, page->index);
 
 	if (PageUptodate(page) || len == PAGE_SIZE)
 		goto success;
@@ -2769,6 +2727,11 @@ static int fuse_launder_folio(struct folio *folio)
 
 		/* Serialize with pending writeback for the same page */
 		fuse_wait_on_page_writeback(inode, folio->index);
+
+		/* Return success if FUSE_NOTIFY_INVAL_FILES is in progress */
+		if (test_bit(FUSE_I_INVAL_FILES, &get_fuse_inode(inode)->state))
+			return 0;
+
 		err = fuse_writepage_locked(&folio->page);
 		if (!err)
 			fuse_wait_on_page_writeback(inode, folio->index);
@@ -2816,10 +2779,12 @@ static vm_fault_t fuse_page_mkwrite(struct vm_fault *vmf)
 		return VM_FAULT_NOPAGE;
 	}
 
-	if (fuse_file_fail_immediately(vmf->vma->vm_file))
-		return -EIO;
-
 	fuse_wait_on_page_writeback(inode, page->index);
+	if (fuse_file_fail_immediately(vmf->vma->vm_file)) {
+		unlock_page(page);
+		return VM_FAULT_SIGSEGV;
+	}
+
 	return VM_FAULT_LOCKED;
 }
 

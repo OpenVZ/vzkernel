@@ -198,6 +198,8 @@ enum {
 
 	/** kdirect open try has already made */
 	FUSE_I_KIO_OPEN_TRY_MADE,
+	/** Operation invalidating files is in progress */
+	FUSE_I_INVAL_FILES,
 };
 
 struct fuse_conn;
@@ -1387,6 +1389,16 @@ static inline void fuse_dio_wait(struct fuse_inode *fi)
 {
 	fuse_read_dio_wait(fi);
 	fuse_write_dio_wait(fi);
+}
+
+static inline bool __fuse_file_fail_immediately(struct fuse_file *ff)
+{
+	return test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state);
+}
+
+static inline bool fuse_file_fail_immediately(struct file *file)
+{
+	return  __fuse_file_fail_immediately(file->private_data);
 }
 
 /**
