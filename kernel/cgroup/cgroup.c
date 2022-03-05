@@ -2536,15 +2536,14 @@ static int cgroup_get_tree(struct fs_context *fc)
 	struct cgroup_fs_context *ctx = cgroup_fc2context(fc);
 	int ret;
 
+	if (ve_hide_cgroups(ctx->root))
+		return -EPERM;
+
 	cgrp_dfl_visible = true;
 	cgroup_get_live(&cgrp_dfl_root.cgrp);
 	ctx->root = &cgrp_dfl_root;
 
-	if (ve_hide_cgroups(ctx->root))
-		ret = -EPERM;
-
-	if (!ret)
-		ret = cgroup_do_get_tree(fc);
+	ret = cgroup_do_get_tree(fc);
 	if (!ret)
 		apply_cgroup_root_flags(ctx->flags);
 	return ret;
