@@ -21,6 +21,12 @@
 #include <linux/xattr.h>
 #include <linux/fs.h>
 
+#ifdef CONFIG_CGROUP_PIDS
+void cgroup_pids_release(struct task_struct *task);
+#else
+static inline void cgroup_pids_release(struct task_struct *task) {}
+#endif
+
 #ifdef CONFIG_CGROUPS
 
 struct cgroupfs_root;
@@ -30,24 +36,22 @@ struct cgroup;
 struct css_id;
 struct eventfd_ctx;
 
-extern int cgroup_init_early(void);
-extern int cgroup_init(void);
-extern void cgroup_fork(struct task_struct *p);
-extern void cgroup_post_fork(struct task_struct *p);
-extern void cgroup_exit(struct task_struct *p, int run_callbacks);
-extern int cgroupstats_build(struct cgroupstats *stats,
-				struct dentry *dentry);
-extern int cgroup_load_subsys(struct cgroup_subsys *ss);
-extern void cgroup_unload_subsys(struct cgroup_subsys *ss);
-
-extern int proc_cgroup_show(struct seq_file *, void *);
-
 /*
  * Define the enumeration of all cgroup subsystems.
  *
  * We define ids for builtin subsystems and then modular ones.
+ *
+ * NOTE: Theres some real hackery going on here.  Initially in RHEL7, the
+ * netprio cgroup was built as a module, but in 7.3 we had need to make it
+ * builtin.  The cgroup design caused this move to create LOTS of false positive
+ * ABI breaks.  AS such, we use this ENABLE_NETPRIO_NOW macro to direct where in
+ * the cgroup_subsys_id ennumeration the netprio subsys id is defined, thereby
+ * avoiding those false positives.  Please be very careful making further
+ * modifications to this ennumeration
  */
 #define SUBSYS(_x) _x ## _subsys_id,
+#define SUBSYS_TAG(_t) CGROUP_ ## _t, \
+	__unused_tag_ ## _t = CGROUP_ ## _t - 1,
 enum cgroup_subsys_id {
 #define IS_SUBSYS_ENABLED(option) IS_BUILTIN(option)
 #include <linux/cgroup_subsys.h>
@@ -56,12 +60,34 @@ enum cgroup_subsys_id {
 
 	__CGROUP_SUBSYS_TEMP_PLACEHOLDER = CGROUP_BUILTIN_SUBSYS_COUNT - 1,
 
+#undef SUBSYS_TAG
 #define IS_SUBSYS_ENABLED(option) IS_MODULE(option)
+#define ENABLE_NETPRIO_NOW
 #include <linux/cgroup_subsys.h>
+#undef ENABLE_NETPRIO_NOW
 #undef IS_SUBSYS_ENABLED
 	CGROUP_SUBSYS_COUNT,
 };
 #undef SUBSYS
+
+#define CGROUP_CANFORK_COUNT (CGROUP_CANFORK_END - CGROUP_CANFORK_START)
+
+extern int cgroup_init_early(void);
+extern int cgroup_init(void);
+extern void cgroup_fork(struct task_struct *p);
+extern int cgroup_can_fork(struct task_struct *p,
+			   void *ss_priv[CGROUP_CANFORK_COUNT]);
+extern void cgroup_cancel_fork(struct task_struct *p,
+			       void *ss_priv[CGROUP_CANFORK_COUNT]);
+extern void cgroup_post_fork(struct task_struct *p,
+			     void *old_ss_priv[CGROUP_CANFORK_COUNT]);
+extern void cgroup_exit(struct task_struct *p, int run_callbacks);
+extern int cgroupstats_build(struct cgroupstats *stats,
+				struct dentry *dentry);
+extern int cgroup_load_subsys(struct cgroup_subsys *ss);
+extern void cgroup_unload_subsys(struct cgroup_subsys *ss);
+
+extern int proc_cgroup_show(struct seq_file *, void *);
 
 /* Per-subsystem/per-cgroup state maintained by the system. */
 struct cgroup_subsys_state {
@@ -269,8 +295,17 @@ enum {
 	 *
 	 * - Remount is disallowed.
 	 *
+	 * - cpuset: tasks will be kept in empty cpusets when hotplug happens
+	 *   and take masks of ancestors with non-empty cpus/mems, instead of
+	 *   being moved to an ancestor.
+	 *
+	 * - cpuset: a task can be moved into an empty cpuset, and again it
+	 *   takes masks of ancestors.
+	 *
 	 * - memcg: use_hierarchy is on by default and the cgroup file for
 	 *   the flag is not created.
+	 *
+	 * - blkcg: blk-throttle becomes properly hierarchical.
 	 *
 	 * The followings are planned changes.
 	 *
@@ -281,6 +316,11 @@ enum {
 
 	CGRP_ROOT_NOPREFIX	= (1 << 1), /* mounted subsystems have no named prefix */
 	CGRP_ROOT_XATTR		= (1 << 2), /* supports extended attributes */
+
+	/*
+	 * Enable cpuset controller in v1 cgroup to use v2 behavior.
+	 */
+	CGRP_ROOT_CPUSET_V2_MODE = (1 << 3),
 };
 
 /*
@@ -581,7 +621,8 @@ struct cgroup_subsys {
 	int (*can_attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
 	void (*cancel_attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
 	void (*attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
-	void (*fork)(struct task_struct *task);
+	RH_KABI_REPLACE(void (*fork)(struct task_struct *task),
+			void (*fork)(struct task_struct *task, void *priv))
 	void (*exit)(struct cgroup *cgrp, struct cgroup *old_cgrp,
 		     struct task_struct *task);
 	void (*bind)(struct cgroup *root);
@@ -593,7 +634,7 @@ struct cgroup_subsys {
 	 * True if this subsys uses ID. ID is not available before cgroup_init()
 	 * (not available in early_init time.)
 	 */
-	bool use_id;
+	RH_KABI_DEPRECATE(bool, use_id)
 
 	/*
 	 * If %false, this subsystem is properly hierarchical -
@@ -620,8 +661,8 @@ struct cgroup_subsys {
 	struct cgroupfs_root *root;
 	struct list_head sibling;
 	/* used when use_id == true */
-	struct idr idr;
-	spinlock_t id_lock;
+	RH_KABI_DEPRECATE(struct idr, idr)
+	RH_KABI_DEPRECATE(spinlock_t, id_lock)
 
 	/* list of cftype_sets */
 	struct list_head cftsets;
@@ -632,11 +673,16 @@ struct cgroup_subsys {
 
 	/* should be defined only by modular subsystems */
 	struct module *module;
+
+	RH_KABI_EXTEND(int (*can_fork)(struct task_struct *task, void **priv_p))
+	RH_KABI_EXTEND(void (*cancel_fork)(struct task_struct *task, void *priv))
 };
 
 #define SUBSYS(_x) extern struct cgroup_subsys _x ## _subsys;
+#define ENABLE_NETPRIO_NOW
 #define IS_SUBSYS_ENABLED(option) IS_BUILTIN(option)
 #include <linux/cgroup_subsys.h>
+#undef ENABLE_NETPRIO_NOW
 #undef IS_SUBSYS_ENABLED
 #undef SUBSYS
 
@@ -646,22 +692,60 @@ static inline struct cgroup_subsys_state *cgroup_subsys_state(
 	return cgrp->subsys[subsys_id];
 }
 
-/*
- * function to get the cgroup_subsys_state which allows for extra
- * rcu_dereference_check() conditions, such as locks used during the
- * cgroup_subsys::attach() methods.
+/**
+ * task_css_set_check - obtain a task's css_set with extra access conditions
+ * @task: the task to obtain css_set for
+ * @__c: extra condition expression to be passed to rcu_dereference_check()
+ *
+ * A task's css_set is RCU protected, initialized and exited while holding
+ * task_lock(), and can only be modified while holding both cgroup_mutex
+ * and task_lock() while the task is alive.  This macro verifies that the
+ * caller is inside proper critical section and returns @task's css_set.
+ *
+ * The caller can also specify additional allowed conditions via @__c, such
+ * as locks used during the cgroup_subsys::attach() methods.
  */
 #ifdef CONFIG_PROVE_RCU
 extern struct mutex cgroup_mutex;
-#define task_subsys_state_check(task, subsys_id, __c)			\
-	rcu_dereference_check((task)->cgroups->subsys[(subsys_id)],	\
-			      lockdep_is_held(&(task)->alloc_lock) ||	\
-			      lockdep_is_held(&cgroup_mutex) || (__c))
+#define task_css_set_check(task, __c)					\
+	rcu_dereference_check((task)->cgroups,				\
+		lockdep_is_held(&(task)->alloc_lock) ||			\
+		lockdep_is_held(&cgroup_mutex) || (__c))
 #else
-#define task_subsys_state_check(task, subsys_id, __c)			\
-	rcu_dereference((task)->cgroups->subsys[(subsys_id)])
+#define task_css_set_check(task, __c)					\
+	rcu_dereference((task)->cgroups)
 #endif
 
+/**
+ * task_subsys_state_check - obtain css for (task, subsys) w/ extra access conds
+ * @task: the target task
+ * @subsys_id: the target subsystem ID
+ * @__c: extra condition expression to be passed to rcu_dereference_check()
+ *
+ * Return the cgroup_subsys_state for the (@task, @subsys_id) pair.  The
+ * synchronization rules are the same as task_css_set_check().
+ */
+#define task_subsys_state_check(task, subsys_id, __c)			\
+	task_css_set_check((task), (__c))->subsys[(subsys_id)]
+
+/**
+ * task_css_set - obtain a task's css_set
+ * @task: the task to obtain css_set for
+ *
+ * See task_css_set_check().
+ */
+static inline struct css_set *task_css_set(struct task_struct *task)
+{
+	return task_css_set_check(task, false);
+}
+
+/**
+ * task_subsys_state - obtain css for (task, subsys)
+ * @task: the target task
+ * @subsys_id: the target subsystem ID
+ *
+ * See task_subsys_state_check().
+ */
 static inline struct cgroup_subsys_state *
 task_subsys_state(struct task_struct *task, int subsys_id)
 {
@@ -672,6 +756,31 @@ static inline struct cgroup* task_cgroup(struct task_struct *task,
 					       int subsys_id)
 {
 	return task_subsys_state(task, subsys_id)->cgroup;
+}
+
+/**
+ * task_get_css - find and get the css for (task, subsys)
+ * @task: the target task
+ * @subsys_id: the target subsystem ID
+ *
+ * Find the css for the (@task, @subsys_id) combination, increment a
+ * reference on and return it.  This function is guaranteed to return a
+ * valid css.
+ */
+static inline struct cgroup_subsys_state *
+task_get_css(struct task_struct *task, int subsys_id)
+{
+	struct cgroup_subsys_state *css;
+
+	rcu_read_lock();
+	while (true) {
+		css = task_subsys_state(task, subsys_id);
+		if (likely(css_tryget(css)))
+			break;
+		cpu_relax();
+	}
+	rcu_read_unlock();
+	return css;
 }
 
 /**
@@ -798,44 +907,22 @@ int cgroup_scan_tasks(struct cgroup_scanner *scan);
 int cgroup_attach_task_all(struct task_struct *from, struct task_struct *);
 int cgroup_transfer_tasks(struct cgroup *to, struct cgroup *from);
 
-/*
- * CSS ID is ID for cgroup_subsys_state structs under subsys. This only works
- * if cgroup_subsys.use_id == true. It can be used for looking up and scanning.
- * CSS ID is assigned at cgroup allocation (create) automatically
- * and removed when subsys calls free_css_id() function. This is because
- * the lifetime of cgroup_subsys_state is subsys's matter.
- *
- * Looking up and scanning function should be called under rcu_read_lock().
- * Taking cgroup_mutex is not necessary for following calls.
- * But the css returned by this routine can be "not populated yet" or "being
- * destroyed". The caller should check css and cgroup's status.
- */
-
-/*
- * Typically Called at ->destroy(), or somewhere the subsys frees
- * cgroup_subsys_state.
- */
-void free_css_id(struct cgroup_subsys *ss, struct cgroup_subsys_state *css);
-
-/* Find a cgroup_subsys_state which has given ID */
-
-struct cgroup_subsys_state *css_lookup(struct cgroup_subsys *ss, int id);
-
-/* Returns true if root is ancestor of cg */
-bool css_is_ancestor(struct cgroup_subsys_state *cg,
-		     const struct cgroup_subsys_state *root);
-
-/* Get id and depth of css */
-unsigned short css_id(struct cgroup_subsys_state *css);
-unsigned short css_depth(struct cgroup_subsys_state *css);
 struct cgroup_subsys_state *cgroup_css_from_dir(struct file *f, int id);
 
 #else /* !CONFIG_CGROUPS */
 
+#define CGROUP_CANFORK_COUNT	0
+
 static inline int cgroup_init_early(void) { return 0; }
 static inline int cgroup_init(void) { return 0; }
 static inline void cgroup_fork(struct task_struct *p) {}
-static inline void cgroup_post_fork(struct task_struct *p) {}
+static inline int cgroup_can_fork(struct task_struct *p,
+				  void *ss_priv[CGROUP_CANFORK_COUNT])
+{ return 0; }
+static inline void cgroup_cancel_fork(struct task_struct *p,
+				      void *ss_priv[CGROUP_CANFORK_COUNT]) {}
+static inline void cgroup_post_fork(struct task_struct *p,
+				    void *ss_priv[CGROUP_CANFORK_COUNT]) {}
 static inline void cgroup_exit(struct task_struct *p, int callbacks) {}
 
 static inline void cgroup_lock(void) {}

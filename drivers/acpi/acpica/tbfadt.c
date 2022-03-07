@@ -52,7 +52,8 @@ ACPI_MODULE_NAME("tbfadt")
 static void
 acpi_tb_init_generic_address(struct acpi_generic_address *generic_address,
 			     u8 space_id,
-			     u8 byte_width, u64 address, char *register_name);
+			     u8 byte_width,
+			     u64 address, char *register_name, u8 flags);
 
 static void acpi_tb_convert_fadt(void);
 
@@ -68,13 +69,14 @@ typedef struct acpi_fadt_info {
 	u16 address32;
 	u16 length;
 	u8 default_length;
-	u8 type;
+	u8 flags;
 
 } acpi_fadt_info;
 
 #define ACPI_FADT_OPTIONAL          0
 #define ACPI_FADT_REQUIRED          1
 #define ACPI_FADT_SEPARATE_LENGTH   2
+#define ACPI_FADT_GPE_REGISTER      4
 
 static struct acpi_fadt_info fadt_info_table[] = {
 	{"Pm1aEventBlock",
@@ -124,14 +126,14 @@ static struct acpi_fadt_info fadt_info_table[] = {
 	 ACPI_FADT_OFFSET(gpe0_block),
 	 ACPI_FADT_OFFSET(gpe0_block_length),
 	 0,
-	 ACPI_FADT_SEPARATE_LENGTH},
+	 ACPI_FADT_SEPARATE_LENGTH | ACPI_FADT_GPE_REGISTER},
 
 	{"Gpe1Block",
 	 ACPI_FADT_OFFSET(xgpe1_block),
 	 ACPI_FADT_OFFSET(gpe1_block),
 	 ACPI_FADT_OFFSET(gpe1_block_length),
 	 0,
-	 ACPI_FADT_SEPARATE_LENGTH}
+	 ACPI_FADT_SEPARATE_LENGTH | ACPI_FADT_GPE_REGISTER}
 };
 
 #define ACPI_FADT_INFO_ENTRIES \
@@ -187,19 +189,29 @@ static struct acpi_fadt_pm_info fadt_pm_info_table[] = {
 static void
 acpi_tb_init_generic_address(struct acpi_generic_address *generic_address,
 			     u8 space_id,
-			     u8 byte_width, u64 address, char *register_name)
+			     u8 byte_width,
+			     u64 address, char *register_name, u8 flags)
 {
 	u8 bit_width;
 
-	/* Bit width field in the GAS is only one byte long, 255 max */
-
+	/*
+	 * Bit width field in the GAS is only one byte long, 255 max.
+	 * Check for bit_width overflow in GAS.
+	 */
 	bit_width = (u8)(byte_width * 8);
-
-	if (byte_width > 31) {	/* (31*8)=248 */
-		ACPI_ERROR((AE_INFO,
-			    "%s - 32-bit FADT register is too long (%u bytes, %u bits) "
-			    "to convert to GAS struct - 255 bits max, truncating",
-			    register_name, byte_width, (byte_width * 8)));
+	if (byte_width > 31) {	/* (31*8)=248, (32*8)=256 */
+		/*
+		 * No error for GPE blocks, because we do not use the bit_width
+		 * for GPEs, the legacy length (byte_width) is used instead to
+		 * allow for a large number of GPEs.
+		 */
+		if (!(flags & ACPI_FADT_GPE_REGISTER)) {
+			ACPI_ERROR((AE_INFO,
+				    "%s - 32-bit FADT register is too long (%u bytes, %u bits) "
+				    "to convert to GAS struct - 255 bits max, truncating",
+				    register_name, byte_width,
+				    (byte_width * 8)));
+		}
 
 		bit_width = 255;
 	}
@@ -268,15 +280,15 @@ void acpi_tb_parse_fadt(u32 table_index)
 
 	/* Obtain the DSDT and FACS tables via their addresses within the FADT */
 
-	acpi_tb_install_table((acpi_physical_address) acpi_gbl_FADT.Xdsdt,
-			      ACPI_SIG_DSDT, ACPI_TABLE_INDEX_DSDT);
+	acpi_tb_install_fixed_table((acpi_physical_address) acpi_gbl_FADT.Xdsdt,
+				    ACPI_SIG_DSDT, ACPI_TABLE_INDEX_DSDT);
 
 	/* If Hardware Reduced flag is set, there is no FACS */
 
 	if (!acpi_gbl_reduced_hardware) {
-		acpi_tb_install_table((acpi_physical_address) acpi_gbl_FADT.
-				      Xfacs, ACPI_SIG_FACS,
-				      ACPI_TABLE_INDEX_FACS);
+		acpi_tb_install_fixed_table((acpi_physical_address)
+					    acpi_gbl_FADT.Xfacs, ACPI_SIG_FACS,
+					    ACPI_TABLE_INDEX_FACS);
 	}
 }
 
@@ -300,25 +312,26 @@ void acpi_tb_create_local_fadt(struct acpi_table_header *table, u32 length)
 {
 	/*
 	 * Check if the FADT is larger than the largest table that we expect
-	 * (the ACPI 5.0 version). If so, truncate the table, and issue
-	 * a warning.
+	 * (typically the current ACPI specification version). If so, truncate
+	 * the table, and issue a warning.
 	 */
 	if (length > sizeof(struct acpi_table_fadt)) {
 		ACPI_BIOS_WARNING((AE_INFO,
-				   "FADT (revision %u) is longer than ACPI 5.0 version, "
+				   "FADT (revision %u) is longer than %s length, "
 				   "truncating length %u to %u",
-				   table->revision, length,
+				   table->revision, ACPI_FADT_CONFORMANCE,
+				   length,
 				   (u32)sizeof(struct acpi_table_fadt)));
 	}
 
 	/* Clear the entire local FADT */
 
-	ACPI_MEMSET(&acpi_gbl_FADT, 0, sizeof(struct acpi_table_fadt));
+	memset(&acpi_gbl_FADT, 0, sizeof(struct acpi_table_fadt));
 
 	/* Copy the original FADT, up to sizeof (struct acpi_table_fadt) */
 
-	ACPI_MEMCPY(&acpi_gbl_FADT, table,
-		    ACPI_MIN(length, sizeof(struct acpi_table_fadt)));
+	memcpy(&acpi_gbl_FADT, table,
+	       ACPI_MIN(length, sizeof(struct acpi_table_fadt)));
 
 	/* Take a copy of the Hardware Reduced flag */
 
@@ -476,7 +489,8 @@ static void acpi_tb_convert_fadt(void)
 								   fadt_info_table
 								   [i].length),
 						     (u64) address32,
-						     fadt_info_table[i].name);
+						     fadt_info_table[i].name,
+						     fadt_info_table[i].flags);
 		}
 	}
 }
@@ -506,6 +520,7 @@ static void acpi_tb_validate_fadt(void)
 	char *name;
 	struct acpi_generic_address *address64;
 	u8 length;
+	u8 flags;
 	u32 i;
 
 	/*
@@ -555,6 +570,7 @@ static void acpi_tb_validate_fadt(void)
 		    *ACPI_ADD_PTR(u8, &acpi_gbl_FADT,
 				  fadt_info_table[i].length);
 		name = fadt_info_table[i].name;
+		flags = fadt_info_table[i].flags;
 
 		/*
 		 * For each extended field, check for length mismatch between the
@@ -572,7 +588,7 @@ static void acpi_tb_validate_fadt(void)
 					   address64->bit_width));
 		}
 
-		if (fadt_info_table[i].type & ACPI_FADT_REQUIRED) {
+		if (fadt_info_table[i].flags & ACPI_FADT_REQUIRED) {
 			/*
 			 * Field is required (Pm1a_event, Pm1a_control, pm_timer).
 			 * Both the address and length must be non-zero.
@@ -586,7 +602,7 @@ static void acpi_tb_validate_fadt(void)
 								    address),
 						 length));
 			}
-		} else if (fadt_info_table[i].type & ACPI_FADT_SEPARATE_LENGTH) {
+		} else if (fadt_info_table[i].flags & ACPI_FADT_SEPARATE_LENGTH) {
 			/*
 			 * Field is optional (Pm2_control, GPE0, GPE1) AND has its own
 			 * length field. If present, both the address and length must
@@ -595,9 +611,12 @@ static void acpi_tb_validate_fadt(void)
 			if ((address64->address && !length) ||
 			    (!address64->address && length)) {
 				ACPI_BIOS_WARNING((AE_INFO,
-						   "Optional FADT field %s has zero address or length: "
-						   "0x%8.8X%8.8X/0x%X",
-						   name,
+						   "Optional FADT field %s has valid %s but zero %s: "
+						   "0x%8.8X%8.8X/0x%X", name,
+						   (length ? "Length" :
+						    "Address"),
+						   (length ? "Address" :
+						    "Length"),
 						   ACPI_FORMAT_UINT64
 						   (address64->address),
 						   length));
@@ -695,7 +714,7 @@ static void acpi_tb_setup_fadt_registers(void)
 						     (fadt_pm_info_table[i].
 						      register_num *
 						      pm1_register_byte_width),
-						     "PmRegisters");
+						     "PmRegisters", 0);
 		}
 	}
 }

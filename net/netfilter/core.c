@@ -17,6 +17,7 @@
 #include <linux/interrupt.h>
 #include <linux/if.h>
 #include <linux/netdevice.h>
+#include <linux/netfilter_ipv6.h>
 #include <linux/inetdevice.h>
 #include <linux/proc_fs.h>
 #include <linux/mutex.h>
@@ -33,13 +34,12 @@ EXPORT_SYMBOL(nf_afinfo);
 const struct nf_ipv6_ops __rcu *nf_ipv6_ops __read_mostly;
 EXPORT_SYMBOL_GPL(nf_ipv6_ops);
 
+DEFINE_PER_CPU(bool, nf_skb_duplicated);
+EXPORT_SYMBOL_GPL(nf_skb_duplicated);
+
 int nf_register_afinfo(const struct nf_afinfo *afinfo)
 {
-	int err;
-
-	err = mutex_lock_interruptible(&afinfo_mutex);
-	if (err < 0)
-		return err;
+	mutex_lock(&afinfo_mutex);
 	RCU_INIT_POINTER(nf_afinfo[afinfo->family], afinfo);
 	mutex_unlock(&afinfo_mutex);
 	return 0;
@@ -68,11 +68,8 @@ static DEFINE_MUTEX(nf_hook_mutex);
 int nf_register_hook(struct nf_hook_ops *reg)
 {
 	struct nf_hook_ops *elem;
-	int err;
 
-	err = mutex_lock_interruptible(&nf_hook_mutex);
-	if (err < 0)
-		return err;
+	mutex_lock(&nf_hook_mutex);
 	list_for_each_entry(elem, &nf_hooks[reg->pf][reg->hooknum], list) {
 		if (reg->priority < elem->priority)
 			break;
@@ -126,12 +123,8 @@ EXPORT_SYMBOL(nf_unregister_hooks);
 
 unsigned int nf_iterate(struct list_head *head,
 			struct sk_buff *skb,
-			unsigned int hook,
-			const struct net_device *indev,
-			const struct net_device *outdev,
-			struct nf_hook_ops **elemp,
-			int (*okfn)(struct sk_buff *),
-			int hook_thresh)
+			struct nf_hook_state *state,
+			struct nf_hook_ops **elemp)
 {
 	unsigned int verdict;
 
@@ -140,19 +133,20 @@ unsigned int nf_iterate(struct list_head *head,
 	 * function because of risk of continuing from deleted element.
 	 */
 	list_for_each_entry_continue_rcu((*elemp), head, list) {
-		if (hook_thresh > (*elemp)->priority)
+		if (state->thresh > (*elemp)->priority)
 			continue;
 
 		/* Optimization: we don't need to hold module
 		   reference here, since function can't sleep. --RR */
 repeat:
-		verdict = (*elemp)->hook(hook, skb, indev, outdev, okfn);
+		verdict = (*elemp)->hook(*elemp, skb, state->in, state->out,
+					 state);
 		if (verdict != NF_ACCEPT) {
 #ifdef CONFIG_NETFILTER_DEBUG
 			if (unlikely((verdict & NF_VERDICT_MASK)
 							> NF_MAX_VERDICT)) {
 				NFDEBUG("Evil return from %p(%u).\n",
-					(*elemp)->hook, hook);
+					(*elemp)->hook, state->hook);
 				continue;
 			}
 #endif
@@ -167,11 +161,8 @@ repeat:
 
 /* Returns 1 if okfn() needs to be executed by the caller,
  * -EPERM for NF_DROP, 0 otherwise. */
-int nf_hook_slow(u_int8_t pf, unsigned int hook, struct sk_buff *skb,
-		 struct net_device *indev,
-		 struct net_device *outdev,
-		 int (*okfn)(struct sk_buff *),
-		 int hook_thresh)
+RH_KABI_FORCE_CHANGE(1)
+int nf_hook_slow(struct sk_buff *skb, struct nf_hook_state *state)
 {
 	struct nf_hook_ops *elem;
 	unsigned int verdict;
@@ -180,10 +171,11 @@ int nf_hook_slow(u_int8_t pf, unsigned int hook, struct sk_buff *skb,
 	/* We may already have this, but read-locks nest anyway */
 	rcu_read_lock();
 
-	elem = list_entry_rcu(&nf_hooks[pf][hook], struct nf_hook_ops, list);
+	elem = list_entry_rcu(&nf_hooks[state->pf][state->hook],
+			      struct nf_hook_ops, list);
 next_hook:
-	verdict = nf_iterate(&nf_hooks[pf][hook], skb, hook, indev,
-			     outdev, &elem, okfn, hook_thresh);
+	verdict = nf_iterate(&nf_hooks[state->pf][state->hook], skb, state,
+			     &elem);
 	if (verdict == NF_ACCEPT || verdict == NF_STOP) {
 		ret = 1;
 	} else if ((verdict & NF_VERDICT_MASK) == NF_DROP) {
@@ -192,8 +184,8 @@ next_hook:
 		if (ret == 0)
 			ret = -EPERM;
 	} else if ((verdict & NF_VERDICT_MASK) == NF_QUEUE) {
-		int err = nf_queue(skb, elem, pf, hook, indev, outdev, okfn,
-						verdict >> NF_VERDICT_QBITS);
+		int err = nf_queue(skb, elem, state,
+				   verdict >> NF_VERDICT_QBITS);
 		if (err < 0) {
 			if (err == -ECANCELED)
 				goto next_hook;
@@ -234,12 +226,13 @@ EXPORT_SYMBOL(skb_make_writable);
 /* This does not belong here, but locally generated errors need it if connection
    tracking in use: without this, connection may not be in hash table, and hence
    manufactured ICMP or RST packets will not be associated with it. */
-void (*ip_ct_attach)(struct sk_buff *, struct sk_buff *) __rcu __read_mostly;
+void (*ip_ct_attach)(struct sk_buff *, const struct sk_buff *)
+		__rcu __read_mostly;
 EXPORT_SYMBOL(ip_ct_attach);
 
-void nf_ct_attach(struct sk_buff *new, struct sk_buff *skb)
+void nf_ct_attach(struct sk_buff *new, const struct sk_buff *skb)
 {
-	void (*attach)(struct sk_buff *, struct sk_buff *);
+	void (*attach)(struct sk_buff *, const struct sk_buff *);
 
 	if (skb->nfct) {
 		rcu_read_lock();
@@ -272,6 +265,12 @@ EXPORT_SYMBOL_GPL(nfq_ct_hook);
 struct nfq_ct_nat_hook __rcu *nfq_ct_nat_hook __read_mostly;
 EXPORT_SYMBOL_GPL(nfq_ct_nat_hook);
 
+/* Built-in default zone used e.g. by modules. */
+const struct nf_conntrack_zone nf_ct_zone_dflt = {
+	.id	= NF_CT_DEFAULT_ZONE_ID,
+	.dir	= NF_CT_DEFAULT_ZONE_DIR,
+};
+EXPORT_SYMBOL_GPL(nf_ct_zone_dflt);
 #endif /* CONFIG_NF_CONNTRACK */
 
 #ifdef CONFIG_NF_NAT_NEEDED
@@ -304,17 +303,26 @@ static struct pernet_operations netfilter_net_ops = {
 	.exit = netfilter_net_exit,
 };
 
-void __init netfilter_init(void)
+int __init netfilter_init(void)
 {
-	int i, h;
+	int i, h, ret;
+
 	for (i = 0; i < ARRAY_SIZE(nf_hooks); i++) {
 		for (h = 0; h < NF_MAX_HOOKS; h++)
 			INIT_LIST_HEAD(&nf_hooks[i][h]);
 	}
 
-	if (register_pernet_subsys(&netfilter_net_ops) < 0)
-		panic("cannot create netfilter proc entry");
+	ret = register_pernet_subsys(&netfilter_net_ops);
+	if (ret < 0)
+		goto err;
 
-	if (netfilter_log_init() < 0)
-		panic("cannot initialize nf_log");
+	ret = netfilter_log_init();
+	if (ret < 0)
+		goto err_pernet;
+
+	return 0;
+err_pernet:
+	unregister_pernet_subsys(&netfilter_net_ops);
+err:
+	return ret;
 }

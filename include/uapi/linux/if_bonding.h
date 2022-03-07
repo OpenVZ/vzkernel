@@ -91,6 +91,8 @@
 #define BOND_XMIT_POLICY_LAYER2		0 /* layer 2 (MAC only), default */
 #define BOND_XMIT_POLICY_LAYER34	1 /* layer 3+4 (IP ^ (TCP || UDP)) */
 #define BOND_XMIT_POLICY_LAYER23	2 /* layer 2+3 (IP ^ MAC) */
+#define BOND_XMIT_POLICY_ENCAP23	3 /* encapsulated layer 2+3 */
+#define BOND_XMIT_POLICY_ENCAP34	4 /* encapsulated layer 3+4 */
 
 typedef struct ifbond {
 	__s32 bond_mode;
@@ -113,6 +115,30 @@ struct ad_info {
 	__u16 partner_key;
 	__u8 partner_system[ETH_ALEN];
 };
+
+/* Embedded inside LINK_XSTATS_TYPE_BOND */
+enum {
+	BOND_XSTATS_UNSPEC,
+	BOND_XSTATS_3AD,
+	__BOND_XSTATS_MAX
+};
+#define BOND_XSTATS_MAX (__BOND_XSTATS_MAX - 1)
+
+/* Embedded inside BOND_XSTATS_3AD */
+enum {
+	BOND_3AD_STAT_LACPDU_RX,
+	BOND_3AD_STAT_LACPDU_TX,
+	BOND_3AD_STAT_LACPDU_UNKNOWN_RX,
+	BOND_3AD_STAT_LACPDU_ILLEGAL_RX,
+	BOND_3AD_STAT_MARKER_RX,
+	BOND_3AD_STAT_MARKER_TX,
+	BOND_3AD_STAT_MARKER_RESP_RX,
+	BOND_3AD_STAT_MARKER_RESP_TX,
+	BOND_3AD_STAT_MARKER_UNKNOWN_RX,
+	BOND_3AD_STAT_PAD,
+	__BOND_3AD_STAT_MAX
+};
+#define BOND_3AD_STAT_MAX (__BOND_3AD_STAT_MAX - 1)
 
 #endif /* _LINUX_IF_BONDING_H */
 

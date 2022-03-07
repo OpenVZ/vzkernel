@@ -304,7 +304,6 @@ acpi_status acpi_ex_opcode_2A_1T_1R(struct acpi_walk_state *walk_state)
 		break;
 
 	case AML_TO_STRING_OP:	/* to_string (Buffer, Length, Result) (ACPI 2.0) */
-
 		/*
 		 * Input object is guaranteed to be a buffer at this point (it may have
 		 * been converted.)  Copy the raw buffer data to a new object of
@@ -338,8 +337,8 @@ acpi_status acpi_ex_opcode_2A_1T_1R(struct acpi_walk_state *walk_state)
 		 * Copy the raw buffer data with no transform.
 		 * (NULL terminated already)
 		 */
-		ACPI_MEMCPY(return_desc->string.pointer,
-			    operand[0]->buffer.pointer, length);
+		memcpy(return_desc->string.pointer,
+		       operand[0]->buffer.pointer, length);
 		break;
 
 	case AML_CONCAT_RES_OP:

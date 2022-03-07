@@ -9,7 +9,7 @@
 #include <linux/slab.h>
 #include <linux/time.h>
 #include <linux/irqnr.h>
-#include <asm/cputime.h>
+#include <linux/cputime.h>
 #include <linux/tick.h>
 
 #ifndef arch_irq_stat_cpu
@@ -76,6 +76,33 @@ static u64 get_iowait_time(int cpu)
 }
 
 #endif
+
+#ifdef CONFIG_GENERIC_HARDIRQS
+static void show_irq_gap(struct seq_file *p, unsigned int gap)
+{
+	static const char zeros[] = " 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0";
+
+	while (gap > 0) {
+		unsigned int inc;
+
+		inc = min_t(unsigned int, gap, ARRAY_SIZE(zeros) / 2);
+		seq_write(p, zeros, 2 * inc);
+		gap -= inc;
+	}
+}
+
+static void show_all_irqs(struct seq_file *p)
+{
+	unsigned int i, next = 0;
+
+	for_each_active_irq(i) {
+		show_irq_gap(p, i - next);
+		seq_put_decimal_ull(p, ' ', kstat_irqs(i));
+		next = i + 1;
+	}
+	show_irq_gap(p, nr_irqs - next);
+}
+#endif /* CONFIG_GENERIC_HARDIRQS */
 
 static int show_stat(struct seq_file *p, void *v)
 {
@@ -157,9 +184,12 @@ static int show_stat(struct seq_file *p, void *v)
 	}
 	seq_printf(p, "intr %llu", (unsigned long long)sum);
 
-	/* sum again ? it could be updated? */
+#ifdef CONFIG_GENERIC_HARDIRQS
+	show_all_irqs(p);
+#else
 	for_each_irq_nr(j)
 		seq_put_decimal_ull(p, ' ', kstat_irqs(j));
+#endif
 
 	seq_printf(p,
 		"\nctxt %llu\n"
@@ -184,29 +214,11 @@ static int show_stat(struct seq_file *p, void *v)
 
 static int stat_open(struct inode *inode, struct file *file)
 {
-	size_t size = 1024 + 128 * num_possible_cpus();
-	char *buf;
-	struct seq_file *m;
-	int res;
+	size_t size = 1024 + 128 * num_online_cpus();
 
 	/* minimum size to display an interrupt count : 2 bytes */
 	size += 2 * nr_irqs;
-
-	/* don't ask for more than the kmalloc() max size */
-	if (size > KMALLOC_MAX_SIZE)
-		size = KMALLOC_MAX_SIZE;
-	buf = kmalloc(size, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
-	res = single_open(file, show_stat, NULL);
-	if (!res) {
-		m = file->private_data;
-		m->buf = buf;
-		m->size = ksize(buf);
-	} else
-		kfree(buf);
-	return res;
+	return single_open_size(file, show_stat, NULL, size);
 }
 
 static const struct file_operations proc_stat_operations = {

@@ -16,7 +16,6 @@
 
 #ifdef CONFIG_PPC64
 
-#include <linux/init.h>
 #include <asm/types.h>
 #include <asm/lppaca.h>
 #include <asm/mmu.h>
@@ -25,6 +24,7 @@
 #ifdef CONFIG_KVM_BOOK3S_64_HANDLER
 #include <asm/kvm_book3s_asm.h>
 #endif
+#include <asm/hmi.h>
 
 register struct paca_struct *local_paca asm("r13");
 
@@ -41,6 +41,15 @@ extern unsigned int debug_smp_processor_id(void); /* from linux/smp.h */
 
 #define get_lppaca()	(get_paca()->lppaca_ptr)
 #define get_slb_shadow()	(get_paca()->slb_shadow_ptr)
+
+/*
+ * RHEL7 kABI: This is required for kABI paca_aux workaround definition
+ * of PACA_AUX_PTR. We use new paca_aux accessors to use shadow struct
+ */
+#define EX_DAR		48
+
+#define get_paca_aux()   ((struct paca_aux_struct *)get_paca()->exslb[EX_DAR/8])
+#define paca_aux_of(cpu) ((struct paca_aux_struct *)paca[cpu].exslb[EX_DAR/8])
 
 struct task_struct;
 struct opal_machine_check_event;
@@ -68,8 +77,13 @@ struct paca_struct {
 	 * instruction.  They must travel together and be properly
 	 * aligned.
 	 */
+#ifdef __BIG_ENDIAN__
 	u16 lock_token;			/* Constant 0x8000, used in locks */
 	u16 paca_index;			/* Logical processor number */
+#else
+	u16 paca_index;			/* Logical processor number */
+	u16 lock_token;			/* Constant 0x8000, used in locks */
+#endif
 
 	u64 kernel_toc;			/* Kernel TOC address */
 	u64 kernelbase;			/* Base address of kernel */
@@ -88,14 +102,17 @@ struct paca_struct {
 	struct slb_shadow *slb_shadow_ptr;
 	struct dtl_entry *dispatch_log;
 	struct dtl_entry *dispatch_log_end;
+#endif /* CONFIG_PPC_STD_MMU_64 */
+	u64 dscr_default;		/* per-CPU default DSCR */
 
+#ifdef CONFIG_PPC_STD_MMU_64
 	/*
 	 * Now, starting in cacheline 2, the exception save areas
 	 */
 	/* used for most interrupts/exceptions */
-	u64 exgen[12] __attribute__((aligned(0x80)));
-	u64 exmc[12];		/* used for machine checks */
-	u64 exslb[12];		/* used for SLB/segment table misses
+	u64 exgen[13] __attribute__((aligned(0x80)));
+	u64 exmc[13];		/* used for machine checks */
+	u64 exslb[13];		/* used for SLB/segment table misses
  				 * on the linear mapping */
 	/* SLB related definitions */
 	u16 vmalloc_sllp;
@@ -146,7 +163,31 @@ struct paca_struct {
 	 * early exception handler for use by high level C handler
 	 */
 	struct opal_machine_check_event *opal_mc_evt;
+	/* Per-core mask tracking idle threads and a lock bit-[L][TTTTTTTT] */
+	u32 *core_idle_state_ptr;
+	u8 thread_idle_state;		/* PNV_THREAD_RUNNING/NAP/SLEEP	*/
+	/* Mask to indicate thread id in core */
+	u8 thread_mask;
+	/* Mask to denote subcore sibling threads */
+	u8 subcore_sibling_mask;
 #endif
+
+#ifdef CONFIG_PPC_BOOK3S_64
+	/* Exclusive emergency stack pointer for machine check exception. */
+	void *mc_emergency_sp;
+	/*
+	 * Flag to check whether we are in machine check early handler
+	 * and already using emergency stack.
+	 */
+	u16 in_mce;
+	u8 hmi_event_available;		 /* HMI event is available */
+	/*
+	 * Bitmap for sibling subcore status. See kvm/book3s_hv_ras.c for
+	 * more details
+	 */
+	struct sibling_subcore_state *sibling_subcore_state;
+#endif
+	u8 ftrace_enabled;		/* Hard disable ftrace */
 
 	/* Stuff for accurate time accounting */
 	u64 user_time;			/* accumulated usermode TB ticks */
@@ -161,13 +202,31 @@ struct paca_struct {
 	struct dtl_entry *dtl_curr;	/* pointer corresponding to dtl_ridx */
 
 #ifdef CONFIG_KVM_BOOK3S_HANDLER
-#ifdef CONFIG_KVM_BOOK3S_PR
+#ifdef CONFIG_KVM_BOOK3S_PR_POSSIBLE
 	/* We use this to store guest state in */
 	struct kvmppc_book3s_shadow_vcpu shadow_vcpu;
 #endif
 	struct kvmppc_host_state kvm_hstate;
 #endif
 };
+
+/*
+ * This is pointer to by a pointer in paca->exslb[EX_DAR] (which is not used
+ * by exception handlers in RHEL7. For the purpose of extending the PACA
+ * structure without breaking kABI.
+ */
+
+#ifdef CONFIG_PPC_BOOK3S_64
+struct paca_aux_struct {
+	/*
+	 * rfi fallback flush must be in its own cacheline to prevent
+	 * other paca data leaking into the L1d
+	 */
+	u64 exrfi[13] __aligned(0x80);
+	void *rfi_flush_fallback_area;
+	u64 l1d_flush_size;
+};
+#endif
 
 extern struct paca_struct *paca;
 extern void initialise_paca(struct paca_struct *new_paca, int cpu);
