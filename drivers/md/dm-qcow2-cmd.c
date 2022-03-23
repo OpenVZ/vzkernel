@@ -52,7 +52,7 @@ static void service_qio_endio(struct qcow2_target *tgt, struct qio *qio,
 }
 
 static int qcow2_service_iter(struct qcow2_target *tgt, struct qcow2 *qcow2,
-			      loff_t end, loff_t step, u8 qio_flags)
+		  loff_t end, loff_t step, unsigned int bi_op, u8 qio_flags)
 {
 	static blk_status_t service_status;
 	struct bio_vec bvec = {0};
@@ -75,7 +75,7 @@ static int qcow2_service_iter(struct qcow2_target *tgt, struct qcow2 *qcow2,
 		}
 
 		/* See fake_merge_qio() and fake_l1cow_qio() */
-		init_qio(qio, REQ_OP_WRITE, qcow2);
+		init_qio(qio, bi_op, qcow2);
 		qio->flags |= qio_flags|QIO_FREE_ON_ENDIO_FL;
 		qio->bi_io_vec = &bvec;
 		qio->bi_iter.bi_sector = to_sector(pos);
@@ -110,7 +110,8 @@ static int qcow2_merge_common(struct qcow2_target *tgt)
 	u32 clu_size = qcow2->clu_size;
 	loff_t end = lower->hdr.size;
 
-	return qcow2_service_iter(tgt, qcow2, end, clu_size, QIO_IS_MERGE_FL);
+	return qcow2_service_iter(tgt, qcow2, end, clu_size,
+				  REQ_OP_WRITE, QIO_IS_MERGE_FL);
 }
 
 /*
@@ -131,7 +132,8 @@ static int qcow2_break_l1cow(struct qcow2_target *tgt)
 	loff_t end = qcow2->hdr.size;
 	loff_t step = (u64)qcow2->l2_entries * qcow2->clu_size;
 
-	return qcow2_service_iter(tgt, qcow2, end, step, QIO_IS_L1COW_FL);
+	return qcow2_service_iter(tgt, qcow2, end, step,
+				  REQ_OP_WRITE, QIO_IS_L1COW_FL);
 }
 
 static void set_backward_merge_in_process(struct qcow2_target *tgt,
