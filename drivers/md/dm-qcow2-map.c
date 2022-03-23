@@ -1546,7 +1546,9 @@ out_lock:
 /*
  * This may be called with @qio == NULL, in case of we are
  * interesting in searching cached in memory md only.
- * This is aimed to be called not only from main kwork.
+ * This is aimed to be called not only from main kwork
+ * for L1/L2 pages, so all callers looking for L1/L2
+ * must care about submit_read_md_page() may return EEXIST.
  */
 static int __handle_md_page(struct qcow2 *qcow2, u64 page_id,
 			    struct qio **qio, struct md_page **ret_md)
@@ -1683,7 +1685,7 @@ static loff_t parse_l1(struct qcow2 *qcow2, struct qcow2_map *map,
 	u64 pos, entry;
 	loff_t ret;
 
-	spin_lock_irq(&qcow2->md_pages_lock);
+	lockdep_assert_held(&qcow2->md_pages_lock);
 	entry = get_u64_from_be_page(l1->md->page, l1->index_in_page);
 	exactly_one = entry & LX_REFCOUNT_EXACTLY_ONE;
 	pos = entry & ~LX_REFCOUNT_EXACTLY_ONE;
@@ -1715,7 +1717,6 @@ static loff_t parse_l1(struct qcow2 *qcow2, struct qcow2_map *map,
 
 	ret = pos;
 out:
-	spin_unlock_irq(&qcow2->md_pages_lock);
 	return ret;
 }
 
@@ -1760,7 +1761,7 @@ static loff_t parse_l2(struct qcow2 *qcow2, struct qcow2_map *map,
 	u64 entry, pos, ext_l2;
 	loff_t ret;
 
-	spin_lock_irq(&qcow2->md_pages_lock);
+	lockdep_assert_held(&qcow2->md_pages_lock);
 	entry = get_u64_from_be_page(l2->md->page, l2->index_in_page);
 	exactly_one = entry & LX_REFCOUNT_EXACTLY_ONE;
 	entry &= ~LX_REFCOUNT_EXACTLY_ONE;
@@ -1864,7 +1865,6 @@ static loff_t parse_l2(struct qcow2 *qcow2, struct qcow2_map *map,
 
 	ret = pos;
 out:
-	spin_unlock_irq(&qcow2->md_pages_lock);
 	return ret;
 }
 
@@ -1951,32 +1951,43 @@ static int parse_metadata(struct qcow2 *qcow2, struct qio **qio,
 	WARN_ON_ONCE(map->data_clu_pos != 0);
 	if (calc_cluster_map(qcow2, *qio, map) < 0)
 		return -EIO;
-
+	spin_lock_irq(&qcow2->md_pages_lock);
+again:
 	/* Check L1 page */
-	ret = handle_md_page(qcow2, map->l1.page_id, qio, &md);
+	ret = __handle_md_page(qcow2, map->l1.page_id, qio, &md);
 	if (ret <= 0)
-		return ret;
+		goto unlock;
 	map->l1.md = md;
 	map->level = L1_LEVEL;
 
 	/* Find L2 cluster (from L1 page) */
 	pos = ret = parse_l1(qcow2, map, qio, write);
 	if (ret <= 0) /* Err, delayed, L2 is not allocated, or zero read */
-		return ret;
+		goto unlock;
 
 	/* pos is start of cluster */
 	pos += map->l2.index * sizeof(u64);
 	calc_page_id_and_index(pos, &map->l2.page_id, &map->l2.index_in_page);
 
 	/* Check L2 page */
-	ret = handle_md_page(qcow2, map->l2.page_id, qio, &md);
-	if (ret <= 0)
-		return ret;
+	ret = __handle_md_page(qcow2, map->l2.page_id, qio, &md);
+	/*
+	 * Only main kwork initiates md changes, but there is side readers.
+	 * This is to order kwork changes with readers, so they get consistent L2.
+	 */
+	if (unlikely(ret == -EAGAIN)) {
+		map->level = 0; /* This should be enough */
+		goto again;
+	} else if (ret <= 0) {
+		goto unlock;
+	}
 	map->l2.md = md;
 	map->level |= L2_LEVEL;
 
 	/* Find DATA cluster (from L2 page) */
 	pos = ret = parse_l2(qcow2, map, qio, write);
+unlock:
+	spin_unlock_irq(&qcow2->md_pages_lock);
 	if (ret <= 0) /* Err, delayed, DATA is not allocated, or zero read */
 		return ret;
 
