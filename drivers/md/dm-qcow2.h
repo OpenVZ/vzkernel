@@ -346,6 +346,11 @@ static inline bool fake_l1cow_qio(struct qio *qio)
 		(qio->flags & QIO_IS_L1COW_FL));
 }
 
+static inline bool fake_service_qio(struct qio *qio)
+{
+	return fake_merge_qio(qio) || fake_l1cow_qio(qio);
+}
+
 static inline bool qcow2_wants_check(struct qcow2_target *tgt)
 {
 

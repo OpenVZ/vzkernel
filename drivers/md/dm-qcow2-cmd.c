@@ -74,7 +74,7 @@ static int qcow2_service_iter(struct qcow2_target *tgt, struct qcow2 *qcow2,
 			break;
 		}
 
-		/* See fake_merge_qio() and fake_l1cow_qio() */
+		/* See fake_service_qio() */
 		init_qio(qio, bi_op, qcow2);
 		qio->flags |= qio_flags|QIO_FREE_ON_ENDIO_FL;
 		qio->bi_io_vec = &bvec;
