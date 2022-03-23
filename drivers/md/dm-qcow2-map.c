@@ -2282,8 +2282,8 @@ static int relocate_refcount_table(struct qcow2 *qcow2, struct qio **qio)
 			WARN_ON_ONCE(1);
 			goto err_free_r2_pages;
 		}
-		md = md_page_find_or_postpone(qcow2, r1.page_id, NULL);
-		if (WARN_ON_ONCE(!md))
+		ret = handle_md_page(qcow2, r1.page_id, NULL, &md);
+		if (WARN_ON_ONCE(ret <= 0))
 			goto err_free_r2_pages;
 		spin_lock_irq(&qcow2->md_pages_lock);
 		set_u64_to_be_page(md->page, r1.index_in_page, i);
@@ -2311,8 +2311,8 @@ static int relocate_refcount_table(struct qcow2 *qcow2, struct qio **qio)
 
 err_free_r2_pages:
 	for (i = end; i < r2_end; i += clu_size) {
-		md = md_page_find_or_postpone(qcow2, i >> PAGE_SHIFT, NULL);
-		if (!md)
+		ret = handle_md_page(qcow2, i >> PAGE_SHIFT, NULL, &md);
+		if (ret <= 0)
 			break;
 		spin_lock_irq(&qcow2->md_pages_lock);
 		md_page_erase(qcow2, md);
