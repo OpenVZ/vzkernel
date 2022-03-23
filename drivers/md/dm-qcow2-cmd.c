@@ -55,7 +55,6 @@ static int qcow2_service_iter(struct qcow2_target *tgt, struct qcow2 *qcow2,
 		  loff_t end, loff_t step, unsigned int bi_op, u8 qio_flags)
 {
 	static blk_status_t service_status;
-	struct bio_vec bvec = {0};
 	struct qio *qio;
 	int ret = 0;
 	loff_t pos;
@@ -77,11 +76,8 @@ static int qcow2_service_iter(struct qcow2_target *tgt, struct qcow2 *qcow2,
 		/* See fake_service_qio() */
 		init_qio(qio, bi_op, qcow2);
 		qio->flags |= qio_flags|QIO_FREE_ON_ENDIO_FL;
-		qio->bi_io_vec = &bvec;
 		qio->bi_iter.bi_sector = to_sector(pos);
-		qio->bi_iter.bi_size = 0;
-		qio->bi_iter.bi_idx = 0;
-		qio->bi_iter.bi_bvec_done = 0;
+		/* The rest is zeroed in alloc_qio() */
 		qio->endio_cb = service_qio_endio;
 		qio->endio_cb_data = &service_status;
 
