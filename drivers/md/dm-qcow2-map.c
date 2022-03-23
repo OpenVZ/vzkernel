@@ -1924,8 +1924,9 @@ static int handle_r1r2_maps(struct qcow2 *qcow2, loff_t pos, struct qio **qio,
  * till some event: reading of md page, end of writeback, etc.
  */
 static int parse_metadata(struct qcow2 *qcow2, struct qio **qio,
-			  struct qcow2_map *map, bool write)
+			  struct qcow2_map *map)
 {
+	bool write = op_is_write((*qio)->bi_op);
 	struct md_page *md;
 	u64 pos;
 	s64 ret;
@@ -3239,7 +3240,7 @@ static int handle_metadata(struct qcow2 *qcow2, struct qio **qio,
 	bool write = op_is_write((*qio)->bi_op);
 	int ret;
 
-	ret = parse_metadata(qcow2, qio, map, write);
+	ret = parse_metadata(qcow2, qio, map);
 	if (ret < 0 || !*qio) /* Error or postponed */
 		goto check_err;
 
