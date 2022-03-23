@@ -7,7 +7,7 @@
 #include <linux/file.h>
 #include "dm-qcow2.h"
 
-#define MERGE_QIOS_MAX 64
+#define SERVICE_QIOS_MAX 64
 
 static int qcow2_get_errors(struct qcow2_target *tgt, char *result,
 			    unsigned int maxlen)
@@ -86,9 +86,9 @@ static int qcow2_service_iter(struct qcow2_target *tgt, struct qcow2 *qcow2,
 		qio->endio_cb_data = &service_status;
 
 		dispatch_qios(qcow2, qio, NULL);
-		if (atomic_inc_return(&tgt->service_qios) == MERGE_QIOS_MAX) {
+		if (atomic_inc_return(&tgt->service_qios) == SERVICE_QIOS_MAX) {
 			wait_event(tgt->service_wq,
-				   atomic_read(&tgt->service_qios) < MERGE_QIOS_MAX);
+				   atomic_read(&tgt->service_qios) < SERVICE_QIOS_MAX);
 		}
 
 		if (unlikely(READ_ONCE(service_status)))
