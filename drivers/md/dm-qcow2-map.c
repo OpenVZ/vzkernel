@@ -993,8 +993,7 @@ static int calc_cluster_map(struct qcow2 *qcow2, struct qio *qio,
 	loff_t pos;
 
 	if (unlikely(start / clu_size != (end - 1) / clu_size &&
-		     (start != end || (!fake_merge_qio(qio) &&
-				       !fake_l1cow_qio(qio)))))
+		     (start != end || !fake_service_qio(qio))))
 		goto eio;
 	if (unlikely(end > qcow2->hdr.size))
 		goto eio;
@@ -1819,7 +1818,7 @@ static loff_t parse_l2(struct qcow2 *qcow2, struct qcow2_map *map,
 					      l2->index_in_page + 1);
 		map->ext_l2 = ext_l2;
 		map->subclus_mask = 0;
-		if (!fake_merge_qio(*qio) && !fake_l1cow_qio(*qio))
+		if (!fake_service_qio(*qio))
 			map->subclus_mask = qio_subclus_mask(qcow2, *qio);
 
 		if (WARN_ON_ONCE(all_zeroes || (ext_l2 & (ext_l2 >> 32))))
