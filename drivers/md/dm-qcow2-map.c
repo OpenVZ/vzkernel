@@ -1525,17 +1525,22 @@ static int submit_read_md_page(struct qcow2 *qcow2, struct qio **qio,
 	struct md_page *md;
 	int ret;
 
+	lockdep_assert_held(&qcow2->md_pages_lock);
+	spin_unlock_irq(&qcow2->md_pages_lock);
+
 	ret = alloc_and_insert_md_page(qcow2, page_id, &md);
 	if (ret < 0)
-		return ret;
+		goto out_lock;
 
 	spin_lock_irq(&qcow2->md_pages_lock);
 	list_add_tail(&(*qio)->link, &md->wait_list);
-	spin_unlock_irq(&qcow2->md_pages_lock);
 	*qio = NULL;
+	spin_unlock_irq(&qcow2->md_pages_lock);
 
 	submit_rw_md_page(READ, qcow2, md);
-	return 0;
+out_lock:
+	spin_lock_irq(&qcow2->md_pages_lock);
+	return ret;
 }
 
 /*
@@ -1543,11 +1548,12 @@ static int submit_read_md_page(struct qcow2 *qcow2, struct qio **qio,
  * interesting in searching cached in memory md only.
  * This is aimed to be called not only from main kwork.
  */
-static int handle_md_page(struct qcow2 *qcow2, u64 page_id,
-		 struct qio **qio, struct md_page **ret_md)
+static int __handle_md_page(struct qcow2 *qcow2, u64 page_id,
+			    struct qio **qio, struct md_page **ret_md)
 {
 	struct md_page *md;
 
+	lockdep_assert_held(&qcow2->md_pages_lock);
 	md = md_page_find_or_postpone(qcow2, page_id, qio);
 	if (!md) {
 		if (qio && *qio)
@@ -1557,6 +1563,17 @@ static int handle_md_page(struct qcow2 *qcow2, u64 page_id,
 
 	*ret_md = md;
 	return 1;
+}
+
+static int handle_md_page(struct qcow2 *qcow2, u64 page_id,
+		 struct qio **qio, struct md_page **ret_md)
+{
+	int ret;
+
+	spin_lock_irq(&qcow2->md_pages_lock);
+	ret = __handle_md_page(qcow2, page_id, qio, ret_md);
+	spin_unlock_irq(&qcow2->md_pages_lock);
+	return ret;
 }
 
 static u32 qio_subclus_covered_start_size(struct qcow2 *qcow2,
