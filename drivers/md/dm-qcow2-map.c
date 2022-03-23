@@ -1526,10 +1526,8 @@ static int submit_read_md_page(struct qcow2 *qcow2, struct qio **qio,
 	int ret;
 
 	ret = alloc_and_insert_md_page(qcow2, page_id, &md);
-	if (ret < 0) {
-		pr_err("Can't alloc: ret=%d, page_id=%llu\n", ret, page_id);
+	if (ret < 0)
 		return ret;
-	}
 
 	spin_lock_irq(&qcow2->md_pages_lock);
 	list_add_tail(&(*qio)->link, &md->wait_list);
@@ -1543,6 +1541,7 @@ static int submit_read_md_page(struct qcow2 *qcow2, struct qio **qio,
 /*
  * This may be called with @qio == NULL, in case of we are
  * interesting in searching cached in memory md only.
+ * This is aimed to be called not only from main kwork.
  */
 static int handle_md_page(struct qcow2 *qcow2, u64 page_id,
 		 struct qio **qio, struct md_page **ret_md)
