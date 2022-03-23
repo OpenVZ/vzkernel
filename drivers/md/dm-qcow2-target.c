@@ -304,7 +304,7 @@ struct md_page *md_page_find_or_postpone(struct qcow2 *qcow2, unsigned int id,
 {
 	struct md_page *md;
 
-	spin_lock_irq(&qcow2->md_pages_lock);
+	lockdep_assert_held(&qcow2->md_pages_lock);
 	md = __md_page_find(qcow2, id);
 	if (md && !(md->status & MD_UPTODATE)) {
 		if (qio) {
@@ -313,7 +313,6 @@ struct md_page *md_page_find_or_postpone(struct qcow2 *qcow2, unsigned int id,
 		}
 		md = NULL;
 	}
-	spin_unlock_irq(&qcow2->md_pages_lock);
 
 	return md;
 }
