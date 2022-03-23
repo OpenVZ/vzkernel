@@ -319,7 +319,7 @@ struct md_page *md_page_find_or_postpone(struct qcow2 *qcow2, unsigned int id,
 	return md;
 }
 
-static void md_page_insert(struct qcow2 *qcow2, struct md_page *new_md)
+static int md_page_try_insert(struct qcow2 *qcow2, struct md_page *new_md)
 {
 	struct rb_root *root = &qcow2->md_pages;
 	unsigned int new_id = new_md->id;
@@ -338,11 +338,12 @@ static void md_page_insert(struct qcow2 *qcow2, struct md_page *new_md)
 		else if (new_id > md->id)
 			node = &parent->rb_right;
 		else
-			BUG();
+			return -EEXIST;
 	}
 
 	rb_link_node(&new_md->node, parent, node);
 	rb_insert_color(&new_md->node, root);
+	return 0;
 }
 
 void md_page_erase(struct qcow2 *qcow2, struct md_page *md)
@@ -362,7 +363,8 @@ struct md_page *md_page_renumber(struct qcow2 *qcow2, unsigned int id,
 		WARN_ON_ONCE(!list_empty(&md->wait_list));
 		md_page_erase(qcow2, md);
 		md->id = new_id;
-		md_page_insert(qcow2, md);
+		if (WARN_ON(md_page_try_insert(qcow2, md) < 0))
+			md = NULL;
 	}
 	return md;
 }
@@ -397,10 +399,14 @@ int alloc_and_insert_md_page(struct qcow2 *qcow2, u64 index, struct md_page **md
 	INIT_LIST_HEAD(&(*md)->wb_link);
 
 	spin_lock_irq(&qcow2->md_pages_lock);
-	md_page_insert(qcow2, *md);
+	ret = md_page_try_insert(qcow2, *md);
 	spin_unlock_irq(&qcow2->md_pages_lock);
+	if (ret)
+		goto err_putpage;
 	return 0;
 
+err_putpage:
+	put_page((*md)->page);
 err_kfree:
 	kfree(*md);
 	return ret;
