@@ -425,7 +425,7 @@ static void inflight_ref_exit1(struct percpu_ref *ref)
 	complete(&tgt->inflight_ref_comp);
 }
 
-void ploop_enospc_timer(struct timer_list *timer)
+static void qcow2_enospc_timer(struct timer_list *timer)
 {
 	struct qcow2_target *tgt = from_timer(tgt, timer, enospc_timer);
 	unsigned long flags;
@@ -487,7 +487,7 @@ static struct qcow2_target *alloc_qcow2_target(struct dm_target *ti)
 	init_waitqueue_head(&tgt->service_wq);
 	INIT_WORK(&tgt->event_work, qcow2_event_work);
 	INIT_LIST_HEAD(&tgt->enospc_qios);
-	timer_setup(&tgt->enospc_timer, ploop_enospc_timer, 0);
+	timer_setup(&tgt->enospc_timer, qcow2_enospc_timer, 0);
 	ti->private = tgt;
 	tgt->ti = ti;
 	qcow2_set_service_operations(ti, false);
@@ -917,7 +917,7 @@ static void qcow2_presuspend(struct dm_target *ti)
 	qcow2_set_service_operations(ti, false);
 	qcow2_set_wants_suspend(ti, true);
 	del_timer_sync(&tgt->enospc_timer);
-	ploop_enospc_timer(&tgt->enospc_timer);
+	qcow2_enospc_timer(&tgt->enospc_timer);
 }
 static void qcow2_presuspend_undo(struct dm_target *ti)
 {
