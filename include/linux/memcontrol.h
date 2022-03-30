@@ -712,8 +712,6 @@ int __mem_cgroup_charge(struct page *page, struct mm_struct *mm,
 static inline int mem_cgroup_charge(struct page *page, struct mm_struct *mm,
 				    gfp_t gfp_mask)
 {
-	if (mem_cgroup_disabled())
-		return 0;
 	return __mem_cgroup_charge(page, mm, gfp_mask);
 }
 
