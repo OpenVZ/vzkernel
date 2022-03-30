@@ -7486,6 +7486,9 @@ static int __mem_cgroup_charge_gen(struct page *page, struct mm_struct *mm,
 	struct mem_cgroup *memcg;
 	int ret;
 
+	if (mem_cgroup_disabled())
+		return 0;
+
 	memcg = get_mem_cgroup_from_mm(mm);
 	ret = charge_memcg(page, memcg, gfp_mask, cache_charge);
 	css_put(&memcg->css);
