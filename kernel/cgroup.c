@@ -5634,11 +5634,9 @@ static int proc_cgroupstats_show(struct seq_file *m, void *v)
 
 	seq_puts(m, "#subsys_name\thierarchy\tnum_cgroups\tenabled\n");
 	/*
-	 * ideally we don't want subsystems moving around while we do this.
-	 * cgroup_mutex is also necessary to guarantee an atomic snapshot of
-	 * subsys/hierarchy state.
+	 * Grab the subsystems state racily. No need to add avenue to
+	 * cgroup_mutex contention.
 	 */
-	mutex_lock(&cgroup_mutex);
 	for (i = 0; i < CGROUP_SUBSYS_COUNT; i++) {
 		struct cgroup_subsys *ss = subsys[i];
 		int num;
@@ -5653,7 +5651,6 @@ static int proc_cgroupstats_show(struct seq_file *m, void *v)
 			   ss->name, ss->root->hierarchy_id,
 			   num, !ss->disabled);
 	}
-	mutex_unlock(&cgroup_mutex);
 	return 0;
 }
 
