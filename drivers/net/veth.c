@@ -1576,6 +1576,8 @@ static int vzethdev_siocdevprivate(struct net_device *dev, struct ifreq *ifr,
 		return -EPERM;
 
 	switch (cmd) {
+	case SIOCSVENET:
+		return 0;
 	case SIOCSFIXEDADDR:
 		if (ifr->ifr_ifru.ifru_flags)
 			dev->ve_features |= NETIF_F_FIXED_ADDR;
