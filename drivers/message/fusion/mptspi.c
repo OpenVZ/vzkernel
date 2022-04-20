@@ -780,32 +780,30 @@ static int mptspi_slave_configure(struct scsi_device *sdev)
 }
 
 static int
-mptspi_qcmd_lck(struct scsi_cmnd *SCpnt, void (*done)(struct scsi_cmnd *))
+mptspi_qcmd(struct Scsi_Host *shost, struct scsi_cmnd *SCpnt)
 {
-	struct _MPT_SCSI_HOST *hd = shost_priv(SCpnt->device->host);
+	struct _MPT_SCSI_HOST *hd = shost_priv(shost);
 	VirtDevice	*vdevice = SCpnt->device->hostdata;
 	MPT_ADAPTER *ioc = hd->ioc;
 
 	if (!vdevice || !vdevice->vtarget) {
 		SCpnt->result = DID_NO_CONNECT << 16;
-		done(SCpnt);
+		SCpnt->scsi_done(SCpnt);
 		return 0;
 	}
 
 	if (SCpnt->device->channel == 1 &&
 		mptscsih_is_phys_disk(ioc, 0, SCpnt->device->id) == 0) {
 		SCpnt->result = DID_NO_CONNECT << 16;
-		done(SCpnt);
+		SCpnt->scsi_done(SCpnt);
 		return 0;
 	}
 
 	if (spi_dv_pending(scsi_target(SCpnt->device)))
 		ddvprintk(ioc, scsi_print_command(SCpnt));
 
-	return mptscsih_qcmd(SCpnt,done);
+	return mptscsih_qcmd(SCpnt);
 }
-
-static DEF_SCSI_QCMD(mptspi_qcmd)
 
 static void mptspi_slave_destroy(struct scsi_device *sdev)
 {
@@ -1153,7 +1151,7 @@ static void mpt_work_wrapper(struct work_struct *work)
 	}
 	shost_printk(KERN_INFO, shost, MYIOC_s_FMT
 	    "Integrated RAID detects new device %d\n", ioc->name, disk);
-	scsi_scan_target(&ioc->sh->shost_gendev, 1, disk, 0, 1);
+	scsi_scan_target(&ioc->sh->shost_gendev, 1, disk, 0, SCSI_SCAN_RESCAN);
 }
 
 
@@ -1546,11 +1544,19 @@ out_mptspi_probe:
 	return error;
 }
 
+static void mptspi_remove(struct pci_dev *pdev)
+{
+	MPT_ADAPTER *ioc = pci_get_drvdata(pdev);
+
+	scsi_remove_host(ioc->sh);
+	mptscsih_remove(pdev);
+}
+
 static struct pci_driver mptspi_driver = {
 	.name		= "mptspi",
 	.id_table	= mptspi_pci_table,
 	.probe		= mptspi_probe,
-	.remove		= mptscsih_remove,
+	.remove		= mptspi_remove,
 	.shutdown	= mptscsih_shutdown,
 #ifdef CONFIG_PM
 	.suspend	= mptscsih_suspend,

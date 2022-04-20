@@ -172,7 +172,6 @@ void ath6kl_dump_registers(struct ath6kl_device *dev,
 			   struct ath6kl_irq_proc_registers *irq_proc_reg,
 			   struct ath6kl_irq_enable_reg *irq_enable_reg)
 {
-
 	ath6kl_dbg(ATH6KL_DBG_IRQ, ("<------- Register Table -------->\n"));
 
 	if (irq_proc_reg != NULL) {
@@ -219,7 +218,6 @@ void ath6kl_dump_registers(struct ath6kl_device *dev,
 				   "GMBOX lookahead alias 1:   0x%x\n",
 				   irq_proc_reg->rx_gmbox_lkahd_alias[1]);
 		}
-
 	}
 
 	if (irq_enable_reg != NULL) {
@@ -1240,20 +1238,14 @@ static ssize_t ath6kl_force_roam_write(struct file *file,
 	char buf[20];
 	size_t len;
 	u8 bssid[ETH_ALEN];
-	int i;
-	int addr[ETH_ALEN];
 
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
 		return -EFAULT;
 	buf[len] = '\0';
 
-	if (sscanf(buf, "%02x:%02x:%02x:%02x:%02x:%02x",
-		   &addr[0], &addr[1], &addr[2], &addr[3], &addr[4], &addr[5])
-	    != ETH_ALEN)
+	if (!mac_pton(buf, bssid))
 		return -EINVAL;
-	for (i = 0; i < ETH_ALEN; i++)
-		bssid[i] = addr[i];
 
 	ret = ath6kl_wmi_force_roam_cmd(ar->wmi, bssid);
 	if (ret)
@@ -1402,7 +1394,6 @@ static ssize_t ath6kl_create_qos_write(struct file *file,
 						const char __user *user_buf,
 						size_t count, loff_t *ppos)
 {
-
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
 	char buf[200];
@@ -1581,7 +1572,6 @@ static ssize_t ath6kl_delete_qos_write(struct file *file,
 				const char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
 	char buf[100];

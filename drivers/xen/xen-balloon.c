@@ -30,6 +30,8 @@
  * IN THE SOFTWARE.
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/capability.h>
@@ -53,8 +55,10 @@ static int register_balloon(struct device *dev);
 static void watch_target(struct xenbus_watch *watch,
 			 const char **vec, unsigned int len)
 {
-	unsigned long long new_target;
+	unsigned long long new_target, static_max;
 	int err;
+	static bool watch_fired;
+	static long target_diff;
 
 	err = xenbus_scanf(XBT_NIL, "memory", "target", "%llu", &new_target);
 	if (err != 1) {
@@ -65,7 +69,21 @@ static void watch_target(struct xenbus_watch *watch,
 	/* The given memory/target value is in KiB, so it needs converting to
 	 * pages. PAGE_SHIFT converts bytes to pages, hence PAGE_SHIFT - 10.
 	 */
-	balloon_set_new_target(new_target >> (PAGE_SHIFT - 10));
+	new_target >>= PAGE_SHIFT - 10;
+
+	if (!watch_fired) {
+		watch_fired = true;
+		err = xenbus_scanf(XBT_NIL, "memory", "static-max", "%llu",
+				   &static_max);
+		if (err != 1)
+			static_max = new_target;
+		else
+			static_max >>= PAGE_SHIFT - 10;
+		target_diff = xen_pv_domain() ? 0
+				: static_max - balloon_stats.target_pages;
+	}
+
+	balloon_set_new_target(new_target - target_diff);
 }
 static struct xenbus_watch target_watch = {
 	.node = "memory/target",
@@ -81,7 +99,7 @@ static int balloon_init_watcher(struct notifier_block *notifier,
 
 	err = register_xenbus_watch(&target_watch);
 	if (err)
-		printk(KERN_ERR "Failed to set balloon watcher\n");
+		pr_err("Failed to set balloon watcher\n");
 
 	return NOTIFY_DONE;
 }
@@ -90,22 +108,15 @@ static struct notifier_block xenstore_notifier = {
 	.notifier_call = balloon_init_watcher,
 };
 
-static int __init balloon_init(void)
+void xen_balloon_init(void)
 {
-	if (!xen_domain())
-		return -ENODEV;
-
-	pr_info("xen-balloon: Initialising balloon driver.\n");
-
 	register_balloon(&balloon_dev);
 
 	register_xen_selfballooning(&balloon_dev);
 
 	register_xenstore_notifier(&xenstore_notifier);
-
-	return 0;
 }
-subsys_initcall(balloon_init);
+EXPORT_SYMBOL_GPL(xen_balloon_init);
 
 static void balloon_exit(void)
 {

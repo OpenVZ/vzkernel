@@ -292,8 +292,7 @@ acpi_status acpi_ns_build_internal_name(struct acpi_namestring_info *info)
 			} else {
 				/* Convert the character to uppercase and save it */
 
-				result[i] =
-				    (char)ACPI_TOUPPER((int)*external_name);
+				result[i] = (char)toupper((int)*external_name);
 				external_name++;
 			}
 		}
@@ -419,10 +418,12 @@ acpi_ns_externalize_name(u32 internal_name_length,
 
 	switch (internal_name[0]) {
 	case AML_ROOT_PREFIX:
+
 		prefix_length = 1;
 		break;
 
 	case AML_PARENT_PREFIX:
+
 		for (i = 0; i < internal_name_length; i++) {
 			if (ACPI_IS_PARENT_PREFIX(internal_name[i])) {
 				prefix_length = i + 1;
@@ -438,6 +439,7 @@ acpi_ns_externalize_name(u32 internal_name_length,
 		break;
 
 	default:
+
 		break;
 	}
 

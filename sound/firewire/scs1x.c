@@ -392,10 +392,10 @@ static int scs_probe(struct device *unit_dev)
 	struct scs *scs;
 	int err;
 
-	err = snd_card_create(-16, NULL, THIS_MODULE, sizeof(*scs), &card);
+	err = snd_card_new(&unit->device, -16, NULL, THIS_MODULE,
+			   sizeof(*scs), &card);
 	if (err < 0)
 		return err;
-	snd_card_set_dev(card, unit_dev);
 
 	scs = card->private_data;
 	scs->card = card;
@@ -405,8 +405,10 @@ static int scs_probe(struct device *unit_dev)
 	scs->output_idle = true;
 
 	scs->buffer = kmalloc(HSS1394_MAX_PACKET_SIZE, GFP_KERNEL);
-	if (!scs->buffer)
+	if (!scs->buffer) {
+		err = -ENOMEM;
 		goto err_card;
+	}
 
 	scs->hss_handler.length = HSS1394_MAX_PACKET_SIZE;
 	scs->hss_handler.address_callback = handle_hss;

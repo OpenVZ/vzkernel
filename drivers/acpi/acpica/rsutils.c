@@ -147,7 +147,8 @@ acpi_rs_move_data(void *destination, void *source, u16 item_count, u8 move_type)
 		case ACPI_RSC_MOVE_GPIO_RES:
 		case ACPI_RSC_MOVE_SERIAL_VEN:
 		case ACPI_RSC_MOVE_SERIAL_RES:
-			ACPI_MEMCPY(destination, source, item_count);
+
+			memcpy(destination, source, item_count);
 			return;
 
 			/*
@@ -157,21 +158,25 @@ acpi_rs_move_data(void *destination, void *source, u16 item_count, u8 move_type)
 			 */
 		case ACPI_RSC_MOVE16:
 		case ACPI_RSC_MOVE_GPIO_PIN:
+
 			ACPI_MOVE_16_TO_16(&ACPI_CAST_PTR(u16, destination)[i],
 					   &ACPI_CAST_PTR(u16, source)[i]);
 			break;
 
 		case ACPI_RSC_MOVE32:
+
 			ACPI_MOVE_32_TO_32(&ACPI_CAST_PTR(u32, destination)[i],
 					   &ACPI_CAST_PTR(u32, source)[i]);
 			break;
 
 		case ACPI_RSC_MOVE64:
+
 			ACPI_MOVE_64_TO_64(&ACPI_CAST_PTR(u64, destination)[i],
 					   &ACPI_CAST_PTR(u64, source)[i]);
 			break;
 
 		default:
+
 			return;
 		}
 	}
@@ -359,12 +364,11 @@ acpi_rs_get_resource_source(acpi_rs_length resource_length,
 		 * Zero the entire area of the buffer.
 		 */
 		total_length =
-		    (u32)
-		    ACPI_STRLEN(ACPI_CAST_PTR(char, &aml_resource_source[1])) +
+		    (u32)strlen(ACPI_CAST_PTR(char, &aml_resource_source[1])) +
 		    1;
 		total_length = (u32) ACPI_ROUND_UP_TO_NATIVE_WORD(total_length);
 
-		ACPI_MEMSET(resource_source->string_ptr, 0, total_length);
+		memset(resource_source->string_ptr, 0, total_length);
 
 		/* Copy the resource_source string to the destination */
 
@@ -427,8 +431,8 @@ acpi_rs_set_resource_source(union aml_resource * aml,
 
 		/* Copy the resource_source string */
 
-		ACPI_STRCPY(ACPI_CAST_PTR(char, &aml_resource_source[1]),
-			    resource_source->string_ptr);
+		strcpy(ACPI_CAST_PTR(char, &aml_resource_source[1]),
+		       resource_source->string_ptr);
 
 		/*
 		 * Add the length of the string (+ 1 for null terminator) to the
@@ -736,7 +740,7 @@ acpi_rs_set_srs_method_data(struct acpi_namespace_node *node,
 	}
 
 	info->prefix_node = node;
-	info->pathname = METHOD_NAME__SRS;
+	info->relative_pathname = METHOD_NAME__SRS;
 	info->parameters = args;
 	info->flags = ACPI_IGNORE_RETURN_VALUE;
 

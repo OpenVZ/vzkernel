@@ -182,25 +182,42 @@ int blk_integrity_compare(struct gendisk *gd1, struct gendisk *gd2)
 }
 EXPORT_SYMBOL(blk_integrity_compare);
 
-int blk_integrity_merge_rq(struct request_queue *q, struct request *req,
-			   struct request *next)
+bool blk_integrity_merge_rq(struct request_queue *q, struct request *req,
+			    struct request *next)
 {
-	if (blk_integrity_rq(req) != blk_integrity_rq(next))
-		return -1;
+	if (blk_integrity_rq(req) == 0 && blk_integrity_rq(next) == 0)
+		return true;
+
+	if (blk_integrity_rq(req) == 0 || blk_integrity_rq(next) == 0)
+		return false;
+
+	if ((req->bio->bi_flags & BIP_FLAGS_MASK) !=
+	    (next->bio->bi_flags & BIP_FLAGS_MASK))
+		return false;
 
 	if (req->nr_integrity_segments + next->nr_integrity_segments >
 	    q->limits.max_integrity_segments)
-		return -1;
+		return false;
 
-	return 0;
+	return true;
 }
 EXPORT_SYMBOL(blk_integrity_merge_rq);
 
-int blk_integrity_merge_bio(struct request_queue *q, struct request *req,
-			    struct bio *bio)
+bool blk_integrity_merge_bio(struct request_queue *q, struct request *req,
+			     struct bio *bio)
 {
 	int nr_integrity_segs;
 	struct bio *next = bio->bi_next;
+
+	if (blk_integrity_rq(req) == 0 && bio_integrity(bio) == 0)
+		return true;
+
+	if (blk_integrity_rq(req) == 0 || bio_integrity(bio) == 0)
+		return false;
+
+	if ((req->bio->bi_flags & BIP_FLAGS_MASK) !=
+	    (bio->bi_flags & BIP_FLAGS_MASK))
+		return false;
 
 	bio->bi_next = NULL;
 	nr_integrity_segs = blk_rq_count_integrity_sg(q, bio);
@@ -208,11 +225,11 @@ int blk_integrity_merge_bio(struct request_queue *q, struct request *req,
 
 	if (req->nr_integrity_segments + nr_integrity_segs >
 	    q->limits.max_integrity_segments)
-		return -1;
+		return false;
 
 	req->nr_integrity_segments += nr_integrity_segs;
 
-	return 0;
+	return true;
 }
 EXPORT_SYMBOL(blk_integrity_merge_bio);
 
@@ -403,7 +420,8 @@ int blk_integrity_register(struct gendisk *disk, struct blk_integrity *template)
 		kobject_uevent(&bi->kobj, KOBJ_ADD);
 
 		bi->flags |= INTEGRITY_FLAG_READ | INTEGRITY_FLAG_WRITE;
-		bi->sector_size = queue_logical_block_size(disk->queue);
+		if (!template || !template->sector_size)
+			bi->sector_size = queue_logical_block_size(disk->queue);
 		disk->integrity = bi;
 	} else
 		bi = disk->integrity;
@@ -417,6 +435,8 @@ int blk_integrity_register(struct gendisk *disk, struct blk_integrity *template)
 		bi->set_tag_fn = template->set_tag_fn;
 		bi->get_tag_fn = template->get_tag_fn;
 		bi->tag_size = template->tag_size;
+		if (template->sector_size)
+			bi->sector_size = template->sector_size;
 	} else
 		bi->name = bi_unsupported_name;
 

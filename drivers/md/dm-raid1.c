@@ -604,6 +604,15 @@ static void write_callback(unsigned long error, void *context)
 		return;
 	}
 
+	/*
+	 * If the bio is discard, return an error, but do not
+	 * degrade the array.
+	 */
+	if (bio->bi_rw & REQ_DISCARD) {
+		bio_endio(bio, -EOPNOTSUPP);
+		return;
+	}
+
 	for (i = 0; i < ms->nr_mirrors; i++)
 		if (test_bit(i, &error))
 			fail_mirror(ms->mirror + i, DM_RAID1_WRITE_ERROR);
@@ -914,16 +923,18 @@ static int get_mirror(struct mirror_set *ms, struct dm_target *ti,
 {
 	unsigned long long offset;
 	char dummy;
+	int ret;
 
 	if (sscanf(argv[1], "%llu%c", &offset, &dummy) != 1) {
 		ti->error = "Invalid offset";
 		return -EINVAL;
 	}
 
-	if (dm_get_device(ti, argv[0], dm_table_get_mode(ti->table),
-			  &ms->mirror[mirror].dev)) {
+	ret = dm_get_device(ti, argv[0], dm_table_get_mode(ti->table),
+			    &ms->mirror[mirror].dev);
+	if (ret) {
 		ti->error = "Device lookup failure";
-		return -ENXIO;
+		return ret;
 	}
 
 	ms->mirror[mirror].ms = ms;
@@ -1077,11 +1088,10 @@ static int mirror_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	ti->num_flush_bios = 1;
 	ti->num_discard_bios = 1;
-	ti->per_bio_data_size = sizeof(struct dm_raid1_bio_record);
+	ti->per_io_data_size = sizeof(struct dm_raid1_bio_record);
 	ti->discard_zeroes_data_unsupported = true;
 
-	ms->kmirrord_wq = alloc_workqueue("kmirrord",
-					  WQ_NON_REENTRANT | WQ_MEM_RECLAIM, 0);
+	ms->kmirrord_wq = alloc_workqueue("kmirrord", WQ_MEM_RECLAIM, 0);
 	if (!ms->kmirrord_wq) {
 		DMERR("couldn't start kmirrord");
 		r = -ENOMEM;
@@ -1245,6 +1255,7 @@ static int mirror_end_io(struct dm_target *ti, struct bio *bio, int error)
 
 			dm_bio_restore(bd, bio);
 			bio_record->details.bi_bdev = NULL;
+
 			queue_bio(ms, bio, rw);
 			return DM_ENDIO_INCOMPLETE;
 		}
@@ -1402,6 +1413,32 @@ static int mirror_iterate_devices(struct dm_target *ti,
 	return ret;
 }
 
+static int mirror_merge(struct dm_target *ti, struct bvec_merge_data *bvm,
+			struct bio_vec *biovec, int max_size)
+{
+	struct mirror_set *ms = ti->private;
+	unsigned i;
+
+	for (i = 0; i < ms->nr_mirrors; i++) {
+		int merge;
+		struct bvec_merge_data bvm_local;
+		struct mirror *m = &ms->mirror[i];
+		struct request_queue *q = bdev_get_queue(m->dev->bdev);
+
+		if (!q->merge_bvec_fn)
+			continue;
+
+		bvm_local = *bvm;
+		bvm_local.bi_bdev = m->dev->bdev;
+		bvm_local.bi_sector = m->offset + dm_target_offset(m->ms->ti, bvm->bi_sector);
+
+		merge = q->merge_bvec_fn(q, &bvm_local, biovec);
+		max_size = min(max_size, merge);
+	}
+
+	return max_size;
+}
+
 static struct target_type mirror_target = {
 	.name	 = "mirror",
 	.version = {1, 13, 2},
@@ -1415,6 +1452,7 @@ static struct target_type mirror_target = {
 	.resume	 = mirror_resume,
 	.status	 = mirror_status,
 	.iterate_devices = mirror_iterate_devices,
+	.merge = mirror_merge,
 };
 
 static int __init dm_mirror_init(void)

@@ -108,6 +108,9 @@ int vb2_get_contig_userptr(unsigned long vaddr, unsigned long size,
 
 	vma = find_vma(mm, start);
 
+	if (vma_is_fsdax(vma))
+		return -EOPNOTSUPP;
+
 	if (vma == NULL || vma->vm_end < end)
 		return -EFAULT;
 

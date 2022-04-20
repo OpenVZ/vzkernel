@@ -389,6 +389,7 @@ static void ccid2_rtt_estimator(struct sock *sk, const long mrtt)
 		hc->tx_mdev += m;
 
 		if (hc->tx_mdev > hc->tx_mdev_max) {
+			gmb();
 			hc->tx_mdev_max = hc->tx_mdev;
 			if (hc->tx_mdev_max > hc->tx_rttvar)
 				hc->tx_rttvar = hc->tx_mdev_max;

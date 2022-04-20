@@ -22,6 +22,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/idr.h>
 #include <linux/acpi.h>
+#include <linux/property.h>
 
 #include "base.h"
 #include "power/power.h"
@@ -271,6 +272,22 @@ int platform_device_add_data(struct platform_device *pdev, const void *data,
 EXPORT_SYMBOL_GPL(platform_device_add_data);
 
 /**
+ * platform_device_add_properties - add built-in properties to a platform device
+ * @pdev: platform device to add properties to
+ * @properties: null terminated array of properties to add
+ *
+ * The function will take deep copy of @properties and attach the copy to the
+ * platform device. The memory associated with properties will be freed when the
+ * platform device is released.
+ */
+int platform_device_add_properties(struct platform_device *pdev,
+				   struct property_entry *properties)
+{
+	return device_add_properties(&pdev->dev, properties);
+}
+EXPORT_SYMBOL_GPL(platform_device_add_properties);
+
+/**
  * platform_device_add - add a platform device to device hierarchy
  * @pdev: platform device we're adding
  *
@@ -371,6 +388,7 @@ void platform_device_del(struct platform_device *pdev)
 	int i;
 
 	if (pdev) {
+		device_remove_properties(&pdev->dev);
 		device_del(&pdev->dev);
 
 		if (pdev->id_auto) {
@@ -435,7 +453,7 @@ struct platform_device *platform_device_register_full(
 		goto err_alloc;
 
 	pdev->dev.parent = pdevinfo->parent;
-	ACPI_HANDLE_SET(&pdev->dev, pdevinfo->acpi_node.handle);
+	set_rh_dev_fwnode(&pdev->dev, pdevinfo->fwnode);
 
 	if (pdevinfo->dma_mask) {
 		/*
@@ -463,10 +481,17 @@ struct platform_device *platform_device_register_full(
 	if (ret)
 		goto err;
 
+	if (pdevinfo->properties) {
+		ret = platform_device_add_properties(pdev,
+						     pdevinfo->properties);
+		if (ret)
+			goto err;
+	}
+
 	ret = platform_device_add(pdev);
 	if (ret) {
 err:
-		ACPI_HANDLE_SET(&pdev->dev, NULL);
+		ACPI_COMPANION_SET(&pdev->dev, NULL);
 		kfree(pdev->dev.dma_mask);
 
 err_alloc:
@@ -523,11 +548,13 @@ static void platform_drv_shutdown(struct device *_dev)
 }
 
 /**
- * platform_driver_register - register a driver for platform-level devices
+ * __platform_driver_register - register a driver for platform-level devices
  * @drv: platform driver structure
  */
-int platform_driver_register(struct platform_driver *drv)
+int __platform_driver_register(struct platform_driver *drv,
+				struct module *owner)
 {
+	drv->driver.owner = owner;
 	drv->driver.bus = &platform_bus_type;
 	if (drv->probe)
 		drv->driver.probe = platform_drv_probe;
@@ -538,7 +565,7 @@ int platform_driver_register(struct platform_driver *drv)
 
 	return driver_register(&drv->driver);
 }
-EXPORT_SYMBOL_GPL(platform_driver_register);
+EXPORT_SYMBOL_GPL(__platform_driver_register);
 
 /**
  * platform_driver_unregister - unregister a driver for platform-level devices
@@ -888,7 +915,6 @@ int platform_pm_restore(struct device *dev)
 static const struct dev_pm_ops platform_dev_pm_ops = {
 	.runtime_suspend = pm_generic_runtime_suspend,
 	.runtime_resume = pm_generic_runtime_resume,
-	.runtime_idle = pm_generic_runtime_idle,
 	USE_PLATFORM_PM_SLEEP_OPS
 };
 

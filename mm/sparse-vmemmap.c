@@ -20,6 +20,7 @@
 #include <linux/mm.h>
 #include <linux/mmzone.h>
 #include <linux/bootmem.h>
+#include <linux/memremap.h>
 #include <linux/highmem.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
@@ -40,7 +41,8 @@ static void * __init_refok __earlyonly_bootmem_alloc(int node,
 				unsigned long align,
 				unsigned long goal)
 {
-	return __alloc_bootmem_node_high(NODE_DATA(node), size, align, goal);
+	return memblock_virt_alloc_try_nid(size, align, goal,
+					    BOOTMEM_ALLOC_ACCESSIBLE, node);
 }
 
 static void *vmemmap_buf;
@@ -50,18 +52,25 @@ void * __meminit vmemmap_alloc_block(unsigned long size, int node)
 {
 	/* If the main allocator is up use that, fallback to bootmem. */
 	if (slab_is_available()) {
+		gfp_t gfp_mask = GFP_KERNEL | __GFP_ZERO | __GFP_REPEAT | __GFP_NOWARN;
+		int order = get_order(size);
+		static bool warned;
 		struct page *page;
 
 		if (node_state(node, N_HIGH_MEMORY))
 			page = alloc_pages_node(
-				node, GFP_KERNEL | __GFP_ZERO | __GFP_REPEAT,
-				get_order(size));
+				node, gfp_mask, order);
 		else
 			page = alloc_pages(
-				GFP_KERNEL | __GFP_ZERO | __GFP_REPEAT,
-				get_order(size));
+				gfp_mask, order);
 		if (page)
 			return page_address(page);
+
+		if (!warned) {
+			warn_alloc_failed(gfp_mask & ~__GFP_NOWARN, order,
+				   "vmemmap alloc failure");
+			warned = true;
+		}
 		return NULL;
 	} else
 		return __earlyonly_bootmem_alloc(node, size, size,
@@ -84,6 +93,55 @@ void * __meminit vmemmap_alloc_block_buf(unsigned long size, int node)
 	vmemmap_buf = ptr + size;
 
 	return ptr;
+}
+
+static unsigned long __meminit vmem_altmap_next_pfn(struct vmem_altmap *altmap)
+{
+	return altmap->base_pfn + altmap->reserve + altmap->alloc
+		+ altmap->align;
+}
+
+static unsigned long __meminit vmem_altmap_nr_free(struct vmem_altmap *altmap)
+{
+	unsigned long allocated = altmap->alloc + altmap->align;
+
+	if (altmap->free > allocated)
+		return altmap->free - allocated;
+	return 0;
+}
+
+/**
+ * altmap_alloc_block_buf - allocate pages from the device page map
+ * @altmap:	device page map
+ * @size:	size (in bytes) of the allocation
+ *
+ * Allocations are aligned to the size of the request.
+ */
+void * __meminit altmap_alloc_block_buf(unsigned long size,
+		struct vmem_altmap *altmap)
+{
+	unsigned long pfn, nr_pfns, nr_align;
+
+	if (size & ~PAGE_MASK) {
+		pr_warn_once("%s: allocations must be multiple of PAGE_SIZE (%ld)\n",
+				__func__, size);
+		return NULL;
+	}
+
+	pfn = vmem_altmap_next_pfn(altmap);
+	nr_pfns = size >> PAGE_SHIFT;
+	nr_align = 1UL << find_first_bit(&nr_pfns, BITS_PER_LONG);
+	nr_align = ALIGN(pfn, nr_align) - pfn;
+	if (nr_pfns + nr_align > vmem_altmap_nr_free(altmap))
+		return NULL;
+
+	altmap->alloc += nr_pfns;
+	altmap->align += nr_align;
+	pfn += nr_align;
+
+	pr_debug("%s: pfn: %#lx alloc: %ld align: %ld nr: %#lx\n",
+			__func__, pfn, altmap->alloc, altmap->align, nr_pfns);
+	return __va(__pfn_to_phys(pfn));
 }
 
 void __meminit vmemmap_verify(pte_t *pte, int node,
@@ -175,7 +233,8 @@ int __meminit vmemmap_populate_basepages(unsigned long start,
 	return 0;
 }
 
-struct page * __meminit sparse_mem_map_populate(unsigned long pnum, int nid)
+struct page * __meminit sparse_mem_map_populate(unsigned long pnum, int nid,
+		struct vmem_altmap *altmap)
 {
 	unsigned long start;
 	unsigned long end;
@@ -185,7 +244,7 @@ struct page * __meminit sparse_mem_map_populate(unsigned long pnum, int nid)
 	start = (unsigned long)map;
 	end = (unsigned long)(map + PAGES_PER_SECTION);
 
-	if (vmemmap_populate(start, end, nid))
+	if (vmemmap_populate(start, end, nid, altmap))
 		return NULL;
 
 	return map;
@@ -215,7 +274,7 @@ void __init sparse_mem_maps_populate_node(struct page **map_map,
 		if (!present_section_nr(pnum))
 			continue;
 
-		map_map[pnum] = sparse_mem_map_populate(pnum, nodeid);
+		map_map[pnum] = sparse_mem_map_populate(pnum, nodeid, NULL);
 		if (map_map[pnum])
 			continue;
 		ms = __nr_to_section(pnum);
@@ -226,7 +285,8 @@ void __init sparse_mem_maps_populate_node(struct page **map_map,
 
 	if (vmemmap_buf_start) {
 		/* need to free left buf */
-		free_bootmem(__pa(vmemmap_buf), vmemmap_buf_end - vmemmap_buf);
+		memblock_free_early(__pa(vmemmap_buf),
+				    vmemmap_buf_end - vmemmap_buf);
 		vmemmap_buf = NULL;
 		vmemmap_buf_end = NULL;
 	}

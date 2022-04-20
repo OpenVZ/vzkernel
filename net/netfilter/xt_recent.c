@@ -228,7 +228,7 @@ static void recent_table_flush(struct recent_table *t)
 static bool
 recent_mt(const struct sk_buff *skb, struct xt_action_param *par)
 {
-	struct net *net = dev_net(par->in ? par->in : par->out);
+	struct net *net = xt_net(par);
 	struct recent_net *recent_net = recent_pernet(net);
 	const struct xt_recent_mtinfo_v1 *info = par->matchinfo;
 	struct recent_table *t;
@@ -237,7 +237,7 @@ recent_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	u_int8_t ttl;
 	bool ret = info->invert;
 
-	if (par->family == NFPROTO_IPV4) {
+	if (xt_family(par) == NFPROTO_IPV4) {
 		const struct iphdr *iph = ip_hdr(skb);
 
 		if (info->side == XT_RECENT_DEST)
@@ -258,7 +258,8 @@ recent_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	}
 
 	/* use TTL as seen before forwarding */
-	if (par->out != NULL && skb->sk == NULL)
+	if (xt_out(par) != NULL &&
+	    (!skb->sk || !net_eq(net, sock_net(skb->sk))))
 		ttl++;
 
 	spin_lock_bh(&recent_lock);
@@ -266,12 +267,12 @@ recent_mt(const struct sk_buff *skb, struct xt_action_param *par)
 
 	nf_inet_addr_mask(&addr, &addr_mask, &t->mask);
 
-	e = recent_entry_lookup(t, &addr_mask, par->family,
+	e = recent_entry_lookup(t, &addr_mask, xt_family(par),
 				(info->check_set & XT_RECENT_TTL) ? ttl : 0);
 	if (e == NULL) {
 		if (!(info->check_set & XT_RECENT_SET))
 			goto out;
-		e = recent_entry_init(t, &addr_mask, par->family, ttl);
+		e = recent_entry_init(t, &addr_mask, xt_family(par), ttl);
 		if (e == NULL)
 			par->hotdrop = true;
 		ret = !ret;
@@ -313,10 +314,7 @@ out:
 
 static void recent_table_free(void *addr)
 {
-	if (is_vmalloc_addr(addr))
-		vfree(addr);
-	else
-		kfree(addr);
+	kvfree(addr);
 }
 
 static int recent_mt_check(const struct xt_mtchk_param *par,
@@ -358,9 +356,9 @@ static int recent_mt_check(const struct xt_mtchk_param *par,
 			info->hit_count, ip_pkt_list_tot);
 		return -EINVAL;
 	}
-	if (info->name[0] == '\0' ||
-	    strnlen(info->name, XT_RECENT_NAME_LEN) == XT_RECENT_NAME_LEN)
-		return -EINVAL;
+	ret = xt_check_proc_name(info->name, sizeof(info->name));
+	if (ret)
+		return ret;
 
 	mutex_lock(&recent_mutex);
 	t = recent_table_lookup(recent_net, info->name);
@@ -371,10 +369,7 @@ static int recent_mt_check(const struct xt_mtchk_param *par,
 	}
 
 	sz = sizeof(*t) + sizeof(t->iphash[0]) * ip_list_hash_size;
-	if (sz <= PAGE_SIZE)
-		t = kzalloc(sz, GFP_KERNEL);
-	else
-		t = vzalloc(sz);
+	t = kvzalloc(sz, GFP_KERNEL);
 	if (t == NULL) {
 		ret = -ENOMEM;
 		goto out;

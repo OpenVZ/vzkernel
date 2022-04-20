@@ -37,14 +37,19 @@ struct snd_usb_audio {
 	struct usb_interface *pm_intf;
 	u32 usb_id;
 	struct mutex mutex;
-	struct rw_semaphore shutdown_rwsem;
-	unsigned int shutdown:1;
-	unsigned int probing:1;
 	unsigned int autosuspended:1;	
+	atomic_t active;
+	atomic_t shutdown;
+	atomic_t usage_count;
+	wait_queue_head_t shutdown_wait;
 	unsigned int txfr_quirk:1; /* Subframe boundaries on transfers */
+	unsigned int tx_length_quirk:1; /* Put length specifier in transfers */
 	
 	int num_interfaces;
 	int num_suspended_intf;
+	int sample_rate_read_error;
+
+	int badd_profile;		/* UAC3 BADD profile */
 
 	struct list_head pcm_list;	/* list of pcm streams */
 	struct list_head ep_list;	/* list of audio-related endpoints */
@@ -55,11 +60,22 @@ struct snd_usb_audio {
 	struct list_head mixer_list;	/* list of mixer interfaces */
 
 	int setup;			/* from the 'device_setup' module param */
-	int nrpacks;			/* from the 'nrpacks' module param */
 	bool autoclock;			/* from the 'autoclock' module param */
+	bool keep_iface;		/* keep interface/altset after closing
+					 * or parameter change
+					 */
 
 	struct usb_host_interface *ctrl_intf;	/* the audio control interface */
 };
+
+#define usb_audio_err(chip, fmt, args...) \
+	dev_err(&(chip)->dev->dev, fmt, ##args)
+#define usb_audio_warn(chip, fmt, args...) \
+	dev_warn(&(chip)->dev->dev, fmt, ##args)
+#define usb_audio_info(chip, fmt, args...) \
+	dev_info(&(chip)->dev->dev, fmt, ##args)
+#define usb_audio_dbg(chip, fmt, args...) \
+	dev_dbg(&(chip)->dev->dev, fmt, ##args)
 
 /*
  * Information about devices with broken descriptors
@@ -72,9 +88,11 @@ struct snd_usb_audio {
 enum quirk_type {
 	QUIRK_IGNORE_INTERFACE,
 	QUIRK_COMPOSITE,
+	QUIRK_AUTODETECT,
 	QUIRK_MIDI_STANDARD_INTERFACE,
 	QUIRK_MIDI_FIXED_ENDPOINT,
 	QUIRK_MIDI_YAMAHA,
+	QUIRK_MIDI_ROLAND,
 	QUIRK_MIDI_MIDIMAN,
 	QUIRK_MIDI_NOVATION,
 	QUIRK_MIDI_RAW_BYTES,
@@ -83,6 +101,7 @@ enum quirk_type {
 	QUIRK_MIDI_AKAI,
 	QUIRK_MIDI_US122L,
 	QUIRK_MIDI_FTDI,
+	QUIRK_MIDI_CH345,
 	QUIRK_AUDIO_STANDARD_INTERFACE,
 	QUIRK_AUDIO_FIXED_ENDPOINT,
 	QUIRK_AUDIO_EDIROL_UAXX,
@@ -95,6 +114,7 @@ enum quirk_type {
 struct snd_usb_audio_quirk {
 	const char *vendor_name;
 	const char *product_name;
+	const char *profile_name;	/* override the card->longname */
 	int16_t ifnum;
 	uint16_t type;
 	const void *data;
@@ -103,5 +123,10 @@ struct snd_usb_audio_quirk {
 #define combine_word(s)    ((*(s)) | ((unsigned int)(s)[1] << 8))
 #define combine_triple(s)  (combine_word(s) | ((unsigned int)(s)[2] << 16))
 #define combine_quad(s)    (combine_triple(s) | ((unsigned int)(s)[3] << 24))
+
+int snd_usb_lock_shutdown(struct snd_usb_audio *chip);
+void snd_usb_unlock_shutdown(struct snd_usb_audio *chip);
+
+extern bool snd_usb_use_vmalloc;
 
 #endif /* __USBAUDIO_H */

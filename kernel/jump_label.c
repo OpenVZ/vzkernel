@@ -13,6 +13,9 @@
 #include <linux/sort.h>
 #include <linux/err.h>
 #include <linux/static_key.h>
+#include <linux/jump_label_ratelimit.h>
+#include <linux/bug.h>
+#include <asm/sections.h>
 
 #ifdef HAVE_JUMP_LABEL
 
@@ -55,8 +58,15 @@ jump_label_sort_entries(struct jump_entry *start, struct jump_entry *stop)
 
 static void jump_label_update(struct static_key *key, int enable);
 
+bool static_key_enabled(struct static_key *key)
+{
+	return (atomic_read(&key->enabled) > 0);
+}
+EXPORT_SYMBOL_GPL(static_key_enabled);
+
 void static_key_slow_inc(struct static_key *key)
 {
+	STATIC_KEY_CHECK_USE();
 	if (atomic_inc_not_zero(&key->enabled))
 		return;
 
@@ -102,19 +112,29 @@ static void jump_label_update_timeout(struct work_struct *work)
 
 void static_key_slow_dec(struct static_key *key)
 {
+	STATIC_KEY_CHECK_USE();
 	__static_key_slow_dec(key, 0, NULL);
 }
 EXPORT_SYMBOL_GPL(static_key_slow_dec);
 
 void static_key_slow_dec_deferred(struct static_key_deferred *key)
 {
+	STATIC_KEY_CHECK_USE();
 	__static_key_slow_dec(&key->key, key->timeout, &key->work);
 }
 EXPORT_SYMBOL_GPL(static_key_slow_dec_deferred);
 
+void static_key_deferred_flush(struct static_key_deferred *key)
+{
+	STATIC_KEY_CHECK_USE();
+	flush_delayed_work(&key->work);
+}
+EXPORT_SYMBOL_GPL(static_key_deferred_flush);
+
 void jump_label_rate_limit(struct static_key_deferred *key,
 		unsigned long rl)
 {
+	STATIC_KEY_CHECK_USE();
 	key->timeout = rl;
 	INIT_DELAYED_WORK(&key->work, jump_label_update_timeout);
 }
@@ -168,8 +188,13 @@ static void __jump_label_update(struct static_key *key,
 		 * kernel_text_address() verifies we are not in core kernel
 		 * init code, see jump_label_invalidate_module_init().
 		 */
-		if (entry->code && kernel_text_address(entry->code))
-			arch_jump_label_transform(entry, enable);
+		if (entry->code) {
+			if (kernel_text_address(entry->code))
+				arch_jump_label_transform(entry, enable);
+			else
+				WARN(1, "can't patch jump_label at 0x%lx\n",
+				     (unsigned long)entry->code);
+		}
 	}
 }
 
@@ -191,6 +216,15 @@ void __init jump_label_init(void)
 	struct static_key *key = NULL;
 	struct jump_entry *iter;
 
+	/*
+	 * Since we are initializing the static_key.enabled field with
+	 * with the 'raw' int values (to avoid pulling in atomic.h) in
+	 * jump_label.h, let's make sure that is safe. There are only two
+	 * cases to check since we initialize to 0 or 1.
+	 */
+	BUILD_BUG_ON((int)ATOMIC_INIT(0) != 0);
+	BUILD_BUG_ON((int)ATOMIC_INIT(1) != 1);
+
 	jump_label_lock();
 	jump_label_sort_entries(iter_start, iter_stop);
 
@@ -211,7 +245,22 @@ void __init jump_label_init(void)
 		key->next = NULL;
 #endif
 	}
+	static_key_initialized = true;
 	jump_label_unlock();
+}
+
+/* Disable any jump label entries in __init/__exit code */
+void __init jump_label_invalidate_initmem(void)
+{
+	struct jump_entry *iter_start = __start___jump_table;
+	struct jump_entry *iter_stop = __stop___jump_table;
+	struct jump_entry *iter;
+
+	for (iter = iter_start; iter < iter_stop; iter++) {
+		if (iter->code >= (unsigned long)__init_begin &&
+		    iter->code <  (unsigned long)__init_end)
+			iter->code = 0;
+	}
 }
 
 #ifdef CONFIG_MODULES
@@ -351,6 +400,7 @@ static void jump_label_del_module(struct module *mod)
 	}
 }
 
+/* Disable any jump label entries in module init code */
 static void jump_label_invalidate_module_init(struct module *mod)
 {
 	struct jump_entry *iter_start = mod->jump_entries;
