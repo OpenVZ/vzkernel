@@ -116,6 +116,13 @@ static struct page *tswap_delete_page(swp_entry_t entry, struct page *expected)
 	struct page *page;
 
 	spin_lock(&tswap_lock);
+	if (expected) {
+		page = radix_tree_lookup(&tswap_page_tree, entry.val);
+		if (page && page != expected) {
+			spin_unlock(&tswap_lock);
+			return expected;
+		}
+	}
 	page = radix_tree_delete_item(&tswap_page_tree, entry.val, expected);
 	if (page) {
 		tswap_lru_del(page);
