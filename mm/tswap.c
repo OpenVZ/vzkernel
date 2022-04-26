@@ -335,7 +335,7 @@ static int tswap_frontswap_store(unsigned type, pgoff_t offset,
 		/* If type of page has not changed, just reuse it */
 		if (zero_filled == (cache_page == ZERO_PAGE(0)))
 			goto copy;
-		tswap_delete_page(entry, NULL);
+		tswap_delete_page(entry, cache_page);
 		put_page(cache_page);
 	}
 
