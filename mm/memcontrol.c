@@ -3336,6 +3336,8 @@ retry:
 		 * charging allocations that carry the __GFP_NOFAIL flag.
 		 */
 		page_counter_charge(&memcg->memory, batch);
+		if (do_swap_account)
+			page_counter_charge(&memcg->memsw, batch);
 	} else
 		mem_over_limit = mem_cgroup_from_counter(counter, memory);
 
