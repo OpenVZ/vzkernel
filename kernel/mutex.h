@@ -10,9 +10,9 @@
  */
 
 #define spin_lock_mutex(lock, flags) \
-		do { spin_lock(lock); (void)(flags); } while (0)
+		do { spin_lock_irqsave(lock, flags); } while (0)
 #define spin_unlock_mutex(lock, flags) \
-		do { spin_unlock(lock); (void)(flags); } while (0)
+		do { spin_unlock_irqrestore(lock, flags); } while (0)
 #define mutex_remove_waiter(lock, waiter, ti) \
 		__list_del((waiter)->list.prev, (waiter)->list.next)
 
