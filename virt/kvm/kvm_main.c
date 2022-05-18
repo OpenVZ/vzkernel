@@ -189,16 +189,6 @@ bool kvm_is_reserved_pfn(kvm_pfn_t pfn)
 	return true;
 }
 
-bool kvm_is_transparent_hugepage(kvm_pfn_t pfn)
-{
-	struct page *page = pfn_to_page(pfn);
-
-	if (!PageTransCompoundMap(page))
-		return false;
-
-	return is_transparent_hugepage(compound_head(page));
-}
-
 /*
  * Switches to specified vcpu, until a matching vcpu_put()
  */
@@ -1252,9 +1242,9 @@ static int kvm_vm_release(struct inode *inode, struct file *filp)
  */
 static int kvm_alloc_dirty_bitmap(struct kvm_memory_slot *memslot)
 {
-	unsigned long dirty_bytes = 2 * kvm_dirty_bitmap_bytes(memslot);
+	unsigned long dirty_bytes = kvm_dirty_bitmap_bytes(memslot);
 
-	memslot->dirty_bitmap = kvzalloc(dirty_bytes, GFP_KERNEL_ACCOUNT);
+	memslot->dirty_bitmap = __vcalloc(2, dirty_bytes, GFP_KERNEL_ACCOUNT);
 	if (!memslot->dirty_bitmap)
 		return -ENOMEM;
 

@@ -5163,6 +5163,10 @@ mptsas_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	int			error=0;
 	int			r;
 
+#ifdef CONFIG_RHEL_DIFFERENCES
+	mark_driver_unmaintained(MYNAM);
+#endif
+
 	r = mpt_attach(pdev,id);
 	if (r)
 		return r;
@@ -5317,11 +5321,6 @@ mptsas_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		mptbase_sas_persist_operation(
 		    ioc, MPI_SAS_OP_CLEAR_ALL_PERSISTENT);
 	}
-
-#ifdef CONFIG_RHEL_DIFFERENCES
-	add_taint(TAINT_SUPPORT_REMOVED, LOCKDEP_STILL_OK);
-	pr_warn("MPTSAS MODULE IS NOT SUPPORTED\n");
-#endif
 
 	error = scsi_add_host(sh, &ioc->pcidev->dev);
 	if (error) {

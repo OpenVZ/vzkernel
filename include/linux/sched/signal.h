@@ -235,6 +235,15 @@ struct signal_struct {
 						 * and may have inconsistent
 						 * permissions.
 						 */
+	/*
+	 * RHEL9: signal_struct is always dynamically allocated at process
+	 * creation time and not embedded directly into other structure.
+	 * So it is also safe to extend the size of the structure.
+	 */
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 } __randomize_layout;
 
 /*

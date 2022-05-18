@@ -4635,9 +4635,11 @@ static void unmap_ref_private(struct mm_struct *mm, struct vm_area_struct *vma,
  * cannot race with other handlers or page migration.
  * Keep the pte_same checks anyway to make transition from the mutex easier.
  */
-static vm_fault_t hugetlb_cow(struct mm_struct *mm, struct vm_area_struct *vma,
-		       unsigned long address, pte_t *ptep,
-		       struct page *pagecache_page, spinlock_t *ptl)
+static __always_inline vm_fault_t
+__hugetlb_cor_cow(struct mm_struct *mm, struct vm_area_struct *vma,
+		  unsigned long address, pte_t *ptep,
+		  struct page *pagecache_page, spinlock_t *ptl,
+		  bool cor_fault)
 {
 	pte_t pte;
 	struct hstate *h = hstate_vma(vma);
@@ -4654,8 +4656,10 @@ retry_avoidcopy:
 	/* If no-one else is actually using this page, avoid the copy
 	 * and just make the page writable */
 	if (page_mapcount(old_page) == 1 && PageAnon(old_page)) {
-		page_move_anon_rmap(old_page, vma);
-		set_huge_ptep_writable(vma, haddr, ptep);
+		if (!cor_fault) {
+			page_move_anon_rmap(old_page, vma);
+			set_huge_ptep_writable(vma, haddr, ptep);
+		}
 		return 0;
 	}
 
@@ -4760,7 +4764,7 @@ retry_avoidcopy:
 		huge_ptep_clear_flush(vma, haddr, ptep);
 		mmu_notifier_invalidate_range(mm, range.start, range.end);
 		set_huge_pte_at(mm, haddr, ptep,
-				make_huge_pte(vma, new_page, 1));
+				make_huge_pte(vma, new_page, !cor_fault));
 		page_remove_rmap(old_page, true);
 		hugepage_add_new_anon_rmap(new_page, vma, haddr);
 		SetHPageMigratable(new_page);
@@ -4779,6 +4783,22 @@ out_release_old:
 
 	spin_lock(ptl); /* Caller expects lock to be held */
 	return ret;
+}
+
+static vm_fault_t hugetlb_cor(struct mm_struct *mm, struct vm_area_struct *vma,
+			      unsigned long address, pte_t *ptep,
+			      struct page *pagecache_page, spinlock_t *ptl)
+{
+	return __hugetlb_cor_cow(mm, vma, address, ptep, pagecache_page,
+				 ptl, true);
+}
+
+static vm_fault_t hugetlb_cow(struct mm_struct *mm, struct vm_area_struct *vma,
+			      unsigned long address, pte_t *ptep,
+			      struct page *pagecache_page, spinlock_t *ptl)
+{
+	return __hugetlb_cor_cow(mm, vma, address, ptep, pagecache_page,
+				 ptl, false);
 }
 
 /* Return the pagecache page at a given address within a VMA */
@@ -5156,7 +5176,8 @@ vm_fault_t hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * page now as it is used to determine if a reservation has been
 	 * consumed.
 	 */
-	if ((flags & FAULT_FLAG_WRITE) && !huge_pte_write(entry)) {
+	if ((flags & (FAULT_FLAG_WRITE|FAULT_FLAG_UNSHARE)) &&
+	    !huge_pte_write(entry)) {
 		if (vma_needs_reservation(h, vma, haddr) < 0) {
 			ret = VM_FAULT_OOM;
 			goto out_mutex;
@@ -5196,6 +5217,11 @@ vm_fault_t hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 			goto out_put_page;
 		}
 		entry = huge_pte_mkdirty(entry);
+	} else if (flags & FAULT_FLAG_UNSHARE &&
+		   !huge_pte_write(entry)) {
+		ret = hugetlb_cor(mm, vma, address, ptep,
+				  pagecache_page, ptl);
+		goto out_put_page;
 	}
 	entry = pte_mkyoung(entry);
 	if (huge_ptep_set_access_flags(vma, haddr, ptep, entry,
@@ -5442,10 +5468,11 @@ long follow_hugetlb_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	int err = -EFAULT, refs;
 
 	while (vaddr < vma->vm_end && remainder) {
-		pte_t *pte;
+		pte_t *pte, pteval;
 		spinlock_t *ptl = NULL;
 		int absent;
 		struct page *page;
+		bool unshare;
 
 		/*
 		 * If we have a pending SIGKILL, don't keep faulting pages and
@@ -5467,7 +5494,11 @@ long follow_hugetlb_page(struct mm_struct *mm, struct vm_area_struct *vma,
 				      huge_page_size(h));
 		if (pte)
 			ptl = huge_pte_lock(h, mm, pte);
-		absent = !pte || huge_pte_none(huge_ptep_get(pte));
+		absent = !pte;
+		if (!absent) {
+			pteval = huge_ptep_get(pte);
+			absent = huge_pte_none(pteval);
+		}
 
 		/*
 		 * When coredumping, it suits get_dump_page if we just return
@@ -5494,9 +5525,12 @@ long follow_hugetlb_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		 * both cases, and because we can't follow correct pages
 		 * directly from any kind of swap entries.
 		 */
-		if (absent || is_swap_pte(huge_ptep_get(pte)) ||
-		    ((flags & FOLL_WRITE) &&
-		      !huge_pte_write(huge_ptep_get(pte)))) {
+		unshare = false;
+		if (absent || is_swap_pte(pteval) ||
+		    (!huge_pte_write(pteval) &&
+		     ((flags & FOLL_WRITE) ||
+		      (unshare = gup_must_unshare(flags, pte_page(pteval),
+						  true))))) {
 			vm_fault_t ret;
 			unsigned int fault_flags = 0;
 
@@ -5504,6 +5538,8 @@ long follow_hugetlb_page(struct mm_struct *mm, struct vm_area_struct *vma,
 				spin_unlock(ptl);
 			if (flags & FOLL_WRITE)
 				fault_flags |= FAULT_FLAG_WRITE;
+			else if (unshare)
+				fault_flags |= FAULT_FLAG_UNSHARE;
 			if (locked)
 				fault_flags |= FAULT_FLAG_ALLOW_RETRY |
 					FAULT_FLAG_KILLABLE;
@@ -6199,7 +6235,23 @@ retry:
 		goto out;
 	pte = huge_ptep_get((pte_t *)pmd);
 	if (pte_present(pte)) {
-		page = pmd_page(*pmd) + ((address & ~PMD_MASK) >> PAGE_SHIFT);
+		struct page *head_page = pmd_page(*pmd);
+		page = head_page + ((address & ~PMD_MASK) >> PAGE_SHIFT);
+		/*
+		 * gup_must_unshare() isn't strictly needed in
+		 * follow_page() as long as all follow_page() users
+		 * never can expose the page payload to userland or
+		 * devices. follow_page_mask() isn't invoked by the
+		 * hugetlb paths (hugetlbfs goes through
+		 * follow_hugetlb_page() instead of
+		 * follow_page_mask()). So the gup_must_unshare()
+		 * check here is just in case.
+		 */
+		if (!huge_pte_write(pte) &&
+		    gup_must_unshare(flags, head_page, true)) {
+			page = NULL;
+			goto out;
+		}
 		/*
 		 * try_grab_page() should always succeed here, because: a) we
 		 * hold the pmd (ptl) lock, and b) we've just checked that the

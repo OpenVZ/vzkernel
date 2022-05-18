@@ -5372,8 +5372,10 @@ lpfc_sli4_async_link_evt(struct lpfc_hba *phba,
 	 */
 	if (!(phba->hba_flag & HBA_FCOE_MODE)) {
 		rc = lpfc_sli_issue_mbox(phba, pmb, MBX_NOWAIT);
-		if (rc == MBX_NOT_FINISHED)
+		if (rc == MBX_NOT_FINISHED) {
+			lpfc_mbuf_free(phba, mp->virt, mp->phys);
 			goto out_free_dmabuf;
+		}
 		return;
 	}
 	/*
@@ -5924,7 +5926,7 @@ lpfc_cmf_timer(struct hrtimer *timer)
 	uint32_t io_cnt;
 	uint32_t head, tail;
 	uint32_t busy, max_read;
-	uint64_t total, rcv, lat, mbpi, extra;
+	uint64_t total, rcv, lat, mbpi, extra, cnt;
 	int timer_interval = LPFC_CMF_INTERVAL;
 	uint32_t ms;
 	struct lpfc_cgn_stat *cgs;
@@ -5995,20 +5997,28 @@ lpfc_cmf_timer(struct hrtimer *timer)
 
 		/* Calculate any extra bytes needed to account for the
 		 * timer accuracy. If we are less than LPFC_CMF_INTERVAL
-		 * add an extra 3% slop factor, equal to LPFC_CMF_INTERVAL
-		 * add an extra 2%. The goal is to equalize total with a
-		 * time > LPFC_CMF_INTERVAL or <= LPFC_CMF_INTERVAL + 1
+		 * calculate the adjustment needed for total to reflect
+		 * a full LPFC_CMF_INTERVAL.
 		 */
-		if (ms == LPFC_CMF_INTERVAL)
-			extra = div_u64(total, 50);
-		else if (ms < LPFC_CMF_INTERVAL)
-			extra = div_u64(total, 33);
+		if (ms && ms < LPFC_CMF_INTERVAL) {
+			cnt = div_u64(total, ms); /* bytes per ms */
+			cnt *= LPFC_CMF_INTERVAL; /* what total should be */
+
+			/* If the timeout is scheduled to be shorter,
+			 * this value may skew the data, so cap it at mbpi.
+			 */
+			if ((phba->hba_flag & HBA_SHORT_CMF) && cnt > mbpi)
+				cnt = mbpi;
+
+			extra = cnt - total;
+		}
 		lpfc_issue_cmf_sync_wqe(phba, LPFC_CMF_INTERVAL, total + extra);
 	} else {
 		/* For Monitor mode or link down we want mbpi
 		 * to be the full link speed
 		 */
 		mbpi = phba->cmf_link_byte_count;
+		extra = 0;
 	}
 	phba->cmf_timer_cnt++;
 
@@ -6039,6 +6049,7 @@ lpfc_cmf_timer(struct hrtimer *timer)
 				   LPFC_RXMONITOR_TABLE_IN_USE);
 		entry = &phba->rxtable[head];
 		entry->total_bytes = total;
+		entry->cmf_bytes = total + extra;
 		entry->rcv_bytes = rcv;
 		entry->cmf_busy = busy;
 		entry->cmf_info = phba->cmf_active_info;
@@ -6081,6 +6092,8 @@ lpfc_cmf_timer(struct hrtimer *timer)
 	/* Each minute save Fabric and Driver congestion information */
 	lpfc_cgn_save_evt_cnt(phba);
 
+	phba->hba_flag &= ~HBA_SHORT_CMF;
+
 	/* Since we need to call lpfc_cgn_save_evt_cnt every minute, on the
 	 * minute, adjust our next timer interval, if needed, to ensure a
 	 * 1 minute granularity when we get the next timer interrupt.
@@ -6091,6 +6104,8 @@ lpfc_cmf_timer(struct hrtimer *timer)
 						  jiffies);
 		if (timer_interval <= 0)
 			timer_interval = LPFC_CMF_INTERVAL;
+		else
+			phba->hba_flag |= HBA_SHORT_CMF;
 
 		/* If we adjust timer_interval, max_bytes_per_interval
 		 * needs to be adjusted as well.
@@ -6336,8 +6351,10 @@ lpfc_sli4_async_fc_evt(struct lpfc_hba *phba, struct lpfc_acqe_fc_la *acqe_fc)
 	}
 
 	rc = lpfc_sli_issue_mbox(phba, pmb, MBX_NOWAIT);
-	if (rc == MBX_NOT_FINISHED)
+	if (rc == MBX_NOT_FINISHED) {
+		lpfc_mbuf_free(phba, mp->virt, mp->phys);
 		goto out_free_dmabuf;
+	}
 	return;
 
 out_free_dmabuf:
@@ -15255,6 +15272,14 @@ lpfc_pci_probe_one(struct pci_dev *pdev, const struct pci_device_id *pid)
 {
 	int rc;
 	struct lpfc_sli_intf intf;
+
+#ifdef CONFIG_RHEL_DIFFERENCES
+	if (pci_hw_disabled(rh_disabled_pci_table, pdev))
+		return -ENODEV;
+
+	pci_hw_deprecated(rh_deprecated_pci_table, pdev);
+	pci_hw_unmaintained(rh_unmaintained_pci_table, pdev);
+#endif
 
 	if (pci_read_config_dword(pdev, LPFC_SLI_INTF, &intf.word0))
 		return -ENODEV;

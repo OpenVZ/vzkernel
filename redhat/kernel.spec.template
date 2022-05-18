@@ -71,12 +71,6 @@
 
 Summary: The Linux kernel
 
-# Set released_kernel to 1 when the upstream source tarball contains a
-#  kernel release. (This includes prepatch or "rc" releases.)
-# Set released_kernel to 0 when the upstream source tarball contains an
-#  unreleased kernel development snapshot.
-%global released_kernel %%RELEASED_KERNEL%%
-
 # Set debugbuildsenabled to 1 to build separate base and debug kernels
 #  (on supported architectures). The kernel-debug-* subpackages will
 #  contain the debug kernel.
@@ -84,8 +78,6 @@ Summary: The Linux kernel
 #  to build the base kernel using the debug configuration. (Specifying
 #  the --with-release option overrides this setting.)
 %define debugbuildsenabled %%DEBUG_BUILDS_ENABLED%%
-
-%global distro_build %%DISTRO_BUILD%%
 
 %if 0%{?fedora}
 %define secure_boot_arch x86_64
@@ -572,6 +564,9 @@ BuildRequires: net-tools, hostname, bc, elfutils-devel
 BuildRequires: dwarves
 BuildRequires: python3-devel
 BuildRequires: gcc-plugin-devel
+# glibc-static is required for a consistent build environment (specifically
+# CONFIG_CC_CAN_LINK_STATIC=y).
+BuildRequires: glibc-static
 BuildRequires: kernel-rpm-macros >= 185-9
 %ifnarch %{nobuildarches} noarch
 BuildRequires: bpftool
@@ -606,6 +601,9 @@ BuildRequires: libcap-devel libcap-ng-devel
 BuildRequires: pciutils-devel
 %endif
 %endif
+%if %{with_tools} || %{signmodules} || %{signkernel}
+BuildRequires: openssl-devel
+%endif
 %if %{with_bpftool}
 BuildRequires: python3-docutils
 BuildRequires: zlib-devel binutils-devel
@@ -639,8 +637,9 @@ BuildRequires: kabi-dw
 %endif
 
 %if %{signkernel}%{signmodules}
-BuildRequires: openssl openssl-devel
+BuildRequires: openssl
 %if %{signkernel}
+BuildRequires: system-sb-certs
 %ifarch x86_64 aarch64
 BuildRequires: nss-tools
 BuildRequires: pesign >= 0.10-4
@@ -681,6 +680,7 @@ Source0: linux-%%TARBALL_VERSION%%.tar.xz
 
 Source1: Makefile.rhelver
 
+%if %{signkernel}
 
 # Name of the packaged file containing signing key
 %ifarch ppc64le
@@ -690,42 +690,24 @@ Source1: Makefile.rhelver
 %define signing_key_filename kernel-signing-s390.cer
 %endif
 
-%if %{?released_kernel}
+%define secureboot_ca_0 %{_datadir}/pki/sb-certs/secureboot-ca-%{_arch}.cer
+%define secureboot_key_0 %{_datadir}/pki/sb-certs/secureboot-kernel-%{_arch}.cer
 
-Source10: redhatsecurebootca5.cer
-Source11: redhatsecurebootca3.cer
-Source12: redhatsecurebootca6.cer
-Source13: redhatsecureboot501.cer
-Source14: redhatsecureboot302.cer
-Source15: redhatsecureboot601.cer
-
+%if 0%{?centos}
+%define pesign_name_0 centossecureboot201
+%else
 %ifarch x86_64 aarch64
-%define secureboot_ca_0 %{SOURCE10}
-%define secureboot_key_0 %{SOURCE13}
 %define pesign_name_0 redhatsecureboot501
 %endif
 %ifarch s390x
-%define secureboot_ca_0 %{SOURCE11}
-%define secureboot_key_0 %{SOURCE14}
 %define pesign_name_0 redhatsecureboot302
 %endif
 %ifarch ppc64le
-%define secureboot_ca_0 %{SOURCE12}
-%define secureboot_key_0 %{SOURCE15}
 %define pesign_name_0 redhatsecureboot601
 %endif
+%endif
 
-# released_kernel
-%else
-
-Source10: redhatsecurebootca4.cer
-Source11: redhatsecureboot401.cer
-
-%define secureboot_ca_0 %{SOURCE10}
-%define secureboot_key_0 %{SOURCE11}
-%define pesign_name_0 redhatsecureboot401
-
-# released_kernel
+# signkernel
 %endif
 
 Source20: mod-denylist.sh
@@ -791,7 +773,6 @@ Source80: generate_all_configs.sh
 Source81: process_configs.sh
 
 Source82: update_scripts.sh
-Source83: generate_crashkernel_default.sh
 
 Source84: mod-internal.list
 
@@ -810,8 +791,8 @@ Source211: Module.kabi_dup_ppc64le
 Source212: Module.kabi_dup_s390x
 Source213: Module.kabi_dup_x86_64
 
-Source300: kernel-abi-stablelists-%{rpmversion}-%{distro_build}.tar.bz2
-Source301: kernel-kabi-dw-%{rpmversion}-%{distro_build}.tar.bz2
+Source300: kernel-abi-stablelists-%{rpmversion}-%{pkgrelease}.tar.bz2
+Source301: kernel-kabi-dw-%{rpmversion}-%{pkgrelease}.tar.bz2
 
 # Sources for kernel-tools
 Source2000: cpupower.service
@@ -856,7 +837,8 @@ Provides: kernel-drm-nouveau = 16\
 Provides: kernel-uname-r = %{KVERREL}%{?1:+%{1}}\
 Requires(pre): %{kernel_prereq}\
 Requires(pre): %{initrd_prereq}\
-Requires(pre): linux-firmware >= 20150904-56.git6ebf5d57\
+Requires(pre): ((linux-firmware >= 20150904-56.git6ebf5d57) if linux-firmware)\
+Recommends: linux-firmware\
 Requires(preun): systemd >= 200\
 Conflicts: xfsprogs < 4.3.0-1\
 Conflicts: xorg-x11-drv-vmmouse < 13.0.99\
@@ -1450,9 +1432,11 @@ done
 openssl x509 -inform der -in %{SOURCE100} -out rheldup3.pem
 openssl x509 -inform der -in %{SOURCE101} -out rhelkpatch1.pem
 cat rheldup3.pem rhelkpatch1.pem > ../certs/rhel.pem
+%if %{signkernel}
 %ifarch s390x ppc64le
 openssl x509 -inform der -in %{secureboot_ca_0} -out secureboot.pem
 cat secureboot.pem >> ../certs/rhel.pem
+%endif
 %endif
 for i in *.config; do
   sed -i 's@CONFIG_SYSTEM_TRUSTED_KEYS=""@CONFIG_SYSTEM_TRUSTED_KEYS="certs/rhel.pem"@' $i
@@ -1587,6 +1571,7 @@ BuildKernel() {
 
     mkdir -p $RPM_BUILD_ROOT/%{image_install_path}
     mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer
+    mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/systemtap
 %if %{with_debuginfo}
     mkdir -p $RPM_BUILD_ROOT%{debuginfodir}/%{image_install_path}
 %endif
@@ -1638,7 +1623,7 @@ BuildKernel() {
     %ifarch s390x ppc64le
     if [ -x /usr/bin/rpm-sign ]; then
 	rpm-sign --key "%{pesign_name_0}" --lkmsign $SignImage --output vmlinuz.signed
-    elif [ $DoModules -eq 1 ]; then
+    elif [ "$DoModules" == "1" -a "%{signmodules}" == "1" ]; then
 	chmod +x scripts/sign-file
 	./scripts/sign-file -p sha256 certs/signing_key.pem certs/signing_key.x509 $SignImage vmlinuz.signed
     else
@@ -2067,14 +2052,6 @@ BuildKernel() {
     rm -f $RPM_BUILD_ROOT/mod-extra.list
     rm -f $RPM_BUILD_ROOT/mod-internal.list
 
-%if %{signmodules}
-    if [ $DoModules -eq 1 ]; then
-	# Save the signing keys so we can sign the modules in __modsign_install_post
-	cp certs/signing_key.pem certs/signing_key.pem.sign${Variant:++${Variant}}
-	cp certs/signing_key.x509 certs/signing_key.x509.sign${Variant:++${Variant}}
-    fi
-%endif
-
     # Move the devel headers out of the root file system
     mkdir -p $RPM_BUILD_ROOT/usr/src/kernels
     mv $RPM_BUILD_ROOT/lib/modules/$KernelVer/build $RPM_BUILD_ROOT/$DevelDir
@@ -2093,23 +2070,31 @@ BuildKernel() {
     # prune junk from kernel-devel
     find $RPM_BUILD_ROOT/usr/src/kernels -name ".*.cmd" -delete
 
-    # Generate crashkernel default config
-    %{SOURCE83} "$KernelVer" "$Arch" "$RPM_BUILD_ROOT"
-
     # Red Hat UEFI Secure Boot CA cert, which can be used to authenticate the kernel
     mkdir -p $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer
+%if %{signkernel}
     install -m 0644 %{secureboot_ca_0} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/kernel-signing-ca.cer
     %ifarch s390x ppc64le
-    if [ $DoModules -eq 1 ]; then
-	if [ -x /usr/bin/rpm-sign ]; then
-	    install -m 0644 %{secureboot_key_0} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
-	else
-	    install -m 0644 certs/signing_key.x509.sign${Variant:++${Variant}} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/kernel-signing-ca.cer
-	    openssl x509 -in certs/signing_key.pem.sign${Variant:++${Variant}} -outform der -out $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
-	    chmod 0644 $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
-	fi
+    if [ -x /usr/bin/rpm-sign ]; then
+        install -m 0644 %{secureboot_key_0} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
     fi
     %endif
+%endif
+
+%if %{signmodules}
+    if [ $DoModules -eq 1 ]; then
+        # Save the signing keys so we can sign the modules in __modsign_install_post
+        cp certs/signing_key.pem certs/signing_key.pem.sign${Variant:++${Variant}}
+        cp certs/signing_key.x509 certs/signing_key.x509.sign${Variant:++${Variant}}
+        %ifarch s390x ppc64le
+        if [ ! -x /usr/bin/rpm-sign ]; then
+            install -m 0644 certs/signing_key.x509.sign${Variant:++${Variant}} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/kernel-signing-ca.cer
+            openssl x509 -in certs/signing_key.pem.sign${Variant:++${Variant}} -outform der -out $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
+            chmod 0644 $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
+        fi
+        %endif
+    fi
+%endif
 
 %if %{with_ipaclones}
     MAXPROCS=$(echo %{?_smp_mflags} | sed -n 's/-j\s*\([0-9]\+\)/\1/p')
@@ -2903,7 +2888,7 @@ fi
 /lib/modules/%{KVERREL}%{?3:+%{3}}/source\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/updates\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/weak-updates\
-/lib/modules/%{KVERREL}%{?3:+%{3}}/crashkernel.default\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/systemtap\
 %{_datadir}/doc/kernel-keys/%{KVERREL}%{?3:+%{3}}\
 %if %{1}\
 /lib/modules/%{KVERREL}%{?3:+%{3}}/vdso\

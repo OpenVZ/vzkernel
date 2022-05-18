@@ -36,6 +36,8 @@ struct vm86;
 #include <linux/irqflags.h>
 #include <linux/mem_encrypt.h>
 
+#include <linux/rh_kabi.h>
+
 /*
  * We handle most unaligned accesses in hardware.  On the other hand
  * unaligned DMA can be quite expensive on some Nehalem processors.
@@ -71,6 +73,9 @@ extern u16 __read_mostly tlb_lld_4k[NR_INFO];
 extern u16 __read_mostly tlb_lld_2m[NR_INFO];
 extern u16 __read_mostly tlb_lld_4m[NR_INFO];
 extern u16 __read_mostly tlb_lld_1g[NR_INFO];
+
+struct cpuinfo_x86_rh {
+};
 
 /*
  *  CPU type and hardware bug flags. Kept separately for each CPU.
@@ -142,6 +147,11 @@ struct cpuinfo_x86 {
 	/* Address space bits used by the cache internally */
 	u8			x86_cache_bits;
 	unsigned		initialized : 1;
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_AUX_EMBED(cpuinfo_x86)
 } __randomize_layout;
 
 struct cpuid_regs {
@@ -527,7 +537,7 @@ struct thread_struct {
 	u32			pkru;
 
 	/* Floating point and extended processor state */
-	struct fpu		fpu;
+	RH_KABI_EXCLUDE(struct fpu		fpu)
 	/*
 	 * WARNING: 'fpu' is dynamically-sized.  It *MUST* be at
 	 * the end.
@@ -804,11 +814,14 @@ static inline u32 amd_get_nodes_per_socket(void)	{ return 0; }
 static inline u32 amd_get_highest_perf(void)		{ return 0; }
 #endif
 
+#define for_each_possible_hypervisor_cpuid_base(function) \
+	for (function = 0x40000000; function < 0x40010000; function += 0x100)
+
 static inline uint32_t hypervisor_cpuid_base(const char *sig, uint32_t leaves)
 {
 	uint32_t base, eax, signature[3];
 
-	for (base = 0x40000000; base < 0x40010000; base += 0x100) {
+	for_each_possible_hypervisor_cpuid_base(base) {
 		cpuid(base, &eax, &signature[0], &signature[1], &signature[2]);
 
 		if (!memcmp(sig, signature, 12) &&
@@ -849,5 +862,13 @@ enum mds_mitigations {
 	MDS_MITIGATION_FULL,
 	MDS_MITIGATION_VMWERV,
 };
+
+#ifdef CONFIG_X86_SGX
+int arch_memory_failure(unsigned long pfn, int flags);
+#define arch_memory_failure arch_memory_failure
+
+bool arch_is_platform_page(u64 paddr);
+#define arch_is_platform_page arch_is_platform_page
+#endif
 
 #endif /* _ASM_X86_PROCESSOR_H */

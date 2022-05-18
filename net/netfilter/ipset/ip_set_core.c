@@ -1051,6 +1051,8 @@ static int ip_set_create(struct sk_buff *skb, const struct nfnl_info *info,
 	u32 flags = flag_exist(info->nlh);
 	int ret = 0;
 
+	DO_ONCE_LITE(mark_driver_deprecated, "ipset");
+
 	if (unlikely(protocol_min_failed(attr) ||
 		     !attr[IPSET_ATTR_SETNAME] ||
 		     !attr[IPSET_ATTR_TYPENAME] ||
@@ -2364,11 +2366,8 @@ static struct pernet_operations ip_set_net_ops = {
 static int __init
 ip_set_init(void)
 {
-	int ret;
+	int ret = register_pernet_subsys(&ip_set_net_ops);
 
-	mark_driver_deprecated("ipset");
-
-	ret = register_pernet_subsys(&ip_set_net_ops);
 	if (ret) {
 		pr_err("ip_set: cannot register pernet_subsys.\n");
 		return ret;

@@ -233,6 +233,30 @@ struct obj_cgroup {
  * page cache and RSS per cgroup. We would eventually like to provide
  * statistics based on the statistics developed by Rik Van Riel for clock-pro,
  * to help the administrator determine what knobs to tune.
+ *
+ * RHEL9 Notes
+ * -----------
+ * The mem_cgroup structure is allocated dynamically and is not embedded in
+ * other data structures. To support new features, mem_cgroup structure can
+ * change quite a lot over time. Therefore, the kABI signature of mem_cgroup
+ * will change over time. The mem_cgroup structure is excluded from the kABI
+ * signature generation to avoid impacting kABI signature of other structures
+ * that include a pointer to mem_cgroup. Third-party kernel modules should not
+ * access mem_cgroup or mem_cgroup_per_node directly or use inlined functions
+ * that access them directly.
+ *
+ * In addition, the following enum types will have new upstream fields added
+ * in a way that may break kABI if they are used or referenced by 3rd party
+ * kernel drivers.
+ *  - memcg_memory_event: affect MEMCG_NR_MEMORY_EVENTS
+ *  - node_stat_item: NR_VM_NODE_STAT_ITEMS does get used in lruvec_stat[] of
+ *    mem_cgroup_per_node (memcontrol.h) and lumped into MEMCG_NR_STAT.
+ *    The change in MEMCG_NR_STAT does increase the size of stat[] of
+ *    memcg_vmstats_percpu and vmstats[] of mem_cgroup structures.
+ *    These arrays are not at the end of the structure and so changing
+ *    the array size will break offsets of existing fields that
+ *    follows the arrays.
+ *  - vm_event_item: NR_VM_EVENT_ITEMS used in vmevents[] of memcg.
  */
 struct mem_cgroup {
 	struct cgroup_subsys_state css;

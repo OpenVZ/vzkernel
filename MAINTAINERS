@@ -4418,6 +4418,17 @@ L:	patches@opensource.cirrus.com
 S:	Maintained
 F:	sound/soc/codecs/cs*
 
+CIRRUS LOGIC DSP FIRMWARE DRIVER
+M:	Simon Trimmer <simont@opensource.cirrus.com>
+M:	Charles Keepax <ckeepax@opensource.cirrus.com>
+M:	Richard Fitzgerald <rf@opensource.cirrus.com>
+L:	patches@opensource.cirrus.com
+S:	Supported
+W:	https://github.com/CirrusLogic/linux-drivers/wiki
+T:	git https://github.com/CirrusLogic/linux-drivers.git
+F:	drivers/firmware/cirrus/*
+F:	include/linux/firmware/cirrus/*
+
 CIRRUS LOGIC EP93XX ETHERNET DRIVER
 M:	Hartley Sweeten <hsweeten@visionengravers.com>
 L:	netdev@vger.kernel.org
@@ -15972,6 +15983,12 @@ F:	Documentation/ABI/*/sysfs-driver-hid-roccat*
 F:	drivers/hid/hid-roccat*
 F:	include/linux/hid-roccat*
 
+ROCKCHIP I2S TDM DRIVER
+M:	Nicolas Frattaroli <frattaroli.nicolas@gmail.com>
+L:	linux-rockchip@lists.infradead.org
+S:	Maintained
+F:	sound/soc/rockchip/rockchip_i2s_tdm.*
+
 ROCKCHIP ISP V1 DRIVER
 M:	Helen Koike <helen.koike@collabora.com>
 M:	Dafna Hirschfeld <dafna.hirschfeld@collabora.com>
@@ -19642,6 +19659,7 @@ M:	"Michael S. Tsirkin" <mst@redhat.com>
 M:	Jason Wang <jasowang@redhat.com>
 L:	virtualization@lists.linux-foundation.org
 S:	Maintained
+F:	Documentation/ABI/testing/sysfs-bus-vdpa
 F:	Documentation/devicetree/bindings/virtio/
 F:	drivers/block/virtio_blk.c
 F:	drivers/crypto/virtio/
@@ -20577,6 +20595,18 @@ S:	Maintained
 F:	Documentation/vm/zsmalloc.rst
 F:	include/linux/zsmalloc.h
 F:	mm/zsmalloc.c
+
+ZSTD
+M:	Nick Terrell <terrelln@fb.com>
+S:	Maintained
+B:	https://github.com/facebook/zstd/issues
+T:	git git://github.com/terrelln/linux.git
+F:	include/linux/zstd*
+F:	lib/zstd/
+F:	lib/decompress_unzstd.c
+F:	crypto/zstd.c
+N:	zstd
+K:	zstd
 
 ZSWAP COMPRESSED SWAP CACHING
 M:	Seth Jennings <sjenning@redhat.com>

@@ -19,6 +19,8 @@
 
 #include <asm/mmu.h>
 
+#include <linux/rh_kabi.h>
+
 #ifndef AT_VECTOR_SIZE_ARCH
 #define AT_VECTOR_SIZE_ARCH 0
 #endif
@@ -145,6 +147,12 @@ struct page {
 			unsigned char compound_order;
 			atomic_t compound_mapcount;
 			unsigned int compound_nr; /* 1 << compound_order */
+			/*
+			 * mapcount_seqcount is serialized by the
+			 * PG_locked bit spinlock from the first tail
+			 * page.
+			 */
+			unsigned int mapcount_seqcount;
 		};
 		struct {	/* Second tail page of compound page */
 			unsigned long _compound_pad_1;	/* compound_head */

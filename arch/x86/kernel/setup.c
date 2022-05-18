@@ -752,7 +752,8 @@ static void rh_check_supported(void)
 		pr_crit("Detected processor %s %s\n",
 			boot_cpu_data.x86_vendor_id,
 			boot_cpu_data.x86_model_id);
-		mark_hardware_unsupported("Processor");
+		mark_hardware_unmaintained("x86 processor", "%s %s", boot_cpu_data.x86_vendor_id,
+					  boot_cpu_data.x86_model_id);
 		break;
 	}
 

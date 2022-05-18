@@ -1547,8 +1547,6 @@ retry:
 			if (!PageSwapCache(page)) {
 				if (!(sc->gfp_mask & __GFP_IO))
 					goto keep_locked;
-				if (page_maybe_dma_pinned(page))
-					goto keep_locked;
 				if (PageTransHuge(page)) {
 					/* cannot split THP, skip it */
 					if (!can_split_huge_page(page, NULL))

@@ -2497,11 +2497,10 @@ static inline unsigned short blk_plug_max_rq_count(struct blk_plug *plug)
 }
 
 static bool blk_mq_attempt_bio_merge(struct request_queue *q,
-				     struct bio *bio, unsigned int nr_segs,
-				     bool *same_queue_rq)
+				     struct bio *bio, unsigned int nr_segs)
 {
 	if (!blk_queue_nomerges(q) && bio_mergeable(bio)) {
-		if (blk_attempt_plug_merge(q, bio, nr_segs, same_queue_rq))
+		if (blk_attempt_plug_merge(q, bio, nr_segs))
 			return true;
 		if (blk_mq_sched_bio_merge(q, bio, nr_segs))
 			return true;
@@ -2511,9 +2510,7 @@ static bool blk_mq_attempt_bio_merge(struct request_queue *q,
 
 static struct request *blk_mq_get_new_requests(struct request_queue *q,
 					       struct blk_plug *plug,
-					       struct bio *bio,
-					       unsigned int nsegs,
-					       bool *same_queue_rq)
+					       struct bio *bio)
 {
 	struct blk_mq_alloc_data data = {
 		.q		= q,
@@ -2522,10 +2519,8 @@ static struct request *blk_mq_get_new_requests(struct request_queue *q,
 	};
 	struct request *rq;
 
-	if (blk_mq_attempt_bio_merge(q, bio, nsegs, same_queue_rq))
+	if (unlikely(bio_queue_enter(bio)))
 		return NULL;
-
-	rq_qos_throttle(q, bio);
 
 	if (plug) {
 		data.nr_tags = plug->nr_ios;
@@ -2534,66 +2529,38 @@ static struct request *blk_mq_get_new_requests(struct request_queue *q,
 	}
 
 	rq = __blk_mq_alloc_requests(&data);
-	if (rq)
-		return rq;
+	if (!rq)
+		goto fail;
+	return rq;
 
+fail:
 	rq_qos_cleanup(q, bio);
 	if (bio->bi_opf & REQ_NOWAIT)
 		bio_wouldblock_error(bio);
-
-	return NULL;
-}
-
-static inline bool blk_mq_can_use_cached_rq(struct request *rq, struct bio *bio)
-{
-	if (blk_mq_get_hctx_type(bio->bi_opf) != rq->mq_hctx->type)
-		return false;
-
-	if (op_is_flush(rq->cmd_flags) != op_is_flush(bio->bi_opf))
-		return false;
-
-	return true;
-}
-
-static inline struct request *blk_mq_get_request(struct request_queue *q,
-						 struct blk_plug *plug,
-						 struct bio *bio,
-						 unsigned int nsegs,
-						 bool *same_queue_rq)
-{
-	struct request *rq;
-	bool checked = false;
-
-	if (plug) {
-		rq = rq_list_peek(&plug->cached_rq);
-		if (rq && rq->q == q) {
-			if (unlikely(!submit_bio_checks(bio)))
-				return NULL;
-			if (blk_mq_attempt_bio_merge(q, bio, nsegs,
-						same_queue_rq))
-				return NULL;
-			checked = true;
-			if (!blk_mq_can_use_cached_rq(rq, bio))
-				goto fallback;
-			rq->cmd_flags = bio->bi_opf;
-			plug->cached_rq = rq_list_next(rq);
-			INIT_LIST_HEAD(&rq->queuelist);
-			rq_qos_throttle(q, bio);
-			return rq;
-		}
-	}
-
-fallback:
-	if (unlikely(bio_queue_enter(bio)))
-		return NULL;
-	if (unlikely(!checked && !submit_bio_checks(bio)))
-		goto out_put;
-	rq = blk_mq_get_new_requests(q, plug, bio, nsegs, same_queue_rq);
-	if (rq)
-		return rq;
-out_put:
 	blk_queue_exit(q);
 	return NULL;
+}
+
+static inline struct request *blk_mq_get_cached_request(struct request_queue *q,
+		struct blk_plug *plug, struct bio *bio)
+{
+	struct request *rq;
+
+	if (!plug)
+		return NULL;
+	rq = rq_list_peek(&plug->cached_rq);
+	if (!rq || rq->q != q)
+		return NULL;
+
+	if (blk_mq_get_hctx_type(bio->bi_opf) != rq->mq_hctx->type)
+		return NULL;
+	if (op_is_flush(rq->cmd_flags) != op_is_flush(bio->bi_opf))
+		return NULL;
+
+	rq->cmd_flags = bio->bi_opf;
+	plug->cached_rq = rq_list_next(rq);
+	INIT_LIST_HEAD(&rq->queuelist);
+	return rq;
 }
 
 /**
@@ -2612,10 +2579,9 @@ out_put:
 void blk_mq_submit_bio(struct bio *bio)
 {
 	struct request_queue *q = bdev_get_queue(bio->bi_bdev);
+	struct blk_plug *plug = blk_mq_plug(q, bio);
 	const int is_sync = op_is_sync(bio->bi_opf);
 	struct request *rq;
-	struct blk_plug *plug;
-	bool same_queue_rq = false;
 	unsigned int nr_segs = 1;
 	blk_status_t ret;
 
@@ -2629,10 +2595,17 @@ void blk_mq_submit_bio(struct bio *bio)
 	if (!bio_integrity_prep(bio))
 		return;
 
-	plug = blk_mq_plug(q, bio);
-	rq = blk_mq_get_request(q, plug, bio, nr_segs, &same_queue_rq);
-	if (unlikely(!rq))
+	if (blk_mq_attempt_bio_merge(q, bio, nr_segs))
 		return;
+
+	rq_qos_throttle(q, bio);
+
+	rq = blk_mq_get_cached_request(q, plug, bio);
+	if (!rq) {
+		rq = blk_mq_get_new_requests(q, plug, bio);
+		if (unlikely(!rq))
+			return;
+	}
 
 	trace_block_getrq(bio);
 
@@ -2653,16 +2626,7 @@ void blk_mq_submit_bio(struct bio *bio)
 		return;
 	}
 
-	if (plug && (q->nr_hw_queues == 1 ||
-	    blk_mq_is_shared_tags(rq->mq_hctx->flags) ||
-	    q->mq_ops->commit_rqs || !blk_queue_nonrot(q))) {
-		/*
-		 * Use plugging if we have a ->commit_rqs() hook as well, as
-		 * we know the driver uses bd->last in a smart fashion.
-		 *
-		 * Use normal plugging if this disk is slow HDD, as sequential
-		 * IO may benefit a lot from plug merging.
-		 */
+	if (plug) {
 		unsigned int request_count = plug->rq_count;
 		struct request *last = NULL;
 
@@ -2680,40 +2644,12 @@ void blk_mq_submit_bio(struct bio *bio)
 		}
 
 		blk_add_rq_to_plug(plug, rq);
-	} else if (rq->rq_flags & RQF_ELV) {
-		/* Insert the request at the IO scheduler queue */
+	} else if ((rq->rq_flags & RQF_ELV) ||
+		   (rq->mq_hctx->dispatch_busy &&
+		    (q->nr_hw_queues == 1 || !is_sync))) {
 		blk_mq_sched_insert_request(rq, false, true, true);
-	} else if (plug && !blk_queue_nomerges(q)) {
-		struct request *next_rq = NULL;
-
-		/*
-		 * We do limited plugging. If the bio can be merged, do that.
-		 * Otherwise the existing request in the plug list will be
-		 * issued. So the plug list will have one request at most
-		 * The plug list might get flushed before this. If that happens,
-		 * the plug list is empty, and same_queue_rq is invalid.
-		 */
-		if (same_queue_rq) {
-			next_rq = rq_list_pop(&plug->mq_list);
-			plug->rq_count--;
-		}
-		blk_add_rq_to_plug(plug, rq);
-		trace_block_plug(q);
-
-		if (next_rq) {
-			trace_block_unplug(q, 1, true);
-			blk_mq_try_issue_directly(next_rq->mq_hctx, next_rq);
-		}
-	} else if ((q->nr_hw_queues > 1 && is_sync) ||
-		   !rq->mq_hctx->dispatch_busy) {
-		/*
-		 * There is no scheduler and we can try to send directly
-		 * to the hardware.
-		 */
-		blk_mq_try_issue_directly(rq->mq_hctx, rq);
 	} else {
-		/* Default case. */
-		blk_mq_sched_insert_request(rq, false, true, true);
+		blk_mq_try_issue_directly(rq->mq_hctx, rq);
 	}
 }
 

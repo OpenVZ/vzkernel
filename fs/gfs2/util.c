@@ -296,7 +296,7 @@ skip_recovery:
 		fs_warn(sdp, "Journal recovery complete for jid %d.\n",
 			sdp->sd_lockstruct.ls_jid);
 	else
-		fs_warn(sdp, "Journal recovery skipped for %d until next "
+		fs_warn(sdp, "Journal recovery skipped for jid %d until next "
 			"mount.\n", sdp->sd_lockstruct.ls_jid);
 	fs_warn(sdp, "Glock dequeues delayed: %lu\n", sdp->sd_glock_dqs_held);
 	sdp->sd_glock_dqs_held = 0;
@@ -454,6 +454,7 @@ void gfs2_consist_inode_i(struct gfs2_inode *ip,
 		(unsigned long long)ip->i_no_formal_ino,
 		(unsigned long long)ip->i_no_addr,
 		function, file, line);
+	gfs2_dump_glock(NULL, ip->i_gl, 1);
 	gfs2_withdraw(sdp);
 }
 
@@ -475,6 +476,7 @@ void gfs2_consist_rgrpd_i(struct gfs2_rgrpd *rgd,
 		"  function = %s, file = %s, line = %u\n",
 		(unsigned long long)rgd->rd_addr,
 		function, file, line);
+	gfs2_dump_glock(NULL, rgd->rd_gl, 1);
 	gfs2_withdraw(sdp);
 }
 

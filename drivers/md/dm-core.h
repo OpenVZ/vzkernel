@@ -18,6 +18,7 @@
 #include <trace/events/block.h>
 
 #include "dm.h"
+#include "dm-ima.h"
 
 #define DM_RESERVED_MAX_IOS		1024
 
@@ -63,6 +64,8 @@ struct mapped_device {
 	char name[16];
 	struct gendisk *disk;
 	struct dax_device *dax_dev;
+
+	unsigned long __percpu *pending_io;
 
 	/*
 	 * A list of ios that arrived while we were suspended.
@@ -118,6 +121,10 @@ struct mapped_device {
 #ifdef CONFIG_BLK_DEV_ZONED
 	unsigned int nr_zones;
 	unsigned int *zwp_offset;
+#endif
+
+#ifdef CONFIG_IMA
+	struct dm_ima_measurements ima;
 #endif
 };
 

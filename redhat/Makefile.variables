@@ -19,16 +19,6 @@ UPSTREAM_BRANCH ?= v5.14
 # based on untagged releases.
 VERSION_ON_UPSTREAM:=0
 
-# RELEASED_KERNEL swaps between the pre-release secureboot keys and
-# the release one, for vmlinux signing. It also controls whether Fedora
-# kernels are built as debug kernels or release kernels with a separate
-# kernel-debug build.
-# Set RELEASED_KERNEL to 1 when the upstream source tarball contains a
-#  kernel release. (This includes prepatch or "rc" releases.)
-# Set RELEASED_KERNEL to 0 when the upstream source tarball contains an
-#  unreleased kernel development snapshot.
-RELEASED_KERNEL:=0
-
 # BUMP_RELEASE determines whether the pkgrelease is bumped when you call
 # 'make dist-release'.  It should be set to "yes" if you expect to do
 # multiple updates and builds without bumping the base version, and no

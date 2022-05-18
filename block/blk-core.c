@@ -51,6 +51,7 @@
 #include "blk-mq-sched.h"
 #include "blk-pm.h"
 #include "blk-throttle.h"
+#include "blk-rq-qos.h"
 
 struct dentry *blk_debugfs_root;
 
@@ -359,6 +360,9 @@ void blk_cleanup_queue(struct request_queue *q)
 	 * after draining finished.
 	 */
 	blk_freeze_queue(q);
+
+	/* cleanup rq qos structures for queue without disk */
+	rq_qos_exit(q);
 
 	blk_queue_flag_set(QUEUE_FLAG_DEAD, q);
 
@@ -864,16 +868,20 @@ end_io:
 
 static void __submit_bio_fops(struct gendisk *disk, struct bio *bio)
 {
-	if (unlikely(bio_queue_enter(bio) != 0))
-		return;
-	if (submit_bio_checks(bio) && blk_crypto_bio_prep(&bio))
-		disk->fops->submit_bio(bio);
-	blk_queue_exit(disk->queue);
+	if (blk_crypto_bio_prep(&bio)) {
+		if (likely(bio_queue_enter(bio) == 0)) {
+			disk->fops->submit_bio(bio);
+			blk_queue_exit(disk->queue);
+		}
+	}
 }
 
 static void __submit_bio(struct bio *bio)
 {
 	struct gendisk *disk = bio->bi_bdev->bd_disk;
+
+	if (unlikely(!submit_bio_checks(bio)))
+		return;
 
 	if (!disk->fops->submit_bio)
 		blk_mq_submit_bio(bio);
@@ -1286,20 +1294,32 @@ void __blk_account_io_start(struct request *rq)
 }
 
 static unsigned long __part_start_io_acct(struct block_device *part,
-					  unsigned int sectors, unsigned int op)
+					  unsigned int sectors, unsigned int op,
+					  unsigned long start_time)
 {
 	const int sgrp = op_stat_group(op);
-	unsigned long now = READ_ONCE(jiffies);
 
 	part_stat_lock();
-	update_io_ticks(part, now, false);
+	update_io_ticks(part, start_time, false);
 	part_stat_inc(part, ios[sgrp]);
 	part_stat_add(part, sectors[sgrp], sectors);
 	part_stat_local_inc(part, in_flight[op_is_write(op)]);
 	part_stat_unlock();
 
-	return now;
+	return start_time;
 }
+
+/**
+ * bio_start_io_acct_time - start I/O accounting for bio based drivers
+ * @bio:	bio to start account for
+ * @start_time:	start time that should be passed back to bio_end_io_acct().
+ */
+void bio_start_io_acct_time(struct bio *bio, unsigned long start_time)
+{
+	__part_start_io_acct(bio->bi_bdev, bio_sectors(bio),
+			     bio_op(bio), start_time);
+}
+EXPORT_SYMBOL_GPL(bio_start_io_acct_time);
 
 /**
  * bio_start_io_acct - start I/O accounting for bio based drivers
@@ -1309,14 +1329,15 @@ static unsigned long __part_start_io_acct(struct block_device *part,
  */
 unsigned long bio_start_io_acct(struct bio *bio)
 {
-	return __part_start_io_acct(bio->bi_bdev, bio_sectors(bio), bio_op(bio));
+	return __part_start_io_acct(bio->bi_bdev, bio_sectors(bio),
+				    bio_op(bio), jiffies);
 }
 EXPORT_SYMBOL_GPL(bio_start_io_acct);
 
 unsigned long disk_start_io_acct(struct gendisk *disk, unsigned int sectors,
 				 unsigned int op)
 {
-	return __part_start_io_acct(disk->part0, sectors, op);
+	return __part_start_io_acct(disk->part0, sectors, op, jiffies);
 }
 EXPORT_SYMBOL(disk_start_io_acct);
 
@@ -1466,6 +1487,7 @@ int blk_rq_prep_clone(struct request *rq, struct request *rq_src,
 		bio = bio_clone_fast(bio_src, gfp_mask, bs);
 		if (!bio)
 			goto free_and_out;
+		bio->bi_bdev = rq->q->disk->part0;
 
 		if (bio_ctr && bio_ctr(bio, bio_src, data))
 			goto free_and_out;

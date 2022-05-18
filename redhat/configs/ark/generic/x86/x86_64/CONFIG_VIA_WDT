@@ -1,1 +1,1 @@
-CONFIG_VIA_WDT=m
+# CONFIG_VIA_WDT is not set

@@ -2056,20 +2056,16 @@ static int dsa_slave_prechangeupper(struct net_device *dev,
 				    struct netdev_notifier_changeupper_info *info)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct netlink_ext_ack *extack;
-	int err = 0;
-
-	extack = netdev_notifier_info_to_extack(&info->info);
 
 	if (netif_is_bridge_master(info->upper_dev) && !info->linking)
-		err = dsa_port_pre_bridge_leave(dp, info->upper_dev, extack);
+		dsa_port_pre_bridge_leave(dp, info->upper_dev);
 	else if (netif_is_lag_master(info->upper_dev) && !info->linking)
-		err = dsa_port_pre_lag_leave(dp, info->upper_dev, extack);
+		dsa_port_pre_lag_leave(dp, info->upper_dev);
 	/* dsa_port_pre_hsr_leave is not yet necessary since hsr cannot be
 	 * meaningfully enslaved to a bridge yet
 	 */
 
-	return notifier_from_errno(err);
+	return NOTIFY_DONE;
 }
 
 static int
@@ -2442,7 +2438,7 @@ static int dsa_slave_switchdev_event(struct notifier_block *unused,
 			 * On the other hand, FDB entries for local termination
 			 * should always be installed.
 			 */
-			if (!fdb_info->added_by_user && !fdb_info->is_local &&
+			if (switchdev_fdb_is_dynamically_learned(fdb_info) &&
 			    !dp->ds->assisted_learning_on_cpu_port)
 				return NOTIFY_DONE;
 

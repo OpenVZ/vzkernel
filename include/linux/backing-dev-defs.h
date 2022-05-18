@@ -164,6 +164,10 @@ struct bdi_writeback {
 		struct rcu_head rcu;
 	};
 #endif
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 };
 
 struct backing_dev_info {

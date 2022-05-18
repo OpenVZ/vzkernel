@@ -3362,6 +3362,10 @@ static int sd_format_disk_name(char *prefix, int index, char *buf, int buflen)
 	return 0;
 }
 
+#ifdef CONFIG_RHEL_DIFFERENCES
+static bool hardware_warning_issued;
+#endif
+
 /**
  *	sd_probe - called during driver initialization and whenever a
  *	new scsi device is attached to the system. It is called once
@@ -3401,6 +3405,13 @@ static int sd_probe(struct device *dev)
 			    "Unsupported ZBC host-managed device.\n");
 		goto out;
 	}
+
+#ifdef CONFIG_RHEL_DIFFERENCES
+	if (!hardware_warning_issued && sdp->type == TYPE_ZBC) {
+		mark_hardware_unmaintained("ZBC host-mananaged device", "");
+		hardware_warning_issued = true;
+	}
+#endif
 
 	SCSI_LOG_HLQUEUE(3, sdev_printk(KERN_INFO, sdp,
 					"sd_probe\n"));

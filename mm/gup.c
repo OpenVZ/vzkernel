@@ -29,6 +29,113 @@ struct follow_page_context {
 	unsigned int page_mask;
 };
 
+static __always_inline bool is_fast_only_in_irq(bool irq_safe)
+{
+	/*
+	 * If irq_safe == true, we can still spin on the mapcount
+	 * seqlock as long as we're not in irq context. Only the
+	 * gup/pin_fast_only() can be invoked in irq context. This
+	 * means all gup/pin_fast() will always obtain an accurate
+	 * reading of the mapcount.
+	 */
+	return irq_safe && unlikely(!!irq_count());
+}
+
+static bool gup_must_unshare_slowpath(struct page *page)
+{
+	bool must_unshare;
+	/*
+	 * NOTE: the mapcount of the anon page is 1 here, so there's
+	 * not going to be much contention in trylock_page().
+	 *
+	 * If trylock_page() fails (for example if the VM temporarily
+	 * holds the lock), just defer the blocking point to
+	 * wp_page_unshare() that will invoke lock_page().
+	 */
+	if (!trylock_page(page))
+		return true;
+	must_unshare = !can_read_pin_swap_page(page);
+	unlock_page(page);
+	return must_unshare;
+}
+
+static bool gup_must_unshare_hugetlbfs_slowpath(struct page *page)
+{
+	bool must_unshare;
+	/*
+	 * The hugetlbfs COW and COR fault always run under the page
+	 * lock. The page lock is needed here as well to prevent a
+	 * race with page migration. If we fail taking the lock it'll
+	 * sleep in the COR fault.
+	 */
+	if (!trylock_page(page))
+		return true;
+	must_unshare = __page_mapcount(page) > 1;
+	unlock_page(page);
+	return must_unshare;
+}
+
+/*
+ * For a page wrprotected in the pgtable, which pages do we need to
+ * unshare with copy-on-read (COR) for the GUP pin to remain coherent
+ * with the MM?
+ *
+ * This only provides full coherency to short term pins: FOLL_LONGTERM
+ * still needs to specify FOLL_WRITE|FOLL_FORCE in the caller and in
+ * turn it still risks inefficiency and to lose coherency with the MM
+ * in various cases.
+ */
+static __always_inline bool __gup_must_unshare(unsigned int flags,
+					       struct page *page,
+					       bool is_head, bool irq_safe)
+{
+	if (flags & (FOLL_WRITE|FOLL_NOUNSHARE))
+		return false;
+	/* mmu notifier doesn't need unshare */
+	if (!(flags & (FOLL_GET|FOLL_PIN)))
+		return false;
+	if (!PageAnon(page))
+		return false;
+	if (PageKsm(page))
+		return false;
+	if (PageHuge(page)) {
+		if (__page_mapcount(page) > 1)
+			return true;
+		return gup_must_unshare_hugetlbfs_slowpath(page);
+	}
+	if (is_head) {
+		if (PageTransHuge(page)) {
+			if (!is_fast_only_in_irq(irq_safe)) {
+				if (page_trans_huge_anon_shared(page))
+					return true;
+				return gup_must_unshare_slowpath(page);
+			}
+			return true;
+		}
+		BUG();
+	} else {
+		if (!is_fast_only_in_irq(irq_safe)) {
+			if (page_mapcount(page) > 1)
+				return true;
+			return gup_must_unshare_slowpath(page);
+		}
+		return true;
+	}
+}
+
+/* requires full accuracy */
+bool gup_must_unshare(unsigned int flags, struct page *page, bool is_head)
+{
+	return __gup_must_unshare(flags, page, is_head, false);
+}
+
+/* false positives are allowed, false negatives not allowed */
+bool gup_must_unshare_irqsafe(unsigned int flags, struct page *page,
+			      bool is_head)
+{
+	return __gup_must_unshare(flags, page, is_head, true);
+}
+
 static void hpage_pincount_add(struct page *page, int refs)
 {
 	VM_BUG_ON_PAGE(!hpage_pincount_available(page), page);
@@ -440,7 +547,7 @@ static int follow_pfn_pte(struct vm_area_struct *vma, unsigned long address,
 		pte_t *pte, unsigned int flags)
 {
 	/* No page to get reference */
-	if (flags & FOLL_GET)
+	if (flags & (FOLL_GET | FOLL_PIN))
 		return -EFAULT;
 
 	if (flags & FOLL_TOUCH) {
@@ -543,6 +650,20 @@ retry:
 		}
 	}
 
+	/*
+	 * Anon COW shared pages with another mm must be un-shared
+	 * before GUP pinning. Otherwise if the shared page is
+	 * unmapped from this mm the other mm could re-use it while
+	 * this mm can still read it through the GUP pin.
+	 *
+	 * This needs to set FOLL_UNSHARE and keep retrying the
+	 * unshare until the page becomes exclusive.
+	 */
+	if (!pte_write(pte) &&
+	    gup_must_unshare(flags, page, false)) {
+		page = ERR_PTR(-EMLINK);
+		goto out;
+	}
 	/* try_grab_page() does nothing unless FOLL_GET or FOLL_PIN is set. */
 	if (unlikely(!try_grab_page(page, flags))) {
 		page = ERR_PTR(-ENOMEM);
@@ -790,6 +911,11 @@ static struct page *follow_p4d_mask(struct vm_area_struct *vma,
  * When getting pages from ZONE_DEVICE memory, the @ctx->pgmap caches
  * the device's dev_pagemap metadata to avoid repeating expensive lookups.
  *
+ * When getting an anonymous page and the caller has to trigger a Copy
+ * On Read (COR) fault, -EMLINK is returned. The caller should trigger
+ * a fault with FAULT_FLAG_UNSHARE set. With FOLL_NOUNSHARE set, will
+ * never require a COR fault and consequently not return -EMLINK.
+ *
  * On output, the @ctx->page_mask is set according to the size of the page.
  *
  * Return: the mapped (struct page *), %NULL if no mapping exists, or
@@ -844,6 +970,14 @@ struct page *follow_page(struct vm_area_struct *vma, unsigned long address,
 
 	if (vma_is_secretmem(vma))
 		return NULL;
+
+	/*
+	 * Don't require unsharing in case we stumble over a read-only
+	 * mapped, shared anonymous page: this is an internal API only
+	 * and callers don't actually use it for exposing page content
+	 * to user space.
+	 */
+	foll_flags |= FOLL_NOUNSHARE;
 
 	page = follow_page_mask(vma, address, foll_flags, &ctx);
 	if (ctx.pgmap)
@@ -910,7 +1044,8 @@ unmap:
  * is, *@locked will be set to 0 and -EBUSY returned.
  */
 static int faultin_page(struct vm_area_struct *vma,
-		unsigned long address, unsigned int *flags, int *locked)
+		unsigned long address, unsigned int *flags, bool unshare,
+		int *locked)
 {
 	unsigned int fault_flags = 0;
 	vm_fault_t ret;
@@ -918,6 +1053,8 @@ static int faultin_page(struct vm_area_struct *vma,
 	/* mlock all present pages, but do not fault in new pages */
 	if ((*flags & (FOLL_POPULATE | FOLL_MLOCK)) == FOLL_MLOCK)
 		return -ENOENT;
+	if (*flags & FOLL_NOFAULT)
+		return -EFAULT;
 	if (*flags & FOLL_WRITE)
 		fault_flags |= FAULT_FLAG_WRITE;
 	if (*flags & FOLL_REMOTE)
@@ -932,6 +1069,13 @@ static int faultin_page(struct vm_area_struct *vma,
 		 * can co-exist
 		 */
 		fault_flags |= FAULT_FLAG_TRIED;
+	}
+	if (unshare) {
+		fault_flags |= FAULT_FLAG_UNSHARE;
+		/* FAULT_FLAG_WRITE and FAULT_FLAG_UNSHARE are incompatible */
+		VM_BUG_ON(fault_flags & FAULT_FLAG_WRITE);
+		/* If FOLL_NOUNSHARE was set, then FOLL_UNSHARE must not be */
+		VM_BUG_ON(*flags & FOLL_NOUNSHARE);
 	}
 
 	ret = handle_mm_fault(vma, address, fault_flags, NULL);
@@ -1154,8 +1298,9 @@ retry:
 		cond_resched();
 
 		page = follow_page_mask(vma, start, foll_flags, &ctx);
-		if (!page) {
-			ret = faultin_page(vma, start, &foll_flags, locked);
+		if (!page || PTR_ERR(page) == -EMLINK) {
+			ret = faultin_page(vma, start, &foll_flags,
+					   PTR_ERR(page) == -EMLINK, locked);
 			switch (ret) {
 			case 0:
 				goto retry;
@@ -1655,6 +1800,122 @@ finish_or_fault:
 	return i ? : -EFAULT;
 }
 #endif /* !CONFIG_MMU */
+
+/**
+ * fault_in_writeable - fault in userspace address range for writing
+ * @uaddr: start of address range
+ * @size: size of address range
+ *
+ * Returns the number of bytes not faulted in (like copy_to_user() and
+ * copy_from_user()).
+ */
+size_t fault_in_writeable(char __user *uaddr, size_t size)
+{
+	char __user *start = uaddr, *end;
+
+	if (unlikely(size == 0))
+		return 0;
+	if (!PAGE_ALIGNED(uaddr)) {
+		if (unlikely(__put_user(0, uaddr) != 0))
+			return size;
+		uaddr = (char __user *)PAGE_ALIGN((unsigned long)uaddr);
+	}
+	end = (char __user *)PAGE_ALIGN((unsigned long)start + size);
+	if (unlikely(end < start))
+		end = NULL;
+	while (uaddr != end) {
+		if (unlikely(__put_user(0, uaddr) != 0))
+			goto out;
+		uaddr += PAGE_SIZE;
+	}
+
+out:
+	if (size > uaddr - start)
+		return size - (uaddr - start);
+	return 0;
+}
+EXPORT_SYMBOL(fault_in_writeable);
+
+/*
+ * fault_in_safe_writeable - fault in an address range for writing
+ * @uaddr: start of address range
+ * @size: length of address range
+ *
+ * Faults in an address range for writing.  This is primarily useful when we
+ * already know that some or all of the pages in the address range aren't in
+ * memory.
+ *
+ * Unlike fault_in_writeable(), this function is non-destructive.
+ *
+ * Note that we don't pin or otherwise hold the pages referenced that we fault
+ * in.  There's no guarantee that they'll stay in memory for any duration of
+ * time.
+ *
+ * Returns the number of bytes not faulted in, like copy_to_user() and
+ * copy_from_user().
+ */
+size_t fault_in_safe_writeable(const char __user *uaddr, size_t size)
+{
+	unsigned long start = (unsigned long)uaddr, end;
+	struct mm_struct *mm = current->mm;
+	bool unlocked = false;
+
+	if (unlikely(size == 0))
+		return 0;
+	end = PAGE_ALIGN(start + size);
+	if (end < start)
+		end = 0;
+
+	mmap_read_lock(mm);
+	do {
+		if (fixup_user_fault(mm, start, FAULT_FLAG_WRITE, &unlocked))
+			break;
+		start = (start + PAGE_SIZE) & PAGE_MASK;
+	} while (start != end);
+	mmap_read_unlock(mm);
+
+	if (size > (unsigned long)uaddr - start)
+		return size - ((unsigned long)uaddr - start);
+	return 0;
+}
+EXPORT_SYMBOL(fault_in_safe_writeable);
+
+/**
+ * fault_in_readable - fault in userspace address range for reading
+ * @uaddr: start of user address range
+ * @size: size of user address range
+ *
+ * Returns the number of bytes not faulted in (like copy_to_user() and
+ * copy_from_user()).
+ */
+size_t fault_in_readable(const char __user *uaddr, size_t size)
+{
+	const char __user *start = uaddr, *end;
+	volatile char c;
+
+	if (unlikely(size == 0))
+		return 0;
+	if (!PAGE_ALIGNED(uaddr)) {
+		if (unlikely(__get_user(c, uaddr) != 0))
+			return size;
+		uaddr = (const char __user *)PAGE_ALIGN((unsigned long)uaddr);
+	}
+	end = (const char __user *)PAGE_ALIGN((unsigned long)start + size);
+	if (unlikely(end < start))
+		end = NULL;
+	while (uaddr != end) {
+		if (unlikely(__get_user(c, uaddr) != 0))
+			goto out;
+		uaddr += PAGE_SIZE;
+	}
+
+out:
+	(void)c;
+	if (size > uaddr - start)
+		return size - (uaddr - start);
+	return 0;
+}
+EXPORT_SYMBOL(fault_in_readable);
 
 /**
  * get_dump_page() - pin user page in memory while writing it to core dump
@@ -2174,6 +2435,12 @@ static int gup_pte_range(pmd_t pmd, unsigned long addr, unsigned long end,
 			goto pte_unmap;
 		}
 
+		if (!pte_write(pte) &&
+		    gup_must_unshare_irqsafe(flags, page, false)) {
+			put_compound_head(head, 1, flags);
+			goto pte_unmap;
+		}
+
 		VM_BUG_ON_PAGE(compound_head(page) != head, page);
 
 		/*
@@ -2413,6 +2680,12 @@ static int gup_huge_pmd(pmd_t orig, pmd_t *pmdp, unsigned long addr,
 		return 0;
 
 	if (unlikely(pmd_val(orig) != pmd_val(*pmdp))) {
+		put_compound_head(head, refs, flags);
+		return 0;
+	}
+
+	if (!pmd_write(orig) &&
+	    gup_must_unshare_irqsafe(flags, head, true)) {
 		put_compound_head(head, refs, flags);
 		return 0;
 	}
@@ -2705,7 +2978,7 @@ static int internal_get_user_pages_fast(unsigned long start,
 
 	if (WARN_ON_ONCE(gup_flags & ~(FOLL_WRITE | FOLL_LONGTERM |
 				       FOLL_FORCE | FOLL_PIN | FOLL_GET |
-				       FOLL_FAST_ONLY)))
+				       FOLL_FAST_ONLY | FOLL_NOFAULT)))
 		return -EINVAL;
 
 	if (gup_flags & FOLL_PIN)

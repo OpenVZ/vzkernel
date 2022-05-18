@@ -377,6 +377,15 @@ struct blk_mq_hw_ctx {
 	 */
 	struct list_head	hctx_list;
 
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+	RH_KABI_RESERVE(8)
+
 	/**
 	 * @srcu: Sleepable RCU. Use as lock when type of the hardware queue is
 	 * blocking (BLK_MQ_F_BLOCKING). Must be the last member - see also
@@ -414,6 +423,7 @@ enum hctx_type {
 	HCTX_TYPE_POLL,
 
 	HCTX_MAX_TYPES,
+	RH_HCTX_MAX_TYPES = 6,	/* RH extend for reserving space*/
 };
 
 /**
@@ -448,7 +458,7 @@ enum hctx_type {
  *		   request_queue.tag_set_list.
  */
 struct blk_mq_tag_set {
-	struct blk_mq_queue_map	map[HCTX_MAX_TYPES];
+	struct blk_mq_queue_map	map[RH_HCTX_MAX_TYPES];
 	unsigned int		nr_maps;
 	const struct blk_mq_ops	*ops;
 	unsigned int		nr_hw_queues;
@@ -466,6 +476,15 @@ struct blk_mq_tag_set {
 
 	struct mutex		tag_list_lock;
 	struct list_head	tag_list;
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+	RH_KABI_RESERVE(8)
 };
 
 /**
@@ -477,6 +496,8 @@ struct blk_mq_tag_set {
 struct blk_mq_queue_data {
 	struct request *rq;
 	bool last;
+
+	RH_KABI_RESERVE(1)
 };
 
 typedef bool (busy_iter_fn)(struct blk_mq_hw_ctx *, struct request *, void *,
@@ -595,6 +616,15 @@ struct blk_mq_ops {
 	 */
 	void (*show_rq)(struct seq_file *m, struct request *rq);
 #endif
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
+	RH_KABI_RESERVE(5)
+	RH_KABI_RESERVE(6)
+	RH_KABI_RESERVE(7)
+	RH_KABI_RESERVE(8)
 };
 
 enum {

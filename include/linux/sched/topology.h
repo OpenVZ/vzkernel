@@ -149,6 +149,10 @@ struct sched_domain {
 	};
 	struct sched_domain_shared *shared;
 
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+
 	unsigned int span_weight;
 	/*
 	 * Span of all CPUs in this domain.

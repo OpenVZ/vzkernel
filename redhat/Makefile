@@ -201,10 +201,10 @@ dist-tarball: $(TARBALL)
 	@echo "redhat/$(TARFILE)"
 
 dist-kernelrelease:
-	@echo $(PACKAGE_NAME)-$(KVERSION)-$(DISTRO_BUILD)
+	@echo $(PACKAGE_NAME)-$(KVERSION)-$(PKGRELEASE)
 
 dist-kernelversion:
-	@echo $(KVERSION)-$(DISTRO_BUILD)
+	@echo $(KVERSION)-$(PKGRELEASE)
 
 dist-specfile: setup-source
 	@echo $(SOURCES)/$(SPECFILE)
@@ -237,7 +237,7 @@ setup-source: dist-git-version-check dist-clean-sources
 		cp $(REDHAT)/$(CHANGELOG_PREV) $(REDHAT)/$(CHANGELOG); \
 	fi
 	@cp $(REDHAT)/$(CHANGELOG) $(SOURCES)/$(CHANGELOG)
-	@$(REDHAT)/genspec.sh $(SOURCES) $(SOURCES)/$(SPECFILE) $(SOURCES)/$(CHANGELOG) $(PKGRELEASE) $(RPMKVERSION) $(RPMKPATCHLEVEL) $(RPMKSUBLEVEL) $(DISTRO_BUILD) $(RELEASED_KERNEL) $(SPECRELEASE) $(__ZSTREAM) "$(BUILDOPTS)" $(MARKER) `cat $(REDHAT)/marker` $(SINGLE_TARBALL) $(TARFILE_RELEASE) $(SNAPSHOT) $(UPSTREAM_BRANCH) $(INCLUDE_FEDORA_FILES) $(INCLUDE_RHEL_FILES) $(BUILDID)
+	@$(REDHAT)/genspec.sh $(SOURCES) $(SOURCES)/$(SPECFILE) $(SOURCES)/$(CHANGELOG) $(PKGRELEASE) $(RPMKVERSION) $(RPMKPATCHLEVEL) $(RPMKSUBLEVEL) $(SPECRELEASE) "$(BUILDOPTS)" $(MARKER) `cat $(REDHAT)/marker` $(SINGLE_TARBALL) $(TARFILE_RELEASE) $(SNAPSHOT) $(UPSTREAM_BRANCH) $(INCLUDE_FEDORA_FILES) $(INCLUDE_RHEL_FILES) $(RHEL_MAJOR) $(RHEL_MINOR) $(BUILDID)
 	@cp $(SOURCES)/$(SPECFILE) $(SOURCES)/../SPECS/
 
 generate-testpatch-tmp:
@@ -273,16 +273,10 @@ sources-rh: $(TARBALL) generate-testpatch-tmp setup-source dist-configs-check
 		configs/merge.pl \
 		configs/process_configs.sh \
 		parallel_xz.sh \
-		generate_crashkernel_default.sh \
 		../Makefile.rhelver \
 		README.rst \
 		kernel-local \
 		$(SOURCES)/
-	@if [ "$(RELEASED_KERNEL)" -ne 0 ]; then \
-		cp keys/redhatsecureboot{302,501,601,ca3,ca5,ca6}.cer $(SOURCES)/; \
-	else \
-		cp keys/redhatsecureboot{401,ca4}.cer $(SOURCES)/; \
-	fi
 	@for KABIARCH in $(ARCH_LIST); do \
 		cp kabi/Module.kabi_$$KABIARCH $(SOURCES)/; \
 		cp kabi/Module.kabi_dup_$$KABIARCH $(SOURCES)/; \
@@ -410,7 +404,7 @@ endif
 		exit 1; \
 	fi; \
 	fi
-	$(REDHAT)/scripts/rh-dist-git.sh "$(RHDISTGIT_BRANCH)" "$(RHDISTGIT_CACHE)" "$(RHDISTGIT_TMP)" "$(RHDISTGIT)" "$(TARBALL)" "$(KABI_TARBALL)" "$(KABIDW_TARBALL)" "$(__ZSTREAM)" "$(PACKAGE_NAME)" "$(RHEL_MAJOR)" "$(RHPKG_BIN)" "$(SRPMS)/$(PACKAGE_NAME)-$(KVERSION)-$(PKGRELEASE)$(SRPM_DIST).src.rpm"
+	$(REDHAT)/scripts/rh-dist-git.sh "$(RHDISTGIT_BRANCH)" "$(RHDISTGIT_CACHE)" "$(RHDISTGIT_TMP)" "$(RHDISTGIT)" "$(TARBALL)" "$(KABI_TARBALL)" "$(KABIDW_TARBALL)" "$(PACKAGE_NAME)" "$(RPMVERSION)-$(PKGRELEASE)" "$(REDHAT)/$(CHANGELOG)" "$(RHEL_MAJOR)" "$(RHPKG_BIN)" "$(SRPMS)/$(PACKAGE_NAME)-$(KVERSION)-$(PKGRELEASE)$(SRPM_DIST).src.rpm"
 
 dist-rtg: dist-release
 	@$(MAKE) dist-release-tag

@@ -19,14 +19,9 @@ struct seq_file;
  */
 struct sbitmap_word {
 	/**
-	 * @depth: Number of bits being used in @word/@cleared
-	 */
-	unsigned long depth;
-
-	/**
 	 * @word: word holding free bits
 	 */
-	unsigned long word ____cacheline_aligned_in_smp;
+	unsigned long word;
 
 	/**
 	 * @cleared: word holding cleared bits
@@ -155,6 +150,14 @@ struct sbitmap_queue {
 int sbitmap_init_node(struct sbitmap *sb, unsigned int depth, int shift,
 		      gfp_t flags, int node, bool round_robin, bool alloc_hint);
 
+/* sbitmap internal helper */
+static inline unsigned int __map_depth(const struct sbitmap *sb, int index)
+{
+	if (index == sb->map_nr - 1)
+		return sb->depth - (index << sb->shift);
+	return 1U << sb->shift;
+}
+
 /**
  * sbitmap_free() - Free memory used by a &struct sbitmap.
  * @sb: Bitmap to free.
@@ -242,7 +245,7 @@ static inline void __sbitmap_for_each_set(struct sbitmap *sb,
 	while (scanned < sb->depth) {
 		unsigned long word;
 		unsigned int depth = min_t(unsigned int,
-					   sb->map[index].depth - nr,
+					   __map_depth(sb, index) - nr,
 					   sb->depth - scanned);
 
 		scanned += depth;
@@ -405,6 +408,17 @@ static inline void sbitmap_queue_free(struct sbitmap_queue *sbq)
 	kfree(sbq->ws);
 	sbitmap_free(&sbq->sb);
 }
+
+/**
+ * sbitmap_queue_recalculate_wake_batch() - Recalculate wake batch
+ * @sbq: Bitmap queue to recalculate wake batch.
+ * @users: Number of shares.
+ *
+ * Like sbitmap_queue_update_wake_batch(), this will calculate wake batch
+ * by depth. This interface is for HCTX shared tags or queue shared tags.
+ */
+void sbitmap_queue_recalculate_wake_batch(struct sbitmap_queue *sbq,
+					    unsigned int users);
 
 /**
  * sbitmap_queue_resize() - Resize a &struct sbitmap_queue.

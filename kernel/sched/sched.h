@@ -262,6 +262,8 @@ struct rt_bandwidth {
 	u64			rt_runtime;
 	struct hrtimer		rt_period_timer;
 	unsigned int		rt_period_active;
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
 };
 
 void __dl_clear_params(struct task_struct *p);
@@ -270,6 +272,8 @@ struct dl_bandwidth {
 	raw_spinlock_t		dl_runtime_lock;
 	u64			dl_runtime;
 	u64			dl_period;
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
 };
 
 static inline int dl_bandwidth_enabled(void)
@@ -299,6 +303,8 @@ struct dl_bw {
 	raw_spinlock_t		lock;
 	u64			bw;
 	u64			total_bw;
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
 };
 
 static inline void __dl_update(struct dl_bw *dl_b, s64 bw);
@@ -385,6 +391,9 @@ struct cfs_bandwidth {
 	u64			throttled_time;
 	u64			burst_time;
 #endif
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
 };
 
 /* Task group related information */
@@ -440,6 +449,8 @@ struct task_group {
 	struct uclamp_se	uclamp[UCLAMP_CNT];
 #endif
 
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -625,6 +636,11 @@ struct cfs_rq {
 	struct list_head	throttled_list;
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 };
 
 static inline int rt_bandwidth_enabled(void)
@@ -671,6 +687,9 @@ struct rt_rq {
 	struct rq		*rq;
 	struct task_group	*tg;
 #endif
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
 };
 
 static inline bool rt_rq_is_runnable(struct rt_rq *rt_rq)
@@ -733,6 +752,9 @@ struct dl_rq {
 	 * by the GRUB algorithm.
 	 */
 	u64			bw_ratio;
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -859,6 +881,10 @@ struct root_domain {
 	 * CPUs of the rd. Protected by RCU.
 	 */
 	struct perf_domain __rcu *pd;
+
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
 };
 
 extern void init_defrootdomain(void);
@@ -1090,7 +1116,7 @@ struct rq {
 
 #ifdef CONFIG_CPU_IDLE
 	/* Must be inspected within a rcu lock section */
-	struct cpuidle_state	*idle_state;
+	RH_KABI_EXCLUDE(struct cpuidle_state	*idle_state)
 #endif
 
 #ifdef CONFIG_SMP
@@ -1114,6 +1140,14 @@ struct rq {
 	unsigned char		core_forceidle;
 	unsigned int		core_forceidle_seq;
 #endif
+
+	/* RH KABI: A few reserved fields to mark this as needing KABI but
+	 * struct rq is generally safe to EXTEND.
+	 */
+	RH_KABI_RESERVE(1)
+	RH_KABI_RESERVE(2)
+	RH_KABI_RESERVE(3)
+	RH_KABI_RESERVE(4)
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED

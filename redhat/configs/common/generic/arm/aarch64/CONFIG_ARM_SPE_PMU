@@ -1,1 +1,1 @@
-# CONFIG_ARM_SPE_PMU is not set
+CONFIG_ARM_SPE_PMU=m

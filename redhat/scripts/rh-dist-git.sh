@@ -19,11 +19,12 @@ rhdistgit_server=$4;
 rhdistgit_tarball=$5;
 rhdistgit_kabi_tarball=$6;
 rhdistgit_kabidw_tarball=$7;
-rhdistgit_zstream_flag=$8;
-package_name=$9;
-rhel_major=${10};
-rhpkg_bin=${11};
-srpm_name=${12};
+package_name=$8;
+rpm_version=$9;
+changelog=${10};
+rhel_major=${11};
+rhpkg_bin=${12};
+srpm_name=${13};
 
 redhat=$(dirname "$0")/..;
 topdir="$redhat"/..;
@@ -61,19 +62,9 @@ echo "Copying updated files"
 echo "Uploading new tarballs"
 # upload tarballs
 sed -i "/linux-.*.tar.xz/d" "$tmpdir/$package_name"/{sources,.gitignore};
-upload_list="$rhdistgit_tarball"
-
-# Only upload kernel-abi-stablelists tarball if its release counter changed.
-if [ "$rhdistgit_zstream_flag" == "no" ]; then
-	if ! grep -q "$rhdistgit_kabi_tarball" "$tmpdir/$package_name"/sources; then
-		sed -i "/kernel-abi-stablelists.*.tar.bz2/d" "$tmpdir/$package_name"/{sources,.gitignore};
-		upload_list="$upload_list $rhdistgit_kabi_tarball"
-	fi
-	if ! grep -q "$rhdistgit_kabidw_tarball" "$tmpdir/$package_name"/sources; then
-		sed -i "/kernel-kabi-dw-.*.tar.bz2/d" "$tmpdir/$package_name"/{sources,.gitignore};
-		upload_list="$upload_list $rhdistgit_kabidw_tarball"
-	fi
-fi
+sed -i "/kernel-abi-stablelists.*.tar.bz2/d" "$tmpdir/$package_name"/{sources,.gitignore};
+sed -i "/kernel-kabi-dw-.*.tar.bz2/d" "$tmpdir/$package_name"/{sources,.gitignore};
+upload_list="$rhdistgit_tarball $rhdistgit_kabi_tarball $rhdistgit_kabidw_tarball"
 
 # We depend on word splitting here:
 # shellcheck disable=SC2086
@@ -83,9 +74,11 @@ echo "Creating diff for review ($tmpdir/diff) and changelog"
 # diff the result (redhat/cvs/dontdiff). note: diff reuturns 1 if
 # differences were found
 diff -X "$redhat"/git/dontdiff -upr "$tmpdir/$package_name" "$redhat"/rpm/SOURCES/ > "$tmpdir"/diff;
-# creating the changelog file
-"$redhat"/scripts/create_distgit_changelog.sh "$redhat/rpm/SOURCES/$package_name".spec \
-	"$rhdistgit_zstream_flag" "$package_name" >"$tmpdir"/changelog
+
+# changelog has been created by genspec.sh, including Resolves line, just copy it here
+echo -e "${package_name}-${rpm_version}\n" > $tmpdir/changelog
+awk '1;/^Resolves: /{exit};' $changelog >> $tmpdir/changelog
+
 
 # all done
 echo "$tmpdir"

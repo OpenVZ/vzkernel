@@ -1,1 +1,1 @@
-CONFIG_DRM_GMA500=m
+# CONFIG_DRM_GMA500 is not set

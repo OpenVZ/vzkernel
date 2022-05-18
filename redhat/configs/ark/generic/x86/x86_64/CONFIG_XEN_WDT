@@ -1,1 +1,1 @@
-CONFIG_XEN_WDT=m
+# CONFIG_XEN_WDT is not set

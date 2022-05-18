@@ -967,7 +967,6 @@ static void dmz_dtr(struct dm_target *ti)
 	struct dmz_target *dmz = ti->private;
 	int i;
 
-	flush_workqueue(dmz->chunk_wq);
 	destroy_workqueue(dmz->chunk_wq);
 
 	for (i = 0; i < dmz->nr_ddevs; i++)
@@ -1118,6 +1117,9 @@ static void dmz_status(struct dm_target *ti, status_type_t type,
 			format_dev_t(buf, dev->bdev->bd_dev);
 			DMEMIT(" %s", buf);
 		}
+		break;
+	case STATUSTYPE_IMA:
+		*result = '\0';
 		break;
 	}
 	return;

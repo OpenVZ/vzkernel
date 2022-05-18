@@ -144,12 +144,29 @@ static void megasas_get_pd_info(struct megasas_instance *instance,
 static void
 megasas_set_ld_removed_by_fw(struct megasas_instance *instance);
 
-/*
- * PCI ID table for all supported controllers
- */
-static struct pci_device_id megasas_pci_table[] = {
+#ifdef CONFIG_RHEL_DIFFERENCES
+static const struct pci_device_id rh_deprecated_pci_table[] = {
 
-#ifndef CONFIG_RHEL_DIFFERENCES
+	{0}     /* Terminating entry */
+};
+
+static const struct pci_device_id rh_unmaintained_pci_table[] = {
+
+	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS0079GEN2)},
+	/* gen2*/
+	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS0073SKINNY)},
+	/* skinny*/
+	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS0071SKINNY)},
+	/* skinny*/
+
+	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_FUSION)},
+	/* Fusion */
+
+	{0}     /* Terminating entry */
+};
+
+static const struct pci_device_id rh_disabled_pci_table[] = {
+
 	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS1064R)},
 	/* xscale IOP */
 	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS1078R)},
@@ -158,19 +175,39 @@ static struct pci_device_id megasas_pci_table[] = {
 	/* ppc IOP */
 	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS1078GEN2)},
 	/* gen2*/
+
+	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_VERDE_ZCR)},
+	/* xscale IOP, vega */
+	{PCI_DEVICE(PCI_VENDOR_ID_DELL, PCI_DEVICE_ID_DELL_PERC5)},
+	/* xscale IOP */
+
+	{0}     /* Terminating entry */
+};
 #endif
+
+/*
+ * PCI ID table for all supported controllers
+ */
+static struct pci_device_id megasas_pci_table[] = {
+
+	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS1064R)},
+	/* xscale IOP */
+	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS1078R)},
+	/* ppc IOP */
+	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS1078DE)},
+	/* ppc IOP */
+	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS1078GEN2)},
+	/* gen2*/
 	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS0079GEN2)},
 	/* gen2*/
 	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS0073SKINNY)},
 	/* skinny*/
 	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_SAS0071SKINNY)},
 	/* skinny*/
-#ifndef CONFIG_RHEL_DIFFERENCES
 	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_VERDE_ZCR)},
 	/* xscale IOP, vega */
 	{PCI_DEVICE(PCI_VENDOR_ID_DELL, PCI_DEVICE_ID_DELL_PERC5)},
 	/* xscale IOP */
-#endif
 	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_FUSION)},
 	/* Fusion */
 	{PCI_DEVICE(PCI_VENDOR_ID_LSI_LOGIC, PCI_DEVICE_ID_LSI_PLASMA)},
@@ -7465,6 +7502,14 @@ static int megasas_probe_one(struct pci_dev *pdev,
 	struct Scsi_Host *host;
 	struct megasas_instance *instance;
 	u16 control = 0;
+
+#ifdef CONFIG_RHEL_DIFFERENCES
+	if (pci_hw_disabled(rh_disabled_pci_table, pdev))
+		return -ENODEV;
+
+	pci_hw_deprecated(rh_deprecated_pci_table, pdev);
+	pci_hw_unmaintained(rh_unmaintained_pci_table, pdev);
+#endif
 
 	switch (pdev->device) {
 	case PCI_DEVICE_ID_LSI_AERO_10E0:
