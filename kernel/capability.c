@@ -441,6 +441,24 @@ bool feature_capable(int feature, int cap)
 	else
 		return capable(cap);
 }
+
+bool file_ns_ve_capable(const struct file *file, struct user_namespace *ns,
+			int cap)
+{
+	struct cred *cred;
+	int ret;
+
+	rcu_read_lock();
+	cred = get_exec_env()->init_cred;
+
+	if (cred == NULL) /* ve isn't running */
+		cred = ve0.init_cred;
+
+	ret = security_capable(file->f_cred, ns, cap, CAP_OPT_NONE);
+	rcu_read_unlock();
+
+	return ret == 0;
+}
 #else
 bool ve_capable(int cap)
 {
@@ -456,9 +474,15 @@ bool feature_capable(int feature, int cap)
 {
 	return capable(cap);
 }
+bool file_ns_ve_capable(const struct file *file, struct user_namespace *ns,
+			int cap)
+{
+	return file_ns_capable(file, ns, cap);
+}
 #endif
 EXPORT_SYMBOL_GPL(ve_capable);
 EXPORT_SYMBOL_GPL(ve_capable_noaudit);
+EXPORT_SYMBOL_GPL(file_ns_ve_capable);
 
 /**
  * ns_capable_noaudit - Determine if the current task has a superior capability
