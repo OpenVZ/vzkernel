@@ -361,12 +361,6 @@ static DEFINE_MUTEX(syslog_lock);
 
 #ifdef CONFIG_PRINTK
 DECLARE_WAIT_QUEUE_HEAD(log_wait);
-/* All 3 protected by @syslog_lock. */
-/* the next printk record to read by syslog(READ) or /proc/kmsg */
-static u64 syslog_seq;
-static size_t syslog_partial;
-static bool syslog_time;
-
 /* All 3 protected by @console_sem. */
 /* the next printk record to write to the console */
 static u64 console_seq;
@@ -417,6 +411,12 @@ static struct printk_ringbuffer printk_rb_dynamic;
 static struct log_state {
 	char *buf;
 	u32 buf_len;
+
+	/* All 3 protected by @syslog_lock. */
+	/* the next printk record to read by syslog(READ) or /proc/kmsg */
+	u64 syslog_seq;
+	size_t syslog_partial;
+	bool syslog_time;
 
 	/*
 	 * The next printk record to read after the last 'clear' command. There are
@@ -1555,7 +1555,7 @@ static int syslog_print(struct log_state *log,
 	 * change while waiting.
 	 */
 	do {
-		seq = syslog_seq;
+		seq = log->syslog_seq;
 
 		mutex_unlock(&syslog_lock);
 		len = wait_event_interruptible(log_wait,
@@ -1564,7 +1564,7 @@ static int syslog_print(struct log_state *log,
 
 		if (len)
 			goto out;
-	} while (syslog_seq != seq);
+	} while (log->syslog_seq != seq);
 
 	/*
 	 * Copy records that fit into the buffer. The above cycle makes sure
@@ -1575,33 +1575,33 @@ static int syslog_print(struct log_state *log,
 		size_t skip;
 		int err;
 
-		if (!prb_read_valid(log->prb, syslog_seq, &r))
+		if (!prb_read_valid(log->prb, log->syslog_seq, &r))
 			break;
 
-		if (r.info->seq != syslog_seq) {
+		if (r.info->seq != log->syslog_seq) {
 			/* message is gone, move to next valid one */
-			syslog_seq = r.info->seq;
-			syslog_partial = 0;
+			log->syslog_seq = r.info->seq;
+			log->syslog_partial = 0;
 		}
 
 		/*
 		 * To keep reading/counting partial line consistent,
 		 * use printk_time value as of the beginning of a line.
 		 */
-		if (!syslog_partial)
-			syslog_time = printk_time;
+		if (!log->syslog_partial)
+			log->syslog_time = printk_time;
 
-		skip = syslog_partial;
-		n = record_print_text(&r, true, syslog_time);
-		if (n - syslog_partial <= size) {
+		skip = log->syslog_partial;
+		n = record_print_text(&r, true, log->syslog_time);
+		if (n - log->syslog_partial <= size) {
 			/* message fits into buffer, move forward */
-			syslog_seq = r.info->seq + 1;
-			n -= syslog_partial;
-			syslog_partial = 0;
+			log->syslog_seq = r.info->seq + 1;
+			n -= log->syslog_partial;
+			log->syslog_partial = 0;
 		} else if (!len){
 			/* partial read(), remember position */
 			n = size;
-			syslog_partial += n;
+			log->syslog_partial += n;
 		} else
 			n = 0;
 
@@ -1714,7 +1714,7 @@ int do_syslog(int type, char __user *buf, int len, int source)
 			return 0;
 		if (!access_ok(buf, len))
 			return -EFAULT;
-		error = syslog_print(buf, len);
+		error = syslog_print(log, buf, len);
 		break;
 	/* Read/clear last kernel messages */
 	case SYSLOG_ACTION_READ_CLEAR:
@@ -1760,15 +1760,15 @@ int do_syslog(int type, char __user *buf, int len, int source)
 	/* Number of chars in the log buffer */
 	case SYSLOG_ACTION_SIZE_UNREAD:
 		mutex_lock(&syslog_lock);
-		if (!prb_read_valid_info(log->prb, syslog_seq, &info, NULL)) {
+		if (!prb_read_valid_info(log->prb, log->syslog_seq, &info, NULL)) {
 			/* No unread messages. */
 			mutex_unlock(&syslog_lock);
 			return 0;
 		}
-		if (info.seq != syslog_seq) {
+		if (info.seq != log->syslog_seq) {
 			/* messages are gone, move to first one */
-			syslog_seq = info.seq;
-			syslog_partial = 0;
+			log->syslog_seq = info.seq;
+			log->syslog_partial = 0;
 		}
 		if (source == SYSLOG_FROM_PROC) {
 			/*
@@ -1776,19 +1776,19 @@ int do_syslog(int type, char __user *buf, int len, int source)
 			 * for pending data, not the size; return the count of
 			 * records, not the length.
 			 */
-			error = prb_next_seq(log->prb) - syslog_seq;
+			error = prb_next_seq(log->prb) - log->syslog_seq;
 		} else {
-			bool time = syslog_partial ? syslog_time : printk_time;
+			bool time = log->syslog_partial ? log->syslog_time : printk_time;
 			unsigned int line_count;
 			u64 seq;
 
-			prb_for_each_info(syslog_seq, log->prb, seq, &info,
+			prb_for_each_info(log->syslog_seq, log->prb, seq, &info,
 					  &line_count) {
 				error += get_record_print_text_size(&info, line_count,
 								    true, time);
 				time = printk_time;
 			}
-			error -= syslog_partial;
+			error -= log->syslog_partial;
 		}
 		mutex_unlock(&syslog_lock);
 		break;
@@ -2382,7 +2382,6 @@ EXPORT_SYMBOL(printk);
 #define prb_read_valid(rb, seq, r)	false
 #define prb_first_valid_seq(rb)		0
 
-static u64 syslog_seq;
 static u64 console_seq;
 static u64 exclusive_console_stop_seq;
 static unsigned long console_dropped;
@@ -3022,6 +3021,7 @@ static int try_enable_new_console(struct console *newcon, bool user_specified)
  */
 void register_console(struct console *newcon)
 {
+	struct log_state *log = &init_log_state;
 	struct console *bcon = NULL;
 	int err;
 
@@ -3127,7 +3127,7 @@ void register_console(struct console *newcon)
 
 		/* Get a consistent copy of @syslog_seq. */
 		mutex_lock(&syslog_lock);
-		console_seq = syslog_seq;
+		console_seq = log->syslog_seq;
 		mutex_unlock(&syslog_lock);
 	}
 	console_unlock();
