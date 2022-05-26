@@ -555,11 +555,21 @@ static ssize_t cgroup_release_agent_write(struct kernfs_open_file *of,
 	/*
 	 * Release agent gets called with all capabilities,
 	 * require capabilities to set release agent.
+	 *
+	 * Release agent is virtualialized per-Container, so
+	 * allow to configure it from top CT userns as well.
+	 *
+	 * We need both checks here because CRIU during restore stage
+	 * configures release agent while being in init_user_ns and
+	 * in non-root ve cgroup.
 	 */
 	ctx = of->priv;
-	if ((ctx->ns->user_ns != &init_user_ns) ||
-	    !file_ns_capable(of->file, &init_user_ns, CAP_SYS_ADMIN))
+	if (((ctx->ns->user_ns != &init_user_ns) ||
+	     !file_ns_capable(of->file, &init_user_ns, CAP_SYS_ADMIN)) &&
+	    ((ctx->ns->user_ns != ve_init_user_ns()) ||
+	     !file_ns_ve_capable(of->file, ve_init_user_ns(), CAP_SYS_ADMIN))) {
 		return -EPERM;
+	}
 
 	cgrp = cgroup_kn_lock_live(of->kn, false);
 	if (!cgrp)
@@ -1089,7 +1099,10 @@ int cgroup1_parse_param(struct fs_context *fc, struct fs_parameter *param)
 		 * Release agent gets called with all capabilities,
 		 * require capabilities to set release agent.
 		 */
-		if ((fc->user_ns != &init_user_ns) || !capable(CAP_SYS_ADMIN))
+		if (((fc->user_ns != &init_user_ns) ||
+		     !capable(CAP_SYS_ADMIN)) &&
+		    ((fc->user_ns != ve_init_user_ns()) ||
+		     !ve_capable(CAP_SYS_ADMIN)))
 			return invalfc(fc, "Setting release_agent not allowed");
 		ctx->release_agent = param->string;
 		param->string = NULL;
