@@ -1256,7 +1256,7 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 			 * Release agent gets called with all capabilities,
 			 * require capabilities to set release agent.
 			 */
-			if (!capable(CAP_SYS_ADMIN))
+			if (!ve_capable(CAP_SYS_ADMIN))
 				return -EPERM;
 
 			opts->release_agent =
@@ -2573,7 +2573,7 @@ static int cgroup_release_agent_write(struct cgroup *cgrp, struct cftype *cft,
 	 * Release agent gets called with all capabilities,
 	 * require capabilities to set release agent.
 	 */
-	if (!capable(CAP_SYS_ADMIN))
+	if (!ve_capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	if (!cgroup_lock_live_group(cgrp))
