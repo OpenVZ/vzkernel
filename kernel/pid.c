@@ -76,6 +76,7 @@ struct pid_namespace init_pid_ns = {
 	.ns.count = REFCOUNT_INIT(2),
 	.idr = IDR_INIT(init_pid_ns.idr),
 	.pid_allocated = PIDNS_ADDING,
+	.pid_max = PID_MAX_DEFAULT,
 	.level = 0,
 	.child_reaper = &init_task,
 	.user_ns = &init_user_ns,
