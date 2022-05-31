@@ -299,7 +299,6 @@ static int pid_ns_ctl_handler(struct ctl_table *table, int write,
 	return proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
 }
 
-extern int pid_max;
 static int zero = 0;
 static struct ctl_table pid_ns_ctl_table[] = {
 	{
