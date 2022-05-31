@@ -110,7 +110,7 @@ static struct pid_namespace *create_pid_namespace(struct user_namespace *user_ns
 	ns->user_ns = get_user_ns(user_ns);
 	ns->ucounts = ucounts;
 	ns->pid_allocated = PIDNS_ADDING;
-	ns->pid_max = PID_MAX_NS_DEFAULT;
+	ns->pid_max = pid_max_ns_default;
 
 	return ns;
 

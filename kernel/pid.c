@@ -59,7 +59,7 @@ struct pid init_struct_pid = {
 	}, }
 };
 
-int pid_max = PID_MAX_DEFAULT;
+int pid_max_ns_default;
 
 #define RESERVED_PIDS		300
 
@@ -76,7 +76,6 @@ struct pid_namespace init_pid_ns = {
 	.ns.count = REFCOUNT_INIT(2),
 	.idr = IDR_INIT(init_pid_ns.idr),
 	.pid_allocated = PIDNS_ADDING,
-	.pid_max = PID_MAX_DEFAULT,
 	.level = 0,
 	.child_reaper = &init_task,
 	.user_ns = &init_user_ns,
@@ -192,7 +191,7 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t *set_tid,
 			tid = set_tid[ns->level - i];
 
 			retval = -EINVAL;
-			if (tid < 1 || tid >= pid_max)
+			if (tid < 1 || tid >= tmp->pid_max)
 				goto out_free;
 			/*
 			 * Also fail if a PID != 1 is requested and
@@ -623,12 +622,16 @@ void __init pid_idr_init(void)
 	/* Verify no one has done anything silly: */
 	BUILD_BUG_ON(PID_MAX_LIMIT >= PIDNS_ADDING);
 
-	/* bump default and minimum pid_max based on number of cpus */
-	pid_max = min(pid_max_max, max_t(int, pid_max,
+	/* setup default and init_pid_ns pid_max based on number of cpus */
+	pid_max_ns_default = min(pid_max_max, max_t(int, PID_MAX_DEFAULT,
 				PIDS_PER_CPU_DEFAULT * num_possible_cpus()));
+	init_pid_ns.pid_max = pid_max_ns_default;
+
+	/* bump minimum pid_max based on number of cpus */
 	pid_max_min = max_t(int, pid_max_min,
 				PIDS_PER_CPU_MIN * num_possible_cpus());
-	pr_info("pid_max: default: %u minimum: %u\n", pid_max, pid_max_min);
+	pr_info("pid_max: default: %u minimum: %u\n",
+		pid_max_ns_default, pid_max_min);
 
 	idr_init(&init_pid_ns.idr);
 
