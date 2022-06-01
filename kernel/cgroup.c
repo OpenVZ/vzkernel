@@ -705,13 +705,14 @@ static inline bool css_has_host_cgroups(struct css_set *css_set)
  * Return the cgroup for "task" from the given hierarchy. Must be
  * called with cgroup_mutex held.
  */
-static struct cgroup *task_cgroup_from_root(struct task_struct *task,
-					    struct cgroupfs_root *root)
+static struct cgroup *__task_cgroup_from_root(struct task_struct *task,
+					      struct cgroupfs_root *root,
+					      int nocgmtx)
 {
 	struct css_set *css;
 	struct cgroup *res = NULL;
 
-	BUG_ON(!mutex_is_locked(&cgroup_mutex));
+	BUG_ON(!nocgmtx && !mutex_is_locked(&cgroup_mutex));
 	read_lock(&css_set_lock);
 	/*
 	 * No need to lock the task - since we hold cgroup_mutex the
@@ -734,6 +735,12 @@ static struct cgroup *task_cgroup_from_root(struct task_struct *task,
 	read_unlock(&css_set_lock);
 	BUG_ON(!res);
 	return res;
+}
+
+static struct cgroup *task_cgroup_from_root(struct task_struct *task,
+					      struct cgroupfs_root *root)
+{
+	return __task_cgroup_from_root(task, root, false);
 }
 
 /*
@@ -5592,7 +5599,8 @@ int proc_cgroup_show(struct seq_file *m, void *v)
 
 	retval = 0;
 
-	mutex_lock(&cgroup_mutex);
+	/* without cgroup_mutex we must protect roots list */
+	mutex_lock(&cgroup_root_mutex);
 
 	for_each_active_root(root) {
 		struct cgroup_subsys *ss;
@@ -5608,8 +5616,13 @@ int proc_cgroup_show(struct seq_file *m, void *v)
 			seq_printf(m, "%sname=%s", count ? "," : "",
 				   root->name);
 		seq_putc(m, ':');
-		cgrp = task_cgroup_from_root(tsk, root);
+
+		/* without cgroup_mutex we take rcu to make cgrp valid */
+		rcu_read_lock();
+		cgrp = __task_cgroup_from_root(tsk, root, true);
 		retval = cgroup_path_ve(cgrp, buf, PAGE_SIZE);
+		rcu_read_unlock();
+
 		if (retval < 0)
 			goto out_unlock;
 		seq_puts(m, buf);
@@ -5617,7 +5630,7 @@ int proc_cgroup_show(struct seq_file *m, void *v)
 	}
 
 out_unlock:
-	mutex_unlock(&cgroup_mutex);
+	mutex_unlock(&cgroup_root_mutex);
 	put_task_struct(tsk);
 out_free:
 	kfree(buf);
