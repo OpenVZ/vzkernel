@@ -902,6 +902,9 @@ static void qcow2_status(struct dm_target *ti, status_type_t type,
 		DMEMIT("%u v%u %llu", qcow2->img_id + 1, hdr->version,
 				      to_sector(qcow2->clu_size));
 		break;
+	case STATUSTYPE_IMA:
+		result[0] = '\0';
+		break;
 	}
 	qcow2_ref_dec(tgt, ref_index);
 }
