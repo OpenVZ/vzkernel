@@ -452,22 +452,33 @@ static void ploop_status(struct dm_target *ti, status_type_t type,
 	char stat[32], *p = stat;
 	ssize_t sz = 0;
 
-	down_read(&ploop->ctl_rwsem);
-	if (ploop->falloc_new_clu)
-		*p++ = 'f';
-	if (READ_ONCE(ploop->noresume))
-		*p++ = 'n';
-	if (READ_ONCE(ploop->event_enospc))
-		*p++ = 's';
-	if (p == stat)
-		*p++ = 'o';
-	if (ploop->skip_off)
-		p += sprintf(p, " off=%llu", ploop->skip_off);
-	*p++ = '\0';
-	up_read(&ploop->ctl_rwsem);
+	switch (type) {
+	case STATUSTYPE_INFO:
+		result[0] = '\0';
+		break;
+	case STATUSTYPE_TABLE:
+		down_read(&ploop->ctl_rwsem);
+		if (ploop->falloc_new_clu)
+			*p++ = 'f';
+		if (READ_ONCE(ploop->noresume))
+			*p++ = 'n';
+		if (READ_ONCE(ploop->event_enospc))
+			*p++ = 's';
+		if (p == stat)
+			*p++ = 'o';
+		if (ploop->skip_off)
+			p += sprintf(p, " off=%llu", ploop->skip_off);
+		*p++ = '\0';
+		up_read(&ploop->ctl_rwsem);
 
-	BUG_ON(p - stat >= sizeof(stat));
-	DMEMIT("%u v2 %u %s", ploop->nr_deltas, (u32)CLU_TO_SEC(ploop, 1), stat);
+		BUG_ON(p - stat >= sizeof(stat));
+		DMEMIT("%u v2 %u %s", ploop->nr_deltas, (u32)CLU_TO_SEC(ploop, 1), stat);
+
+		break;
+	case STATUSTYPE_IMA:
+		result[0] = '\0';
+		break;
+	}
 }
 
 static void ploop_set_wants_suspend(struct dm_target *ti, bool wants)
