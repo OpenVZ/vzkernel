@@ -11,6 +11,7 @@
 #include <linux/fs_context.h>
 #include <linux/fs_parser.h>
 #include <linux/fs.h>
+#include <linux/blkdev.h>
 #include <linux/mount.h>
 #include <linux/nsproxy.h>
 #include <linux/slab.h>
@@ -19,6 +20,7 @@
 #include <linux/mnt_namespace.h>
 #include <linux/pid_namespace.h>
 #include <linux/user_namespace.h>
+#include <linux/ve.h>
 #include <net/net_namespace.h>
 #include <asm/sections.h>
 #include "mount.h"
@@ -160,6 +162,171 @@ int vfs_parse_fs_param(struct fs_context *fc, struct fs_parameter *param)
 }
 EXPORT_SYMBOL(vfs_parse_fs_param);
 
+#ifdef CONFIG_VE
+int __vfs_add_monolithic_fs_param(struct fs_context *fc,
+				  struct fs_parameter *param)
+{
+	char *opts = fc->lazy_opts;
+	size_t free_size;
+	size_t estimated_size = 0;
+
+	BUG_ON(!opts);
+
+	/* lazy_opts length + place for 0-byte */
+	free_size = PAGE_SIZE - (strlen(opts) + 1);
+
+	/* param->key length + sizeof(',') */
+	estimated_size += strlen(param->key) + 1;
+	if (free_size < estimated_size)
+		return -ENOMEM;
+
+	strcat(opts, param->key);
+
+	if (param->type == fs_value_is_string) {
+		/* param->string length + sizeof('=') */
+		estimated_size += strlen(param->string) + 1;
+		if (free_size < estimated_size)
+			return -ENOMEM;
+
+		strcat(opts, "=");
+		strcat(opts, param->string);
+	}
+
+	strcat(opts, ",");
+
+	return 0;
+}
+
+static inline int fscontext_lookup_bdev(struct fs_context *fc, dev_t *s_dev)
+{
+	dev_t bd_dev;
+	int ret;
+
+	/* can we reach fc->root->d_sb->s_dev ? */
+	if (fc->root && fc->root->d_sb && fc->root->d_sb) {
+		if (s_dev)
+			*s_dev = fc->root->d_sb->s_dev;
+
+		return 0;
+	}
+
+	if (fc->source) {
+		ret = lookup_bdev(fc->source, &bd_dev);
+		if (ret)
+			return ret;
+
+		if (s_dev)
+			*s_dev = bd_dev;
+
+		return 0;
+	}
+
+	return -ENODEV;
+}
+
+static int fscontext_init_lazy_opts(struct fs_context *fc)
+{
+	struct ve_struct *ve = get_exec_env();
+	int fs_flags;
+	char *opts;
+
+	fc->lazy_opts = NULL;
+
+	if (!(fc->purpose == FS_CONTEXT_FOR_MOUNT ||
+	      fc->purpose == FS_CONTEXT_FOR_RECONFIGURE))
+		return 0;
+
+	if (ve_is_super(ve))
+		return 0;
+
+	/*
+	 * Currently, fc->fs_type is filled in fsopen(),
+	 * so this situation is impossible, but let's
+	 * be cautious as fs_context implementation may
+	 * be changed in the future.
+	 */
+	if (!fc->fs_type) {
+		WARN_ON(1);
+		return 0;
+	}
+
+	fs_flags = fc->fs_type->fs_flags;
+
+	/*
+	 * If we already know block device then we can do devmnt checks,
+	 * if fs doesn't require block dev we have to skip it
+	 */
+	if (!(fs_flags & FS_REQUIRES_DEV) || !fscontext_lookup_bdev(fc, NULL))
+		return 0;
+
+	/* we interested in filesystems which can be mounted from inside VE */
+	if (!(fs_flags & FS_VIRTUALIZED))
+		return 0;
+
+	fc->lazy_opts = (void *)__get_free_page(GFP_KERNEL_ACCOUNT);
+	if (!fc->lazy_opts)
+		return -ENOMEM;
+
+	opts = fc->lazy_opts;
+
+	/* we will use fc->lazy_opts as a string */
+	*opts = 0;
+
+	return 0;
+}
+
+int vfs_parse_fs_param_lazy(struct fs_context *fc, struct fs_parameter *param)
+{
+	struct ve_struct *ve = get_exec_env();
+
+	/* it means that we didn't turn on lazy mode */
+	if (!fc->lazy_opts)
+		goto non_lazy_way;
+
+	/*
+	 * source parameter should be passed over lazy opts, as it
+	 * describes source bdev for fs
+	 */
+	if (!strcmp(param->key, "source"))
+		goto non_lazy_way;
+
+	if (!(param->type == fs_value_is_flag ||
+	      param->type == fs_value_is_string)) {
+		/*
+		 * In case when we can't serialize fs parameters into
+		 * a string it means that this fs uses blob parameters,
+		 * or fd parameters, or something similar. We can't use
+		 * devmnt to control such mounts.
+		 */
+		ve_pr_warn_ratelimited(VE0_LOG, "VE%s: can't do devmnt checks "
+			"for fstype %s (param key %s, param type %d)\n",
+			ve->ve_name,
+			fc->fs_type->name,
+			param->key,
+			param->type);
+
+		return -EPERM;
+	}
+
+	/*
+	 * Okay, we here it means that we want to collect all mount
+	 * parameters, and then check it all at one time when
+	 * fc->source will be known.
+	 */
+	return __vfs_add_monolithic_fs_param(fc, param);
+
+non_lazy_way:
+	return vfs_parse_fs_param(fc, param);
+}
+EXPORT_SYMBOL(vfs_parse_fs_param_lazy);
+#else
+static inline int fscontext_init_lazy_opts(struct fs_context *fc)
+{
+	fc->lazy_opts = NULL;
+	return 0;
+}
+#endif
+
 /**
  * vfs_parse_fs_string - Convenience function to just parse a string.
  */
@@ -202,6 +369,39 @@ int generic_parse_monolithic(struct fs_context *fc, void *data)
 {
 	char *options = data, *key;
 	int ret = 0;
+#ifdef CONFIG_VE
+	void *options_orig = options;
+	void *options_after;
+	struct ve_struct *ve = get_exec_env();
+
+	if (!ve_is_super(ve) && (fc->fs_type->fs_flags & FS_REQUIRES_DEV)) {
+		dev_t bd_dev;
+
+		ret = fscontext_lookup_bdev(fc, &bd_dev);
+		if (ret) {
+			errorf(fc, "%s: Can't lookup blockdev", fc->source);
+			return -ENODEV;
+		}
+
+		ret = ve_devmnt_process(ve, bd_dev, (void **) &options,
+				fc->purpose == FS_CONTEXT_FOR_RECONFIGURE);
+		if (ret)
+			return ret;
+	}
+
+	/*
+	 * Very dangerous place.
+	 * 1. ve_devmnt_process may alloc new page and write address to options
+	 *    variable.
+	 * 2. we have to detect such case and call free_page() if so, but
+	 * 3. we can free page after all options processing, but during that
+	 *    strsep() function modifies options variable too. Ugh.
+	 *
+	 * Let's save page address to options_after and use it to detect new
+	 * page allocation.
+	 */
+	options_after = options;
+#endif
 
 	if (!options)
 		return 0;
@@ -226,6 +426,11 @@ int generic_parse_monolithic(struct fs_context *fc, void *data)
 				break;
 		}
 	}
+
+#ifdef CONFIG_VE
+	if (options_after != options_orig)
+		free_page((unsigned long)options_after);
+#endif
 
 	return ret;
 }
@@ -290,7 +495,13 @@ static struct fs_context *alloc_fs_context(struct file_system_type *fs_type,
 	ret = init_fs_context(fc);
 	if (ret < 0)
 		goto err_fc;
+
 	fc->need_free = true;
+
+	ret = fscontext_init_lazy_opts(fc);
+	if (ret < 0)
+		goto err_fc;
+
 	return fc;
 
 err_fc:
@@ -363,6 +574,10 @@ struct fs_context *vfs_dup_fs_context(struct fs_context *src_fc)
 
 	/* Can't call put until we've called ->dup */
 	ret = fc->ops->dup(fc, src_fc);
+	if (ret < 0)
+		goto err_fc;
+
+	ret = fscontext_init_lazy_opts(fc);
 	if (ret < 0)
 		goto err_fc;
 
@@ -474,6 +689,8 @@ void put_fs_context(struct fs_context *fc)
 	put_cred(fc->cred);
 	put_fc_log(fc);
 	put_filesystem(fc->fs_type);
+	if (fc->lazy_opts)
+		free_page((unsigned long)fc->lazy_opts);
 	kfree(fc->source);
 	kfree(fc);
 }
@@ -689,6 +906,10 @@ void vfs_clean_context(struct fs_context *fc)
 	fc->s_fs_info = NULL;
 	fc->sb_flags = 0;
 	security_free_mnt_opts(&fc->security);
+	if (fc->lazy_opts) {
+		free_page((unsigned long)fc->lazy_opts);
+		fc->lazy_opts = NULL;
+	}
 	kfree(fc->source);
 	fc->source = NULL;
 
@@ -711,7 +932,15 @@ int finish_clean_context(struct fs_context *fc)
 		fc->phase = FS_CONTEXT_FAILED;
 		return error;
 	}
+
 	fc->need_free = true;
+
+	error = fscontext_init_lazy_opts(fc);
+	if (unlikely(error)) {
+		fc->phase = FS_CONTEXT_FAILED;
+		return error;
+	}
+
 	fc->phase = FS_CONTEXT_RECONF_PARAMS;
 	return 0;
 }
