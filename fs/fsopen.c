@@ -209,6 +209,26 @@ err:
 	return ret;
 }
 
+static int fscontext_finalize_lazy_opts(struct fs_context *fc)
+{
+#ifdef CONFIG_VE
+	if (fc->lazy_opts) {
+		int ret;
+
+		/*
+		 * Now we have fc->source set and can do all delayed
+		 * devmnt checks. We need just to call
+		 * generic_parse_monolithic on our fc->lazy_opts.
+		 */
+		ret = generic_parse_monolithic(fc, fc->lazy_opts);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+#endif
+}
+
 /*
  * Check the state and apply the configuration.  Note that this function is
  * allowed to 'steal' the value by setting param->xxx to NULL before returning.
@@ -228,6 +248,11 @@ static int vfs_fsconfig_locked(struct fs_context *fc, int cmd,
 			return -EBUSY;
 		if (!mount_capable(fc))
 			return -EPERM;
+
+		ret = fscontext_finalize_lazy_opts(fc);
+		if (ret)
+			return ret;
+
 		fc->phase = FS_CONTEXT_CREATING;
 		ret = vfs_get_tree(fc);
 		if (ret)
@@ -250,6 +275,11 @@ static int vfs_fsconfig_locked(struct fs_context *fc, int cmd,
 			ret = -EPERM;
 			break;
 		}
+
+		ret = fscontext_finalize_lazy_opts(fc);
+		if (ret)
+			return ret;
+
 		down_write(&sb->s_umount);
 		ret = reconfigure_super(fc);
 		up_write(&sb->s_umount);
@@ -262,7 +292,7 @@ static int vfs_fsconfig_locked(struct fs_context *fc, int cmd,
 		    fc->phase != FS_CONTEXT_RECONF_PARAMS)
 			return -EBUSY;
 
-		return vfs_parse_fs_param(fc, param);
+		return vfs_parse_fs_param_lazy(fc, param);
 	}
 	fc->phase = FS_CONTEXT_FAILED;
 	return ret;
