@@ -92,6 +92,7 @@ struct fs_context {
 	struct mutex		uapi_mutex;	/* Userspace access mutex */
 	struct file_system_type	*fs_type;
 	void			*fs_private;	/* The filesystem's context */
+	void			*lazy_opts;	/* mount options which can't be checked at fsconfig() time */
 	void			*sget_key;
 	struct dentry		*root;		/* The root and superblock */
 	struct user_namespace	*user_ns;	/* The user namespace for this mount */
@@ -134,6 +135,16 @@ extern struct fs_context *fs_context_for_submount(struct file_system_type *fs_ty
 
 extern struct fs_context *vfs_dup_fs_context(struct fs_context *fc);
 extern int vfs_parse_fs_param(struct fs_context *fc, struct fs_parameter *param);
+#ifdef CONFIG_VE
+extern int vfs_parse_fs_param_lazy(struct fs_context *fc,
+				   struct fs_parameter *param);
+#else
+static inline int vfs_parse_fs_param_lazy(struct fs_context *fc,
+					  struct fs_parameter *param)
+{
+	return vfs_parse_fs_param(fc, param);
+}
+#endif
 extern int vfs_parse_fs_string(struct fs_context *fc, const char *key,
 			       const char *value, size_t v_size);
 extern int generic_parse_monolithic(struct fs_context *fc, void *data);
