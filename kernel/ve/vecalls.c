@@ -29,10 +29,10 @@
 #include <generated/utsrelease.h>
 
 #include <linux/ve.h>
-#include <linux/vecalls.h>
 #include <linux/vzctl.h>
 #include <linux/veowner.h>
 #include <linux/device_cgroup.h>
+#include <uapi/linux/vzcalluser.h>
 
 static int fill_cpu_stat(envid_t veid, struct vz_cpu_stat __user *buf)
 {
@@ -271,38 +271,14 @@ static struct proc_ops proc_vz_version_operations = {
 };
 
 /* /proc/vz/veinfo */
-static ve_seq_print_t veaddr_seq_print_cb;
-
-void vzmon_register_veaddr_print_cb(ve_seq_print_t cb)
-{
-	rcu_assign_pointer(veaddr_seq_print_cb, cb);
-}
-EXPORT_SYMBOL(vzmon_register_veaddr_print_cb);
-
-void vzmon_unregister_veaddr_print_cb(ve_seq_print_t cb)
-{
-	rcu_assign_pointer(veaddr_seq_print_cb, NULL);
-	synchronize_rcu();
-}
-EXPORT_SYMBOL(vzmon_unregister_veaddr_print_cb);
-
 static int veinfo_seq_show(struct seq_file *m, void *v)
 {
 	struct ve_struct *ve;
-	ve_seq_print_t veaddr_seq_print;
 
 	ve = list_entry((struct list_head *)v, struct ve_struct, ve_list);
 
 	/* second 0 is deprecated ve->class_id */
-	seq_printf(m, "%10s 0 %5u", ve_name(ve), nr_threads_ve(ve));
-
-	rcu_read_lock();
-	veaddr_seq_print = rcu_dereference(veaddr_seq_print_cb);
-	if (veaddr_seq_print)
-		veaddr_seq_print(m, ve);
-	rcu_read_unlock();
-
-	seq_putc(m, '\n');
+	seq_printf(m, "%10s 0 %5u\n", ve_name(ve), nr_threads_ve(ve));
 	return 0;
 }
 
