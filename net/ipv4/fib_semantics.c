@@ -707,11 +707,24 @@ static int fib_get_nhs(struct fib_info *fi, struct rtnexthop *rtnh,
 			return -EINVAL;
 		}
 
+#if 0
 		if (rtnh->rtnh_flags & (RTNH_F_DEAD | RTNH_F_LINKDOWN)) {
 			NL_SET_ERR_MSG(extack,
 				       "Invalid flags for nexthop - can not contain DEAD or LINKDOWN");
 			return -EINVAL;
 		}
+#else
+		/* We just want to workaround inconsistency between dump and restore.
+		 * During dump the userspace requests:
+		 * nlmsg_type=RTM_GETROUTE, nlmsg_flags=NLM_F_REQUEST|NLM_F_DUMP
+		 * it may get RTNH_F_DEAD and RTNH_F_LINKDOWN bits set on rtnh_flags.
+		 * But during the restore process:
+		 * nlmsg_type=RTM_NEWROUTE, nlmsg_flags=NLM_F_REQUEST|..|NLM_F_CREATE
+		 * the userspace can't set this flags back. It's obvious inconsistency,
+		 * let's temporarily workaround it just by ignoring excess flags.
+		 */
+		rtnh->rtnh_flags &= ~(RTNH_F_DEAD | RTNH_F_LINKDOWN);
+#endif
 
 		fib_cfg.fc_flags = (cfg->fc_flags & ~0xFF) | rtnh->rtnh_flags;
 		fib_cfg.fc_oif = rtnh->rtnh_ifindex;
@@ -1418,11 +1431,15 @@ struct fib_info *fib_create_info(struct fib_config *cfg,
 		goto err_inval;
 	}
 
+#if 0
 	if (cfg->fc_flags & (RTNH_F_DEAD | RTNH_F_LINKDOWN)) {
 		NL_SET_ERR_MSG(extack,
 			       "Invalid rtm_flags - can not contain DEAD or LINKDOWN");
 		goto err_inval;
 	}
+#else
+	cfg->fc_flags &= ~(RTNH_F_DEAD | RTNH_F_LINKDOWN);
+#endif
 
 	if (cfg->fc_nh_id) {
 		if (!cfg->fc_mx) {
