@@ -1,0 +1,44 @@
+# command:
+# git-check-rebase --meta rebase_5.14.0-42.el9_5.14.0-70.13.1.el9.meta --rows-hide-level show_all --columns full rhel9.beta:rh9-5.14.0-42.el9..rh9-5.14.0-42.vz9.15.3 rhel9.rtm:rh9-5.14.0-70.13.1.el9..rh9-5.14.0-70.13.1.vz9.16.1
+
+ok:
+cgroup-v1: Allow setting release_agent from root Container user_ns
+  (ms commit disabled settings of release_agent from any nested userns)
+
+ve/printk: Virtualize "prb" and "clear_seq"
+  (log->prb should be moved from ("ve/printk: Virtualize syslog_*"))
+
+ve/printk: Virtualize syslog_*
+  (log->prb should be moved to ("ve/printk: Virtualize "prb" and "clear_seq""))
+
+ve/ext3: treat panic_on_errors as remount-ro_on_errors in CTs
+  (reviewed in the scope of PSBM-140278)
+
+ext4: Teach the fs where the balloon inode is
+  (The patch has been rewritten because ext4 moved to fs_context API, the patch has been reviewed in the scope of PSBM-140277)
+
+OpenVZ kernel rh9-5.14.0-70.13.1.vz9.15.3
+OpenVZ kernel rh9-5.14.0-70.13.1.vz9.16.1
+
+###################################################################
+# context changed
+###################################################################
+dm-ploop: Add ploop target driver
+dm: Add push backup driver
+sched: Port CONFIG_CFS_CPULIMIT feature
+fs: Mask appropriate filesystems FS_VIRTUALIZED
+fs/pipe: Use kvcalloc for pipe buffers
+ve/printk: Introduce struct "log_state" and virtualize log_buf/log_buf_len
+ve/printk: Virtualize console_*
+ve/printk: Virtualize log_wait queue
+ve/fs: Allow to mount ext4 in top CT userns
+ext4: Provide a balloon nipple for management
+ext4: add generic uevent infrastructure
+ms/sock: allow reading and changing sk_userlocks with setsockopt
+ve/page_alloc, kstat: account allocation latencies per-task and per-thread
+ve/net/neighbour: per-ct limit for neighbour entries
+mm: Add and use batched version of __tlb_remove_table()
+ve/cgroup: Set release_agent_path for root cgroups separately
+ext4: Check alloc_file() results in ext4_open_balloon()
+fs: Make ext4_event_type more generic
+ve/cgroup: Allow to write to several safe cgroup files from CT
