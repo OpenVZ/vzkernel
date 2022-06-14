@@ -1,0 +1,962 @@
+# command:
+# git-check-rebase --meta rebase_5.14.0-42.el9_5.14.0-70.13.1.el9.meta --rows-hide-level show_all --columns full rhel9.beta:rh9-5.14.0-42.el9..rh9-5.14.0-42.vz9.15.3 rhel9.rtm:rh9-5.14.0-70.13.1.el9..rh9-5.14.0-70.13.1.vz9.16.1
+#
+
+<tag>  rhel9.beta    rhel9.rtm     SUBJECT
+match  826c81f0bc96  d097778c0711  net/ipv4/udp_diag.c: author email updated
+match  8300c0bf9369  6e9d2a371cd9  ve: Add ve cgroup and ve_hook subsys
+match  6cb76563db9e  a9658ab8f816  ve: Link net and ve_struct
+match  967084855b03  7ba6f4538f9c  ve: Add veowner: skeleton for vz specific sysctl and /proc/ entries
+match  c45712b4c1a5  72cb34dd2662  net: Add NETIF_F_VIRTUAL feature to mask devices allowed in CT
+match  6af7203a778f  4dfb3e5b8180  vzdev: initial patch
+match  f55d143be423  190af0dc7e2a  Makefile: make VZVERSION evaluated dynamically
+match  298a29860f12  a0057d8443c1  printf: Add VZVERSION and task_ve_name() to dump_stack_print_info()
+match  459c30f2e969  78017a377a5f  ve: Add vecalls
+match  e41a60eb95cf  707b77b1f172  mm/vmscan: Introduce PF_MEMCG_RECLAIM task flag to identify memcg reclaim.
+match  e4fcacc3a7db  d20e70f90c24  memcg: allow to disable cleancache per memcg
+match  fc515cb18317  1c3c79149e35  Revert "kref: Remove kref_put_spinlock_irqsave()"
+match  9b31774842e0  4f3761e84b8b  mm: introduce transcendent file cache (tcache)
+match  db4d3c1e5b8e  2431a42d2837  meminfo: show size of tcache
+match  456029ba6f3e  53e7f353e3a3  ve/mm/cleancache: count only successful put in the cleancache_puts counter
+match  e15d45b6990a  9860a09e18de  mm/vmscan: shrink tcache upfront everything else
+match  dc48b6c5c728  4fb2abd20df8  vzevent: initial patch
+match  28f937b6addc  1cae610c3e88  ve/cred: add ve_capable to check capabilities relative to the current VE (v2)
+match  4f3e9bb6761e  6c50f5991588  ve/cgroup: Add pseudosuper state for restore sake
+match  e199e166f4ab  d734308d9484  kernel/ve: Add support of VE features mask
+match  c5388f832c7b  02959e3d15f5  net: Make sit feature optional
+match  a2e443b6e6e1  b77f2ed46c07  net: Make ipip feature optional
+match  1bba1e0ff981  7e02e6b08229  ve/bridge: br_dev_init: check if "bridge" feature is enabled
+match  a50cf85112ec  cf9b29553227  ve/net/ppp: introduce VE_FEATURE_PPP feature
+match  e4b32e124dff  0c39d0e03ae4  cgroup: Mark cgroup CGRP_VE_ROOT
+ok     dd361b5b622b  f95edb1cca15  ve/cgroup: Allow to write to several safe cgroup files from CT
+match  fff2afc62c1d  69206bfc8c24  ve/cgroups: Introduce subgroups_limit control
+match  57cf0f78ae85  5900a6c9d8d2  ve/cgroups: fake num_cgroups in /proc/cgroups output
+match  aaa01f692602  bfb69f6013fa  fs: Introduce vfs_truncate2() with file argument
+match  5255e881016c  efe3d6b89226  ploop: Export dm_complete_request()
+match  eb353ab70927  6f331c764455  ext4: Care about reserves in case of IO thread
+match  c7c8c377f33c  906203df7a40  dm: Call io_hints even for device-less drivers
+ok     c16cd4ba983c  7d6ba53b93c4  dm-ploop: Add ploop target driver
+match  0f0352ca8677  62b295404f43  configs: Build DM_PLOOP as a module
+match  ede2fa77687d  bbcbe25eec69  dm: Introduce dm_requeue_original_rq()
+match  eedfa7a4c449  1371894b11ed  dm: Allow singleton target with devices attached
+ok     b135a58b3dc9  322a9d290e05  dm: Add push backup driver
+match  1b994fb4441e  be484c8e46ad  dm: Add dm-tracking target
+match  e2d4c5d481ac  c134e0b420dc  dm-ploop: Set PF_LOCAL_THROTTLE and PF_MEMALLOC_NOIO
+match  601b88548593  2b0a69ab61fe  dm-qcow2: Introduce driver to create block devices over QCOW2 files
+match  d536573a0b9d  922745f4c1f5  configs: Add more our dm configs
+match  9ef0b1e501d2  f65f24e5218f  kmapset: set of key-value mappings with build-in
+match  4e16e890e070  b969ba243120  ve/kernfs: implement ve-based permissions
+match  0ec4e532afb2  2cb5a2640cb1  ve/kernfs: hide forbidden entries in container
+match  efe97c480b0b  447a6c8a9795  ve/kernfs: add new interface to control per-VE nodes visibility
+match  a983e7f2e4c2  6c03b21b962e  kernfs/sysfs: add ioctl to get fd network namespace tag
+match  4d9b974c639f  7e9b464d41c7  ve/sysfs: add dentries visibility filter
+match  30f4b8db6ebe  ed3ef738e325  ve/security: device_cgroup -- Allow manage devices in @pseudosuper state
+match  594fe38c4722  157f8b10eb7d  ve: Implement current_user_ns_initial() helper
+match  ca490bfa9c21  27c85b003978  ve/fs: allow devices-realted mounts in VE initial user namespace
+match  c5ad317504a0  024e811dd3e7  ve/device_cgroup: fake allowing all devices for docker inside VZCT
+match  30bf43a77b5a  cf22dc0645fa  ve/netns: limit number of network namespaces per container
+match  187c8dff3f69  f7579fc2e3ee  ptrace: prevent tracing "init" from inside a CT
+match  35e3ef560a60  f674652e005b  ve/mm/trace: introduce vps_dumpable flag
+match  91f0c0d202f0  84345ff13de1  ve/net: restrict ethtool to CT root userns and prohibit EEPROM change
+match  c17e681ef684  ee50bd40257c  ve: Implement per ve randomize_va_space
+match  715ce9527a1d  9d66c4fa6f6c  ve: Virtualize /proc/cmdline
+match  f6c82268288f  649f135f08aa  ve: Prohibit module load and usermode_helper from inside CT
+match  c5e571b7b82a  95596622d14e  ve: introduce ve_init_user_ns() helper
+match  350d4737db44  5620c4901425  ve: allow mounts in non-init but VE-init user namespace
+match  9583727a384b  304e4a3df05f  sched: Add ve name to sched_show_task()
+match  538f4572352a  bb87019f3824  sched: disable dumping cfs info on sysrq trigger
+match  576ef5894a3c  fa00bb75ae82  kernel: Account nr_zombie and nr_dead
+match  e63d4cf55689  bbd733437c12  sched: Count rq::nr_sleeping and cfs_rq::nr_unint
+match  b62a1cad1fbc  3b2aeee66df2  sched: Account cfs_rq::nr_iowait
+match  59e47aafd982  2b74e967cbc0  sched: Add primitives to calculate nr running, sleeping, stopped and uninterruptible tasks
+match  8fd334cc5f13  4ad94674f020  sched: Split task_h_load()
+ok     7b1380b92b5e  851acd2ea5d7  sched: Port CONFIG_CFS_CPULIMIT feature
+match  796947073c6b  d95677c615a7  sched: Split tg_set_cfs_bandwidth() and export default_cfs_period()
+match  0ae6ac42e884  184dee2eb7a1  sched: Add cpulimit cgroup interfaces
+match  24dac1d50752  eb62f52ddbf4  sched: prohibit setting affinity from inside a CT
+match  f8dac31ae6cc  bd05b5a811ed  sched: Return only virtual cpus in sched_getaffinity()
+match  4db445af7780  ab23c3d1eb2e  device_cgroup: add device visibility virtualization in CT
+match  49480d904168  7a9c23ef1ca7  ve/kernel: allow to increase rlimit from inside container
+match  e44a2c99fcc0  dbc6dfaf9861  ve/net/cred: add ve_capable to check capabilities relative to the current VE (v2)
+match  3d91649107e6  78a7cfe8cdee  ve/net/dummy: enable support in a container
+match  6a09cea9a30f  74aa57895252  ve/net/ip_gre: containerize per-net devices
+match  11e04b404b98  5dc4b89a2c5f  ve/net: ip_vti: skip per net init in ve
+match  dec68a8dcd00  50033c23a430  ve/net/vxlan: enable support in a container
+match  9fb228554486  f56a5312b5e8  ve/uevent: Use own uevent_seqnum for every VE
+match  9c33c99b60d4  74f2ce13bb5c  ve/kobj: Send events per VE instead of all net-namespaces broadcasting
+match  ac55661f2101  5acf1107cd6d  ve/net: introduce vz_security_*_check checks
+match  b72c8111d76b  56847031321b  ve/quota: allow to manage quota in top CT user ns
+match  103be443ab45  0470f59c927e  rh/lib/cpumask: Make CPUMASK_OFFSTACK usable without debug dependency
+match  693b74f52398  e9b9e20e2fdd  memcg: do not allow to disable oom from inside a container
+match  bdfc9ca20ade  6dfa06ce5f46  ve/mm,oom: print information about ve of killed task
+match  e2a8d6b2cbc8  90b84af95da9  oom: do not dump all tasks info on each oom kill
+match  f33e2b59fa1e  dc9fde29853d  exit: clear TIF_MEMDIE after exit_task_work
+match  8491a1522f1c  c236ea5a513a  memcg: add oom_guarantee
+match  e43e1874ebfa  15cac45a229b  proc,memcg: use memcg limits for showing oom_score inside CT
+match  83f9d312d55e  b6536a99255a  oom: resurrect berserker mode
+match  21d7a93a8cb3  927f97b78498  oom: make berserker more aggressive
+match  3f157276f562  a3905103a998  kernel/freezer: don't freeze stopped & about to be ptraced task
+match  8ae9ebe2fe89  42eb088a0f3c  vzstat: Add base kstat structures and variables
+match  ba3196bc0e48  4c0948b977d5  mm: Export swap_cache_info struct and variable
+match  82beb65feb2f  89eb7c8a0046  mm: Export first_online_pgdat() and next_online_pgdat()
+match  430519bfbeaa  9c36c837f4fc  vzstat: Add vzstat module and kstat interfaces
+match  2dc10ee1e22b  e39524cebb5c  vzstat,sched: Track sched_lat_ve
+match  90d789aa2968  fcb04cfac841  kernel: Export tasklist_lock
+match  114a34a76f3d  47ea3924819d  vzstat: Update sched lat in vzmon
+match  6deade232f8b  76fe2060a2ff  fs/ve: add new FS_VE_MOUNT flag to allow mount in container init userns
+ok     fa6dfd7e2905  568f747791c7  fs: Mask appropriate filesystems FS_VIRTUALIZED
+match  0bd47e235e46  823f0735b50a  VE/FS: containerize filesystems access
+match  f69bd6bb814c  ee279453d2b3  ve/fs/locks: Make CAP_LEASE work in containers
+match  9c5ca96d6fd6  9b30263d986a  ve/fanotify: Use ve-capable instead of plain capable test
+match  b0a226a5f072  f29cd208bba8  ve/fs/namei: fix capabilities check in sys_renameat2 () to support Containers
+match  c918d419af3d  cc213b7b4b68  ve/fs: add ve_capable to check capabilities relative to the current VE
+match  dad6c2ab140a  471ca53049e7  ve/block: add ve_capable to check capabilities relative to the current VE
+match  f0076ac966d7  4d9361474f71  ve/uts_ns: Implement cgroup interface to configure ve's os_release
+match  d5c25ed92e44  7fbf70fc6380  ve/netlink: allow IPVS netlink messages to CT init userns
+match  2821d1392f3c  cd1f9111aff3  ve: Allow taskstats via netlink in netns
+match  8453f5990d90  5722fd76d45c  ve/taskstats: allow delivery of task attributes in CT context
+match  6f81aede4620  b8d51037c559  ve/lockdep: Taint kernel on circular locking complains
+match  e447716cdf60  55b6c99c05e6  ve/itimer: add ve_name to warning for a NULL new_value
+match  9fb388e152b1  105d8964dcd5  proc/net: proc_net_*() helpers introduced
+match  feb2b1626f11  1c9116809e8a  ve/proc/net: virtualize all the network proc entries
+match  47b0c3847f1b  e49dcd5bb47c  mm/memcg: enable memory.low for cgroup v1
+match  943ce7ff82da  9f298fa692cd  mm/memcg: enable memory.high for cgroup v1.
+match  b7e10b25378b  c4d4ea1a7cf5  mm/vmalloc: add v[mz]alloc_account helpers
+match  eda7695d7711  1994ca95599c  ms/memcg: enable accounting for net_device and Tx/Rx queues
+match  e8b623818ade  da9c45476bd9  ms/memcg: enable accounting for IP address and routing-related objects
+match  678c3fcbf079  03814fb6e830  ms/memcg: enable accounting for inet_bin_bucket cache
+match  f6af7f19f336  0e77d1590221  ms/memcg: enable accounting for VLAN group array
+match  daa1c7ed275b  123581168da0  ms/memcg: ipv6/sit: account and don't WARN on ip_tunnel_prl structs allocation
+match  ccb07ccccd2e  d1a804b9d9d5  ms/memcg: enable accounting for scm_fp_list objects
+match  81023d485b92  e61df6decf79  ms/memcg: enable accounting for pids in nested pid namespaces
+match  5c6f3f07892d  23419ee49e3d  ms/memcg: enable accounting for pollfd and select bits arrays
+match  a0d9c3ae7abc  011861d0508e  ms/memcg: enable accounting for file lock caches
+match  f58d8de8aff1  67a2ae515c15  ms/memcg: enable accounting of ipc resources
+match  4a956a1016f4  3bd88a6c18c2  ms/ipc: remove memcg accounting for sops objects in do_semtimedop()
+match  69d837210bae  076fd746bd99  memcg: Enable accounting for nft objects
+match  7f093a2e1914  1c12ab26d8ff  memcg: charge kmem allocations accounted to UBC in PCS6 to memcg
+match  3e3cb2972d15  7df8b95dce11  netfilter/x_tables: account entry offsets allocations
+match  dea15f4870de  abb021bff5e8  trace/osnoise: Fix compiler complain about using "main" local variable
+match  4403e1054671  97494130c53e  ve/sysctl: write permission restriction
+match  d5ad1ae9223a  4a342d652ea6  ve/sysctl: implement virtualized methods
+match  d45a81f2368d  706dc921a146  sysctl: make hotplug, printk and mmap_min_addr accessible inside a CT
+match  9a448eb2b378  14ceaa79a5a4  ve/sysctl/ipc: mark as virtualized
+match  684879d4220b  45aa3462be99  ve/sysctl/pidns: allow to change sysctl "ns_last_pid" from containers
+match  b626a040a310  c6773e2101be  ve/sysctl: allow to write kernel/hostname and kernel/domainname entries in container
+match  7120d3f2e082  590ec26d1d37  introduce ve_net_hide_sysctl helper
+match  bccb980e34ff  582c52fa7806  ve/sysctl/net: allow "net.unix.max_dgram_qlen" sysctl in CT init userns
+match  bce8b74b5a28  e5f0567f7500  ve/sysctl/net: allow net.ipv4.vs.* in CT init userns
+match  7639ecac59e6  0cfffabfe585  sysctl: Change sysctl::show_unhandled_signals default
+match  9768eddb52be  ab9298751c69  ve/proc: restricted proc-entries scope
+match  3c8be531a67c  e7a9b0759b81  ve/proc: Show vcpu in do_task_stat()
+match  c0fa01bcd2b6  303b36699176  ve: Virtualize /proc/swaps to watch from inside CT
+match  753e5218a024  5e3849f2df5c  ve/proc: print VE id and virtual pid in process status
+match  12c031ae24d1  510a0e3d5103  ve: Replace 0 ppid with 1 (workaround for bad utils)
+match  1de26099c9ef  31fa896a32c8  ve/proc: virtualize /proc/meminfo in a Container
+match  9c6b580d8356  777e2825461a  cbt: introduce changed block tracking
+match  2225e49bfc7d  9763df045a3d  cbt: Add config
+match  9465b4637d6e  db92102cb615  livepatch: added minimal support for failure injection
+match  ac67ea13f2fe  c5aa32ded9cb  mm: add warning about high order allocations
+match  487f54002537  e9fef1a82ac5  net/mlx5: suppress high order allocation
+match  40efaaf512b7  f14abc5dad00  keys, user: Fix high order allocation in user_instantiate() #PSBM-107794
+match  2f332260b07b  349f92a4e9ec  x86/kvm/vmx: Suppress warning on high-order allocation
+match  801f4602db88  33e11f62cb7a  include/linux/sockptr: introduce vmemdup_sockptr helper
+match  b52b2ebaa36d  501b4361b41a  net/setsockopt: switch high order allocations to kvmalloc() in do_ip_setsockopt()
+match  f969a7062a42  963313ecd99d  sctp: suppress warnings on high order memory allocation on sctp chunk creation
+match  bd68eccf3cf4  2123640d9cf4  vhost: suppress high-order-allocation warning for vhost_log
+match  a01d2c439f69  e78f874d1654  sctp: suppress warnings on high order memory allocation on packet transmit
+match  3e4f7dd8c1fe  bb13e9e90893  x86/microcode/intel: hide warning on high order allocation for microcode area
+match  6ee705aaeca4  a9e713eac9b1  net: silence high-order allocation warning from UDP with big headers.
+match  9146d443a36c  0dd85af626dd  net: silence high-order-allocation warning in sctp_pack_cookie()
+match  42b1f290f8a0  16a30ac2eb31  ipv6: silence high-order allocation warinig in rawv6_sendmsg()
+match  095099b84876  7de5fd39a935  netlink: silence high-order memory allocation warning in netlink_ack
+match  ef34fc47e9dd  b2631b88631c  modules: use kvmalloc when creating sysfs attributes for ELF sections
+match  c36046cfc66c  d7d948e58ea9  net/vhost: Replace kmalloc with kvmalloc for order>=3
+match  10614bb3aece  eaffb5b16114  mm/mempool: Use kvmalloc to allocate array of element pointers
+match  20f7dfc168c4  4a55fb0be703  IB/core: Use kvzalloc to allocate ib_device
+match  4d98c1aa7f88  537c6aa30dbf  bnx2x: Suppress warnings on DMA memory allocation
+match  187800878650  88a78e46fb88  bnx2: Use kvzalloc() to allocate certain internal data
+match  c777983133e7  ecbcebc3a54b  mm: introduce kvmalloc_check() for safe calls to kvmalloc()
+match  1878d3a68aac  f60d1c9f470d  net/sock: teach sock_kmalloc() to call kvmalloc() when possible
+match  8f818a732817  656b05890619  tty: use kvmalloc for screenbuffer allocation
+match  e9039d17bb20  3fe6153432e7  kvm: use kvzalloc for struct kvm allocation
+ok     9c313578995f  ffe587bbdae8  fs/pipe: Use kvcalloc for pipe buffers
+match  90473aac67d0  9b298b89001f  net/drivers/i40e: suppress high order allocation warning
+match  f4b141edbb72  b7f9aea90215  net/drivers/i40e: suppress warning on skb linearization
+match  f7dc6370763a  4712eb765307  fence-watchdog: Add fence-watchdog driver
+match  45a5ef667e59  ddfaf3ddde4d  fence-watchdog: Add xt_wdog_tmo netfilter match
+match  a51af6fcfea1  4b23805c28ac  fence-watchdog/arptables: add ability to filter by watchdog timeout
+match  54b5b9676d8a  199b9459002e  mm, cgroup, writeback: Enable per-cgroup writeback for v1 cgroup.
+match  13bf14cb8664  d71e8c427741  x86: "pages zeroing on free" option introduced
+match  4e265d4dd0b7  6b41e30459d1  mm: issue panic() on bad page/pte bugs if panic_on_warn is set
+match  eb6714dc226d  2aef93eeeb2e  mm: memcontrol: add stats for reclaimable and unreclaimable stats
+match  d2ac0a17feca  b63a9efc83e4  ve/mm: introduce min threshold for dcache
+match  5aa6d4ab8db2  fa2f67ad920f  ve/mm: allow container's root to ignore mlock limit
+match  27a5fc05646d  1baa0324dc22  mm: memcontrol: add swapin/out stats
+match  ce049eaa5d02  e7d12a186415  mm, memcg: add oom counter to memory.stat memcgroup file
+match  2654f2f1fa8d  c963dfc11b76  mm: per-memcg negative dentries accounting
+match  012832e7c42c  d21eb80d747d  mm: default collapse huge pages if there's at least 1/4th ptes mapped
+match  5dcce6d68c1b  ea70b9c99eb0  mm: memcontrol: add memory.numa_migrate file
+match  96f2c5d16315  61a7a222713f  mm: Do not leak node data to CT's /proc/vmstat
+match  c566face979b  b107e29eb58f  mm/mecontrol: add memcg_[un]charge_kmem() API
+match  70e2decdafd7  5d31646e4318  mm/swap: activate swapped in pages on fault
+match  1d7ed259051d  87b80c96108b  ve/mm: add heuristic check for memory overcommit
+match  e9799426e5d3  445d4f2b898d  ve/audit: allow changing loginuid for VE root
+match  943f9a0e6e98  954ee53be9aa  configs: provide kernel config via proc
+match  6b12f8392007  567334a59d0e  ve/procfs: make /proc/config.gz visible inside Containers
+match  dd5bae491433  0878bbc61bf9  configs: Limit number of legacy ptys
+match  11550a9ed1cf  314d6e9b6b81  configs: Increase default value for vm.mmap_min_addr
+match  99177e77a3ed  709aad0ccd79  configs: VZ options
+match  41d2adc7cd30  f4b909d7e184  dm-tracking: Add tracking_clear cmd
+ok     2d21b0f4671f  c9d60cc34644  ve/printk: Introduce struct "log_state" and virtualize log_buf/log_buf_len
+ok     5c0a1447b8dd  d453856434c9  ve/printk: Virtualize "prb" and "clear_seq"
+                                     (log->prb should be moved from ("ve/printk: Virtualize syslog_*"))
+ok     e08fc5fbdd57  edff531df565  ve/printk: Virtualize syslog_*
+                                     (log->prb should be moved to ("ve/printk: Virtualize "prb" and "clear_seq""))
+ok     221c6c5203b4  16291323cc5f  ve/printk: Virtualize console_*
+ok     15fda8e27a80  8dd2171d7104  ve/printk: Virtualize log_wait queue
+match  16d42ded4644  8a040d980de0  ve/printk: Introduce ve_printk()
+match  aa7c3f1fec6e  dbdf2f525dc7  ve/printk: per-CT printk helpers introduced
+match  1c328df3332f  038166b5b5c2  ve: Use ve_printk() for often kernel messages about user actions
+match  ae48c350dbd3  b46f7adeaffe  ve: use ve_printk() to print VMA address in case of segfault
+match  f71a5b60e632  d1c5e2bddc73  ve: network rate-limited VE logging helpers introduced
+match  1435fb0b27ab  e52edcfcf27a  ve/netfilter: ve_printk for "nf_conntrack: table full"
+match  fdaae2aca560  230e940add22  ve/kthreadd: emulate kthreadd by kworker thread, attached to CT
+match  2f82d348ae81  a0b76bfdcae5  ve/kthreadd: add per-ve kthreads creation interface
+match  6091e4e5a7dc  580f2b1dde94  ve/kthreadd: create kthreadd in a containers pid ns
+match  cb1d6fa6e791  3e5ea6a5e000  ve/umh: make queue function one of the subprocess_info parameters
+match  2c7b14ff159f  1d1e5e66ea9c  ve/umh: init work separately from other subprocess_info parameters
+match  4c5fae974f6c  48f134137d40  ve/umh: add per-container usermodehelper thread
+match  1bc8605fa96d  242b732906b8  ve/umh: introduce per-container user mode helper macroses and functions
+match  c4b7f2d363a1  2292f386af20  ve/umh: create kernel thread for each synchronious UMH request
+match  d086b62647d0  a684fa188926  ve/umh: enable user mode helper in container
+match  7c66f934366e  755c2c161557  sunrpc: add "kill-tasks" proc entry
+match  00f07ff6a9b0  53f5bd2e207a  sunrpc: bring back SUNRPC task abort logic
+match  5c4d5e751eed  3eee1c19eb56  sunrpc: pending tasks kill helper added
+match  0376f0c384c7  d61e8e1cdf81  sunrpc: do not place task to sleep if has to be killed
+match  a52d73563288  863c6bbdd60e  ve/fs/nfs: NFS containerization
+match  5adea283b97d  cc8cca6f0891  ms/NFS/CIFS/SUNRPC: don't allow to freeze execution
+match  de6a3701a189  8f65ef94f754  ve/sunrpc/nfsd: containerize kthreads
+match  3ea97151116c  798f9890b3fc  ve/nfsd: enable UMH client tracker in a container
+match  003e670be1c4  8b8a742b40fe  ve/nfsd: disable legacy recovery tracking for containers
+match  7a9c1162cd99  501e6dc9f999  ve/fs/nfsd: NFSd containerization
+match  7f7e84128636  a9c747eebd8d  nfsd: return file system superblock time granulaty on FSINFO request
+match  b60ef4fa3571  7e6043fb480e  ve/sunrpc: Prohibit mounting rpc_pipefs in CT without nfsd feature
+match  937679abad92  6c0006569cc0  ve/sunrpc: Enable rpc_pipefs mounts in Container root user namespace
+match  cbda721f28b4  c8f3c1376f53  fs/nfs: more leaks for busy inodes case.
+match  f7569dfeca60  bc410599cfa9  ve/perf: forbid perf events syscall in containers
+match  7bb0fcc6dc62  f6f20fa9f694  ipc: add export_operations to mqueue sb
+match  2999f5aae4f3  5b9a998b8516  ipc: WARN if trying to remove ipc object which is absent
+match  fae77b694928  e8e9b827df3d  VE/sysrq-trigger: make it VE-namespace aware
+match  3fd6c14d00b8  982c362c6f25  tmpfs: shmem_fallocate must return ERESTARTSYS
+match  c7870ba3015e  9550029ff83e  kernel/sched/fair: Fix 'releasing a pinned lock'
+match  11ff5ac9db2a  d6628d0fa164  ve/sched: Link VE root cpu cgroups in separate list
+match  7d33197be528  639b1843c4fa  sched: Make calc_global_load() return true when it's need to update ve statistic
+match  51a62d8c94e1  af00a098b027  ve/sched/loadavg: Calculate avenrun for Containers root cpu cgroups
+match  905459b26b98  5dae5442bcd9  ve/sysinfo/loadavg: Virtualize loadavg values in sysinfo()
+match  9bd85988f5c1  d882e3834def  ve/proc/loadavg: Virtualize /proc/loadavg in Containers
+match  f16d9080a7ea  09e8f4a0ebe5  vzstat: Add kstat_glob.nr_unint_avg real accounting
+match  6b3c7fe14930  c52f59d3b20f  ve, x86_64: add per-ve vdso mapping.
+match  5f2212dacacf  cd3efce8ad11  ia32: add 32-bit vdso virtualization.
+match  c39651502a7f  bd192f6237f5  ve: patch linux_version_code in vdso
+match  720e35496761  2e64b9757730  ve/devmnt: Introduce ve::devmnt list #PSBM-108196
+match  76332e396b33  a72ba04a4459  ve/fs/devmnt: process mount options
+match  588cf264e1c9  9346c375d78e  userns: associate user_struct with the user_namespace
+match  b3c58e996b79  ebde5329331b  ve/mm: print OOM info to VE log
+match  caef34269ef3  0e141395008d  tty: Avoid threads files iterations in __do_SAK()
+match  d75b0b1bfdfb  ef656a6489b9  tty: Use RCU read lock to iterate tasks and threads in __do_SAK()
+match  1e98569826ee  44e86f36b63e  mnt: allow to add a mount into an existing group
+match  700f06c10de6  516896238492  ve/fs/binfmt: move all internal data to structure
+match  f428bcf1e891  0b57a631759b  ve/fs/binfmt: virtualization
+match  0bbde6edf86e  1997023869b6  ve/binfmt_misc: destroy all nodes on ve stop
+match  a68acfe1eae4  54bd7e5e8822  ve/kernfs: fix lookup for kernfs superblock
+match  9ec6f270c369  00f508f102ea  kernfs/ve: ignore kernfs 've_perms_map' in cgroups.
+match  0094594c9dd0  a9a3eb13e790  overlayfs: add dynamic path resolving in mount options
+match  1eac982b40ed  fb1ae499c31b  overlayfs: add mnt_id paths options
+match  db77299d66c1  bc568ab16dc6  configs: add/enable options for overlayfs paths absolute resolution
+match  7e22156afff6  da2deea07ad2  configs: Set overlayfs nfs_export option to true
+match  420f2d6bc5a1  90df7a5ce836  ve/fs/overlay: allow overlayfs to be used inside a Container
+match  3acad7f6f16e  505d2f6e3a5b  overlayfs: relax capable check for trusted prefix xattrs
+match  8b882f2c2288  0fe758f9cc31  ovl: make uuid=off compatible with overlayfs created without it
+match  3b9726bb323e  cf0b82f3dab9  ve/vfs: introduce "fs.odirect_enable" sysctl and disable it by default
+match  fb8d90add434  ddf525c14c55  ve/fs: add per-VE limit of mount points
+match  5bf27cc1daa6  b9b0ff08e2e5  trusted/block: Added trusted flag to struct genhd
+match  987f5ac7643a  3b4050f2f3f7  trusted/ve/fs/exec: Don't allow a privileged user to execute untrusted files
+match  96dba2824ed3  f5b79dd397cb  trusted/ve/fs/exec: Send SIGSEGV to a process trying to execute untrusted files
+match  71c8f7d30660  ada07cf66bfc  trusted/ve/exec: Allow trusted exec change both on boot and on running system
+match  6ef508d26eb6  a67c1ccb240d  trusted/ve/mmap: Protect from unsecure library load from CT image
+match  6efbabc80ca2  10746178878c  ve/time: remove our per-ve times in favor of mainstream time-namespaces
+match  dc094b2f7eab  8544bd4fd9c2  ve/proc: Added separate start time field to task_struct to show in container
+match  9541ace6c6e1  65ab6259ba95  ve: Add interface for ve::clock_[monotonic|bootbased] adjustment
+match  4283c8728be3  17e7964a31fa  ve/time: Use ve_relative_clock in times() syscall and /proc/[pid]/stat
+match  0a7bca40a469  794d2eae83b0  ve: Virtualize sysinfo
+match  57da1df231f0  d6357bb7c038  ve/module: hide module refcounts from container
+match  63e59affd5ca  c7c9fb16f6e2  ve/kernfs: export kernfs_perms_set() helper
+match  a633455eb6a9  02f3cf3ae33b  ve/sysfs: generic sysfs_set_def_perms() helper introduced
+match  ed7b600ce7a9  0d37fb782e00  ve/module: export sysfs dentries in containers
+match  98bd2b2c7709  e852355de333  ve/net: allow to rename devices in non-ve namespaces
+match  8a5690084ed6  84910a74940d  ve/prctl_set_mm: allow setting exe link while unprivileged for spfs
+match  acb983879524  c199d7b047c5  ve/coredump: virtualize kernel.core_pattern sysctl
+ok     d81bff22df9a  cfb0df6d2135  ext4: Teach the fs where the balloon inode is
+                                     (The patch has been rewritten because ext4 moved to fs_context API, the patch has been reviewed in the scope of PSBM-140277)
+ok     52ee3b9eb5d5  a2692cf3a3cb  ve/fs: Allow to mount ext4 in top CT userns
+match  0103a94a593a  ebfee50524f2  ext4: Teach statfs to report reduced disk usage
+match  6bf2805d8a93  a7a2b052877b  ext4: Don't show the active balloon to user
+match  36af19c9fbb3  3ccf38787238  fs: Revert ee1904ba44bd "make alloc_file() static"
+ok     735a743e1b56  58ee342cafd3  ext4: Provide a balloon nipple for management
+match  a0439c27d824  83679d2d7a46  kernel/stat: Introduce kernel_cpustat operation wrappers
+match  28eed8f6675a  a1c5301cea1f  ve/sched/stat: Add basic infrastructure for vcpu statistics
+match  d41a4c1951b1  f4319fef997c  ve: uninline ve_get_monotonic() and ve_get_uptime()
+match  f3330d026466  deacff1b96c7  ve/sched/stat: Introduce functions to calculate vcpustat data
+match  e34b30280514  8af4dd755546  ve/proc/stat: Wire virtualized /proc/stat handler
+match  0ec41698d8f0  469394274a70  sched: Fix task_group "iowait_sum" statistic accounting
+match  a06138dc038c  dcf9162477f6  sched/stat: account ctxsw per task group
+match  4d662f66ee5f  2504366e476c  ve/sched/stat: Introduce handler for getting CT cpu statistics
+match  aa6af16ee1c5  811241a79e8c  ve/time/stat: idle time virtualization in /proc/loadavg
+match  6a6551660ddf  3dd773503842  ve/proc/stat: Introduce CPUTIME_USED field in cpustat statistic
+match  527a8410054a  b5d03a322c22  ve/vestat: Introduce /proc/vz/vestat
+match  8af3a3673a77  5ba5d66b2e6b  sched/stat: account forks per task group
+match  27244aa5c8bd  f6f299b31b40  ve/proc/net/nr_cpus: Cut lines in /proc/net/softnet_stat to number of vcpus in CT
+match  756540a3f409  9394a7b524ea  sched: Count loadavg under rq::lock in calc_load_nohz_start()
+match  b9cc95ec2e6a  325b29c8de74  sched/ve: Do not show loadavg in child VE cpu cgroups
+match  72cb964bb873  6267a7b24ec7  sched: show CPU stats for a cgroup in cpu.proc.stat file
+match  ef849f4d796a  2c835475d2ca  arch/x86: introduce cpuid override
+match  090e4ed2c3a9  f2b7e2e6dae2  x86: make ARCH_[SET|GET]_CPUID friends with /proc/vz/cpuid_override
+match  dbd1f339a4a6  98dad4292223  x86: Show vcpu cpuflags in cpuinfo
+match  7498b875919e  9f157c56f0ce  x86, cpuinfo: Fix race on parallel /proc/cpuinfo read #PSBM-121823
+match  48f0c9e99a1e  7d20e428d3ee  x86: don't enable cpuid faults if /proc/vz/cpuid_override unused #PSBM-121823
+match  b6b477194594  7e9d06f78aa3  ve/net/core: allow to call setsockopt(SO_SNDBUFFORCE) from Containers
+match  c7b8a8ecd711  a99785b5decc  ve/net/core: allow to call setsockopt(SO_RCVBUFFORCE) from Containers
+match  0d07397dc494  1b23d22b5591  vecalls: Introduce VZCTL_GET_CPU_STAT ioctl
+match  eedbc9c42ba2  7ece32ff939a  ve: allow writing to features in pseudosuper state
+match  8433a033ecd0  35f957aaa7d6  ve/fs/aio: aio_nr & aio_max_nr variables virtualization
+match  7154341e7218  03083ba51bce  ve/aio: Add a handle to checkpoint/restore AIO context
+match  04cb6d814df7  5093f0c9b196  ms/cgroup: let a symlink too be created with a cftype file
+match  1510bcdc0e58  f238f22b795f  ms/block, bfq: add weight symlink to the bfq.weight cgroup parameter
+match  aa1a7640f96a  972a8fec5a46  netlink: allow to set peeking offset for sockets
+match  944012703fba  382681c87145  netlink: add an ability to restore messages in a receive queue
+match  07c3c37f8549  67ea706900d1  netlink: add an option to set sk->err from userspace
+match  e2cde29b6966  80b14d7d539e  ve/fs/namespace: allow submounts in non-init userns
+match  66f622444cfd  ab23bc686f05  Kconfig.openvz: force CGROUP_PERF if compiling VZ Containers code
+match  c95d2f50569b  b6d8662970b2  ext4: don't iterate over sbi->s_es_list more than the number of elements
+ok     1e983bb6a030  604d027dec40  ve/ext3: treat panic_on_errors as remount-ro_on_errors in CTs
+                                     (reviewed in the scope of PSBM-140278)
+match  d3b65c72ad31  971dcfba83b8  ext4: Fix error handling after filesystem abort
+match  dc263755fe55  8202225cf28e  jbd2: make shure that we do not miss aborted state
+match  3faba6fac29f  93c6a125232a  ext4: make data=writeback mode safe
+match  694f17931fc6  4cd96f8c7f3c  jbd2: raid amnesia protection for the journal
+match  cac18613dce9  32111ca4ebb4  ext4: add mfsync support
+match  c2a2054ed564  23a538ad8f8a  ms/Revert "ext4: simplify kobject usage"
+ok     24dfe553c5af  1c3b77282ba0  ext4: add generic uevent infrastructure
+match  44958db575a7  15413cef1d2b  ext4: send abort uevent on ext4 journal abort
+match  14f32fa00760  ed55c33514fe  ve/net/ipv6 tunnels: Enable GRE netdevice register inside container
+match  dfa104b14ddd  37d5a6306605  ve/net/sit: Enable SIT devices in Containers
+match  3fa4fe7a65f0  f509a7e49ed4  ve/fs: Export fs.aio-max-nr via ve cgroup
+match  c627904f4182  8fcd39a70b87  ms/fs: Revert "Make super_blocks and sb_lock static"
+match  5ae2ad05b6bb  f63d1e30b98e  fs: Lower ioprio in case of ioprio_set() called from CT
+match  4cf5fbc446de  aefdd3bdca6e  ve/fs/ioprio: Confine ioprio_{set, get}(IOPRIO_WHO_USER) to current ve
+match  e7accd19bd51  b881ac0573f3  ve/fs: namespace -- Ignore device permissions during restore
+match  baa9744095fc  a52d3edd6d4f  ve/fs: namespace -- Don't fail on permissions if @ve->devmnt_list is empty
+match  ad53a4c1403a  f6847ec4bdc9  fs: FIEMAP should sync only required range with FIEMAP_FLAG_SYNC
+match  c57ebe8c09bc  840b340385a0  ve/fs: Allow mount fs in init userns if it's mounted in another userns
+match  fb97cab04db1  13acfc79e231  ve/fs/files: Add new argument to expand_files()
+match  a3659677f95d  4cfc49267634  ve/fs/files: Add fdtable_align() helper
+match  584d47a57e0e  48f5db36d739  ve/fs/files: Shrink big fdtable on close in is_pseudosuper mode
+match  9d0a391c2e89  28e62bba7814  pidns: add proc mount option 'hidepidns=0|1'
+match  9f811c8a9cb4  ef0fcd8587fe  x86/cpuid_fault: Increase max count of cpuid overrides
+match  9e931057505f  953f07bf4bc8  x86/cpuid_fault: Log table updates
+match  60e737c15df0  947f1778326d  drivers/bnx2x: Limit setting of the max mtu
+match  25a195a1e5c2  93ef3bc4f4ef  drivers/igb: increase link detection timeout up to 5 sec
+match  7c8999470425  582b4d76cf52  ve/cgroup: Hide ve cgroup in Containers
+match  b2dd0101a459  76b1cdeab419  net/teql: disable "True" (or "trivial") link equalizer inside a CT
+match  fc304efe4389  017eb488f9c9  connector: store all private data on VE structure
+match  4efa39072d00  814bceb09d08  connector: introduce VE-aware get_cdev() helper
+match  045ba70772e0  25de38f9c0be  connector: per-ve init and fini helpers introduced
+match  ef13f0e49766  775259a23638  connector: use device stored in VE
+match  5693ae081e0a  45f1f6741944  connector: per-ve helpers intoruduced
+match  9d1674ea4d6c  2464b29808a8  connector: take cn_already_initialized from VE
+match  6c7b46aa7d55  9b3376a6f098  proc connector: generic proc_event_connector() helper introduced
+match  2bd92a8cb262  ad7e448e9c8d  proc connector: use generic event helper for fork event
+match  fae544f28c7a  61e78a2c4119  proc connector: use generic event helper for exec event
+match  2a404037b951  0af2023e8494  proc connector: use generic event helper for id event
+match  072e1126209e  1b987e50048d  proc connector: use generic event helper for sid event
+match  cf2993e33948  3330081bdd2f  proc connector: use generic event helper for ptrace event
+match  eaae1e720cf9  925df0899c42  proc connector: use generic event helper for comm event
+match  081607fe20ff  8727a9479bbd  proc connector: use generic event helper for coredump event
+match  3dffea37bd4d  c08ad8b76484  proc connector: use generic event helper for exit event
+match  7a4423886b5b  a8cfa04457fd  proc connector: add pid namespace awareness
+match  b47c33ed5775  c17dc52ce2b2  proc connector: add per-ve init and fini foutines
+match  03cf589e762f  f8affe02ab54  proc connector: call proc-related init and fini routines explicitly
+match  22e21db014b8  659811e7d223  proc connector: take number of listeners and per-cpu conters from VE
+match  c5d0724928e2  400e5ac57632  proc connector: pass VE to event fillers
+match  e9de10ca5276  aa44dffbf12a  proc connector: take namespaces from VE
+match  54c51bca171d  e98637a0d58b  proc connector: use per-ve netlink sender helper
+match  be6d9fda1a32  825afc745088  proc connector: send events to both VEs if not in VE#0
+match  1e0534fdab5f  b48888bd1ebe  connector: containerize "connector" proc entry
+match  c44f0c679e7e  0f2b9d92e882  connector: take VE from socket upon callback
+match  41f1fd28c624  8ac3b4150fd1  connector: add VE SS hook
+match  c9b89b726749  abe2ebd27f1f  ve/kbd: add file kbd_bind in sysfs, which allow unbind keyboard from tty (v2)
+match  003d65767de4  d1b2a7ff21d9  ve/tty: Provide interface for current tty inheritance
+match  68d9ad88c123  81ef16f7ee4b  ve/tty: TIOSAK Secure Attention Key ioctl
+match  923fe092fef2  bbe5b2bf2685  ve/tty: vt -- Implement per VE support for console and terminals
+match  de1c7ef5c645  58038237b7cd  ve/vtty: Don't zap termios fields on slave peer
+match  6cf227475d68  9e37dc7ef0fc  ve/vtty: Make indices to match pcs6 scheme
+match  f0e3e215f54d  97aa92305fdb  ve/vtty: Don't close unread master peer if slave is nonzero
+match  1759e2d688bb  4eccb71a67e7  ve/vtty: Don't free console mapping until no clients left
+match  ff301714d447  5b0e46b70319  vtty: update termios settings and fix hung
+match  6a256e5aa5d6  bd3442f6c0bd  ve/sysctl/kmod: Introduce tweak to allow indirect modules load from CT
+match  b81e4f634e70  c25bd8566bd4  ve/kmod/whitelist: Infrustructure for list of modules to autoload from CT
+match  592de9927f99  507e4389236a  ve/kmod: Honor modprobe blacklist on indirect modules autoload from CT
+match  3ab1f5995aed  eccb819e12bc  ve/kmod/whitelist: Allow iptables/netfilter modules for autoload from CT
+match  b2224ba1573a  f9400ccaa599  ve/kmod/whitelist: List of allowed to autoload in CT modules (non-netfilters)
+match  92a9df9c6717  08a6361d1a8f  ve/kmod/whitelist: Add modules to whitelist for c/r sake
+match  83e0e886f1b4  7ab79180d621  ve/kmod/whitelist: Allow dummy module autoloading
+match  fdf7b6ed8a16  e31351a2c451  ve/kmod/whitelist: Enable vxlan module autoload from inside a Container
+match  3b2d355adcd2  1093cb5e8912  ve/kmod/whitelist: Allow IPVS modules autoload in CT
+match  0b50b044fbd4  726a030e7842  ve/kmod/whitelist: Allow netfilter/ipset modules autoload from inside a CT
+match  8950e7958f38  8bf76365ee0b  ve/kmod/whitelist: Allow ip6tables_raw modules autoload upon request from CT
+match  9fcefcc24b42  edabc10bec18  ve/kmod/whitelist: Allow NFS modules autoload in Containers
+match  bb537da71f08  533e177c5ea4  ve/kmod/whitelist: Allow nfnetlink_queue module autoload from CT
+match  a6f636579935  b819af19b5ba  ve/kmod/whitelist: Allow conntrack nft-helper-* modules autoloading
+match  55370ebdfe53  9f7d40a24226  ve/kmod/whitelist: Allow ts_kmp module autoloading
+match  28a9c4418659  91ccba1fc449  ve/kmod/whitelist: Allow nf_tables module autoloading on request from CT
+match  70500ea6de31  91fe269f4444  ve/kmod/whitelist: Allow "nft_compat" module autoload from inside a Container
+match  99f5d693d9e1  af244c563e03  ve/kmod/whitelist: Enable autoload for iptables security tables from inside CT
+match  078032768ecd  535426ac87c7  ve/kmod/whitelist: make nfnetlink_log autoloadable upon request from a CT
+match  d6268d445252  f4fe88a3236d  ve/kmod/whitelist: Make fib modules autoloadable from CT
+match  18df756510e1  402fb2997ec7  ve/devtmpfs: lightweight virtualization
+match  9f39b21d995f  569dd9af0c0e  ve/memcg: Virtualize /proc/vmstat view inside CT
+match  5ce89154fb81  0bb899b0c028  ve: prohibit opening proc/self/exe from VE for VD_VE_ENTER_TASK
+match  8cb0f08c576d  92d0d71a0560  ve/sysfs: relax sanity check for ns equality in kernfs_find_ns()
+match  32fad348775f  bee36920d522  shmem/ve: virtualize tmpfs default size
+ok     9f89fd51f2b3  2460109b0c06  ms/sock: allow reading and changing sk_userlocks with setsockopt
+match  2dfd3ce4f187  64b154c2f749  net: openvswitch: add capability to specify ifindex of new links
+match  fdc9e8361db8  215eea56f5d4  openvswitch: allow to create ovs bridges inside Containers
+match  b9547ab25f51  3e6a611b87cc  ve/bridge: handle netlink messages AF_BRIDGE / RTM_[GSD]ETLINK sent from inside a Container
+match  0302574bfa0f  defb011dcd38  scsi: ratelimit messages about rejected I/O
+match  46b926bb62cf  51d93d0fb15c  ve/proc/block: show /proc/diskstats inside a Container
+match  23f0be767d61  9668ada540ca  shm: skip shm_destroy if task IPC namespace was changed
+match  1b21b2f58d0e  c579697034cf  ve: add get_curr_ve helper
+match  a46a948a656a  314b2d14f3a2  ve: get_curr_ve: first try getting ve with rcu lock
+match  ec2aa0523e8d  f4f074e2d287  cgroup/net_prio: virtualize ifpriomap per-ve
+match  e4a75a3cfecd  10ce463856a5  ve/fs/inotify: do not impose limit on the number of instances by default
+match  8b17c3b09236  bf60ad06e556  cgroup: remove excess rcu_read_lock in cgroup marking
+match  f79f77efbf93  d2af363fddb0  ve/cgroup: Skip non-virtualized roots in cgroup_{,un}mark_ve_roots()
+match  f348467722c9  18b8c2dc11bc  ve/cgroup: Add ve_owner field to cgroup
+match  5076cff55e59  a9a115546479  cgroup: split cgroup_get_ve_root1 into css and cgroup version
+match  293f3efb5b58  c05c1f8f646b  ve: use rcu_dereference for ve_ns in ve_get_init_css
+match  f8c623d28547  702f2953cba8  ve/cgroup: temporary ignore misc cgroup to let vzctl start container
+match  271ddb105e0f  ebda8b1de197  sched/ve: calc_load_ve -- use raw spinlock
+match  9b9d79d7c2eb  ec7be3613316  x86/cpu: init_cpu_flags -- use raw spinlock
+match  54e1fa638679  f32151730a79  kernel/cgroup: implement cgroup_get_e_ve_css
+match  707900ece9a7  e5fa3025fc50  mm/backing-dev: associate writeback with correct blkcg
+match  465b4c76331e  282894bc8238  mm/memcg: limit page cache in memcg hack
+match  d6d87fa8cd25  95fe44f0d6f6  mm: introduce page vz extension (using page_ext)
+match  5efc1d6fbe46  16f75e5e50e9  configs: Enable CONFIG_PAGE_EXTENSION
+match  4bfc3301fb24  21eea5bafeed  ploop: Introduce option "off=" to cut beginning of device
+match  79a6c9e60b0b  fd056bb4fa31  core: Add glob_kstat, percpu kstat and account mm stat
+ok     dec2f18308ae  8f1df783f2b5  ve/page_alloc, kstat: account allocation latencies per-task and per-thread
+match  dfc504e96822  2808783cccef  /proc/<pid>/vz_latency: Show maximal allocation latency in the last 2min.
+match  39012fd98b70  a02461586697  /proc/<pid>/vz_latency: Add scheduling stats
+match  8ed751257888  3a5bd45c5b7a  /proc/vz/latency: distinguish atomic allocations in irq from in task atomics.
+match  13a589afab08  38fddbcaad90  /proc/vz/latency: Show max latency in 2 min instead of 5sec.
+match  de456fab3d9c  bf4d0870bddb  mm/page_alloc: add latency to the page_alloc tracepoint
+match  23034f6edddd  db90ab3a9293  fence-watchdog: Print alive messages
+match  4e2ab92ca166  08c9d389f368  ve/device_cgroup: Introduce "devices.extra_list" cgroup file
+match  3092aef846ed  6b7321d49ffd  ve/device_cgroup: Show all devices allowed in ct to fool docker
+match  2634668f1f4b  879f01c7861d  net: export net/core/somaxconn sysctl for unprivileged users
+match  da429f41527f  cd2f58344af0  xfs: Allow to mount XFS in non-init userns
+match  4261c9258b48  fb8becc58b06  ve/netfilter: Send iptables/netfilter kernel error messages to Containers
+match  736a520ceec1  2f1ef167dd0a  ve/netfilter: Implement pernet expect_max / virtualize "net.netfilter.nf_conntrack_expect_max" sysctl
+match  69fe70ff556c  9b9b58390e35  ve/netfilter: Implement pernet net->ct.max / virtualize "nf_conntrack_max" sysctl
+match  12fb075210bd  44ddae62d6d5  ve/netfilter: Check for permittions while looking for target and match
+match  ee82477b05f5  229e184ec6bd  net: Primitives to enable conntrack allocation
+match  fe1a3d292f15  761be76b7116  net: Mark conntrack users in xtables
+match  99b7d5cc6a33  8cb18c058cef  net: Mark conntrack users in nftables
+match  1a2db2ae4154  2bbc9b6c582b  net: export "net/*/neigh/*/*" sysctls for Container
+match  97dcc46abcda  85244e07aec6  ve/mount: allow pseudosuper to temporary exceed the container limit
+ok     0f721b6b7d48  c85f36d2cce8  ve/net/neighbour: per-ct limit for neighbour entries
+match  3eb9556eeb0c  d538e86fb559  net/skbuff: Don't waste memory reserves
+match  b7f34226e602  4a0f8b10d538  net/skbuff: WARN if kmalloc_reserve() fails to allocate memory.
+match  7d1219102238  0d8d0bf9a48e  kvm/x86: add log printing on emulation failure
+match  30712520be11  a3071a66e497  kvm/x86: extend info on emualation failure
+match  ad7c38447f3b  99e17531396b  kvm: move VMs which we skip during shrink to vm_list tail
+match  5997237f0564  9db4084bd4bd  kvm: move actual VM memory shrink out of kvm_lock
+match  424169cfc847  7e6ae617dcc7  net/gre: Consider VE_FEATURE_IPGRE on new net creation
+match  114e65bcaeab  16d83c02f96d  net/ip6ip: Consider VE_FEATURE_IPIP on new net creation
+match  34fdf6de8b30  43987c11a6f1  fs: Export symbols replace_fd() and create_pipe_files()
+match  fe3659ebaf1c  bf691f556128  ve/meminfo: show "MemAvailable: ..." line in CT's meminfo
+match  5f869e2668d0  28b83b9a70d4  ve/memcg: Account some swapped memory as used in CT in /proc/meminfo
+match  24d88967a518  ce4c4c6798b1  commoncap: relax setxattr and removxattr checks
+match  1f6009022785  7f089f1db15a  DMA-API: exceeded 7 overlapping mappings of cacheline share
+match  b9aab63581c4  f6a7abc88764  pid_ns: Virtualize pid_max
+ok     d47a5a18396a  ca8433febbe2  mm: Add and use batched version of __tlb_remove_table()
+match  554453b192c6  09c940c536a9  mempolicy: prohibit all NUMA API syscalls in VE
+match  26d39e65e5ec  5fd9870c7a09  fs/super: don't destroy super_block in case of leaked inodes
+match  e6851c1cd3ad  2700fd5fcdab  ve/cpu: handle sysfs attributes for CTs
+match  9abf3b901a34  3907e6bc1e26  mm/vmscan: add cond_resched() to loop in shrink_slab_memcg()
+match  6ead7b81705b  eada96c4650d  mm: fix hanging shrinker management on long do_shrink_slab
+match  deadd0b71726  54f294189901  ve/capability: introduce capable() wrapper which honors CT features
+match  98440b96a2fd  288d9b180bd0  ve/time: introduce CT feature to allow setting date/time
+match  d2a5897ab793  fe5273e18b50  ve/time/ntp: allow CT ntp adjustment time tuning under VE_FEATURE_TIME feature
+match  8fd4d3604a63  5193936793c4  scsi: aacraid: resurrect correct arc ctrl checks for Series-6
+match  0f0a8dbd9970  1ce9f4c1a74e  ve/pid: Export kernel.pid_max via ve cgroup
+match  35716fd1fb60  7481f781f282  ve/cgroup: fix cgroup_mark_ve_roots naming
+match  a3e5250bb109  8685f0dacf99  mnt_ns: introduce global list of mount namespaces for debug
+match  fcda9a81936d  33150c6921ac  cgroup/cfs: added 'activate' option to cgroup_add_file
+match  336170fd03df  5aec3a181a41  ve/cgroup: Implement per-ve workqueue
+match  cc9745b66715  5ff24d2ca551  ve/cgroup: Move release_agent from system_wq to per-ve workqueues
+match  868cbfe52093  daa2f916bb63  ve/cgroup: Private per-cgroup-root data container
+ok     257ba0a3b815  0be8179d6464  ve/cgroup: Set release_agent_path for root cgroups separately
+match  37fb2d16ba8e  bc2d5f90d587  configs: Enable vhost_scsi module build
+match  00b3ce9e7be1  6467f27681b7  xfs: Teach the fs where the balloon inode is
+match  744094285efc  952c5284d858  xfs: Never show balloon in readdir results
+match  7df1dff82642  9c5ff22f076d  xfs: Don't show the active balloon to user
+match  555dd74b05ee  d33f6d1af16e  xfs: Provide a balloon nipple for management
+match  dcdeb5392b74  5357c1dcfa4d  binfmt_misc: fix mount after umount in CT
+match  64ed144cdc17  b37c9b5834a7  mm: tcache: handle not initialized tcache properly in tcache_shrink_count
+match  82ce203e7f8d  1568669f3573  dm-ploop: Fix usage of bio_vec on stack
+match  e7c3e8704788  65cb66557319  ve/cgroup: hide non-virtualized cgroups in container
+match  694fbe0539c4  64cadefd097c  ploop: Provide more info about ENOSPC
+match  ea83bbb30bb4  e7071e48658b  ploop: simplify ploop_status
+match  97c499b293f7  46396cd9a9c1  drivers: build "isci" SAS controller driver
+match  db54981f20e3  005ff5132fdd  ms/prctl: allow to setup brk for et_dyn executables
+match  cf9653cf6d4f  a78b21627e84  ve/net/features: put per-ve netdev features to separate struct member
+match  241730ba6ac5  9b9e8c038bf8  veth: Functionality to disable MAC changing and MAC filtering feature
+match  eeb1e1683878  0dbc0b81e3a9  dm-tracking: Track request after it completed
+match  f2285a3bb65c  fb7db37d522c  dm-tracking: Do not return EAGAIN in case of there is no changed clu
+match  5869b22e2b03  a409b73c5495  dm-ploop: Remove tracking code
+ok     876789f9c777  8ea221c062b1  ext4: Check alloc_file() results in ext4_open_balloon()
+match  05175d1eb88c  58b017b06fc2  xfs: Check alloc_file() results in xfs_open_balloon()
+match  eab30afdf888  673525dfb87a  ve: fixes for !CONFIG_VE case
+match  e8a492c0f852  5e63f020ce2e  dm-qcow2: Do not fail .ctr in case dirty bit is set
+match  7d14fd36436b  50ac482f46e3  dm-qcow2: Do not check for dirty bit if mount is RO
+match  7b0715d7d30e  7d367807e67a  ms/misc/pvpanic: fix set driver data
+match  d64ce41bfe6a  5c9e26bd4ced  ve: cgroup -- don't use atomic lock in the sleepable context
+match  b70b0cd0fa3e  e46d0664a924  ms/vmalloc: back off when the current task is OOM-killed
+match  795a04705a96  fbd31269134c  ms/mm/vmalloc: repair warn_alloc()s in __vmalloc_area_node()
+match  db3f62263c18  fe3d0580e666  ms/mm, oom: pagefault_out_of_memory: don't force global OOM for dying tasks
+match  41529a9d51ba  3adc5450c741  ms/mm, oom: do not trigger out_of_memory from the #PF
+match  c2531487d98d  de71a34d3a73  ms/memcg: prohibit unconditional exceeding the limit of dying tasks
+match  4accbe330c15  8f6c8c5e27f3  ms/memcg, kmem: further deprecate kmem.limit_in_bytes
+match  bc786faaf2c8  4db60ad79fe4  ovl: replace capable by ve_capable for indexing feature
+match  23c07b93624c  64f1a13e9eaf  dm-qcow2: Extend status line - show qcow2 version and cluster size
+match  d086d83359c5  65a75ad63758  dm-ploop: Remove unused code
+match  3a213fbd6d90  72612284d26d  dm-ploop: Fix obsolete comments
+match  907b35564bb6  747084fb7cc7  ve/netfilter: Add autoloading of sockopt modules
+match  950b1816a257  60e7e5b30a8d  dm-qcow2: Return empty string instead of -ENOENT in qcow2_get_img_name()
+match  9bc9207e9592  d4ee3ad397ca  dm-qcow2: Temporary disable dirty bit check
+match  bfb479abd7ca  83f91a961372  ve/acct: Allow process accounting in containers
+match  4049de7736e2  b92c4621eb46  configs: Enable e1000 module build
+match  b26e8cbcafc4  98d2dd4a4fdb  ms/tracing: Don't use out-of-sync va_list in event printing
+match  2c00333837f0  2e6d2f19baee  dm-ploop: Rename size_in_clus
+match  56b3975595cd  fa5b9e21ade2  dm-ploop: Add check to process_update_delta_index()
+match  a6e7ee7bf9d5  a478d9e511bd  dm-qcow2: Return empty string instead of -ENOENT in qcow2_get_fd()
+match  85a9367b544d  a8ff002f4958  dm-qcow2: Extract similar code from qcow2_get_img_name() and qcow2_get_img_fd()
+match  7958b30608a6  eae95c9f19af  dm_qcow2: Kill nr_images and introduce img_id instead
+match  fad7c22c75d0  475270730448  dm-qcow2: Make qcow2_get_img() use qcow2_ref_inc()
+match  4e482f7ccbdf  0d4cc7fa68ef  dm-qcow2: Move qcow2_get_img_name() and qcow2_get_img_fd() out of mutex
+match  09fb206c2070  0d97c7eda959  dm-qcow2: Change call_rw_iter() parameter
+match  b81d40a74c01  a2d2dc6729cb  dm-qcow2: Add fault injection
+match  c738f4463b27  fd3c4c05af07  ms/xfs: fold perag loop iteration logic into helper function
+match  31578358e06b  d784afee755c  ms/xfs: rename the next_agno perag iteration variable
+match  8ef7ebfd1509  ffde7e89ae7e  ms/xfs: terminate perag iteration reliably on agcount
+match  eb75621fcf3a  c9f174d25fe8  ms/xfs: fix perag reference leak on iteration race with growfs
+match  2366fca2ee77  361a21d5ccf9  ve/fs: support per-CT disable of filesystem sync operations
+match  1114be6892e6  7dd741722d6a  ve/fs: introduce is_sb_ve_accessible()
+match  6a4d683d999e  a4586efe815f  ve/fs/sync: introduce argument struct for helper routines
+match  900988bd58ce  c885b6b16cd0  ve/fs: per-CT sync behavior management
+match  4dafb2feaf27  8ebec8e63f88  FD: fs: per-CT sync behavior management
+match  d43508b3a61c  e1ded3baecfe  rebase_logs: Add rebase logs for 4.18.0-240.1.1.el8 to 4.18.0-305.3.1.el8 rebase
+match  949aa6aace95  4c0dcb9ebeb8  ms/dccp: don't duplicate ccid when cloning dccp sock
+match  7c8e087f10e7  8c8b165510c0  net: export "net/core/xfrm*" sysctls for containers
+match  b257863aed12  d14d1cf0d57d  devtmpfs: Do not reuse name of existing varible
+match  5df53247ceaa  cfc42f94f002  ms/tracing/osnoise: Fix missed cpus_read_unlock() in start_per_cpu_kthreads()
+match  276410a89c93  bca4d410328e  ms/tracing/osnoise: Properly unhook events if start_per_cpu_kthreads() fails
+match  493c64829750  d44cb4607397  ms/nfsd4: add refcount for nfsd4_blocked_lock
+match  d39180b175cb  7d97b78a5ab6  ms/fuse: drop obsoleted and incorrect restriction in fuse_setlk
+match  f0afe50a68ee  6f35d7402f67  ms/fuse: async processing of F_SETLK with FL_SLEEP flag
+match  0a77c80abcca  109452655aa6  net/drivers/slip: disable high-order allocations warnings in slip driver
+match  476cf74b0119  aa89d7ec6570  net: hide high-order-request warning in pskb_expand_head()
+match  b870acfc54c0  b07a2c56dd8a  ms/nfs4: skip locks_lock_inode_wait() in nfs4_locku_done if FL_ACCESS is set
+match  48ccea7ff6dc  faee7c873d0e  fuse: Turn writeback cache on
+match  4041566f4dd2  6575a7899212  fuse: direct_enable mount option
+match  19a5efaf72ea  f149c1b8516c  fuse: fuse-ve-odirect sysctl
+match  63d32303be7d  9a9e281d73f6  fuse: Show active requests in fusectl files
+match  f0d566483e70  71054c2318fa  fuse: Show open files in fusectl
+match  485fd4078cd1  30261cc99946  fuse: Fuse ctl file with connection info
+match  981eb8f40edb  242281fe1d78  fuse: some fairness in handling writeback
+match  50d90408329b  04403d232085  fuse: Wait for real writeback to finish on file
+match  12addea44c4e  6a2d13441554  fuse: reimplement synchronous close
+match  d2213a4bdd54  8d6e8f9977db  fuse: i_size to be updated on first open
+match  e1d590e97673  c380050346bd  fuse: account directio requests into ioacct
+match  d5f39e374deb  af5814b6f57a  fuse: optimize fuse_vma_close()
+match  5cd95bb188d3  ef33b0df10d4  fuse: implement invalidate_files notification
+match  8de0a20d53a6  a66621bb5770  fuse: cleanups in fuse writeback
+match  e53cf8587d5d  587bd54d8282  fuse: add missed fuse_file_put()
+match  40a7eceaf80a  5d62d4439eaa  fuse: do not use RELEASE on directory
+match  45d758b1089f  2836a19edd99  fuse: extend report on pstorage errors
+match  f49c0819d323  ba73283bb39d  fuse: print initialized flag in conn info
+match  8ee40f22497f  ca79cabcd917  fuse: make umount synchronous
+match  5d687cb7af12  ab32011ae8cc  fuse: add mount option to disable close_wait
+match  49eefc5bbae2  a41a30127022  fuse: do not flush files opened ro
+match  ba7aab8b3969  beca816e7772  fuse: the list of all opened files
+match  140f320ad08f  19d43a921d59  fuse: add page_cache bit to fuse request
+match  b389853b0b57  7a409c5e2cc0  fuse: add "killed" bit to fuse request
+match  3a7e8c4febce  657d2947da20  fuse: kill requests on "lost-lease" event
+match  e5576d0417de  c66f35c1f6f6  fuse: prevent queueing new requests after
+match  7fdb2e21c71e  dd68a29de118  fuse: skip waiting for fuse writeback
+match  4f7d43b111fd  5733c6ddc419  fuse: fail lost-lease notification if async_read
+match  722eb1344758  295ea65dd51d  fuse: report details of aio failure
+match  182b816eb03e  85d83a1867b3  fuse: fix writeback/release race
+match  899c2afe8264  0d2b94bdd74c  fuse: invalidate_files backward compatibility mode
+match  81ea1ce619cc  0db43fc72a0d  fuse: fix deadlock in fuse_flush()
+match  0b49753c843a  73d0dd298de8  fuse: release cleanup
+match  ff500125a4a2  3e47fe24eee3  fuse: enable synchronous close for both "pstorage://" and "vstorage://" fs types
+match  58f829fabf5d  82d54cd30500  fuse: fuse_send_writepage() must check FUSE_S_FAIL_IMMEDIATELY
+match  0334e2128f13  b9f562c6cef9  fuse: ratelimint dio complains
+match  7685565ffd28  f30d1b19c496  fuse: trust server file size unless opened
+match  8888a47b45ac  2fb1bbe54eea  fuse: fuse_blocked_for_wb must check rw_files
+match  3a23ad79d856  2fb75f81840f  fuse: fuse_prepare_write() cannot handle page from killed request
+match  fa5ae2afae0d  d15e86d418b9  fuse: separate iqueue for clones
+match  2b5e5f9d103a  4026269c107c  fuse: ioctl() to bind fuse device to input queue
+match  797a4e213334  18397c71cd7f  fuse: ioctl(FIEMAP) support
+match  42db317deac2  142b2b38278a  fuse: skip invalidate_inode_pages2 on truncate
+match  0261ddcb70db  f32fc1f7b5ff  fuse: fix ->end() vs ->waitq ordering
+match  6e2182bcbe6d  5463fa90f196  fuse: add kdirect io engine v0.1
+match  d21657386dfc  1fd480e07de9  fuse kio: minimal noop engine skeleton
+match  40429d2c6b6a  7a6aeb5e2666  fuse kio: Add nullio engine
+match  5d3f8332cf74  10bfa321fb72  fuse kio: Add pcs engine combo v0.8
+match  db8e4e8be1b7  ce9c01c86e66  fio kio: PCS unblock writepath
+match  3674cae886df  b0f61dab4281  fuse_kio_pcs: implement truncate
+match  04f22576e002  c5a7c62c1e4c  configs: Introduce FUSE_KIO_NOOP option and disable module build by default
+match  d1bcd27880ba  4d9c00c73fb4  configs: Introduce FUSE_KIO_NULLIO option and disable module build by default
+match  88e7d361cd8c  d97ec929196e  configs: Enable vStorage in-kernel fast path module build
+match  d5c5096fe7d5  85f3ac87165d  fuse kio pcs: implement logging and prometheus statistics collection v2
+match  d1cb07b185d0  9399b310503b  fuse kio_pcs: ignore special inodes
+match  226a63eab87a  a47548186a73  fuse pcs_kio: fix page zeroing beond EOF
+match  ef8621026c1b  72e978bfe45b  fuse/kio_pcs: support FUSE_FSYNC
+match  f17ba30116e6  f8e00ca1309e  fuse: support FS_IOC_FIEMAP in i386 compat mode
+match  1b371030caba  fdd53a1294be  fuse/kio_pcs: adapt prometheus statistics to current vstorage state
+match  90d0ec906f8c  1a74297adea8  fuse/kio_pcs: fallocate support at low pcs protocol level
+match  0cc4e1004ab7  bf59631d31fe  fuse/kio_pcs: full fallocate() support
+match  832b1035ca14  e89f937b6955  fuse/kio_pcs: FIEMAP support
+match  bf4323ad0801  6df296a5204f  fuse/kio_pcs/pcs_map: fix process_flush_req lock leakage
+match  d450f04f4bf1  f87cc9c47d75  fuse/kio_pcs: read is broken by FIEMAP patch
+match  c450fb97b6f3  a4db1efe756c  fuse: pcs_kio cancel requests after fused crash
+match  10a6d6160ca1  01517090ba20  fuse/kio_pcs: use kvmalloc for pcs_fuse_cluster allocation
+match  0b9f2738fa92  eb319c903853  fuse: Try automatically load kio module
+match  dc3959cbdeb7  e69ebcb48090  kio: Stop always breaking connection in pcs_sockio_send() in case of EAGAIN.
+match  45224a5f1a4f  588c9fa1229f  fuse kio_pcs: ports from new user-space
+match  a23ee8802674  e9daf798e8f1  fuse kio: Do not requeue requests when connection is dead
+match  e8d39716dcb2  fa0d31e07f1c  fuse kio: Declare pcs_sockio::parent type
+match  61fccb47ac27  0461324dc8be  fuse kio: Cleanup in struct pcs_rpc
+match  63f9ac993284  fd401211c31f  fs/fuse kio_pcs: remove s_subtype check
+match  301f9e6b0bef  052657ae945f  fuse kio: Introduce fast path protocol version,
+match  8324557f3fe5  600aa79fd297  fuse kio: cleanup in token enqueue
+match  28bbc65244bf  24c5d78f303e  fuse kio: invalid assertion
+match  099b1817f552  2506d5be5106  fuse kio: Remove useless code in pcs_cs_destroy()
+match  b8667145ad63  26fdee7b7b8f  fuse kio: Introduce pcs_cs_list_of_cs_link()
+match  e3aac30c09d1  acbc6a8d45d3  fuse kio: Fix potential use after free
+match  3dd8cbdddd28  f65b27048eb6  fuse kio: Fix possible use after free in cslist_destroy()
+match  730e8a6bed94  b58c4ed6dac5  fuse kio: Introduce pcs_cs::use_count instead of ::is_probing
+match  c6d415f3ef36  a80b6d2edb27  fuse kio: Wait till cs is unused in pcs_csset_fini()
+match  ec0c410b8765  d4850d7c94ab  fuse kio: Change order around pcs_map_notify_addr_change()
+match  54f932e03e5e  52186c5a0320  fuse kio: Fix fix deadlock during change CS address
+match  fe41f84abe8d  05a290ef7636  fuse kio: Fix dereferencing of NULL cs in map_replicating()
+match  f7312d68559e  d8c2ea1666f6  fs/fuse kio_pcs: some cleanup ireq_on_error_()
+match  acf3bc28151c  8a355758228e  fuse kio: Handle fuse_map_resolve() failure in pcs_map_queue_resolve()
+match  b940c6a0e844  f30b41cdb568  fuse kio: Arrange rcu modifiers around accesses to pcs_cs_link::cs
+match  1b0bf6f83ec0  e2e74f2ac161  fuse kio: Use dereferenced cs in cslist_destroy()
+match  94332bea6f1e  9b65f860b798  fuse kio: infinite loop in processing congestion queue
+match  d31163174c96  6af8547ad236  fs/fuse kio_pcs: move pcs_ireq_queue_fail()
+match  7d9948462d09  5747851b3e39  fs/fuse kio_pcs: handle error of submit_size_grow()
+match  28a0e7343613  71c6b8bd9f28  fs/fuse: export fuse_release_ff() and __fuse_write_file_get()
+match  7fad636a8408  d5f99d2b2912  fs/fuse kio_pcs: pass the file handle for FUSE_SETATTR request
+match  f8d5c6e6500b  36caa0686b99  fs/fuse kio_pcs: fix double unlock of m->lock in pcs_map_get_locked()
+match  1c0d059853c5  bef0f669fe97  fs/fuse kio_pcs: fix out of bounds roles_str[] array access
+match  a210d319d950  c742c541d3f5  fuse kio: Delete excess unlist in pcs_csset_fini()
+match  db6da5a7a8bd  5a49976d597d  fuse kio: Do not NULL used pcs_cs_link::cs during connection destruction
+match  204bbbf889e1  effb057ee0ea  fs/fuse kio_pcs: fix NULL pointer dereference in cs_keep_waiting()
+match  0bcab37c369e  91b6b2379f4c  fs/fuse: remove extra check for empty active_list
+match  e91d28885d2b  276337c47781  fuse kio: Wait pending requests on final fput()
+match  462151f56967  5e0aaa26debb  fuse kio: Place more pcs_cs_link::cs under rcu dereference
+match  56735b9cd7ca  b50db0ce1613  fuse kio: Add comment to fuse_release()
+match  91bf07d0bafd  f4b4c7485da1  fuse kio: Add missed spin_lock into sync_timer_work()
+match  9ec714364e0a  338b1d901dc6  fuse kio: Fix unbalanced queueing and dequeueing pcs_map_entry::sync_work
+match  131acdd780a1  97f18ce0a857  fs/fuse kio_pcs: add more traces for cs requests
+match  67cc425be6bb  63eea749222c  fuse kio: Get msg size in second argument of pcs_sockio::get_msg()
+match  2f10003fbcff  acd01d712677  fuse kio: Skip processing of messages above PAGE_SIZE size
+match  6759b184b6de  6456113881b3  fs/fuse kio_pcs: mapped requests have map version preinitialized
+match  f95dad49d4e4  b58f358f52fc  fuse kio: support unix socket for local CSes
+match  dd9a3065848b  4f1b99ce8065  fs/fuse kio_pcs: handle old map in pcs_cs_submit()
+match  617942dabdf7  5757e3f9a690  fs/fuse kio_pcs: fix missing hbuf.uid update for ireq split case
+match  bd0e6badd751  bad0298764ef  fs/fuse: set inode entry for FUSE_FLUSH request
+match  8409d6296706  7ad49517e640  fs/fuse kio_pcs: add handling FUSE_FLUSH in kio_pcs
+match  908070d24b88  c420632d5dd7  fs/fuse kio_pcs: increment PCS_FAST_PATH_VERSION to 1.1
+match  705a552c51ae  3daae9f51343  fuse kio: Check returned FUSE_SETATTR size
+match  a525e8841b93  b8f3a2dc033d  fs/fuse kio_pcs: enable traces for cs sync
+match  b1de9d645acf  bd90dd846d02  fs/fuse kio_pcs: replace pr_info() with ktrace for ireq fatal error
+match  4e192be3c10d  ad663682f00e  fuse: Teach fuse_blocked_for_wb() handle no files case
+match  63607745cadb  755dc45ddfac  fuse kio: error PCS_ERR_CSD_LACKING is non-fatal
+match  11171e95551b  a81337b4170c  fs/fuse kio_pcs: fix grow work execution with zero
+match  16e702632c7e  33013dada241  fuse kio: Make KIO to require writeback_cache
+match  2e970b6f24cd  93ef096881f0  fuse: Refactor fuse_open_common()
+match  023a346012d6  3aefe1518279  fuse kio: Read file attributes every first open
+match  ef4e667c0122  81108b57049f  fuse kio: missing local client ID initialization
+match  b56447339752  503de3781d1b  fs/fuse kio_pcs: bugs in integrity protocol for fallocate
+match  f9a3fd5a9dd9  ed67ade9fe1b  fuse kio: Fix NULL pointer dereference in pcs_map_get_locked()
+match  32fb90388103  1f613c4714cc  fs/fuse kio_pcs: fix NULL pointer dereference inside a dead map
+match  5f273b1f9315  89f538900c46  fuse kio: Make struct fuse_inode::num_openers int
+match  4bcc57d8afda  e771488f90ee  fuse kio: logging improvements
+match  951672c2eaef  a0d09a9f16ba  fuse kio: avoid spurious uncork setsockopt on unix socket
+match  5faad12a81b2  9e101b38a936  fuse kio: control internal tracing with module parameter pcs_loglevel
+match  00763e8f411e  70919ed4cfcb  fs/fuse: add non-blocking request flag
+match  96fa3c8d2901  257e0af4e8af  fs/fuse kio_pcs: throttle async KIO requests
+match  e33847537550  0bb6cd13a853  fuse kio: kio must not fail when not being able to claim a file
+match  0ab09108b720  9719ad0bb0be  fs/fuse kio_pcs: style fix in pcs_fuse_submit()
+match  395a68b406fa  08b5ca4fd183  fs/fuse kio_pcs: fix NULL pointer dereference in pcs_flushreq_complete()
+match  5a4db2ebc15c  eecf109ee173  fuse kio: Allocate pcs_map from kmem_cache with SLAB_RECLAIM_ACCOUNT flag
+match  5064825a71eb  8302d39de09d  fuse/kio: Add socket io fault injection
+match  9a3177ae1075  43666e7bf671  fs/fuse kio_pcs: missed *msg_size setting in rpc_get_hdr()
+match  6156559d79b0  20f1f155e7b3  fs/fuse kio_pcs: disable TRACE/DTRACE for release kernel
+match  862e8224e053  b7b9f80f1155  fuse kio: Cleanup in pcs_fuse_submit()
+match  f6689ba6c1cd  e4e98a746acd  fuse kio: Extract fiemap iteration from fiemap_worker() to separate function
+match  27e3840c13c1  f609472e83be  fuse kio: Move it variable from stack to struct fiemap_iterator
+match  4160a37ddbf3  4d30bad3b3b0  fuse kio: Kill fiemap_worker() thread
+match  f6514803e709  b3d81fa68d30  fuse kio: Move position advance in fiemap_process_one()
+match  ed66b23d0da3  d83755c29366  fuse kio: Move fiter ireq iocount assignment
+match  dd467661bd3f  decd1e511740  fuse kio: Introduce fiemap_work
+match  2fe6692a6d05  72079e933a61  fuse kio: Async queueing of fiemap from work
+match  03299b932550  eff6b96b44c9  fuse kio: Do not zero already zeroed fields in pcs_find_get_map()
+match  e6ae8395abff  4b47a25c0e37  fuse kio: Do not zero already zeroed fields in pcs_sockio_init
+match  2ba3cc7e34df  f7ff2e167d20  fs/fuse kio_pcs: improve rpc to cpu binding
+match  7f29f450a24e  c4522bb2bd58  fs/fuse kio_pcs: time slice for rpc rebinding
+match  ba9ff5e06918  a885c49b9f9c  fs/fuse kio_pcs: fix race between req->end() and request_wait_answer()
+match  277136d1c7cb  3ff41957b9ca  fs/fuse kio_pcs: remove fuse destroy request
+match  eff5ad50e1fa  f246529d3b86  fs/fuse kio_pcs: drop rpc connection close in pcs_rpc_engine_fini()
+match  56b77a74c87d  fd9605597cd8  fuse kio: Add schedule_timeout() into pcs_rpc_fini_verify()
+match  dea7446dc4d7  281e327ecba9  fuse kio: Do not get useless fuse.ko module reference
+match  2de95f978087  031909bde667  fuse kio: Refactoring in fuse_show_options()
+match  ab960ff0baa7  03a9c24d7af3  fuse kio: Introduce cached_op
+match  aae89d2de72a  fb34de3fba0d  fuse kio: Reorder process_pcs_init_reply() and free memory on failure
+match  f33bdf2ba0b1  ece457a22f1d  fuse kio: Fallback to plain fuse in case of version mismatch
+match  cefcaebeae96  be400fa498fb  fuse kio: Protect struct pcs_rpc_engine::{unhashed, ht, nrpcs}
+match  226998b14c76  35192a78041d  fuse kio: Add debug printk into process_pcs_init_reply()
+match  9dae580f8a59  f5817406dcc5  fs/fuse kio_pcs: split kpcs_req_send()
+match  29ab036bd1f4  e67980f03319  fs/fuse kio_pcs: prevention of falling kio reqs to usermode
+match  86553bdff188  31cca16b2874  fs/fuse kio_pcs: fix double free of synchronous requests
+match  bc7bd090bb18  f4963552a929  fuse kio: Fix deadlock in kpcs_req_send()
+match  474f1b81980b  202a8d3c6c46  fuse kio: Return possibility to handle files served in userspace
+match  53a6dad407e4  6d27026a9b9d  fuse kio: Fix spelling in process_pcs_init_reply()
+match  26e9b958e43d  89cc09607b2a  fuse kio: Do not try to populate fuse_inode::private on second open
+match  27f7fc4c3f55  d0e6e16da53b  fuse kio: Differ fuse_pcs_kdirect_claim_op() return values
+match  c5e8b9e0d447  831b7bb86fe0  fuse kio: Refactoring in struct pcs_rpc
+match  8c37726b372c  5be0e6a40ebd  fuse kio: Port "ignore uninitialized CS addresses" commit
+match  8d1f7058b0f9  62f2dc85e963  fuse kio: Use __maybe_unused
+match  dd0464ee09fb  ef5bd9b0a736  fuse kio: Use sio eof instead of parent to determ abort
+match  f48eb743e140  7496d31487ea  fuse kio: Reorder callback assignment
+match  4e482be30d7b  64886eb41e39  fuse kio: Add pcs_cleanup_wq
+match  22949ec8b1cb  41c192bf179a  fuse kio: Destroy rpc in work func
+match  30cdd7bd7b4c  0157ec143b18  fuse kio: Introduce pcs_sk_kick_queue()
+match  3a35b7cc0bdc  3a5bd2af138d  fuse kio: Dereference sk_user_data under rcu
+match  1f4e81601f5a  769c66597cf0  fuse kio: Fix rpc socket leak on rpc_abort()
+match  3b1eb6ed70c3  8c48faea82fb  fuse kio: Hold pcs_rpc counter till sio may be freed
+match  facc778e9295  9ca5ec45b350  fs/fuse kio_pcs: drop old mapping after size growth
+match  4c523dded595  ccbe48053627  fuse kio: Stop self-abuse of rpc counter in rpc_queue_work()
+match  322c73e35d7c  50a46effb25f  fuse kio: Check for null ep in pcs_rpc_deaccount_msg()
+match  5c406df3a521  a961341f1ce1  fuse kio: Move abort & destroy block up in pcs_rpc_send()
+match  90e79013e51b  be7e72aa1b8c  fs/fuse kio_pcs: flush rpc work inside pcs_rpc_destroy()
+match  6f7ff1525b1e  94d64203927e  fuse kio: Fix deadlock at pcs_fuse_submit() error path
+match  a55ed7432df3  4c81a1c4ec3d  fs/fuse kio_pcs: fix NULL pointer dereference in pcs_mapping_truncate()
+match  1b7fd598cbb4  5ab721a89d24  fuse kio: Unexport pcs_ioconn_close() and pcs_ioconn_unregister()
+match  cd809b342c3d  1c1dc67dfea3  fuse: Prohibit kio engine from containers
+match  601678ddad12  1b4840bb8a47  fs/fuse kio_pcs: make map_truncate_tail() working as the original from libpcs_client
+match  0e5a7fe8c43e  17abf8da1b1f  fs/fuse kio_pcs: forgotten setting of the next phase
+match  80432b4efbce  bc51e7530e5f  fs/fuse kio_pcs: fix condition for map resolving in pcs_mapping_truncate()
+match  78439fc93390  41ce77a5af2d  fs/fuse kio_pcs: protect valid_for_truncate() by m->lock's
+match  cb32fc222c3e  acf090770f21  fs/fuse kio_pcs: fix map leak in pcs_mapping_truncate()
+match  0cc271ff91fc  23360626c4ec  fs/fuse kio_pcs: simplify pcs_mapping_truncate()
+match  81df61183930  784cb8803bc7  fs/fuse kio_pcs: fix map leaks in process_ireq_truncate()
+match  0a3b63b19d0e  95c6d9046a62  fs/fuse kio_pcs: NULL pointer dereference on access m->mapping->chunk_size_bits
+match  4746c2d1922d  105fbb28a6dd  fs/fuse kio_pcs: NULL pointer dereference in map_submit()->MAP_ARGS()
+match  6ef3ddfce456  4dcb647cc61c  fs/fuse kio_pcs: cleanup in truncate (backport)
+match  9951a63738ad  a823a46d79c4  fs/fuse kio_pcs: add assert on i_mutex for PUNCH_HOLE and ZERO_RANGE
+match  37490b4ed3c6  dcb0ba47a499  fs/fuse: add assert on i_mutex in fuse_send_write()
+match  b126c425ba5c  f99e0308e0bb  fs/fuse kio_pcs: make pcs_map_truncate() easier
+match  2776c5f6e6fd  bb0dc54d2f15  fs/fuse kio_pcs: cleanup kpcs_setattr_end()
+match  0613aa05a43a  fdc87cfc7923  fs/fuse kio_pcs: invalidation maps in setattr kio
+match  a88baf9fd2e9  c45489f6a442  fs/fuse kio_pcs: fix update cs state after receiving new map
+match  28f3a2688a6f  8e325ea29f56  fs/fuse kio_pcs: replenish netaddr_cmp() with rdma type
+match  266f9fb8b8be  a13477d310f8  fuse kio: Round down extent start in fiemap_process_one()
+match  176f33370e60  f12d3dab1094  fuse kio: fix timer setup so it actually delays ireq
+match  472dc4f539c2  59c981dddebd  fuse kio: never ignore fuse_req error during PCS_IOC_GETMAP
+match  e0611ef31a00  817417cd815a  fs/fuse kio: fix loss of FUSE_FSYNC/FUSE_FLUSH reqs
+match  027a60f95da3  7b64ecf6731a  fs/fuse kio: fix sreq and msg leak in prepare_map_flush_ireq()
+match  0c343d9b3edb  3a6ec2795d83  fs/fuse kio: retry allocation PCS_IREQ_FLUSH request
+match  fa1f9157f1b6  7ee624e8fdbc  fs/fuse kio: missed clean di->size.op in failed shrink request
+match  30e3c6c3eca7  4221f5d93d04  fs/fuse kio: missed cleanup for interrupted shrink request
+match  28788814e146  a05defa1b2fb  fuse: do not wait for completion of inessential writes in fuse fsync
+match  018ae0f79dcc  9f0210d70019  fs/fuse kio: fix mapping dereference in a dead map
+match  6ae3fcfd6e24  1f85b205f722  fs/fuse kio: satisfy pure FALLOC_FL_KEEP_SIZE immediately
+match  0b5dc9a6fc37  11e51a58bb68  fs/fuse kio: backport immediate-write attribute handle
+match  474e5ba747d2  a4814e034607  fs/fuse kio: add support PCS_CS_IO_SYNC flag
+match  ebddd0cc454d  d1031166cc3b  fs/fuse kio: deny unavailable ioctl's in kio
+match  1ace12976926  34ca6b0148c2  fs/fuse kio: bring fuse ktraces to a common view
+match  b86a7a5619c3  3f2368dd3480  fs/fuse kio: disable duplication FUSE_K* messages to debugfs by default
+match  1c9b44c4689e  ed067d152d8a  fs/fuse kio: make it possible to enable TRACE/DTRACE in the release kernel
+match  f9e08badee88  48099c804c15  fs/fuse kio: invalidate files for kio
+match  bc00744de949  2819483b134a  fs/fuse kio: add FUSE_S_FAIL_IMMEDIATELY check in pcs_fuse_submit()
+match  f1073ae2789a  db447a378a5f  fs/fuse: fix unsafe killing fiq->pending requests
+match  ac307c470f6d  2be63042b89b  fs/fuse kio: fix double free of pfc in process_pcs_init_reply()
+match  31d76ef3f13c  9c841d1e167d  fs/fuse kio: fix getting a non-existent pcs inode in kpcs_kill_requests()
+match  0441f1d287ba  7fef2b44c3d9  ms/fuse: Wake up req->waitq of only if not background
+match  f346abd0657b  88c4dd3feb00  fs/fuse kio: export fastpath protocol version
+match  faad86945dc5  69547ad5202c  fs/fuse kio: fix a typo in worth_to_grow()
+match  b77fa13f7057  faba6fadce12  fs/fuse kio: relax congestion avoidance limits (backport from usermode)
+match  b772bf1b5d81  e50fffaf4e2a  fs/fuse kio: add missed sock write in pcs_sock_sendmsg()
+match  407ecee37611  2e1c268a0b10  fs/fuse kio: export io_locality
+match  5ffcbb539e61  f536d145812a  fs/fuse kio: sync pcs_mds_sys_info struct
+match  e6bd95165750  5bf86cbc168f  fs/fuse kio: add warning about jumbo chunks
+match  2bb78db4da44  78633590502c  fuse: do not take fc->lock in fuse_request_send_background() - fixup
+match  1103a30abe0f  ff4deff399fe  fs/fuse kio: forward fuse_file pointer to kpcs_req_send()
+match  50eae1006bb1  1a62e9f77318  fs/fuse kio: add pending kio requests to kqueue
+match  f113fa4402e5  4e8956b689db  fs/fuse kio: style fix in pcs_fuse_submit()
+match  581d5513e74d  db8a8a87f727  fs/fuse kio: keep fuse_file for requests waiting for shrink
+match  288d45229322  fbedf8d5174e  fs/fuse kio: fix latency time count
+match  a7cd5a7f07b5  c0cf543bc27b  fs/fuse kio: make req_classify callback
+match  25104e998563  bdd43786ea8f  fs/fuse kio: simplify processing and sending kio requests
+match  0379086ee5c3  89cd49c143c7  fs/fuse: fix locked kio request send
+match  b2e49845ee42  c8660dc0e11d  fs/fuse: add conn_ctl to fuse_conn struct
+match  fd5c7f60b82f  50089c8bd6b5  fs/fuse kio: create sysfs stat directory
+match  94796f5ebc4c  a7568c86e298  fs/fuse kio: implement iostat statistics info
+match  76890683bec6  fb3d3dd1a26f  fs/fuse kio: make interface pcs_kio_file_list() for listing kio files
+match  a18f39ab2df9  3ea72110077d  fs/fuse kio: make interface pcs_kio_req_list() for listing kio reqs
+match  251b6fe6fa3d  2536a25e8e9e  fs/fuse kio: add retry counter for kio requests
+match  6c91d592580d  890fb66a53d2  fs/fuse kio: implement pcs_strerror()
+match  2ba6ad68ee76  f22780e62c42  fs/fuse kio: implement requests statistics info
+match  d408497d2c41  04432856edca  fs/fuse kio: implement fstat statistics info
+match  d8e29ffd97ce  9c66c149256f  fs/fuse kio: implement fstat_lat statistics info
+match  10fa5de73271  58bfb3d286d9  fs/fuse kio: remove useless pcs_cs initialization
+match  78b9c2df71e7  dc98470732ff  fs/fuse kio: implement cs statistics accounting
+match  eaae1fd2ffe1  ae9785e6f6b4  fs/fuse kio: convert rpc state id to string
+match  69e1cd983133  a99b86fa4875  fs/fuse kio: implement cs_stats statistics info
+match  942a2e95c1a5  2f3f25199a36  fs/fuse kio: cosmetic changes in pcs_fuse_prep_rw()
+match  64176c5e2691  1eacc67ab606  fs/fuse kio: fix inode leak in pcs_fuse_submit()
+match  6dedad51a11f  21627daf6b4b  fs/fuse kio: fix stack overrun in request_end()
+match  8595441f0675  b3a68ce84c19  fs/fuse kio: skip iostat count for unknown req types
+match  382ef1649498  100c55e33196  fs/fuse kio: fix length overflow in FALLOC_FL_KEEP_SIZE
+match  4365caf35cd9  ddb7dbc190a9  fs/fuse kio: drop maps on file close
+match  486c8c30bb0c  b75715033b1e  fs/fuse kio: reset write_iter for canceled msg
+match  e4c558ea50c0  b46d2ef5cb00  fs/fuse kio: fix fuse_mutex leak in pcs_fuse_stat_fini()
+match  c457944bf144  2334dbdc8858  fs/fuse kio: set NULL to stat->kio_stat in failure case
+match  d5bdf93ad945  50f70953150b  fs/fuse kio: add a sanity check on statistic inc
+match  1e65dfe26163  d7043b64c901  fs/fuse kio: don't wait read requests in case of fsync/flush
+match  fff85ff47239  ce36befcee2d  fs/fuse kio: share bandwith/IOPS for prometheus stats
+match  585c379f8903  f8d283d65452  fs/fuse kio: show latency in cs_stats properly
+match  d5207d392135  53b57b4c5c4f  fs/fuse kio: calculate network latency properly
+match  7f1b936716de  0e452b5f46dc  fs/fuse kio: missing ireq's completion_data initialization
+match  7707319bd8f3  921b465efde7  fs/fuse kio: implement internal cs connection
+match  2007f7df97ad  e372180b9f96  fs/fuse kio: drop external cs connection
+match  ff3ae96a330d  ccb4c5b90025  fs/fuse kio: make pcs rpc socket independent
+match  5c353ef0152c  214db590451a  fs/fuse kio: make pcs auth socket independent
+match  90611c8c7f50  69616622d354  fs/fuse kio: implement support RDMA transport
+match  758cac3cf963  2bb7640bae7a  fs/fuse kio: add storage_version attribute to control filesystem
+match  914253d8cb6a  d6f3c4ae6eeb  fs/fuse kio: align CS messages to 512 bytes
+match  5605c81734c2  e9c3fff94cee  fs/fuse kio: set the connection params for RDMA properly
+match  2255cbc67b52  437fe3281977  fs/fuse kio: allocate memory for each RDMA RX buffer separately
+match  98c658d56cd2  fd8e92c5ab93  fs/fuse kio: concurently work shrink and IO operations
+match  156d2105fb4c  29db1bcd13db  fs/fuse kio: NULL pointer dereference in case of dead map
+match  c14b0134dace  6fa094dd78bd  fs/fuse kio: int overflow while calculation of pos in map_truncate_tail()
+match  58fe7f50fe3c  acee92ef225e  fuse: enable async_dio for pcs
+match  0a3e96f74ff3  335183a8a710  fs/fuse kio: fix processing order of RDMA works during throttle/unthrottle
+match  b06ea033faa4  2f448ae6f274  fs/fuse kio: post rdma work requests only after connection is established
+match  b0a834377815  e97f5d6aa947  fs/fuse kio: always use memory registrations for iWarp RDMA reads
+match  88c1a6d351f1  571041528f27  fs/fuse kio: fix problem with simultaneous map resolving
+match  156f53db6f52  990cf0af146e  fs/fuse kio: avoid race condition at file expand
+match  5d7e908d81d8  a138c99c2636  fs/fuse kio: disable parallel fsyncs and file shrinks
+match  abbfc5caa1a8  29ec5e668859  fs/fuse kio: share stucked requests count for prometheus stats
+match  c509cea840c0  25269949ef2d  fs/fuse kio: don't use kio with uninitialized statistic
+match  a54ca69497ac  a7bc589667c8  fs/fuse kio: redefine fuse_kio_ops callback functions.
+match  37a3ead9af59  ad3807f73be1  fs/fuse kio: set fc->kdirect_io
+match  cd8f903b5533  2d456cc7e08c  fs/fuse kio: inculde header file <linux/fiemap.h>
+match  2a8f5d0a1bae  ed9ad0673be3  fs/fuse kio: remove shash_desc::flags usage
+match  cbb29f313da3  79e7055b32ce  fs/fuse kio: remove current_kernel_time() usage
+match  67c5e9952688  9ac7522f4891  fs/fuse kio: remove ib_dma_*_coherent() usage
+match  efcf969c7b69  44e421d80752  fs/fuse kio: remove kernel_setsockopt() usage
+match  450528e13cdb  4c41dadc4ac5  fs/fuse kio: remove iov_iter_for_each_range() usage
+match  974d4fbc213d  84399ad25464  fs/fuse kio: add fuse_destroy_inode()
+match  90017af7cc29  d91161147dd7  fs/fuse kio: fix compilation warning of 'variable length array'
+match  8e8b6b8ddafe  2bd5dc073019  fs/fuse kio: fix compilation warning of 'implicit-fallthrough'
+match  f3f7024609e7  ee827d986b9a  fuse: improve bdi dirty memory limits for fuse
+match  9b32b9f4c034  bd87614959bd  fuse: resend interrupted release
+match  5783990c047d  bc37b2211d24  fuse: increase min/max_dirty_pages up to 256/512 MB
+match  8a9a28ec3605  3e05bce75049  fuse: process small sync direct reads synchronously
+match  1ccbbdd79864  59e7cfa5cb2b  fuse: queue work for aio_complete (v3)
+match  f6059e176443  e75805ce3166  fuse: relax i_mutex coverage in fuse_fsync
+match  831ec805c2ec  5d1f3339d6ca  fuse: cleanup fuse_wait_on_page_writeback_or_invalidate
+match  1e2fe46240fb  902e63852412  fuse: Wait inflight requests only in case of close_wait
+match  79572b2c6f8c  701f8f5350e0  fuse: don't perform getattr on each write
+match  b844cc6eb66d  73cb3c4d71d6  fuse: don't declare FUSE FIEMAP support for any FUSE fs
+match  14205d43652d  14905d11dfbe  fs/fuse: released handle could be used in fiemap
+match  744ba3986d0b  76e6cc70e80d  fuse: Handle zero req->num_pages in fuse_insert_writeback()
+match  96c596c054f5  36ec657ead31  fs/fuse: avoid triggering BUG_ON at file close
+match  3bf3362bbc87  24a1ff401c67  fuse: deadlock in map request
+match  2d168b951430  78a73f1483ea  fuse: fix fiemap looping
+match  c540fb72a171  9129815dcad1  fuse: illegal access to file in vstorage
+match  b423dd2dc6a5  fffb063eda49  fuse: disable invalid inode dirtying for vstorage
+match  847a4d1cae45  9158b5b5b5d4  vtty: fix slave peer lockdep annotation
+match  7febd5af4d80  78a1cca458e6  ms/scripts/tags.sh: Fix obsolete parameter for ctags
+ok     4eb9f8ef8b53  9b3771ed249b  fs: Make ext4_event_type more generic
+match  8cc0fc326fb8  75b0db430cf2  fs: Introduce fs_events_wq to use instead ext4's rsv_conversion_wq
+match  4277752cdfd8  ee84d36faf2b  fs: add kobj into fs_uevent
+match  4b7c53a44101  a8d8d3e29720  ext4: Kill ext4_uuid_valid()
+match  04c6c5eba22f  5689674ea246  ext4: Simplify UUID dereference in ext4_send_uevent_work()
+match  fb358e83a2dc  509a35d3af54  fs: Move and make generic ext4_send_uevent_work()
+match  45347c6138cd  736cd5ead0b3  fs: Move s_err_event_sent() and s_abrt_event_sent() to super_block
+match  eb6ae21da941  6b8929ff0de0  xfs: Zero uuid if it's not valid
+match  dac8a610da20  2cc4f9ceb651  xfs: Introduce xfs_send_uevent()
+match  543cdaae1d44  53c285d40bea  xfs: Notify userspace about events
+match  ab96d74c4caa  609ad6d12467  dm-ploop: Print more error information on resize
+match  3f48e9ba7687  c944be81943d  ve/net: restrict number of net devices for CT
+match  4cf5c39b2585  339505b2177a  ve/net: ip6_vti: skip per net init in ve
+match  a753d9541ec3  c230e676c82d  fs: Use standard fiemap behavior for all filesystems except FUSE
+match  4822726ac5ed  4fbd8644ac23  dm: Fix use-after-free in dm_cleanup_zoned_dev()
+match  a9310b16e7da  b29e8ea657c5  ve/nf_log_syslog: virtualize packet logging per-ve
+match  c60472db5150  3183affbd505  ve/net: add is_ve_init_net helper
+match  65967d37e028  3a5445b2da59  ve/nf_log_syslog: allow packet logging in ve init netns
+match  730f0636ddd9  c334fd27e50b  kernfs/ve: fix strange ve_is_super check in kernfs_d_visible
+match  4f4f552b25b9  8cbde7aaffa0  ms/ipc/sem: do not sleep with a spin lock held
+match  572754a7e614  631dde69676a  ve/kernfs: handle negative dcache entries in kernfs_iop_lookup()
+match  425cb5ef4cc3  0ff7c523d29c  vzeth: handle custom ioctl using .ndo_siocdevprivate() handler
+match  1a4144437a7d  8abc48bdb548  procfs: ipc: restore visibility of /proc/sysvipc/ in CT
+match  4693e700856d  91617f203bf4  dm-qcow2: Introduce a new helper init_qrq_and_embedded_qio()
+match  c74745c283fd  fa19cb5fbfa9  dm-qcow2: Stop using err_status_lock
+match  de86826f2b22  429655b6eff9  dm-qcow2: Pause IO and notify about ENOSPC events
+match  5a0fcbc3c31e  9ee8b901fb8a  net/ve: move check if netdevice is allowed in VE
+match  ed767df48758  90d5d8384abc  dm-qcow2: Rename MERGE_QIOS_MAX
+match  c3bf9c2ad6c3  b34b93e3bc71  dm_qcow2: Add bi_op argument to qcow2_service_iter()
+match  6f7980885d30  c3a4c0260899  dm-qcow2: Introduce fake_service_qio()
+match  0c0b10cc6843  fc625a3b866d  dm-qcow2: Prepare handle_md_page() for calling not only from main kwork
+match  cbb0f5df8c54  45a931ccfb3d  dm-qcow2: Remove arg in parse_metadata()
+match  b74364e996ee  54b7a9e35822  dm-qcow2: Use handle_md_page() instead of md_page_find_or_postpone()
+match  3b74ee79bfbd  10d30e7a369d  dm-qcow2: Introduce __handle_md_page()
+match  30751d60e1c9  7f4eb048cd6b  dm-qcow2: Move lock into parse_metadata()
+match  e11e4539f38e  58143864f3df  dm-qcow2: Remove useless zeroing in qcow2_service_iter()
+match  3cbd44646f1c  581925aa7a1c  dm-qcow2: Rename and unexport timer function
+match  2087b0645547  43283cfaa0c0  dm-qcow2: Close race between R1/R2 reading and relocate_refcount_table()
+match  bd6853912f2c  90a71b785013  ploop: allow to disable css inheritance in kthread
+match  06aeed62a01f  3953e5113171  FD: dm-ploop: swap speed limit for Containers
+match  d72dc238917d  61f60ad5e8b2  mm: Fix nil dereference in __mem_cgroup_charge_gen()
+match  fbb62a3bd1e6  f07a43e7e8a1  dm-zero-req: Introduce zero request based target
+match  979c99c3ae7a  1a1eebbcfb3f  dm-zero-rq: Rename "dm-zero-req" module to "dm-zero-rq"
+match  5219f60a8a73  1dfe00d34d1c  veth: Resurrect dummy SIOCSVENET ioctl
+match  8f06bdaac909  6186ca9353b5  ms/cgroup: no need for cgroup_mutex for /proc/cgroups
+match  680dd02adc8d  7b53473ce326  fuse: add 'struct fuse_file *ff' field to 'struct fuse_args'
+match  a907ab7c7309  a94023abd8b9  fuse: Add a new fuse inode state FUSE_I_INVAL_FILES
+match  c2c5a90ad57d  baf2690d782c  Revert "memcg: Enable accounting for nft objects"
+match  687406060a28  84340c0d554a  ms/memcg: enable accounting for nft objects
+ok                   dde8bd752643  OpenVZ kernel rh9-5.14.0-70.13.1.vz9.15.3
+ok                   59f12e23b917  cgroup-v1: Allow setting release_agent from root Container user_ns
+                                     (ms commit disabled settings of release_agent from any nested userns)
+ok                   7d944d4eca4a  OpenVZ kernel rh9-5.14.0-70.13.1.vz9.16.1
