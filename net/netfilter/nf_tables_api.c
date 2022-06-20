@@ -1790,7 +1790,7 @@ struct nft_expr *nft_expr_init(const struct nft_ctx *ctx,
 		goto err_expr_stateful;
 
 	err = -ENOMEM;
-	expr = kzalloc(info.ops->size, GFP_KERNEL);
+	expr = kzalloc(info.ops->size, GFP_KERNEL_ACCOUNT);
 	if (expr == NULL)
 		goto err_expr_stateful;
 
