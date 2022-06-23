@@ -4967,11 +4967,20 @@ out:
 	return ret;
 }
 
+static inline bool nested_exit_on_nmi(struct vcpu_svm *svm)
+{
+	return (svm->nested.intercept & (1ULL << INTERCEPT_NMI));
+}
+
 static int svm_nmi_allowed(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct vmcb *vmcb = svm->vmcb;
 	int ret;
+
+	if (is_guest_mode(vcpu) && nested_exit_on_nmi(svm))
+		return 1;
+
 	ret = !(vmcb->control.int_state & SVM_INTERRUPT_SHADOW_MASK) &&
 	      !(svm->vcpu.arch.hflags & HF_NMI_MASK);
 	ret = ret && gif_set(svm) && nested_svm_nmi(svm);
