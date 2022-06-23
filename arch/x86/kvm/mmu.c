@@ -4014,7 +4014,7 @@ bool kvm_can_do_async_pf(struct kvm_vcpu *vcpu)
 	if (!vcpu->arch.apf.delivery_as_pf_vmexit && is_guest_mode(vcpu))
 		return false;
 
-	return kvm_x86_ops->interrupt_allowed(vcpu);
+	return kvm_arch_interrupt_allowed(vcpu);
 }
 
 static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
