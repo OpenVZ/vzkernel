@@ -236,8 +236,8 @@ static void blk_cbt_add(struct request_queue *q, blkcnt_t start, blkcnt_t len)
 		__blk_cbt_set(cbt, start, len, 1, 1, NULL, NULL);
 		goto out_rcu;
 	}
-	ex = this_cpu_ptr(cbt->cache);
 	local_irq_disable();
+	ex = this_cpu_ptr(cbt->cache);
 	if (ex->start + ex->len == start) {
 		ex->len += len;
 		local_irq_enable();
