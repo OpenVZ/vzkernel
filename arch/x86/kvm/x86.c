@@ -8813,10 +8813,13 @@ static inline bool kvm_vcpu_has_events(struct kvm_vcpu *vcpu)
 	if (vcpu->arch.pv.pv_unhalted)
 		return true;
 
-	if (atomic_read(&vcpu->arch.nmi_queued))
+	if (test_bit(KVM_REQ_NMI, &vcpu->requests) ||
+	    (vcpu->arch.nmi_pending &&
+	     kvm_x86_ops->nmi_allowed(vcpu)))
 		return true;
 
-	if (test_bit(KVM_REQ_SMI, &vcpu->requests))
+	if (test_bit(KVM_REQ_SMI, &vcpu->requests) ||
+	    (vcpu->arch.smi_pending && !is_smm(vcpu)))
 		return true;
 
 	if (kvm_arch_interrupt_allowed(vcpu) &&
