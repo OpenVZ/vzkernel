@@ -35,12 +35,12 @@
 #include <linux/timer.h>
 #include <linux/delay.h>
 #include <linux/workqueue.h>
+#include <linux/io.h>
 #include <sound/core.h>
 #include <sound/control.h>
 #include <sound/pcm.h>
 #include <sound/initval.h>
 #include <sound/info.h>
-#include <asm/io.h>
 #include <asm/dma.h>
 #include <mach/sysasic.h>
 #include "aica.h"
@@ -540,7 +540,7 @@ static int aica_pcmvolume_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static struct snd_kcontrol_new snd_aica_pcmswitch_control = {
+static const struct snd_kcontrol_new snd_aica_pcmswitch_control = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "PCM Playback Switch",
 	.index = 0,
@@ -549,7 +549,7 @@ static struct snd_kcontrol_new snd_aica_pcmswitch_control = {
 	.put = aica_pcmswitch_put
 };
 
-static struct snd_kcontrol_new snd_aica_pcmvolume_control = {
+static const struct snd_kcontrol_new snd_aica_pcmvolume_control = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "PCM Playback Volume",
 	.index = 0,
@@ -609,8 +609,8 @@ static int snd_aica_probe(struct platform_device *devptr)
 	dreamcastcard = kmalloc(sizeof(struct snd_card_aica), GFP_KERNEL);
 	if (unlikely(!dreamcastcard))
 		return -ENOMEM;
-	err = snd_card_create(index, SND_AICA_DRIVER, THIS_MODULE, 0,
-			      &dreamcastcard->card);
+	err = snd_card_new(&devptr->dev, index, SND_AICA_DRIVER,
+			   THIS_MODULE, 0, &dreamcastcard->card);
 	if (unlikely(err < 0)) {
 		kfree(dreamcastcard);
 		return err;
@@ -625,7 +625,6 @@ static int snd_aica_probe(struct platform_device *devptr)
 	err = snd_aicapcmchip(dreamcastcard, 0);
 	if (unlikely(err < 0))
 		goto freedreamcast;
-	snd_card_set_dev(dreamcastcard->card, &devptr->dev);
 	dreamcastcard->timer.data = 0;
 	dreamcastcard->channel = NULL;
 	/* Add basic controls */

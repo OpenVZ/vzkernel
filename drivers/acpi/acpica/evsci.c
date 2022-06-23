@@ -73,7 +73,7 @@ static u32 ACPI_SYSTEM_XFACE acpi_ev_sci_xrupt_handler(void *context)
 	ACPI_FUNCTION_TRACE(ev_sci_xrupt_handler);
 
 	/*
-	 * We are guaranteed by the ACPI CA initialization/shutdown code that
+	 * We are guaranteed by the ACPICA initialization/shutdown code that
 	 * if this interrupt handler is installed, ACPI is enabled.
 	 */
 
@@ -120,6 +120,7 @@ u32 ACPI_SYSTEM_XFACE acpi_ev_gpe_xrupt_handler(void *context)
 
 	interrupt_handled |= acpi_ev_gpe_detect(gpe_xrupt_list);
 
+	acpi_sci_count++;
 	return_UINT32(interrupt_handled);
 }
 

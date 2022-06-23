@@ -108,6 +108,12 @@ static inline ktime_t timespec_to_ktime(struct timespec ts)
 	return ktime_set(ts.tv_sec, ts.tv_nsec);
 }
 
+/* convert a timespec64 to ktime_t format: */
+static inline ktime_t timespec64_to_ktime(struct timespec64 ts)
+{
+	return ktime_set(ts.tv_sec, ts.tv_nsec);
+}
+
 /* convert a timeval to ktime_t format: */
 static inline ktime_t timeval_to_ktime(struct timeval tv)
 {
@@ -116,6 +122,9 @@ static inline ktime_t timeval_to_ktime(struct timeval tv)
 
 /* Map the ktime_t to timespec conversion to ns_to_timespec function */
 #define ktime_to_timespec(kt)		ns_to_timespec((kt).tv64)
+
+/* Map the ktime_t to timespec conversion to ns_to_timespec function */
+#define ktime_to_timespec64(kt)		ns_to_timespec64((kt).tv64)
 
 /* Map the ktime_t to timeval conversion to ns_to_timeval function */
 #define ktime_to_timeval(kt)		ns_to_timeval((kt).tv64)
@@ -301,6 +310,30 @@ static inline int ktime_compare(const ktime_t cmp1, const ktime_t cmp2)
 	return 0;
 }
 
+/**
+ * ktime_after - Compare if a ktime_t value is bigger than another one.
+ * @cmp1:	comparable1
+ * @cmp2:	comparable2
+ *
+ * Return: true if cmp1 happened after cmp2.
+ */
+static inline bool ktime_after(const ktime_t cmp1, const ktime_t cmp2)
+{
+	return ktime_compare(cmp1, cmp2) > 0;
+}
+
+/**
+ * ktime_before - Compare if a ktime_t value is smaller than another one.
+ * @cmp1:	comparable1
+ * @cmp2:	comparable2
+ *
+ * Return: true if cmp1 happened before cmp2.
+ */
+static inline bool ktime_before(const ktime_t cmp1, const ktime_t cmp2)
+{
+	return ktime_compare(cmp1, cmp2) < 0;
+}
+
 static inline s64 ktime_to_us(const ktime_t kt)
 {
 	struct timeval tv = ktime_to_timeval(kt);
@@ -318,9 +351,19 @@ static inline s64 ktime_us_delta(const ktime_t later, const ktime_t earlier)
        return ktime_to_us(ktime_sub(later, earlier));
 }
 
+static inline s64 ktime_ms_delta(const ktime_t later, const ktime_t earlier)
+{
+	return ktime_to_ms(ktime_sub(later, earlier));
+}
+
 static inline ktime_t ktime_add_us(const ktime_t kt, const u64 usec)
 {
 	return ktime_add_ns(kt, usec * 1000);
+}
+
+static inline ktime_t ktime_add_ms(const ktime_t kt, const u64 msec)
+{
+	return ktime_add_ns(kt, msec * NSEC_PER_MSEC);
 }
 
 static inline ktime_t ktime_sub_us(const ktime_t kt, const u64 usec)
@@ -348,6 +391,25 @@ static inline bool ktime_to_timespec_cond(const ktime_t kt, struct timespec *ts)
 	}
 }
 
+/**
+ * ktime_to_timespec64_cond - convert a ktime_t variable to timespec64
+ *			    format only if the variable contains data
+ * @kt:		the ktime_t variable to convert
+ * @ts:		the timespec variable to store the result in
+ *
+ * Return: %true if there was a successful conversion, %false if kt was 0.
+ */
+static inline __must_check bool ktime_to_timespec64_cond(const ktime_t kt,
+						       struct timespec64 *ts)
+{
+	if (kt.tv64) {
+		*ts = ktime_to_timespec64(kt);
+		return true;
+	} else {
+		return false;
+	}
+}
+
 /*
  * The resolution of the clocks. The resolution value is returned in
  * the clock_getres() system call to give application programmers an
@@ -358,15 +420,25 @@ static inline bool ktime_to_timespec_cond(const ktime_t kt, struct timespec *ts)
 #define KTIME_LOW_RES		(ktime_t){ .tv64 = LOW_RES_NSEC }
 
 /* Get the monotonic time in timespec format: */
-extern void ktime_get_ts(struct timespec *ts);
+extern void ktime_get_ts64(struct timespec64 *ts);
 
 /* Get the real (wall-) time in timespec format: */
-#define ktime_get_real_ts(ts)	getnstimeofday(ts)
+#define ktime_get_real_ts64(ts)	getnstimeofday64(ts)
 
 static inline ktime_t ns_to_ktime(u64 ns)
 {
 	static const ktime_t ktime_zero = { .tv64 = 0 };
+
 	return ktime_add_ns(ktime_zero, ns);
 }
+
+static inline ktime_t ms_to_ktime(u64 ms)
+{
+	static const ktime_t ktime_zero = { .tv64 = 0 };
+
+	return ktime_add_ms(ktime_zero, ms);
+}
+
+# include <linux/timekeeping.h>
 
 #endif

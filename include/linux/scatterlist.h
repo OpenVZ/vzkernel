@@ -9,6 +9,12 @@
 #include <asm/scatterlist.h>
 #include <asm/io.h>
 
+/*
+ * Since the above length field is an unsigned int, below we define the maximum
+ * length in bytes that can be stored in one scatterlist entry.
+ */
+#define SCATTERLIST_MAX_SEGMENT (UINT_MAX & PAGE_MASK)
+
 struct sg_table {
 	struct scatterlist *sgl;	/* the list */
 	unsigned int nents;		/* number of mapped entries */
@@ -32,17 +38,18 @@ struct sg_table {
  *
  */
 
-#define SG_MAGIC	0x87654321
+#define SG_CHAIN	0x01UL
+#define SG_END		0x02UL
 
 /*
  * We overload the LSB of the page pointer to indicate whether it's
  * a valid sg entry, or whether it points to the start of a new scatterlist.
  * Those low bits are there for everyone! (thanks mason :-)
  */
-#define sg_is_chain(sg)		((sg)->page_link & 0x01)
-#define sg_is_last(sg)		((sg)->page_link & 0x02)
+#define sg_is_chain(sg)		((sg)->page_link & SG_CHAIN)
+#define sg_is_last(sg)		((sg)->page_link & SG_END)
 #define sg_chain_ptr(sg)	\
-	((struct scatterlist *) ((sg)->page_link & ~0x03))
+	((struct scatterlist *) ((sg)->page_link & ~(SG_CHAIN | SG_END)))
 
 /**
  * sg_assign_page - Assign a given page to an SG entry
@@ -56,15 +63,14 @@ struct sg_table {
  **/
 static inline void sg_assign_page(struct scatterlist *sg, struct page *page)
 {
-	unsigned long page_link = sg->page_link & 0x3;
+	unsigned long page_link = sg->page_link & (SG_CHAIN | SG_END);
 
 	/*
 	 * In order for the low bit stealing approach to work, pages
 	 * must be aligned at a 32-bit boundary as a minimum.
 	 */
-	BUG_ON((unsigned long) page & 0x03);
+	BUG_ON((unsigned long) page & (SG_CHAIN | SG_END));
 #ifdef CONFIG_DEBUG_SG
-	BUG_ON(sg->sg_magic != SG_MAGIC);
 	BUG_ON(sg_is_chain(sg));
 #endif
 	sg->page_link = page_link | (unsigned long) page;
@@ -95,10 +101,9 @@ static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 static inline struct page *sg_page(struct scatterlist *sg)
 {
 #ifdef CONFIG_DEBUG_SG
-	BUG_ON(sg->sg_magic != SG_MAGIC);
 	BUG_ON(sg_is_chain(sg));
 #endif
-	return (struct page *)((sg)->page_link & ~0x3);
+	return (struct page *)((sg)->page_link & ~(SG_CHAIN | SG_END));
 }
 
 /**
@@ -150,7 +155,8 @@ static inline void sg_chain(struct scatterlist *prv, unsigned int prv_nents,
 	 * Set lowest bit to indicate a link pointer, and make sure to clear
 	 * the termination bit if it happens to be set.
 	 */
-	prv[prv_nents - 1].page_link = ((unsigned long) sgl | 0x01) & ~0x02;
+	prv[prv_nents - 1].page_link = ((unsigned long) sgl | SG_CHAIN)
+					& ~SG_END;
 }
 
 /**
@@ -164,14 +170,11 @@ static inline void sg_chain(struct scatterlist *prv, unsigned int prv_nents,
  **/
 static inline void sg_mark_end(struct scatterlist *sg)
 {
-#ifdef CONFIG_DEBUG_SG
-	BUG_ON(sg->sg_magic != SG_MAGIC);
-#endif
 	/*
 	 * Set termination bit, clear potential chain bit
 	 */
-	sg->page_link |= 0x02;
-	sg->page_link &= ~0x01;
+	sg->page_link |= SG_END;
+	sg->page_link &= ~SG_CHAIN;
 }
 
 /**
@@ -184,10 +187,7 @@ static inline void sg_mark_end(struct scatterlist *sg)
  **/
 static inline void sg_unmark_end(struct scatterlist *sg)
 {
-#ifdef CONFIG_DEBUG_SG
-	BUG_ON(sg->sg_magic != SG_MAGIC);
-#endif
-	sg->page_link &= ~0x02;
+	sg->page_link &= ~SG_END;
 }
 
 /**
@@ -221,6 +221,7 @@ static inline void *sg_virt(struct scatterlist *sg)
 }
 
 int sg_nents(struct scatterlist *sg);
+int sg_nents_for_len(struct scatterlist *sg, u64 len);
 struct scatterlist *sg_next(struct scatterlist *);
 struct scatterlist *sg_last(struct scatterlist *s, unsigned int);
 void sg_init_table(struct scatterlist *, unsigned int);
@@ -229,26 +230,67 @@ void sg_init_one(struct scatterlist *, const void *, unsigned int);
 typedef struct scatterlist *(sg_alloc_fn)(unsigned int, gfp_t);
 typedef void (sg_free_fn)(struct scatterlist *, unsigned int);
 
-void __sg_free_table(struct sg_table *, unsigned int, sg_free_fn *);
+void __sg_free_table(struct sg_table *, unsigned int, bool, sg_free_fn *);
 void sg_free_table(struct sg_table *);
-int __sg_alloc_table(struct sg_table *, unsigned int, unsigned int, gfp_t,
-		     sg_alloc_fn *);
+int __sg_alloc_table(struct sg_table *, unsigned int, unsigned int,
+		     struct scatterlist *, gfp_t, sg_alloc_fn *);
 int sg_alloc_table(struct sg_table *, unsigned int, gfp_t);
-int sg_alloc_table_from_pages(struct sg_table *sgt,
-	struct page **pages, unsigned int n_pages,
-	unsigned long offset, unsigned long size,
-	gfp_t gfp_mask);
+int __sg_alloc_table_from_pages(struct sg_table *sgt, struct page **pages,
+				unsigned int n_pages, unsigned int offset,
+				unsigned long size, unsigned int max_segment,
+				gfp_t gfp_mask);
+int sg_alloc_table_from_pages(struct sg_table *sgt, struct page **pages,
+			      unsigned int n_pages, unsigned int offset,
+			      unsigned long size, gfp_t gfp_mask);
+
+size_t sg_copy_buffer(struct scatterlist *sgl, unsigned int nents, void *buf,
+		      size_t buflen, off_t skip, bool to_buffer);
 
 size_t sg_copy_from_buffer(struct scatterlist *sgl, unsigned int nents,
-			   void *buf, size_t buflen);
+			   const void *buf, size_t buflen);
 size_t sg_copy_to_buffer(struct scatterlist *sgl, unsigned int nents,
 			 void *buf, size_t buflen);
+
+size_t sg_pcopy_from_buffer(struct scatterlist *sgl, unsigned int nents,
+			    const void *buf, size_t buflen, off_t skip);
+size_t sg_pcopy_to_buffer(struct scatterlist *sgl, unsigned int nents,
+			  void *buf, size_t buflen, off_t skip);
+size_t sg_zero_buffer(struct scatterlist *sgl, unsigned int nents,
+		       size_t buflen, off_t skip);
 
 /*
  * Maximum number of entries that will be allocated in one piece, if
  * a list larger than this is required then chaining will be utilized.
  */
 #define SG_MAX_SINGLE_ALLOC		(PAGE_SIZE / sizeof(struct scatterlist))
+
+/*
+ * The maximum number of SG segments that we will put inside a
+ * scatterlist (unless chaining is used). Should ideally fit inside a
+ * single page, to avoid a higher order allocation.  We could define this
+ * to SG_MAX_SINGLE_ALLOC to pack correctly at the highest order.  The
+ * minimum value is 32
+ */
+#define SCSI_MAX_SG_SEGMENTS	128
+#define SG_CHUNK_SIZE		SCSI_MAX_SG_SEGMENTS
+
+/*
+ * Like SCSI_MAX_SG_SEGMENTS, but for archs that have sg chaining. This limit
+ * is totally arbitrary, a setting of 2048 will get you at least 8mb ios.
+ */
+#ifdef ARCH_HAS_SG_CHAIN
+#define SCSI_MAX_SG_CHAIN_SEGMENTS	2048
+#define SG_MAX_SEGMENTS			SCSI_MAX_SG_CHAIN_SEGMENTS
+#else
+#define SCSI_MAX_SG_CHAIN_SEGMENTS	SCSI_MAX_SG_SEGMENTS
+#define SG_MAX_SEGMENTS			SG_CHUNK_SIZE
+#endif
+
+#ifdef CONFIG_SG_POOL
+void sg_free_table_chained(struct sg_table *table, bool first_chunk);
+int sg_alloc_table_chained(struct sg_table *table, int nents,
+			   gfp_t gfp_mask, struct scatterlist *first_chunk);
+#endif
 
 /*
  * sg page iterator
@@ -340,6 +382,7 @@ struct sg_mapping_iter {
 
 void sg_miter_start(struct sg_mapping_iter *miter, struct scatterlist *sgl,
 		    unsigned int nents, unsigned int flags);
+bool sg_miter_skip(struct sg_mapping_iter *miter, off_t offset);
 bool sg_miter_next(struct sg_mapping_iter *miter);
 void sg_miter_stop(struct sg_mapping_iter *miter);
 

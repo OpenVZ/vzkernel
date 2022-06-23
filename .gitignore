@@ -10,11 +10,15 @@
 # Normal rules
 #
 .*
+*-asn1.[ch]
 *.o
 *.o.*
 *.a
 *.s
 *.ko
+*.ko.unsigned
+*.ko.digest
+*.ko.digest.sig
 *.so
 *.so.dbg
 *.mod.c
@@ -91,3 +95,15 @@ extra_certificates
 signing_key.priv
 signing_key.x509
 x509.genkey
+
+#
+# Red Hat
+#
+configs/*.config
+localversion
+
+# configuration file for rh- targets
+.rhel7git.mk
+
+# Red Hat key security
+kernel/x509_certificate_list

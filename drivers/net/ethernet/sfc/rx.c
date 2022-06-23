@@ -1,7 +1,7 @@
 /****************************************************************************
- * Driver for Solarflare Solarstorm network controllers and boards
+ * Driver for Solarflare network controllers and boards
  * Copyright 2005-2006 Fen Systems Ltd.
- * Copyright 2005-2011 Solarflare Communications Inc.
+ * Copyright 2005-2013 Solarflare Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -12,6 +12,7 @@
 #include <linux/in.h>
 #include <linux/slab.h>
 #include <linux/ip.h>
+#include <linux/ipv6.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/prefetch.h>
@@ -21,6 +22,7 @@
 #include <net/checksum.h>
 #include "net_driver.h"
 #include "efx.h"
+#include "filter.h"
 #include "nic.h"
 #include "selftest.h"
 #include "workarounds.h"
@@ -36,7 +38,7 @@
 #define EFX_RECYCLE_RING_SIZE_NOIOMMU (2 * EFX_RX_PREFERRED_BATCH)
 
 /* Size of buffer allocated for skb header area. */
-#define EFX_SKB_HEADERS  64u
+#define EFX_SKB_HEADERS  128u
 
 /* This is the percentage fill level below which new RX descriptors
  * will be added to the RX descriptor ring.
@@ -60,13 +62,12 @@ static inline u8 *efx_rx_buf_va(struct efx_rx_buffer *buf)
 	return page_address(buf->page) + buf->page_offset;
 }
 
-static inline u32 efx_rx_buf_hash(const u8 *eh)
+static inline u32 efx_rx_buf_hash(struct efx_nic *efx, const u8 *eh)
 {
-	/* The ethernet header is always directly after any hash. */
-#if defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS) || NET_IP_ALIGN % 4 == 0
-	return __le32_to_cpup((const __le32 *)(eh - 4));
+#if defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS)
+	return __le32_to_cpup((const __le32 *)(eh + efx->rx_packet_hash_offset));
 #else
-	const u8 *data = eh - 4;
+	const u8 *data = eh + efx->rx_packet_hash_offset;
 	return (u32)data[0]	  |
 	       (u32)data[1] << 8  |
 	       (u32)data[2] << 16 |
@@ -93,7 +94,7 @@ static inline void efx_sync_rx_buffer(struct efx_nic *efx,
 
 void efx_rx_config_page_split(struct efx_nic *efx)
 {
-	efx->rx_page_buf_step = ALIGN(efx->rx_dma_len + NET_IP_ALIGN,
+	efx->rx_page_buf_step = ALIGN(efx->rx_dma_len + efx->rx_ip_align,
 				      EFX_RX_BUF_ALIGNMENT);
 	efx->rx_bufs_per_page = efx->rx_buffer_order ? 1 :
 		((PAGE_SIZE - sizeof(struct efx_rx_page_state)) /
@@ -148,7 +149,7 @@ static struct page *efx_reuse_page(struct efx_rx_queue *rx_queue)
  * 0 on success. If a single page can be used for multiple buffers,
  * then the page will either be inserted fully, or not at all.
  */
-static int efx_init_rx_buffers(struct efx_rx_queue *rx_queue)
+static int efx_init_rx_buffers(struct efx_rx_queue *rx_queue, bool atomic)
 {
 	struct efx_nic *efx = rx_queue->efx;
 	struct efx_rx_buffer *rx_buf;
@@ -162,7 +163,8 @@ static int efx_init_rx_buffers(struct efx_rx_queue *rx_queue)
 	do {
 		page = efx_reuse_page(rx_queue);
 		if (page == NULL) {
-			page = alloc_pages(__GFP_COLD | __GFP_COMP | GFP_ATOMIC,
+			page = alloc_pages(__GFP_COLD | __GFP_COMP |
+					   (atomic ? GFP_ATOMIC : GFP_KERNEL),
 					   efx->rx_buffer_order);
 			if (unlikely(page == NULL))
 				return -ENOMEM;
@@ -188,9 +190,9 @@ static int efx_init_rx_buffers(struct efx_rx_queue *rx_queue)
 		do {
 			index = rx_queue->added_count & rx_queue->ptr_mask;
 			rx_buf = efx_rx_buffer(rx_queue, index);
-			rx_buf->dma_addr = dma_addr + NET_IP_ALIGN;
+			rx_buf->dma_addr = dma_addr + efx->rx_ip_align;
 			rx_buf->page = page;
-			rx_buf->page_offset = page_offset + NET_IP_ALIGN;
+			rx_buf->page_offset = page_offset + efx->rx_ip_align;
 			rx_buf->len = efx->rx_dma_len;
 			rx_buf->flags = 0;
 			++rx_queue->added_count;
@@ -222,12 +224,17 @@ static void efx_unmap_rx_buffer(struct efx_nic *efx,
 	}
 }
 
-static void efx_free_rx_buffer(struct efx_rx_buffer *rx_buf)
+static void efx_free_rx_buffers(struct efx_rx_queue *rx_queue,
+				struct efx_rx_buffer *rx_buf,
+				unsigned int num_bufs)
 {
-	if (rx_buf->page) {
-		put_page(rx_buf->page);
-		rx_buf->page = NULL;
-	}
+	do {
+		if (rx_buf->page) {
+			put_page(rx_buf->page);
+			rx_buf->page = NULL;
+		}
+		rx_buf = efx_rx_buf_next(rx_queue, rx_buf);
+	} while (--num_bufs);
 }
 
 /* Attempt to recycle the page if there is an RX recycle ring; the page can
@@ -276,15 +283,15 @@ static void efx_fini_rx_buffer(struct efx_rx_queue *rx_queue,
 	/* If this is the last buffer in a page, unmap and free it. */
 	if (rx_buf->flags & EFX_RX_BUF_LAST_IN_PAGE) {
 		efx_unmap_rx_buffer(rx_queue->efx, rx_buf);
-		efx_free_rx_buffer(rx_buf);
+		efx_free_rx_buffers(rx_queue, rx_buf, 1);
 	}
 	rx_buf->page = NULL;
 }
 
 /* Recycle the pages that are used by buffers that have just been received. */
-static void efx_recycle_rx_buffers(struct efx_channel *channel,
-				   struct efx_rx_buffer *rx_buf,
-				   unsigned int n_frags)
+static void efx_recycle_rx_pages(struct efx_channel *channel,
+				 struct efx_rx_buffer *rx_buf,
+				 unsigned int n_frags)
 {
 	struct efx_rx_queue *rx_queue = efx_channel_get_rx_queue(channel);
 
@@ -292,6 +299,17 @@ static void efx_recycle_rx_buffers(struct efx_channel *channel,
 		efx_recycle_rx_page(channel, rx_buf);
 		rx_buf = efx_rx_buf_next(rx_queue, rx_buf);
 	} while (--n_frags);
+}
+
+static void efx_discard_rx_packet(struct efx_channel *channel,
+				  struct efx_rx_buffer *rx_buf,
+				  unsigned int n_frags)
+{
+	struct efx_rx_queue *rx_queue = efx_channel_get_rx_queue(channel);
+
+	efx_recycle_rx_pages(channel, rx_buf, n_frags);
+
+	efx_free_rx_buffers(rx_queue, rx_buf, n_frags);
 }
 
 /**
@@ -306,15 +324,18 @@ static void efx_recycle_rx_buffers(struct efx_channel *channel,
  * this means this function must run from the NAPI handler, or be called
  * when NAPI is disabled.
  */
-void efx_fast_push_rx_descriptors(struct efx_rx_queue *rx_queue)
+void efx_fast_push_rx_descriptors(struct efx_rx_queue *rx_queue, bool atomic)
 {
 	struct efx_nic *efx = rx_queue->efx;
 	unsigned int fill_level, batch_size;
 	int space, rc = 0;
 
+	if (!rx_queue->refill_enabled)
+		return;
+
 	/* Calculate current fill level, and exit if we don't need to fill */
 	fill_level = (rx_queue->added_count - rx_queue->removed_count);
-	EFX_BUG_ON_PARANOID(fill_level > rx_queue->efx->rxq_entries);
+	EFX_WARN_ON_ONCE_PARANOID(fill_level > rx_queue->efx->rxq_entries);
 	if (fill_level >= rx_queue->fast_fill_trigger)
 		goto out;
 
@@ -326,7 +347,7 @@ void efx_fast_push_rx_descriptors(struct efx_rx_queue *rx_queue)
 
 	batch_size = efx->rx_pages_per_batch * efx->rx_bufs_per_page;
 	space = rx_queue->max_fill - fill_level;
-	EFX_BUG_ON_PARANOID(space < batch_size);
+	EFX_WARN_ON_ONCE_PARANOID(space < batch_size);
 
 	netif_vdbg(rx_queue->efx, rx_status, rx_queue->efx->net_dev,
 		   "RX queue %d fast-filling descriptor ring from"
@@ -336,7 +357,7 @@ void efx_fast_push_rx_descriptors(struct efx_rx_queue *rx_queue)
 
 
 	do {
-		rc = efx_init_rx_buffers(rx_queue);
+		rc = efx_init_rx_buffers(rx_queue, atomic);
 		if (unlikely(rc)) {
 			/* Ensure that we don't leave the rx queue empty */
 			if (rx_queue->added_count == rx_queue->removed_count)
@@ -355,9 +376,9 @@ void efx_fast_push_rx_descriptors(struct efx_rx_queue *rx_queue)
 		efx_nic_notify_rx_desc(rx_queue);
 }
 
-void efx_rx_slow_fill(unsigned long context)
+void efx_rx_slow_fill(struct timer_list *t)
 {
-	struct efx_rx_queue *rx_queue = (struct efx_rx_queue *)context;
+	struct efx_rx_queue *rx_queue = from_timer(rx_queue, t, slow_fill);
 
 	/* Post an event to cause NAPI to run and refill the queue */
 	efx_nic_generate_fill_event(rx_queue);
@@ -379,21 +400,10 @@ static void efx_rx_packet__check_len(struct efx_rx_queue *rx_queue,
 	 */
 	rx_buf->flags |= EFX_RX_PKT_DISCARD;
 
-	if ((len > rx_buf->len) && EFX_WORKAROUND_8071(efx)) {
-		if (net_ratelimit())
-			netif_err(efx, rx_err, efx->net_dev,
-				  " RX queue %d seriously overlength "
-				  "RX event (0x%x > 0x%x+0x%x). Leaking\n",
-				  efx_rx_queue_index(rx_queue), len, max_len,
-				  efx->type->rx_buffer_padding);
-		efx_schedule_reset(efx, RESET_TYPE_RX_RECOVERY);
-	} else {
-		if (net_ratelimit())
-			netif_err(efx, rx_err, efx->net_dev,
-				  " RX queue %d overlength RX event "
-				  "(0x%x > 0x%x)\n",
-				  efx_rx_queue_index(rx_queue), len, max_len);
-	}
+	if (net_ratelimit())
+		netif_err(efx, rx_err, efx->net_dev,
+			  "RX queue %d overlength RX event (%#x > %#x)\n",
+			  efx_rx_queue_index(rx_queue), len, max_len);
 
 	efx_rx_queue_channel(rx_queue)->n_rx_overlength++;
 }
@@ -412,18 +422,19 @@ efx_rx_packet_gro(struct efx_channel *channel, struct efx_rx_buffer *rx_buf,
 
 	skb = napi_get_frags(napi);
 	if (unlikely(!skb)) {
-		while (n_frags--) {
-			put_page(rx_buf->page);
-			rx_buf->page = NULL;
-			rx_buf = efx_rx_buf_next(&channel->rx_queue, rx_buf);
-		}
+		struct efx_rx_queue *rx_queue;
+
+		rx_queue = efx_channel_get_rx_queue(channel);
+		efx_free_rx_buffers(rx_queue, rx_buf, n_frags);
 		return;
 	}
 
 	if (efx->net_dev->features & NETIF_F_RXHASH)
-		skb->rxhash = efx_rx_buf_hash(eh);
+		skb_set_hash(skb, efx_rx_buf_hash(efx, eh),
+			     PKT_HASH_TYPE_L3);
 	skb->ip_summed = ((rx_buf->flags & EFX_RX_PKT_CSUMMED) ?
 			  CHECKSUM_UNNECESSARY : CHECKSUM_NONE);
+	skb->csum_level = !!(rx_buf->flags & EFX_RX_PKT_CSUM_LEVEL);
 
 	for (;;) {
 		skb_fill_page_desc(skb, skb_shinfo(skb)->nr_frags,
@@ -457,14 +468,20 @@ static struct sk_buff *efx_rx_mk_skb(struct efx_channel *channel,
 	struct sk_buff *skb;
 
 	/* Allocate an SKB to store the headers */
-	skb = netdev_alloc_skb(efx->net_dev, hdr_len + EFX_PAGE_SKB_ALIGN);
-	if (unlikely(skb == NULL))
+	skb = netdev_alloc_skb(efx->net_dev,
+			       efx->rx_ip_align + efx->rx_prefix_size +
+			       hdr_len);
+	if (unlikely(skb == NULL)) {
+		atomic_inc(&efx->n_rx_noskb_drops);
 		return NULL;
+	}
 
-	EFX_BUG_ON_PARANOID(rx_buf->len < hdr_len);
+	EFX_WARN_ON_ONCE_PARANOID(rx_buf->len < hdr_len);
 
-	skb_reserve(skb, EFX_PAGE_SKB_ALIGN);
-	memcpy(__skb_put(skb, hdr_len), eh, hdr_len);
+	memcpy(skb->data + efx->rx_ip_align, eh - efx->rx_prefix_size,
+	       efx->rx_prefix_size + hdr_len);
+	skb_reserve(skb, efx->rx_ip_align + efx->rx_prefix_size);
+	__skb_put(skb, hdr_len);
 
 	/* Append the remaining page(s) onto the frag list */
 	if (rx_buf->len > hdr_len) {
@@ -494,6 +511,8 @@ static struct sk_buff *efx_rx_mk_skb(struct efx_channel *channel,
 	/* Move past the ethernet header */
 	skb->protocol = eth_type_trans(skb, efx->net_dev);
 
+	skb_mark_napi_id(skb, &channel->napi_str);
+
 	return skb;
 }
 
@@ -504,15 +523,18 @@ void efx_rx_packet(struct efx_rx_queue *rx_queue, unsigned int index,
 	struct efx_channel *channel = efx_rx_queue_channel(rx_queue);
 	struct efx_rx_buffer *rx_buf;
 
+	rx_queue->rx_packets++;
+
 	rx_buf = efx_rx_buffer(rx_queue, index);
 	rx_buf->flags |= flags;
 
 	/* Validate the number of fragments and completed length */
 	if (n_frags == 1) {
-		efx_rx_packet__check_len(rx_queue, rx_buf, len);
+		if (!(flags & EFX_RX_PKT_PREFIX_LEN))
+			efx_rx_packet__check_len(rx_queue, rx_buf, len);
 	} else if (unlikely(n_frags > EFX_RX_MAX_FRAGS) ||
-		   unlikely(len <= (n_frags - 1) * EFX_RX_USR_BUF_SIZE) ||
-		   unlikely(len > n_frags * EFX_RX_USR_BUF_SIZE) ||
+		   unlikely(len <= (n_frags - 1) * efx->rx_dma_len) ||
+		   unlikely(len > n_frags * efx->rx_dma_len) ||
 		   unlikely(!efx->rx_scatter)) {
 		/* If this isn't an explicit discard request, either
 		 * the hardware or the driver is broken.
@@ -533,12 +555,11 @@ void efx_rx_packet(struct efx_rx_queue *rx_queue, unsigned int index,
 	 */
 	if (unlikely(rx_buf->flags & EFX_RX_PKT_DISCARD)) {
 		efx_rx_flush_packet(channel);
-		put_page(rx_buf->page);
-		efx_recycle_rx_buffers(channel, rx_buf, n_frags);
+		efx_discard_rx_packet(channel, rx_buf, n_frags);
 		return;
 	}
 
-	if (n_frags == 1)
+	if (n_frags == 1 && !(flags & EFX_RX_PKT_PREFIX_LEN))
 		rx_buf->len = len;
 
 	/* Release and/or sync the DMA mapping - assumes all RX buffers
@@ -551,8 +572,8 @@ void efx_rx_packet(struct efx_rx_queue *rx_queue, unsigned int index,
 	 */
 	prefetch(efx_rx_buf_va(rx_buf));
 
-	rx_buf->page_offset += efx->type->rx_buffer_hash_size;
-	rx_buf->len -= efx->type->rx_buffer_hash_size;
+	rx_buf->page_offset += efx->rx_prefix_size;
+	rx_buf->len -= efx->rx_prefix_size;
 
 	if (n_frags > 1) {
 		/* Release/sync DMA mapping for additional fragments.
@@ -564,15 +585,15 @@ void efx_rx_packet(struct efx_rx_queue *rx_queue, unsigned int index,
 			rx_buf = efx_rx_buf_next(rx_queue, rx_buf);
 			if (--tail_frags == 0)
 				break;
-			efx_sync_rx_buffer(efx, rx_buf, EFX_RX_USR_BUF_SIZE);
+			efx_sync_rx_buffer(efx, rx_buf, efx->rx_dma_len);
 		}
-		rx_buf->len = len - (n_frags - 1) * EFX_RX_USR_BUF_SIZE;
+		rx_buf->len = len - (n_frags - 1) * efx->rx_dma_len;
 		efx_sync_rx_buffer(efx, rx_buf, rx_buf->len);
 	}
 
-	/* All fragments have been DMA-synced, so recycle buffers and pages. */
+	/* All fragments have been DMA-synced, so recycle pages. */
 	rx_buf = efx_rx_buffer(rx_queue, index);
-	efx_recycle_rx_buffers(channel, rx_buf, n_frags);
+	efx_recycle_rx_pages(channel, rx_buf, n_frags);
 
 	/* Pipeline receives so that we give time for packet headers to be
 	 * prefetched into cache.
@@ -591,13 +612,22 @@ static void efx_rx_deliver(struct efx_channel *channel, u8 *eh,
 
 	skb = efx_rx_mk_skb(channel, rx_buf, n_frags, eh, hdr_len);
 	if (unlikely(skb == NULL)) {
-		efx_free_rx_buffer(rx_buf);
+		struct efx_rx_queue *rx_queue;
+
+		rx_queue = efx_channel_get_rx_queue(channel);
+		efx_free_rx_buffers(rx_queue, rx_buf, n_frags);
 		return;
 	}
 	skb_record_rx_queue(skb, channel->rx_queue.core_index);
 
 	/* Set the SKB flags */
 	skb_checksum_none_assert(skb);
+	if (likely(rx_buf->flags & EFX_RX_PKT_CSUMMED)) {
+		skb->ip_summed = CHECKSUM_UNNECESSARY;
+		skb->csum_level = !!(rx_buf->flags & EFX_RX_PKT_CSUM_LEVEL);
+	}
+
+	efx_rx_skb_attach_timestamp(channel, skb);
 
 	if (channel->type->receive_skb)
 		if (channel->type->receive_skb(channel, skb))
@@ -615,19 +645,30 @@ void __efx_rx_packet(struct efx_channel *channel)
 		efx_rx_buffer(&channel->rx_queue, channel->rx_pkt_index);
 	u8 *eh = efx_rx_buf_va(rx_buf);
 
+	/* Read length from the prefix if necessary.  This already
+	 * excludes the length of the prefix itself.
+	 */
+	if (rx_buf->flags & EFX_RX_PKT_PREFIX_LEN)
+		rx_buf->len = le16_to_cpup((__le16 *)
+					   (eh + efx->rx_packet_len_offset));
+
 	/* If we're in loopback test, then pass the packet directly to the
 	 * loopback layer, and free the rx_buf here
 	 */
 	if (unlikely(efx->loopback_selftest)) {
+		struct efx_rx_queue *rx_queue;
+
 		efx_loopback_rx_packet(efx, eh, rx_buf->len);
-		efx_free_rx_buffer(rx_buf);
+		rx_queue = efx_channel_get_rx_queue(channel);
+		efx_free_rx_buffers(rx_queue, rx_buf,
+				    channel->rx_pkt_n_frags);
 		goto out;
 	}
 
 	if (unlikely(!(efx->net_dev->features & NETIF_F_RXCSUM)))
 		rx_buf->flags &= ~EFX_RX_PKT_CSUMMED;
 
-	if (!channel->type->receive_skb)
+	if ((rx_buf->flags & EFX_RX_PKT_TCP) && !channel->type->receive_skb)
 		efx_rx_packet_gro(channel, rx_buf, channel->rx_pkt_n_frags, eh);
 	else
 		efx_rx_deliver(channel, eh, rx_buf, channel->rx_pkt_n_frags);
@@ -643,7 +684,7 @@ int efx_probe_rx_queue(struct efx_rx_queue *rx_queue)
 
 	/* Create the smallest power-of-two aligned ring */
 	entries = max(roundup_pow_of_two(efx->rxq_entries), EFX_MIN_DMAQ_SIZE);
-	EFX_BUG_ON_PARANOID(entries > EFX_MAX_DMAQ_SIZE);
+	EFX_WARN_ON_PARANOID(entries > EFX_MAX_DMAQ_SIZE);
 	rx_queue->ptr_mask = entries - 1;
 
 	netif_dbg(efx, probe, efx->net_dev,
@@ -675,7 +716,7 @@ static void efx_init_rx_recycle_ring(struct efx_nic *efx,
 #ifdef CONFIG_PPC64
 	bufs_in_recycle_ring = EFX_RECYCLE_RING_SIZE_IOMMU;
 #else
-	if (efx->pci_dev->dev.iommu_group)
+	if (iommu_present(&pci_bus_type))
 		bufs_in_recycle_ring = EFX_RECYCLE_RING_SIZE_IOMMU;
 	else
 		bufs_in_recycle_ring = EFX_RECYCLE_RING_SIZE_NOIOMMU;
@@ -723,9 +764,9 @@ void efx_init_rx_queue(struct efx_rx_queue *rx_queue)
 
 	rx_queue->max_fill = max_fill;
 	rx_queue->fast_fill_trigger = trigger;
+	rx_queue->refill_enabled = true;
 
 	/* Set up RX descriptor ring */
-	rx_queue->enabled = true;
 	efx_nic_init_rx(rx_queue);
 }
 
@@ -738,11 +779,7 @@ void efx_fini_rx_queue(struct efx_rx_queue *rx_queue)
 	netif_dbg(rx_queue->efx, drv, rx_queue->efx->net_dev,
 		  "shutting down RX queue %d\n", efx_rx_queue_index(rx_queue));
 
-	/* A flush failure might have left rx_queue->enabled */
-	rx_queue->enabled = false;
-
 	del_timer_sync(&rx_queue->slow_fill);
-	efx_nic_fini_rx(rx_queue);
 
 	/* Release RX buffers from the current read ptr to the write ptr */
 	if (rx_queue->buffer) {
@@ -788,3 +825,240 @@ module_param(rx_refill_threshold, uint, 0444);
 MODULE_PARM_DESC(rx_refill_threshold,
 		 "RX descriptor ring refill threshold (%)");
 
+#ifdef CONFIG_RFS_ACCEL
+
+static void efx_filter_rfs_work(struct work_struct *data)
+{
+	struct efx_async_filter_insertion *req = container_of(data, struct efx_async_filter_insertion,
+							      work);
+	struct efx_nic *efx = netdev_priv(req->net_dev);
+	struct efx_channel *channel = efx_get_channel(efx, req->rxq_index);
+	int slot_idx = req - efx->rps_slot;
+	struct efx_arfs_rule *rule;
+	u16 arfs_id = 0;
+	int rc;
+
+	rc = efx->type->filter_insert(efx, &req->spec, true);
+	if (rc >= 0)
+		rc %= efx->type->max_rx_ip_filters;
+	if (efx->rps_hash_table) {
+		spin_lock_bh(&efx->rps_hash_lock);
+		rule = efx_rps_hash_find(efx, &req->spec);
+		/* The rule might have already gone, if someone else's request
+		 * for the same spec was already worked and then expired before
+		 * we got around to our work.  In that case we have nothing
+		 * tying us to an arfs_id, meaning that as soon as the filter
+		 * is considered for expiry it will be removed.
+		 */
+		if (rule) {
+			if (rc < 0)
+				rule->filter_id = EFX_ARFS_FILTER_ID_ERROR;
+			else
+				rule->filter_id = rc;
+			arfs_id = rule->arfs_id;
+		}
+		spin_unlock_bh(&efx->rps_hash_lock);
+	}
+	if (rc >= 0) {
+		/* Remember this so we can check whether to expire the filter
+		 * later.
+		 */
+		mutex_lock(&efx->rps_mutex);
+		channel->rps_flow_id[rc] = req->flow_id;
+		++channel->rfs_filters_added;
+		mutex_unlock(&efx->rps_mutex);
+
+		if (req->spec.ether_type == htons(ETH_P_IP))
+			netif_info(efx, rx_status, efx->net_dev,
+				   "steering %s %pI4:%u:%pI4:%u to queue %u [flow %u filter %d id %u]\n",
+				   (req->spec.ip_proto == IPPROTO_TCP) ? "TCP" : "UDP",
+				   req->spec.rem_host, ntohs(req->spec.rem_port),
+				   req->spec.loc_host, ntohs(req->spec.loc_port),
+				   req->rxq_index, req->flow_id, rc, arfs_id);
+		else
+			netif_info(efx, rx_status, efx->net_dev,
+				   "steering %s [%pI6]:%u:[%pI6]:%u to queue %u [flow %u filter %d id %u]\n",
+				   (req->spec.ip_proto == IPPROTO_TCP) ? "TCP" : "UDP",
+				   req->spec.rem_host, ntohs(req->spec.rem_port),
+				   req->spec.loc_host, ntohs(req->spec.loc_port),
+				   req->rxq_index, req->flow_id, rc, arfs_id);
+	}
+
+	/* Release references */
+	clear_bit(slot_idx, &efx->rps_slot_map);
+	dev_put(req->net_dev);
+}
+
+int efx_filter_rfs(struct net_device *net_dev, const struct sk_buff *skb,
+		   u16 rxq_index, u32 flow_id)
+{
+	struct efx_nic *efx = netdev_priv(net_dev);
+	struct efx_async_filter_insertion *req;
+	struct efx_arfs_rule *rule;
+	struct flow_keys fk;
+	int slot_idx;
+	bool new;
+	int rc;
+
+	/* find a free slot */
+	for (slot_idx = 0; slot_idx < EFX_RPS_MAX_IN_FLIGHT; slot_idx++)
+		if (!test_and_set_bit(slot_idx, &efx->rps_slot_map))
+			break;
+	if (slot_idx >= EFX_RPS_MAX_IN_FLIGHT)
+		return -EBUSY;
+
+	if (flow_id == RPS_FLOW_ID_INVALID) {
+		rc = -EINVAL;
+		goto out_clear;
+	}
+
+	if (!skb_flow_dissect_flow_keys(skb, &fk, 0)) {
+		rc = -EPROTONOSUPPORT;
+		goto out_clear;
+	}
+
+	if (fk.basic.n_proto != htons(ETH_P_IP) && fk.basic.n_proto != htons(ETH_P_IPV6)) {
+		rc = -EPROTONOSUPPORT;
+		goto out_clear;
+	}
+	if (fk.control.flags & FLOW_DIS_IS_FRAGMENT) {
+		rc = -EPROTONOSUPPORT;
+		goto out_clear;
+	}
+
+	req = efx->rps_slot + slot_idx;
+	efx_filter_init_rx(&req->spec, EFX_FILTER_PRI_HINT,
+			   efx->rx_scatter ? EFX_FILTER_FLAG_RX_SCATTER : 0,
+			   rxq_index);
+	req->spec.match_flags =
+		EFX_FILTER_MATCH_ETHER_TYPE | EFX_FILTER_MATCH_IP_PROTO |
+		EFX_FILTER_MATCH_LOC_HOST | EFX_FILTER_MATCH_LOC_PORT |
+		EFX_FILTER_MATCH_REM_HOST | EFX_FILTER_MATCH_REM_PORT;
+	req->spec.ether_type = fk.basic.n_proto;
+	req->spec.ip_proto = fk.basic.ip_proto;
+
+	if (fk.basic.n_proto == htons(ETH_P_IP)) {
+		req->spec.rem_host[0] = fk.addrs.v4addrs.src;
+		req->spec.loc_host[0] = fk.addrs.v4addrs.dst;
+	} else {
+		memcpy(req->spec.rem_host, &fk.addrs.v6addrs.src,
+		       sizeof(struct in6_addr));
+		memcpy(req->spec.loc_host, &fk.addrs.v6addrs.dst,
+		       sizeof(struct in6_addr));
+	}
+
+	req->spec.rem_port = fk.ports.src;
+	req->spec.loc_port = fk.ports.dst;
+
+	if (efx->rps_hash_table) {
+		/* Add it to ARFS hash table */
+		spin_lock(&efx->rps_hash_lock);
+		rule = efx_rps_hash_add(efx, &req->spec, &new);
+		if (!rule) {
+			rc = -ENOMEM;
+			goto out_unlock;
+		}
+		if (new)
+			rule->arfs_id = efx->rps_next_id++ % RPS_NO_FILTER;
+		rc = rule->arfs_id;
+		/* Skip if existing or pending filter already does the right thing */
+		if (!new && rule->rxq_index == rxq_index &&
+		    rule->filter_id >= EFX_ARFS_FILTER_ID_PENDING)
+			goto out_unlock;
+		rule->rxq_index = rxq_index;
+		rule->filter_id = EFX_ARFS_FILTER_ID_PENDING;
+		spin_unlock(&efx->rps_hash_lock);
+	} else {
+		/* Without an ARFS hash table, we just use arfs_id 0 for all
+		 * filters.  This means if multiple flows hash to the same
+		 * flow_id, all but the most recently touched will be eligible
+		 * for expiry.
+		 */
+		rc = 0;
+	}
+
+	/* Queue the request */
+	dev_hold(req->net_dev = net_dev);
+	INIT_WORK(&req->work, efx_filter_rfs_work);
+	req->rxq_index = rxq_index;
+	req->flow_id = flow_id;
+	schedule_work(&req->work);
+	return rc;
+out_unlock:
+	spin_unlock(&efx->rps_hash_lock);
+out_clear:
+	clear_bit(slot_idx, &efx->rps_slot_map);
+	return rc;
+}
+
+bool __efx_filter_rfs_expire(struct efx_nic *efx, unsigned int quota)
+{
+	bool (*expire_one)(struct efx_nic *efx, u32 flow_id, unsigned int index);
+	unsigned int channel_idx, index, size;
+	u32 flow_id;
+
+	if (!mutex_trylock(&efx->rps_mutex))
+		return false;
+	expire_one = efx->type->filter_rfs_expire_one;
+	channel_idx = efx->rps_expire_channel;
+	index = efx->rps_expire_index;
+	size = efx->type->max_rx_ip_filters;
+	while (quota--) {
+		struct efx_channel *channel = efx_get_channel(efx, channel_idx);
+		flow_id = channel->rps_flow_id[index];
+
+		if (flow_id != RPS_FLOW_ID_INVALID &&
+		    expire_one(efx, flow_id, index)) {
+			netif_info(efx, rx_status, efx->net_dev,
+				   "expired filter %d [queue %u flow %u]\n",
+				   index, channel_idx, flow_id);
+			channel->rps_flow_id[index] = RPS_FLOW_ID_INVALID;
+		}
+		if (++index == size) {
+			if (++channel_idx == efx->n_channels)
+				channel_idx = 0;
+			index = 0;
+		}
+	}
+	efx->rps_expire_channel = channel_idx;
+	efx->rps_expire_index = index;
+
+	mutex_unlock(&efx->rps_mutex);
+	return true;
+}
+
+#endif /* CONFIG_RFS_ACCEL */
+
+/**
+ * efx_filter_is_mc_recipient - test whether spec is a multicast recipient
+ * @spec: Specification to test
+ *
+ * Return: %true if the specification is a non-drop RX filter that
+ * matches a local MAC address I/G bit value of 1 or matches a local
+ * IPv4 or IPv6 address value in the respective multicast address
+ * range.  Otherwise %false.
+ */
+bool efx_filter_is_mc_recipient(const struct efx_filter_spec *spec)
+{
+	if (!(spec->flags & EFX_FILTER_FLAG_RX) ||
+	    spec->dmaq_id == EFX_FILTER_RX_DMAQ_ID_DROP)
+		return false;
+
+	if (spec->match_flags &
+	    (EFX_FILTER_MATCH_LOC_MAC | EFX_FILTER_MATCH_LOC_MAC_IG) &&
+	    is_multicast_ether_addr(spec->loc_mac))
+		return true;
+
+	if ((spec->match_flags &
+	     (EFX_FILTER_MATCH_ETHER_TYPE | EFX_FILTER_MATCH_LOC_HOST)) ==
+	    (EFX_FILTER_MATCH_ETHER_TYPE | EFX_FILTER_MATCH_LOC_HOST)) {
+		if (spec->ether_type == htons(ETH_P_IP) &&
+		    ipv4_is_multicast(spec->loc_host[0]))
+			return true;
+		if (spec->ether_type == htons(ETH_P_IPV6) &&
+		    ((const u8 *)spec->loc_host)[0] == 0xff)
+			return true;
+	}
+
+	return false;
+}

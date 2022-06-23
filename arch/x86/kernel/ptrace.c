@@ -1491,6 +1491,7 @@ void send_sigtrap(struct task_struct *tsk, struct pt_regs *regs,
 long syscall_trace_enter(struct pt_regs *regs)
 {
 	long ret = 0;
+	bool emulated = false;
 
 	user_exit();
 
@@ -1504,33 +1505,32 @@ long syscall_trace_enter(struct pt_regs *regs)
 	if (test_thread_flag(TIF_SINGLESTEP))
 		regs->flags |= X86_EFLAGS_TF;
 
-	/* do the secure computing check first */
-	if (secure_computing(regs->orig_ax)) {
+	if (unlikely(test_thread_flag(TIF_SYSCALL_EMU)))
+		emulated = true;
+
+	if ((emulated || test_thread_flag(TIF_SYSCALL_TRACE)) &&
+	    tracehook_report_syscall_entry(regs))
+		return -1L;
+
+	if (emulated)
+		return -1L;
+
+	/* Do seccomp after ptrace, to catch any tracer changes. */
+	if (secure_computing()) {
 		/* seccomp failures shouldn't expose any additional code. */
 		ret = -1L;
 		goto out;
 	}
 
-	if (unlikely(test_thread_flag(TIF_SYSCALL_EMU)))
-		ret = -1L;
-
-	if ((ret || test_thread_flag(TIF_SYSCALL_TRACE)) &&
-	    tracehook_report_syscall_entry(regs))
-		ret = -1L;
-
 	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
 		trace_sys_enter(regs, regs->orig_ax);
 
 	if (IS_IA32)
-		audit_syscall_entry(AUDIT_ARCH_I386,
-				    regs->orig_ax,
-				    regs->bx, regs->cx,
+		audit_syscall_entry(regs->orig_ax, regs->bx, regs->cx,
 				    regs->dx, regs->si);
 #ifdef CONFIG_X86_64
 	else
-		audit_syscall_entry(AUDIT_ARCH_X86_64,
-				    regs->orig_ax,
-				    regs->di, regs->si,
+		audit_syscall_entry(regs->orig_ax, regs->di, regs->si,
 				    regs->dx, regs->r10);
 #endif
 

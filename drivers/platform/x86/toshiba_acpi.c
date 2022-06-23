@@ -56,6 +56,8 @@
 #include <linux/i8042.h>
 
 #include <asm/uaccess.h>
+#include <linux/dmi.h>
+#include <acpi/video.h>
 
 #include <acpi/acpi_drivers.h>
 
@@ -265,6 +267,14 @@ static acpi_status hci_read1(struct toshiba_acpi_dev *dev, u32 reg,
 	*result = (status == AE_OK) ? out[0] : HCI_FAILURE;
 	return status;
 }
+
+/*
+ * List of models which have a broken acpi-video backlight interface and thus
+ * need to use the toshiba (vendor) interface instead.
+ */
+static const struct dmi_system_id toshiba_vendor_backlight_dmi[] = {
+	{}
+};
 
 static acpi_status hci_write2(struct toshiba_acpi_dev *dev, u32 reg,
 			      u32 in1, u32 in2, u32 *result)
@@ -1094,6 +1104,20 @@ static int toshiba_acpi_setup_backlight(struct toshiba_acpi_dev *dev)
 	ret = get_tr_backlight_status(dev, &enabled);
 	dev->tr_backlight_supported = !ret;
 
+	/*
+	 * Tell acpi-video-detect code to prefer vendor backlight on all
+	 * systems with transflective backlight and on dmi matched systems.
+	 */
+	if (dev->tr_backlight_supported ||
+	    dmi_check_system(toshiba_vendor_backlight_dmi))
+		acpi_video_dmi_promote_vendor();
+
+	if (acpi_video_backlight_support())
+		return 0;
+
+	/* acpi-video may have loaded before we called dmi_promote_vendor() */
+	acpi_video_unregister_backlight();
+
 	memset(&props, 0, sizeof(props));
 	props.type = BACKLIGHT_PLATFORM;
 	props.max_brightness = HCI_LCD_BRIGHTNESS_LEVELS - 1;
@@ -1311,9 +1335,16 @@ static int toshiba_acpi_resume(struct device *device)
 {
 	struct toshiba_acpi_dev *dev = acpi_driver_data(to_acpi_device(device));
 	u32 result;
+	acpi_status status;
 
-	if (dev->hotkey_dev)
+	if (dev->hotkey_dev) {
+		status = acpi_evaluate_object(dev->acpi_dev->handle, "ENAB",
+				NULL, NULL);
+		if (ACPI_FAILURE(status))
+			pr_info("Unable to re-enable hotkeys\n");
+
 		hci_write1(dev, HCI_HOTKEY_EVENT, HCI_HOTKEY_ENABLE, &result);
+	}
 
 	return 0;
 }

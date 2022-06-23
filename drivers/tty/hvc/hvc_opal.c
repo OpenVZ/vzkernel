@@ -29,6 +29,7 @@
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/export.h>
+#include <linux/interrupt.h>
 
 #include <asm/hvconsole.h>
 #include <asm/prom.h>
@@ -167,7 +168,7 @@ static int hvc_opal_probe(struct platform_device *dev)
 	struct hvc_struct *hp;
 	struct hvc_opal_priv *pv;
 	hv_protocol_t proto;
-	unsigned int termno, boot = 0;
+	unsigned int termno, irq, boot = 0;
 	const __be32 *reg;
 
 	if (of_device_is_compatible(dev->dev.of_node, "ibm,opal-console-raw")) {
@@ -213,10 +214,19 @@ static int hvc_opal_probe(struct platform_device *dev)
 		dev->dev.of_node->full_name,
 		boot ? " (boot console)" : "");
 
-	/* We don't do IRQ yet */
-	hp = hvc_alloc(termno, 0, ops, MAX_VIO_PUT_CHARS);
+	irq = opal_event_request(ilog2(OPAL_EVENT_CONSOLE_INPUT));
+	if (!irq) {
+		pr_err("hvc_opal: Unable to map interrupt for device %s\n",
+			dev->dev.of_node->full_name);
+		return irq;
+	}
+
+	hp = hvc_alloc(termno, irq, ops, MAX_VIO_PUT_CHARS);
 	if (IS_ERR(hp))
 		return PTR_ERR(hp);
+
+	/* hvc consoles on powernv may need to share a single irq */
+	hp->flags = IRQF_SHARED;
 	dev_set_drvdata(&dev->dev, hp);
 
 	return 0;
@@ -329,7 +339,7 @@ static void udbg_init_opal_common(void)
 void __init hvc_opal_init_early(void)
 {
 	struct device_node *stdout_node = NULL;
-	const u32 *termno;
+	const __be32 *termno;
 	const char *name = NULL;
 	const struct hv_ops *ops;
 	u32 index;
@@ -371,7 +381,7 @@ void __init hvc_opal_init_early(void)
 	if (!stdout_node)
 		return;
 	termno = of_get_property(stdout_node, "reg", NULL);
-	index = termno ? *termno : 0;
+	index = termno ? be32_to_cpup(termno) : 0;
 	if (index >= MAX_NR_HVC_CONSOLES)
 		return;
 	hvc_opal_privs[index] = &hvc_opal_boot_priv;
