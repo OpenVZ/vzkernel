@@ -6637,27 +6637,26 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
 	int r;
 
 	/* try to reinject previous events if any */
-	if (vcpu->arch.exception.injected) {
-		kvm_x86_ops->queue_exception(vcpu);
-		return 0;
-	}
 
+	if (vcpu->arch.exception.injected)
+		kvm_x86_ops->queue_exception(vcpu);
 	/*
 	 * Exceptions must be injected immediately, or the exception
 	 * frame will have the address of the NMI or interrupt handler.
 	 */
-	if (!vcpu->arch.exception.pending) {
-		if (vcpu->arch.nmi_injected) {
+	else if (!vcpu->arch.exception.pending) {
+		if (vcpu->arch.nmi_injected)
 			kvm_x86_ops->set_nmi(vcpu);
-			return 0;
-		}
-
-		if (vcpu->arch.interrupt.pending) {
+		else if (vcpu->arch.interrupt.pending)
 			kvm_x86_ops->set_irq(vcpu);
-			return 0;
-		}
 	}
 
+	/*
+	 * Call check_nested_events() even if we reinjected a previous event
+	 * in order for caller to determine if it should require immediate-exit
+	 * from L2 to L1 due to pending L1 events which require exit
+	 * from L2 to L1.
+	 */
 	if (is_guest_mode(vcpu) && kvm_x86_ops->check_nested_events) {
 		r = kvm_x86_ops->check_nested_events(vcpu);
 		if (r != 0)
@@ -6670,6 +6669,7 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
 					vcpu->arch.exception.has_error_code,
 					vcpu->arch.exception.error_code);
 
+		WARN_ON_ONCE(vcpu->arch.exception.injected);
 		vcpu->arch.exception.pending = false;
 		vcpu->arch.exception.injected = true;
 
@@ -6684,7 +6684,13 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
 		}
 
 		kvm_x86_ops->queue_exception(vcpu);
-	} else if (vcpu->arch.smi_pending && kvm_x86_ops->smi_allowed(vcpu, true)) {
+	}
+
+	/* Don't consider new event if we re-injected an event */
+	if (kvm_event_needs_reinjection(vcpu))
+		return 0;
+
+	if (vcpu->arch.smi_pending && kvm_x86_ops->smi_allowed(vcpu, true)) {
 		vcpu->arch.smi_pending = false;
 		enter_smm(vcpu);
 	} else if (vcpu->arch.nmi_pending &&
