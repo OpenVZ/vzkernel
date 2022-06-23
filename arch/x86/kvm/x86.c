@@ -6684,7 +6684,7 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
 		}
 
 		kvm_x86_ops->queue_exception(vcpu);
-	} else if (vcpu->arch.smi_pending && !is_smm(vcpu) && kvm_x86_ops->smi_allowed(vcpu)) {
+	} else if (vcpu->arch.smi_pending && kvm_x86_ops->smi_allowed(vcpu)) {
 		vcpu->arch.smi_pending = false;
 		enter_smm(vcpu);
 	} else if (vcpu->arch.nmi_pending && kvm_x86_ops->nmi_allowed(vcpu)) {
@@ -8826,7 +8826,7 @@ static inline bool kvm_vcpu_has_events(struct kvm_vcpu *vcpu)
 		return true;
 
 	if (test_bit(KVM_REQ_SMI, &vcpu->requests) ||
-	    (vcpu->arch.smi_pending && !is_smm(vcpu)))
+	    (vcpu->arch.smi_pending && kvm_x86_ops->smi_allowed(vcpu)))
 		return true;
 
 	if (kvm_arch_interrupt_allowed(vcpu) &&
