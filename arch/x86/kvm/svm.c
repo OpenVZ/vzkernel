@@ -4972,20 +4972,31 @@ static inline bool nested_exit_on_nmi(struct vcpu_svm *svm)
 	return (svm->nested.intercept & (1ULL << INTERCEPT_NMI));
 }
 
-static int svm_nmi_allowed(struct kvm_vcpu *vcpu)
+static bool svm_nmi_blocked(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct vmcb *vmcb = svm->vmcb;
 	int ret;
 
-	if (is_guest_mode(vcpu) && nested_exit_on_nmi(svm))
-		return 1;
+	if (!gif_set(svm))
+		return true;
 
-	ret = !(vmcb->control.int_state & SVM_INTERRUPT_SHADOW_MASK) &&
-	      !(svm->vcpu.arch.hflags & HF_NMI_MASK);
-	ret = ret && gif_set(svm) && nested_svm_nmi(svm);
+	if (is_guest_mode(vcpu) && nested_exit_on_nmi(svm))
+		return false;
+
+	ret = (vmcb->control.int_state & SVM_INTERRUPT_SHADOW_MASK) ||
+	      (svm->vcpu.arch.hflags & HF_NMI_MASK);
 
 	return ret;
+}
+
+static int svm_nmi_allowed(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_svm *svm = to_svm(vcpu);
+	if (svm->nested.nested_run_pending)
+		return false;
+
+	return !svm_nmi_blocked(vcpu) && nested_svm_nmi(svm); // CHECKME
 }
 
 static bool svm_get_nmi_mask(struct kvm_vcpu *vcpu)
@@ -5008,19 +5019,28 @@ static void svm_set_nmi_mask(struct kvm_vcpu *vcpu, bool masked)
 	}
 }
 
-static int svm_interrupt_allowed(struct kvm_vcpu *vcpu)
+static bool svm_interrupt_blocked(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct vmcb *vmcb = svm->vmcb;
 
 	if (!gif_set(svm) ||
 	     (vmcb->control.int_state & SVM_INTERRUPT_SHADOW_MASK))
-		return 0;
+		return true;
 
 	if (is_guest_mode(vcpu) && (svm->vcpu.arch.hflags & HF_VINTR_MASK))
-		return !!(svm->vcpu.arch.hflags & HF_HIF_MASK);
+		return !(svm->vcpu.arch.hflags & HF_HIF_MASK);
 	else
-		return !!(kvm_get_rflags(vcpu) & X86_EFLAGS_IF);
+		return !(kvm_get_rflags(vcpu) & X86_EFLAGS_IF);
+}
+
+static int svm_interrupt_allowed(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_svm *svm = to_svm(vcpu);
+	if (svm->nested.nested_run_pending)
+		return false;
+
+	return !svm_interrupt_blocked(vcpu);
 }
 
 static void enable_irq_window(struct kvm_vcpu *vcpu)
@@ -5751,14 +5771,15 @@ static inline void avic_post_state_restore(struct kvm_vcpu *vcpu)
 	avic_handle_ldr_update(vcpu);
 }
 
-static int svm_smi_allowed(struct kvm_vcpu *vcpu)
+static bool svm_smi_blocked(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 
 	/* Per APM Vol.2 15.22.2 "Response to SMI" */
 	if (!gif_set(svm))
-		return 0;
+		return true;
 
+#if 0
 	if (is_guest_mode(&svm->vcpu) &&
 	    svm->nested.intercept & (1ULL << INTERCEPT_SMI)) {
 		/* TODO: Might need to set exit_info_1 and exit_info_2 here */
@@ -5766,8 +5787,18 @@ static int svm_smi_allowed(struct kvm_vcpu *vcpu)
 		svm->nested.exit_required = true;
 		return 0;
 	}
+#endif
 
-	return 1;
+	return is_smm(vcpu);
+}
+
+static int svm_smi_allowed(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_svm *svm = to_svm(vcpu);
+	if (svm->nested.nested_run_pending)
+		return false;
+
+	return !svm_smi_blocked(vcpu);
 }
 
 static int svm_pre_enter_smm(struct kvm_vcpu *vcpu, char *smstate)
