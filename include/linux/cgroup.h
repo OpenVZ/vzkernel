@@ -868,6 +868,8 @@ void cgroup1_release_agent(struct work_struct *work);
 #ifdef CONFIG_VE
 extern int cgroup_mark_ve_roots(struct ve_struct *ve);
 void cgroup_unmark_ve_roots(struct ve_struct *ve);
+int ve_release_agent_setup(struct ve_struct *ve);
+void ve_release_agent_teardown(struct ve_struct *ve);
 struct ve_struct *cgroup_ve_owner(struct cgroup *cgrp);
 #endif
 
