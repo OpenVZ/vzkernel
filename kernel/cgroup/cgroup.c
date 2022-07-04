@@ -60,6 +60,7 @@
 #include <linux/sched/deadline.h>
 #include <linux/psi.h>
 #include <net/sock.h>
+#include <linux/task_work.h>
 #include <linux/ve.h>
 
 #define CREATE_TRACE_POINTS
@@ -2166,43 +2167,101 @@ static inline bool ve_check_root_cgroups(struct css_set *cset)
 	return false;
 }
 
-static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
-			   struct cftype *cft, bool activate);
-
 int cgroup_mark_ve_roots(struct ve_struct *ve)
 {
 	struct cgrp_cset_link *link;
 	struct css_set *cset;
 	struct cgroup *cgrp;
+
+	/*
+	 * It's safe to use ve->ve_ns->cgroup_ns->root_cset here without extra
+	 * locking as we do it from container init at container start after
+	 * ve_grab_context and only container init can tear those down.
+	 */
+	cset = rcu_dereference_protected(ve->ve_ns, 1)->cgroup_ns->root_cset;
+	BUG_ON(!cset);
+
+	spin_lock_irq(&css_set_lock);
+	if (ve_check_root_cgroups(cset)) {
+		spin_unlock_irq(&css_set_lock);
+		return -EINVAL;
+	}
+
+	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
+		cgrp = link->cgrp;
+
+		if (!is_virtualized_cgroup(cgrp))
+			continue;
+
+		rcu_assign_pointer(cgrp->ve_owner, ve);
+		set_bit(CGRP_VE_ROOT, &cgrp->flags);
+	}
+	spin_unlock_irq(&css_set_lock);
+
+	/* FIXME: implies cpu cgroup in cset, which is not always right */
+	link_ve_root_cpu_cgroup(cset->subsys[cpu_cgrp_id]);
+	synchronize_rcu();
+	return 0;
+}
+
+void cgroup_unmark_ve_roots(struct ve_struct *ve)
+{
+	struct cgrp_cset_link *link;
+	struct css_set *cset;
+	struct cgroup *cgrp;
+
+	/*
+	 * It's safe to use ve->ve_ns->cgroup_ns->root_cset here without extra
+	 * locking as we do it from container init at container start after
+	 * ve_grab_context and only container init can tear those down.
+	 */
+	cset = rcu_dereference_protected(ve->ve_ns, 1)->cgroup_ns->root_cset;
+	BUG_ON(!cset);
+
+	spin_lock_irq(&css_set_lock);
+	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
+		cgrp = link->cgrp;
+
+		if (!is_virtualized_cgroup(cgrp))
+			continue;
+
+		/* Set by cgroup_mark_ve_roots */
+		if (!test_bit(CGRP_VE_ROOT, &cgrp->flags))
+			continue;
+
+		rcu_assign_pointer(cgrp->ve_owner, NULL);
+		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
+	}
+	spin_unlock_irq(&css_set_lock);
+	/* ve_owner == NULL will be visible */
+	synchronize_rcu();
+}
+
+static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
+			   struct cftype *cft, bool activate);
+
+void ve_release_agent_setup_work(struct callback_head *head)
+{
+	struct cgrp_cset_link *link;
+	struct ve_struct *ve;
+	struct css_set *cset;
+	struct cgroup *cgrp;
 	struct cftype *cft;
-	int err = 0;
+	int err;
 
 	cft = get_cftype_by_name(CGROUP_FILENAME_RELEASE_AGENT);
 	BUG_ON(!cft || cft->file_offset);
 
-	mutex_lock(&cgroup_mutex);
-	spin_lock_irq(&css_set_lock);
-
-	/*
-	 * We can safely use ve->ve_ns without rcu_read_lock here, as we are
-	 * always called _after_ ve_grab_context under ve->op_sem, so we've
-	 * just set ve_ns and nobody else can modify it under us.
-	 */
-	cset = rcu_dereference_protected(ve->ve_ns,
-			lockdep_is_held(&ve->op_sem))->cgroup_ns->root_cset;
-
-	if (ve_check_root_cgroups(cset)) {
-		spin_unlock_irq(&css_set_lock);
-		mutex_unlock(&cgroup_mutex);
-		return -EINVAL;
-	}
+	ve = container_of(head, struct ve_struct,
+			  ve_release_agent_setup_head);
+	cset = rcu_dereference_protected(ve->ve_ns, 1)->cgroup_ns->root_cset;
 
 	/*
 	 * We want to traverse the cset->cgrp_links list and
 	 * call cgroup_add_file() function which will call
 	 * memory allocation functions with GFP_KERNEL flag.
-	 * We can't continue to hold css_set_lock, but it's
-	 * safe to hold cgroup_mutex.
+	 * We can't lock css_set_lock, instead it's safe to
+	 * hold cgroup_mutex.
 	 *
 	 * It's safe to hold only cgroup_mutex and traverse
 	 * the cset list just because in all scenarious where
@@ -2216,18 +2275,17 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 	 * check which prevents any list modifications if someone is still
 	 * holding the refcnt to cset.
 	 * See copy_cgroup_ns() function it's taking refcnt's by get_css_set().
-	 *
 	 */
-	spin_unlock_irq(&css_set_lock);
-
+	mutex_lock(&cgroup_mutex);
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
 		cgrp = link->cgrp;
 
 		if (!is_virtualized_cgroup(cgrp))
 			continue;
 
-		rcu_assign_pointer(cgrp->ve_owner, ve);
-		set_bit(CGRP_VE_ROOT, &cgrp->flags);
+		/* Set by cgroup_mark_ve_roots */
+		if (!test_bit(CGRP_VE_ROOT, &cgrp->flags))
+			continue;
 
 		/*
 		 * The cgroupns can hold reference on cgroups which are already
@@ -2243,17 +2301,29 @@ int cgroup_mark_ve_roots(struct ve_struct *ve)
 			}
 		}
 	}
-
-	link_ve_root_cpu_cgroup(cset->subsys[cpu_cgrp_id]);
 	mutex_unlock(&cgroup_mutex);
-	synchronize_rcu();
-
-	if (err)
-		cgroup_unmark_ve_roots(ve);
-	return err;
 }
 
-void cgroup_unmark_ve_roots(struct ve_struct *ve)
+int ve_release_agent_setup(struct ve_struct *ve)
+{
+	/*
+	 * Add release_agent files to ve root cgroups via task_work.
+	 * This is to resolve deadlock between cgroup file refcount and
+	 * cgroup_mutex, we can't take cgroup_mutex under the refcount
+	 * or under locks, which are under the refcount (ve->op_sem).
+	 *
+	 * It's safe to use ve->ve_ns->cgroup_ns->root_cset inside task_work
+	 * without extra locking as we do it from container init before exiting
+	 * to userspace just after container start and only container init can
+	 * tear those down.
+	 */
+	init_task_work(&ve->ve_release_agent_setup_head,
+		       ve_release_agent_setup_work);
+	return task_work_add(current, &ve->ve_release_agent_setup_head,
+			     TWA_RESUME);
+}
+
+void ve_release_agent_teardown(struct ve_struct *ve)
 {
 	struct cgrp_cset_link *link;
 	struct css_set *cset;
@@ -2263,36 +2333,28 @@ void cgroup_unmark_ve_roots(struct ve_struct *ve)
 	cft = get_cftype_by_name(CGROUP_FILENAME_RELEASE_AGENT);
 	BUG_ON(!cft || cft->file_offset);
 
+	/*
+	 * It's safe to use ve->ve_ns->cgroup_ns->root_cset here without extra
+	 * locking as we do it from container init at container stop before
+	 * ve_drop_context and only container init can tear those down.
+	 */
+	cset = rcu_dereference_protected(ve->ve_ns, 1)->cgroup_ns->root_cset;
+
 	mutex_lock(&cgroup_mutex);
-
-	/*
-	 * We can safely use ve->ve_ns without rcu_read_lock here, as we are
-	 * always called _before_ ve_drop_context under ve->op_sem, so we
-	 * did not change ve_ns yet and nobody else can modify it under us.
-	 */
-	cset = rcu_dereference_protected(ve->ve_ns,
-			lockdep_is_held(&ve->op_sem))->cgroup_ns->root_cset;
-	BUG_ON(!cset);
-
-	/*
-	 * Traversing @cgrp_links without @css_set_lock is safe here for
-	 * the same reasons as in cgroup_mark_ve_roots().
-	 */
 	list_for_each_entry(link, &cset->cgrp_links, cgrp_link) {
 		cgrp = link->cgrp;
 
 		if (!is_virtualized_cgroup(cgrp))
 			continue;
 
+		/* Set by cgroup_mark_ve_roots */
+		if (!test_bit(CGRP_VE_ROOT, &cgrp->flags))
+			continue;
+
 		if (!cgroup_is_dead(cgrp))
 			cgroup_rm_file(cgrp, cft);
-		rcu_assign_pointer(cgrp->ve_owner, NULL);
-		clear_bit(CGRP_VE_ROOT, &cgrp->flags);
 	}
-
 	mutex_unlock(&cgroup_mutex);
-	/* ve_owner == NULL will be visible */
-	synchronize_rcu();
 }
 
 struct cgroup_subsys_state *css_ve_root1(struct cgroup_subsys_state *css)
