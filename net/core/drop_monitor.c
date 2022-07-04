@@ -296,7 +296,7 @@ out_unlock:
 static int net_dm_cmd_config(struct sk_buff *skb,
 			struct genl_info *info)
 {
-	return -ENOTSUPP;
+	return -EOPNOTSUPP;
 }
 
 static int net_dm_cmd_trace(struct sk_buff *skb,
@@ -311,7 +311,7 @@ static int net_dm_cmd_trace(struct sk_buff *skb,
 		break;
 	}
 
-	return -ENOTSUPP;
+	return -EOPNOTSUPP;
 }
 
 static int dropmon_net_event(struct notifier_block *ev_block,
