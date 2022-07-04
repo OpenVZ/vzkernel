@@ -754,6 +754,10 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_mark_ve;
 
+	err = ve_release_agent_setup(ve);
+	if (err)
+		goto err_release_agent_setup;
+
 	ve->is_running = 1;
 
 	printk(KERN_INFO "CT: %s: started\n", ve_name(ve));
@@ -762,6 +766,8 @@ static int ve_start_container(struct ve_struct *ve)
 
 	return 0;
 
+err_release_agent_setup:
+	cgroup_unmark_ve_roots(ve);
 err_mark_ve:
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
 err_iterate:
@@ -823,26 +829,28 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	struct ve_struct *ve = current->task_ve;
 	struct nsproxy *ve_ns;
 
-	down_write(&ve->op_sem);
-	ve_ns = rcu_dereference_protected(ve->ve_ns, lockdep_is_held(&ve->op_sem));
 	/*
-	 * current->cgroups already switched to init_css_set in cgroup_exit(),
-	 * but current->task_ve still points to our exec ve.
+	 * Check that root container pidns dies and we are here to stop VE
 	 */
-	if (!ve_ns || ve_ns->pid_ns_for_children != pid_ns)
-		goto unlock;
-
-	cgroup_unmark_ve_roots(ve);
+	rcu_read_lock();
+	ve_ns = rcu_dereference(ve->ve_ns);
+	if (!ve_ns || ve_ns->pid_ns_for_children != pid_ns) {
+		rcu_read_unlock();
+		return;
+	}
+	rcu_read_unlock();
 
 	/*
 	 * At this point all userspace tasks in container are dead.
 	 */
+	ve_release_agent_teardown(ve);
+	down_write(&ve->op_sem);
+	cgroup_unmark_ve_roots(ve);
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
 	ve_list_del(ve);
 	ve_drop_context(ve);
 	printk(KERN_INFO "CT: %s: stopped\n", ve_name(ve));
 	put_ve(ve); /* from ve_start_container() */
-unlock:
 	up_write(&ve->op_sem);
 }
 

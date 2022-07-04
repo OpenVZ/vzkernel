@@ -113,6 +113,7 @@ struct ve_struct {
 	/* Should take rcu_read_lock and check ve->is_running before queue */
 	struct workqueue_struct	*wq;
 	struct work_struct	release_agent_work;
+	struct callback_head	ve_release_agent_setup_head;
 
 	/*
 	 * List of data, private for each root cgroup in
