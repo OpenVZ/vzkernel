@@ -810,6 +810,7 @@ void transfer_sync_data(struct pcs_cs_list * new_cs_list, struct pcs_cs_list * o
 		for (k = 0; k < old_cs_list->nsrv; k++) {
 			if (old_cs_list->cs[k].info.id.val == new_cs_list->cs[i].info.id.val) {
 				new_cs_list->cs[i].sync = old_cs_list->cs[k].sync;
+				new_cs_list->cs[i].dirty_ts = old_cs_list->cs[i].dirty_ts;
 				break;
 			}
 		}
@@ -862,6 +863,7 @@ static void evaluate_dirty_status(struct pcs_map_entry * m)
 				rec->sync.dirty_integrity = 0;
 				rec->sync.dirty_epoch = 0;
 				rec->sync.dirty_seq = 0;
+				rec->dirty_ts = jiffies;
 			}
 		} else
 			rec->sync.dirty_integrity = 0;
@@ -965,6 +967,7 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 	for (i = 0; i < cs_cnt; i++) {
 		cs_list->cs[i].info = rec[i];
 		memset(&cs_list->cs[i].sync, 0, sizeof(cs_list->cs[i].sync));
+		cs_list->cs[i].dirty_ts = jiffies;
 		RCU_INIT_POINTER(cs_list->cs[i].cslink.cs, NULL);
 		INIT_LIST_HEAD(&cs_list->cs[i].cslink.link);
 		cs_list->cs[i].cslink.index = i;
@@ -2561,11 +2564,36 @@ truncate_tail:
 	pcs_map_put(m);
 }
 
+static void warp_sync_seq(struct pcs_map_entry * m, struct pcs_cs_record * rec, struct pcs_cs_sync_data * sync)
+{
+	struct cs_sync_state * srec = &rec->sync;
+
+	/* The procedure can force sync seq to _decrease_. Log this event just in case.
+	 */
+	if (pcs_sync_seq_compare(sync->sync_epoch, srec->dirty_epoch) < 0 ||
+	    (sync->sync_epoch == srec->dirty_epoch &&
+	     pcs_sync_seq_compare(sync->sync_dirty, srec->dirty_seq) < 0) ||
+	    pcs_sync_seq_compare(sync->sync_epoch, srec->sync_epoch) < 0 ||
+	    (sync->sync_epoch == srec->sync_epoch &&
+	     pcs_sync_seq_compare(sync->sync_current, srec->sync_seq) < 0))
+		FUSE_KTRACE(cc_from_maps(m->maps)->fc, "Warp [" NODE_FMT ",%u/%u,%u/%u,%u/%u] -> [%u/%u,%u/%u]",
+		       NODE_ARGS(rec->info.id), rec->info.integrity_seq, srec->dirty_integrity,
+		       srec->dirty_epoch, srec->dirty_seq, srec->sync_epoch, srec->sync_seq,
+		       sync->sync_epoch, sync->sync_dirty, sync->sync_epoch, sync->sync_current);
+
+	srec->dirty_epoch = sync->sync_epoch;
+	srec->dirty_seq = sync->sync_dirty;
+	srec->sync_epoch = sync->sync_epoch;
+	srec->sync_seq = sync->sync_current;
+}
+
 static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec,
 			     struct pcs_cs_sync_data * sync, u32 lat, int op_type)
 {
 	int dirtying;
 	struct cs_sync_state * srec = &rec->sync;
+	int was_dirty = cs_is_dirty(srec);
+
 	if (sync->ts_net > sync->ts_io)
 		lat -= sync->ts_net;
 	else
@@ -2593,6 +2621,10 @@ static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec
 	dirtying = (op_type == PCS_CS_WRITE_SYNC_RESP || op_type == PCS_CS_WRITE_RESP ||
 		   op_type == PCS_CS_WRITE_AL_RESP ||
 		   op_type == PCS_CS_WRITE_HOLE_RESP || op_type == PCS_CS_WRITE_ZERO_RESP);
+
+	if (sync->sync_dirty == 0)
+		dirtying = 0;
+
 	/* The following looks scary, could be more clear.
 	 * The goal is to update sync seq numbers:
 	 *
@@ -2602,16 +2634,60 @@ static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec
 	 * - sync_epoch/sync_seq advance sync_epoch/seq
 	 * - sync_epoch/sync_dirty advance dirty_epoch/seq
 	 */
-	if (dirtying && sync->sync_dirty) {
-		srec->dirty_integrity = sync->integrity_seq;
+	if (dirtying) {
+		unsigned int tmo;
 
-		if (srec->dirty_epoch == 0 ||
-		    pcs_sync_seq_compare(sync->sync_epoch, srec->dirty_epoch) > 0) {
+		if (pcs_sync_seq_compare(sync->sync_current, sync->sync_dirty) > 0) {
+			dirtying = 0;
+			tmo = PCS_MAX_SYNC_TIMEOUT;
+		} else {
+			srec->dirty_integrity = sync->integrity_seq;
+			tmo = PCS_MAX_DIRTY_TIMEOUT;
+		}
+
+		if (jiffies - rec->dirty_ts > tmo) {
+			warp_sync_seq(m, rec, sync);
+			rec->dirty_ts = jiffies;
+		} else if (srec->dirty_epoch == 0 ||
+			   pcs_sync_seq_compare(sync->sync_epoch, srec->dirty_epoch) > 0) {
 			srec->dirty_epoch = sync->sync_epoch;
 			srec->dirty_seq = sync->sync_dirty;
+			rec->dirty_ts = jiffies;
 		} else if (sync->sync_epoch == srec->dirty_epoch &&
 			   pcs_sync_seq_compare(sync->sync_dirty, srec->dirty_seq) > 0) {
 			srec->dirty_seq = sync->sync_dirty;
+			rec->dirty_ts = jiffies;
+		}
+	} else {
+		if (jiffies - rec->dirty_ts > PCS_MAX_SYNC_TIMEOUT) {
+			srec->sync_epoch = sync->sync_epoch;
+			srec->sync_seq = sync->sync_current;
+
+			if (was_dirty) {
+				/* This must not happen, dirty replica cannot remain dirty
+				 * for >> PCS_SYNC_TIMEOUT unless the cluster is very sick.
+				 */
+				FUSE_KTRACE(cc_from_maps(m->maps)->fc, MAP_FMT " replica " NODE_FMT " is dirty for %ld hz; [%u/%u,%u/%u,%u/%u] -> [%u/%u]",
+				       MAP_ARGS(m), NODE_ARGS(rec->info.id), (long)(jiffies - rec->dirty_ts),
+				       rec->info.integrity_seq, srec->dirty_integrity,
+				       srec->dirty_epoch, srec->dirty_seq, srec->sync_epoch, srec->sync_seq,
+				       sync->sync_epoch, sync->sync_current);
+
+				/* Old dirty seq might be invalid and new one in not dirtying response
+				 * is undefined. But it must be set to _something_ _dirty_.
+				 * We are in troubles. We have to violate requirement of obscurity
+				 * of sequence numbers for client and to forge some sequence number.
+				 */
+				srec->dirty_epoch = sync->sync_epoch;
+				srec->dirty_seq = sync->sync_current;
+			} else {
+				 /* Normal case, replica is clean. Actually, we could do such reset to 0
+				  * every time when replica becomes clean.
+				  */
+				srec->dirty_epoch = 0;
+				srec->dirty_seq = 0;
+			}
+			rec->dirty_ts = jiffies;
 		}
 	}
 
@@ -2622,6 +2698,17 @@ static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec
 	} else if (sync->sync_epoch == srec->sync_epoch &&
 		   pcs_sync_seq_compare(sync->sync_current, srec->sync_seq) > 0) {
 		srec->sync_seq = sync->sync_current;
+	}
+
+	if (!was_dirty && !dirtying && cs_is_dirty(srec)) {
+		FUSE_KTRACE(cc_from_maps(m->maps)->fc, MAP_FMT " replica " NODE_FMT " is not expected to be dirty [%u/%u,%u/%u,%u/%u]",
+		       MAP_ARGS(m), NODE_ARGS(rec->info.id),
+		       rec->info.integrity_seq, srec->dirty_integrity,
+		       srec->dirty_epoch, srec->dirty_seq, srec->sync_epoch, srec->sync_seq);
+		/* "Dirty" dirty fixup */
+		srec->dirty_epoch = 0;
+		srec->dirty_seq = 0;
+		rec->dirty_ts = jiffies;
 	}
 	return 0;
 }
