@@ -3141,6 +3141,9 @@ struct tty_struct *alloc_tty_struct(struct tty_driver *driver, int idx)
 	tty_line_name(driver, idx, tty->name);
 	tty->dev = tty_get_device(tty);
 
+#ifdef CONFIG_TTY
+	vtty_alloc_tty_struct(driver, tty);
+#endif
 	return tty;
 }
 
