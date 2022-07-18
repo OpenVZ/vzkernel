@@ -12,6 +12,21 @@ struct pcs_int_request;
 #define PCS_MAP_LIMIT		4096
 
 #define PCS_SYNC_TIMEOUT		(20 * HZ)
+/* Protection against sync seq wraparound */
+
+/* For completely synchronous writes, which we use with immediate writes
+ * (i.e.  iscsi). It will hold INT_MAX/(PCS_MAX_SYNC_TIMEOUT/HZ)
+ * iops = ~50kiops, this should be enough: such writes are expensive and cannot
+ * be optimized.
+ */
+#define PCS_MAX_SYNC_TIMEOUT	(12*3600*HZ)
+
+/* For normal dirtying writes the limit can be made a lot weaker, the only
+ * severe limitation is that PCS_MAX_DIRTY_TIMEOUT was much greater than
+ * PCS_SYNC_TIMEOUT. Factor 100 protects against ~1Miops.
+ */
+#define PCS_MAX_DIRTY_TIMEOUT	(100*PCS_SYNC_TIMEOUT)
+
 
 #define PCS_REPLICATION_BLACKLIST_TIMEOUT  HZ
 
@@ -76,6 +91,7 @@ struct pcs_cs_record
 {
 	struct pcs_cs_info	info;
 	struct cs_sync_state	sync;
+	abs_time_t		dirty_ts;
 	struct pcs_cs_link	cslink;
 };
 
