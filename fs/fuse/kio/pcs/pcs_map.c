@@ -2818,13 +2818,13 @@ static int sync_is_finished(struct pcs_msg * msg, struct pcs_map_entry * m)
 	     srec++) {
 		int i;
 
-		FUSE_KDTRACE(cc_from_maps(m->maps)->fc, "Checking cs="NODE_FMT" sync=[%d,%d,%d,%d]", NODE_ARGS(srec->cs_id), srec->sync.integrity_seq,
+		FUSE_KDTRACE(cc_from_maps(m->maps)->fc, "Checking cs="NODE_FMT" sync=[%u,%u,%u,%u]", NODE_ARGS(srec->cs_id), srec->sync.integrity_seq,
 		      srec->sync.sync_epoch,
 		      srec->sync.sync_dirty, srec->sync.sync_current);
 
 		for (i = 0; i < m->cs_list->nsrv; i++) {
 			if (m->cs_list->cs[i].info.id.val == srec->cs_id.val) {
-				FUSE_KDTRACE(cc_from_maps(m->maps)->fc, "Checking against sync=[%d,%d,%d,%d,%d]",
+				FUSE_KDTRACE(cc_from_maps(m->maps)->fc, "Checking against sync=[%u,%u,%u,%u,%u]",
 				      m->cs_list->cs[i].sync.dirty_integrity,
 				      m->cs_list->cs[i].sync.dirty_epoch,
 				      m->cs_list->cs[i].sync.dirty_seq,
@@ -2981,7 +2981,7 @@ static void prepare_map_flush_msg(struct pcs_map_entry * m, struct pcs_int_reque
 				arr->sync.ts_net = 0;
 				arr->sync._reserved = 0;
 				varsize += sizeof(struct pcs_cs_sync_resp);
-				FUSE_KLOG(cc_from_maps(m->maps)->fc, LOG_DEBUG5, "fill sync "NODE_FMT" [%d,%d,%d,%d]", NODE_ARGS(arr->cs_id),
+				FUSE_KLOG(cc_from_maps(m->maps)->fc, LOG_DEBUG5, "fill sync "NODE_FMT" [%u,%u,%u,%u]", NODE_ARGS(arr->cs_id),
 					arr->sync.integrity_seq, arr->sync.sync_epoch,
 					arr->sync.sync_dirty, arr->sync.sync_current);
 				arr++;
