@@ -2564,7 +2564,7 @@ truncate_tail:
 static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec,
 			     struct pcs_cs_sync_data * sync, u32 lat, int op_type)
 {
-	int dirtify;
+	int dirtying;
 	struct cs_sync_state * srec = &rec->sync;
 	if (sync->ts_net > sync->ts_io)
 		lat -= sync->ts_net;
@@ -2590,19 +2590,19 @@ static int commit_cs_record(struct pcs_map_entry * m, struct pcs_cs_record * rec
 
 	BUG_ON(srec->dirty_integrity && srec->dirty_integrity != sync->integrity_seq);
 
-	dirtify = (op_type == PCS_CS_WRITE_SYNC_RESP || op_type == PCS_CS_WRITE_RESP ||
+	dirtying = (op_type == PCS_CS_WRITE_SYNC_RESP || op_type == PCS_CS_WRITE_RESP ||
 		   op_type == PCS_CS_WRITE_AL_RESP ||
 		   op_type == PCS_CS_WRITE_HOLE_RESP || op_type == PCS_CS_WRITE_ZERO_RESP);
 	/* The following looks scary, could be more clear.
 	 * The goal is to update sync seq numbers:
 	 *
-	 * READ/SYNC (!dirtifying):
+	 * READ/SYNC (!dirtying):
 	 * - sync_epoch/sync_seq advance sync_epoch/seq
-	 * WRITE/WRITE_SYNC (dirtifying):
+	 * WRITE/WRITE_SYNC (dirtying):
 	 * - sync_epoch/sync_seq advance sync_epoch/seq
 	 * - sync_epoch/sync_dirty advance dirty_epoch/seq
 	 */
-	if (dirtify && sync->sync_dirty) {
+	if (dirtying && sync->sync_dirty) {
 		srec->dirty_integrity = sync->integrity_seq;
 
 		if (srec->dirty_epoch == 0 ||
@@ -3116,7 +3116,7 @@ static void sync_timer_work(struct work_struct *w)
 /* Handle for api PCS_REQ_T_SYNC IO request. It scans through current map
  * and constructs internal subrequests for each chunk, which is dirty at the moment.
  * Current sync seq number are stored in subrequest right now, so that future
- * dirtifying writes will not delay execution of this request.
+ * dirtying writes will not delay execution of this request.
  *
  * XXX we can issue a lot of subrequests here: one per each dirty chunk.
  */
