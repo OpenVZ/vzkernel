@@ -13,22 +13,7 @@ RHEL_RELEASE = 1160.66.1
 RHEL_DRM_VERSION = 5
 RHEL_DRM_PATCHLEVEL = 0
 RHEL_DRM_SUBLEVEL = 10
-# VZVERSION = ovz.188.6
-VZVERSION = ovz.custom
-
-ifeq ($(VZVERSION), ovz.custom)
-  GIT_DIR := .git
-  ifneq ("$(wildcard $(GIT_DIR) )", "")
-    VZVERSION := $(shell git describe --abbrev=0 2>/dev/null | \
-		   sed -r 's/^.*\.vz7\.//')
-  else
-    VZVERSION := custom
-  endif
-
-  ifeq ($(EXTRAVERSION),)
-    EXTRAVERSION := -$(RHEL_RELEASE).ovz.$(VZVERSION)
-  endif
-endif
+VZVERSION = ovz.188.6
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
