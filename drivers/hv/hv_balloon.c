@@ -21,6 +21,7 @@
 #include <linux/kernel.h>
 #include <linux/jiffies.h>
 #include <linux/mman.h>
+#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -33,6 +34,7 @@
 #include <linux/percpu_counter.h>
 
 #include <linux/hyperv.h>
+#include <asm/mshyperv.h>
 
 #define CREATE_TRACE_POINTS
 #include "hv_trace_balloon.h"
@@ -253,7 +255,7 @@ struct dm_capabilities_resp_msg {
  * num_committed: Committed memory in pages.
  * page_file_size: The accumulated size of all page files
  *		   in the system in pages.
- * zero_free: The nunber of zero and free pages.
+ * zero_free: The number of zero and free pages.
  * page_file_writes: The writes to the page file in pages.
  * io_diff: An indicator of file cache efficiency or page file activity,
  *	    calculated as File Cache Page Fault Count - Page Read Count.
@@ -572,6 +574,11 @@ struct hv_dynmem_device {
 	 * The negotiated version agreed by host.
 	 */
 	__u32 version;
+
+	/*
+	 * Maximum number of pages that can be hot_add-ed
+	 */
+	__u64 max_dynamic_page_count;
 };
 
 static struct hv_dynmem_device dm_device;
@@ -1084,6 +1091,7 @@ static void process_info(struct hv_dynmem_device *dm, struct dm_info_msg *msg)
 
 			pr_info("Max. dynamic memory size: %llu MB\n",
 				(*max_page_count) >> (20 - PAGE_SHIFT));
+			dm->max_dynamic_page_count = *max_page_count;
 		}
 
 		break;
@@ -1119,6 +1127,19 @@ static unsigned long compute_balloon_floor(void)
 		min_pages = MB2PAGES(488) + (totalram_pages >> 5);
 #undef MB2PAGES
 	return min_pages;
+}
+
+/*
+ * Compute total committed memory pages
+ */
+
+static unsigned long get_pages_committed(struct hv_dynmem_device *dm)
+{
+	return vm_memory_committed() +
+		dm->num_pages_ballooned +
+		(dm->num_pages_added > dm->num_pages_onlined ?
+		 dm->num_pages_added - dm->num_pages_onlined : 0) +
+		compute_balloon_floor();
 }
 
 /*
@@ -1161,11 +1182,7 @@ static void post_status(struct hv_dynmem_device *dm)
 	 * asking us to balloon them out.
 	 */
 	status.num_avail = si_mem_available();
-	status.num_committed = vm_memory_committed() +
-		dm->num_pages_ballooned +
-		(dm->num_pages_added > dm->num_pages_onlined ?
-		 dm->num_pages_added - dm->num_pages_onlined : 0) +
-		compute_balloon_floor();
+	status.num_committed = get_pages_committed(dm);
 
 	trace_balloon_status(status.num_avail, status.num_committed,
 			     vm_memory_committed(), dm->num_pages_ballooned,
@@ -1570,6 +1587,142 @@ static void balloon_onchannelcallback(void *context)
 
 }
 
+static int ballooning_enabled(void)
+{
+	/*
+	 * Disable ballooning if the page size is not 4k (HV_HYP_PAGE_SIZE),
+	 * since currently it's unclear to us whether an unballoon request can
+	 * make sure all page ranges are guest page size aligned.
+	 */
+	if (PAGE_SIZE != HV_HYP_PAGE_SIZE) {
+		pr_info("Ballooning disabled because page size is not 4096 bytes\n");
+		return 0;
+	}
+
+	return 1;
+}
+
+static int hot_add_enabled(void)
+{
+	/*
+	 * Disable hot add on ARM64, because we currently rely on
+	 * memory_add_physaddr_to_nid() to get a node id of a hot add range,
+	 * however ARM64's memory_add_physaddr_to_nid() always return 0 and
+	 * DM_MEM_HOT_ADD_REQUEST doesn't have the NUMA node information for
+	 * add_memory().
+	 */
+	if (IS_ENABLED(CONFIG_ARM64)) {
+		pr_info("Memory hot add disabled on ARM64\n");
+		return 0;
+	}
+
+	return 1;
+}
+
+
+/*
+ * DEBUGFS Interface
+ */
+#ifdef CONFIG_DEBUG_FS
+
+/**
+ * hv_balloon_debug_show - shows statistics of balloon operations.
+ * @f: pointer to the &struct seq_file.
+ * @offset: ignored.
+ *
+ * Provides the statistics that can be accessed in hv-balloon in the debugfs.
+ *
+ * Return: zero on success or an error code.
+ */
+static int hv_balloon_debug_show(struct seq_file *f, void *offset)
+{
+	struct hv_dynmem_device *dm = f->private;
+	char *sname;
+
+	seq_printf(f, "%-22s: %u.%u\n", "host_version",
+				DYNMEM_MAJOR_VERSION(dm->version),
+				DYNMEM_MINOR_VERSION(dm->version));
+
+	seq_printf(f, "%-22s:", "capabilities");
+	if (ballooning_enabled())
+		seq_puts(f, " enabled");
+
+	if (hot_add_enabled())
+		seq_puts(f, " hot_add");
+
+	seq_puts(f, "\n");
+
+	seq_printf(f, "%-22s: %u", "state", dm->state);
+	switch (dm->state) {
+	case DM_INITIALIZING:
+			sname = "Initializing";
+			break;
+	case DM_INITIALIZED:
+			sname = "Initialized";
+			break;
+	case DM_BALLOON_UP:
+			sname = "Balloon Up";
+			break;
+	case DM_BALLOON_DOWN:
+			sname = "Balloon Down";
+			break;
+	case DM_HOT_ADD:
+			sname = "Hot Add";
+			break;
+	case DM_INIT_ERROR:
+			sname = "Error";
+			break;
+	default:
+			sname = "Unknown";
+	}
+	seq_printf(f, " (%s)\n", sname);
+
+	/* HV Page Size */
+	seq_printf(f, "%-22s: %ld\n", "page_size", HV_HYP_PAGE_SIZE);
+
+	/* Pages added with hot_add */
+	seq_printf(f, "%-22s: %u\n", "pages_added", dm->num_pages_added);
+
+	/* pages that are "onlined"/used from pages_added */
+	seq_printf(f, "%-22s: %u\n", "pages_onlined", dm->num_pages_onlined);
+
+	/* pages we have given back to host */
+	seq_printf(f, "%-22s: %u\n", "pages_ballooned", dm->num_pages_ballooned);
+
+	seq_printf(f, "%-22s: %lu\n", "total_pages_committed",
+				get_pages_committed(dm));
+
+	seq_printf(f, "%-22s: %llu\n", "max_dynamic_page_count",
+				dm->max_dynamic_page_count);
+
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(hv_balloon_debug);
+
+static void  hv_balloon_debugfs_init(struct hv_dynmem_device *b)
+{
+	debugfs_create_file("hv-balloon", 0444, NULL, b,
+			&hv_balloon_debug_fops);
+}
+
+static void  hv_balloon_debugfs_exit(struct hv_dynmem_device *b)
+{
+	debugfs_remove(debugfs_lookup("hv-balloon", NULL));
+}
+
+#else
+
+static inline void hv_balloon_debugfs_init(struct hv_dynmem_device  *b)
+{
+}
+
+static inline void hv_balloon_debugfs_exit(struct hv_dynmem_device *b)
+{
+}
+
+#endif	/* CONFIG_DEBUG_FS */
+
 static int balloon_probe(struct hv_device *dev,
 			const struct hv_vmbus_device_id *dev_id)
 {
@@ -1670,8 +1823,8 @@ static int balloon_probe(struct hv_device *dev,
 	cap_msg.hdr.size = sizeof(struct dm_capabilities);
 	cap_msg.hdr.trans_id = atomic_inc_return(&trans_id);
 
-	cap_msg.caps.cap_bits.balloon = 1;
-	cap_msg.caps.cap_bits.hot_add = 1;
+	cap_msg.caps.cap_bits.balloon = ballooning_enabled();
+	cap_msg.caps.cap_bits.hot_add = hot_add_enabled();
 
 	/*
 	 * Specify our alignment requirements as it relates
@@ -1712,6 +1865,8 @@ static int balloon_probe(struct hv_device *dev,
 	dm_device.state = DM_INITIALIZED;
 	last_post_time = jiffies;
 
+	hv_balloon_debugfs_init(&dm_device);
+
 	return 0;
 
 probe_error2:
@@ -1736,6 +1891,8 @@ static int balloon_remove(struct hv_device *dev)
 
 	if (dm->num_pages_ballooned != 0)
 		pr_warn("Ballooned pages: %d\n", dm->num_pages_ballooned);
+
+	hv_balloon_debugfs_exit(dm);
 
 	cancel_work_sync(&dm->balloon_wrk.wrk);
 	cancel_work_sync(&dm->ha_wrk.wrk);
