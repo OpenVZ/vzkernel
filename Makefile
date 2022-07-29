@@ -13,7 +13,10 @@ RHEL_RELEASE = 1160.66.1
 RHEL_DRM_VERSION = 5
 RHEL_DRM_PATCHLEVEL = 0
 RHEL_DRM_SUBLEVEL = 10
-VZVERSION = ovz.188.6
+VZVERSION = ovz7.188.6
+ifeq ($(EXTRAVERSION),)
+  EXTRAVERSION := -$(RHEL_RELEASE).$(VZVERSION)
+endif
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
