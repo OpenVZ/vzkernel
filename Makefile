@@ -4,22 +4,7 @@ PATCHLEVEL = 14
 SUBLEVEL = 0
 EXTRAVERSION =
 NAME = Opossums on Parade
-# VZVERSION = ovz.16.6
-VZVERSION = ovz.custom
-
-ifeq ($(VZVERSION), ovz.custom)
-  GIT_DIR := .git
-  ifneq ("$(wildcard $(GIT_DIR) )", "")
-    VZVERSION := $(shell git describe --abbrev=0 2>/dev/null | \
-		   sed -r 's/^.*\.vz9\.//')
-  else
-    VZVERSION := custom
-  endif
-
-  ifeq ($(EXTRAVERSION),)
-    EXTRAVERSION := .ovz9.$(VZVERSION)
-  endif
-endif
+VZVERSION = ovz9.16.6
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
@@ -380,7 +365,7 @@ include $(srctree)/scripts/Kbuild.include
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
 KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
-export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION VZVERSION
+export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION
 
 include $(srctree)/scripts/subarch.include
 
@@ -1262,8 +1247,7 @@ define filechk_utsrelease.h
 	  echo '"$(KERNELRELEASE)" exceeds $(uts_len) characters' >&2;    \
 	  exit 1;                                                         \
 	fi;                                                               \
-	echo \#define UTS_RELEASE \"$(KERNELRELEASE)\";                   \
-	echo \#define VZVERSION \"$(VZVERSION)\"
+	echo \#define UTS_RELEASE \"$(KERNELRELEASE)\"
 endef
 
 define filechk_version.h
