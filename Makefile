@@ -28,6 +28,11 @@ __all:
 # Use this spot to avoid future merge conflicts
 include Makefile.rhelver
 
+VZVERSION = ovz9.16.6
+ifeq ($(EXTRAVERSION),)
+  EXTRAVERSION := -$(RHEL_RELEASE).$(VZVERSION)
+endif
+
 # We are using a recursive build, so we need to do a little thinking
 # to get the ordering right.
 #
@@ -387,7 +392,7 @@ include $(srctree)/scripts/Kbuild.include
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
 KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
-export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION
+export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION VZVERSION
 
 include $(srctree)/scripts/subarch.include
 
@@ -1301,7 +1306,8 @@ define filechk_utsrelease.h
 	  echo '"$(KERNELRELEASE)" exceeds $(uts_len) characters' >&2;    \
 	  exit 1;                                                         \
 	fi;                                                               \
-	echo \#define UTS_RELEASE \"$(KERNELRELEASE)\"
+	echo \#define UTS_RELEASE \"$(KERNELRELEASE)\";			  \
+	echo \#define VZVERSION \"$(VZVERSION)\"
 endef
 
 define filechk_version.h
