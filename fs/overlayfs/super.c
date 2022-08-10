@@ -2197,10 +2197,9 @@ static struct dentry *ovl_mount(struct file_system_type *fs_type, int flags,
 static struct file_system_type ovl_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "overlay",
-	.fs_flags	= FS_USERNS_MOUNT,
+	.fs_flags	= FS_USERNS_MOUNT | FS_VIRTUALIZED,
 	.mount		= ovl_mount,
 	.kill_sb	= kill_anon_super,
-	.fs_flags	= FS_VIRTUALIZED | FS_VE_MOUNT,
 };
 MODULE_ALIAS_FS("overlay");
 
