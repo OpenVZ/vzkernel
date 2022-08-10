@@ -217,21 +217,21 @@ static inline struct proc_dir_entry *proc_net_mkdir(
 	return _proc_mkdir(name, S_IRUGO | S_IXUGO | S_ISVTX, parent, net, true);
 }
 
-static inline struct proc_dir_entry *proc_net_create_data(const char *name,
+static inline struct proc_dir_entry *proc_ve_create_data(const char *name,
 				umode_t mode, struct proc_dir_entry *parent,
 				const struct proc_ops *proc_ops, void *data)
 {
 	return proc_create_data(name, S_ISVTX | mode, parent, proc_ops, data);
 }
 
-static inline struct proc_dir_entry *proc_net_create(const char *name,
+static inline struct proc_dir_entry *proc_ve_create(const char *name,
 				umode_t mode, struct proc_dir_entry *parent,
 				const struct proc_ops *proc_ops)
 {
-	return proc_net_create_data(name, mode, parent, proc_ops, NULL);
+	return proc_ve_create_data(name, mode, parent, proc_ops, NULL);
 }
 
-static inline struct proc_dir_entry *proc_net_create_seq_private(
+static inline struct proc_dir_entry *proc_ve_create_seq_private(
 		const char *name, umode_t mode,
 		struct proc_dir_entry *parent, const struct seq_operations *ops,
 		unsigned int state_size, void *data)
@@ -239,12 +239,12 @@ static inline struct proc_dir_entry *proc_net_create_seq_private(
 	return proc_create_seq_private(name, S_ISVTX | mode, parent, ops,
 				       state_size, data);
 }
-#define proc_net_create_seq_data(name, mode, parent, ops, data) \
-	proc_net_create_seq_private(name, mode, parent, ops, 0, data)
-#define proc_net_create_seq(name, mode, parent, ops) \
-	proc_net_create_seq_private(name, mode, parent, ops, 0, NULL)
+#define proc_ve_create_seq_data(name, mode, parent, ops, data) \
+	proc_ve_create_seq_private(name, mode, parent, ops, 0, data)
+#define proc_ve_create_seq(name, mode, parent, ops) \
+	proc_ve_create_seq_private(name, mode, parent, ops, 0, NULL)
 
-static inline struct proc_dir_entry *proc_net_create_net_data(
+static inline struct proc_dir_entry *proc_ve_create_net_data(
 		const char *name, umode_t mode,
 		struct proc_dir_entry *parent, const struct seq_operations *ops,
 		unsigned int state_size, void *data)
@@ -252,10 +252,10 @@ static inline struct proc_dir_entry *proc_net_create_net_data(
 	return proc_create_net_data(name, S_ISVTX | mode, parent,
 				    ops, state_size, data);
 }
-#define proc_net_create_net(name, mode, parent, state_size, ops) \
-	proc_net_create_net_data(name, mode, parent, state_size, ops, NULL)
+#define proc_ve_create_net(name, mode, parent, state_size, ops) \
+	proc_ve_create_net_data(name, mode, parent, state_size, ops, NULL)
 
-static inline struct proc_dir_entry *proc_net_create_net_single(
+static inline struct proc_dir_entry *proc_ve_create_net_single(
 		const char *name, umode_t mode,
 		struct proc_dir_entry *parent,
 		int (*show)(struct seq_file *, void *), void *data)
@@ -264,7 +264,7 @@ static inline struct proc_dir_entry *proc_net_create_net_single(
 				      show, data);
 }
 
-static inline struct proc_dir_entry *proc_net_create_single_data(
+static inline struct proc_dir_entry *proc_ve_create_single_data(
 		const char *name, umode_t mode,
 		struct proc_dir_entry *parent,
 		int (*show)(struct seq_file *, void *), void *data)
@@ -272,8 +272,8 @@ static inline struct proc_dir_entry *proc_net_create_single_data(
 	return proc_create_single_data(name, S_ISVTX | mode, parent,
 				       show, data);
 }
-#define proc_net_create_single(name, mode, parent, show) \
-	proc_net_create_single_data(name, mode, parent, show, NULL)
+#define proc_ve_create_single(name, mode, parent, show) \
+	proc_ve_create_single_data(name, mode, parent, show, NULL)
 
 struct ns_common;
 int open_related_ns(struct ns_common *ns,
