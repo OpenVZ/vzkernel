@@ -269,7 +269,7 @@ void bond_create_proc_entry(struct bonding *bond)
 	struct bond_net *bn = net_generic(dev_net(bond_dev), bond_net_id);
 
 	if (bn->proc_dir) {
-		bond->proc_entry = proc_net_create_seq_data(bond_dev->name, 0444,
+		bond->proc_entry = proc_ve_create_seq_data(bond_dev->name, 0444,
 				bn->proc_dir, &bond_info_seq_ops, bond);
 		if (bond->proc_entry == NULL)
 			netdev_warn(bond_dev, "Cannot create /proc/net/%s/%s\n",

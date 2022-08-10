@@ -338,7 +338,7 @@ static int htable_create(struct net *net, struct hashlimit_cfg3 *cfg,
 		ops = &dl_seq_ops;
 	}
 
-	hinfo->pde = proc_net_create_seq_data(name, 0,
+	hinfo->pde = proc_ve_create_seq_data(name, 0,
 		(family == NFPROTO_IPV4) ?
 		hashlimit_net->ipt_hashlimit : hashlimit_net->ip6t_hashlimit,
 		ops, hinfo);
