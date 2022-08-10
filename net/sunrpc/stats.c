@@ -286,7 +286,7 @@ do_register(struct net *net, const char *name, void *data,
 
 	dprintk("RPC:       registering /proc/net/rpc/%s\n", name);
 	sn = net_generic(net, sunrpc_net_id);
-	return proc_net_create_data(name, 0, sn->proc_net_rpc, proc_ops, data);
+	return proc_ve_create_data(name, 0, sn->proc_net_rpc, proc_ops, data);
 }
 
 struct proc_dir_entry *

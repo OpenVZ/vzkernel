@@ -412,7 +412,7 @@ static int recent_mt_check(const struct xt_mtchk_param *par,
 		ret = -EINVAL;
 		goto out;
 	}
-	pde = proc_net_create_data(t->name, ip_list_perms, recent_net->xt_recent,
+	pde = proc_ve_create_data(t->name, ip_list_perms, recent_net->xt_recent,
 			       &recent_mt_proc_ops, t);
 	if (pde == NULL) {
 		recent_table_free(t);
