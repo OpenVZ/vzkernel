@@ -308,7 +308,7 @@ static int cn_init_ve(void *data)
 
 	ve->cn->cn_already_initialized = 1;
 
-	if (!proc_net_create_single("connector", S_IRUGO, net->proc_net,
+	if (!proc_ve_create_single("connector", S_IRUGO, net->proc_net,
 				cn_proc_show)) {
 		err = -ENOMEM;
 		goto free_cdev;
