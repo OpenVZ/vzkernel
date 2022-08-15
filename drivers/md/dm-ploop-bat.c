@@ -11,7 +11,7 @@
 #include <linux/mm.h>
 #include "dm-ploop.h"
 
-struct md_page * md_page_find(struct ploop *ploop, u32 id)
+struct md_page *ploop_md_page_find(struct ploop *ploop, u32 id)
 {
 	struct rb_node *node;
 	struct md_page *md;
@@ -55,12 +55,12 @@ static void __md_page_insert(struct rb_root *root, struct md_page *new_md)
 	rb_insert_color(&new_md->node, root);
 }
 
-void md_page_insert(struct ploop *ploop, struct md_page *new_md)
+void ploop_md_page_insert(struct ploop *ploop, struct md_page *new_md)
 {
 	__md_page_insert(&ploop->bat_entries, new_md);
 }
 
-static struct md_page * alloc_md_page(u32 id)
+static struct md_page *ploop_alloc_md_page(u32 id)
 {
 	struct md_page *md;
 	struct page *page;
@@ -101,20 +101,20 @@ void ploop_free_md_page(struct md_page *md)
 	kfree(md);
 }
 
-int prealloc_md_pages(struct rb_root *root, u32 nr_bat_entries,
+int ploop_prealloc_md_pages(struct rb_root *root, u32 nr_bat_entries,
 		      u32 new_nr_bat_entries)
 {
 	u32 i, nr_pages, new_nr_pages;
 	struct md_page *md;
 	void *addr;
 
-	new_nr_pages = bat_clu_to_page_nr(new_nr_bat_entries - 1) + 1;
+	new_nr_pages = ploop_bat_clu_to_page_nr(new_nr_bat_entries - 1) + 1;
 	nr_pages = 0;
 	if (nr_bat_entries)
-		nr_pages = bat_clu_to_page_nr(nr_bat_entries - 1) + 1;
+		nr_pages = ploop_bat_clu_to_page_nr(nr_bat_entries - 1) + 1;
 
 	for (i = nr_pages; i < new_nr_pages; i++) {
-		md = alloc_md_page(i);
+		md = ploop_alloc_md_page(i);
 		if (!md)
 			return -ENOMEM;
 		addr = kmap_atomic(md->page);
@@ -127,17 +127,17 @@ int prealloc_md_pages(struct rb_root *root, u32 nr_bat_entries,
 	return 0;
 }
 
-bool try_update_bat_entry(struct ploop *ploop, u32 clu, u8 level, u32 dst_clu)
+bool ploop_try_update_bat_entry(struct ploop *ploop, u32 clu, u8 level, u32 dst_clu)
 {
-	u32 *bat_entries, id = bat_clu_to_page_nr(clu);
-	struct md_page *md = md_page_find(ploop, id);
+	u32 *bat_entries, id = ploop_bat_clu_to_page_nr(clu);
+	struct md_page *md = ploop_md_page_find(ploop, id);
 
 	lockdep_assert_held(&ploop->bat_rwlock);
 
 	if (!md)
 		return false;
 
-	clu = bat_clu_idx_in_page(clu); /* relative offset */
+	clu = ploop_bat_clu_idx_in_page(clu); /* relative offset */
 
 	if (md->bat_levels[clu] == level) {
 		bat_entries = kmap_atomic(md->page);
@@ -234,7 +234,7 @@ static int ploop_delta_check_header(struct ploop *ploop,
 				    u32 *delta_nr_be_ret)
 {
 	u32 bytes, delta_nr_be, offset_clusters, bat_clusters;
-	struct md_page *md0 = md_first_entry(md_root);
+	struct md_page *md0 = ploop_md_first_entry(md_root);
 	struct ploop_pvd_header *d_hdr;
 	int ret = -EPROTO;
 
@@ -262,7 +262,7 @@ out:
 	return ret;
 }
 
-static int convert_bat_entries(struct ploop *ploop, struct rb_root *md_root,
+static int ploop_convert_bat_entries(struct ploop *ploop, struct rb_root *md_root,
 			       u32 nr_be, u32 nr_pages, loff_t file_size)
 {
 	u32 i, end, bytes, bat_clusters, page_id, *bat_entries, max_file_clu;
@@ -311,9 +311,9 @@ int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 	int ret;
 
 	ret = -ENOMEM;
-	if (prealloc_md_pages(md_root, 0, 1))
+	if (ploop_prealloc_md_pages(md_root, 0, 1))
 		goto out;
-	bvec[0].bv_page = md_first_entry(md_root)->page;
+	bvec[0].bv_page = ploop_md_first_entry(md_root)->page;
 	bvec[0].bv_len = PAGE_SIZE;
 	bvec[0].bv_offset = 0;
 
@@ -335,7 +335,7 @@ int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 	nr_segs = size / PAGE_SIZE;
 
 	ret = -ENOMEM;
-	if (prealloc_md_pages(md_root, 1, delta_nr_be))
+	if (ploop_prealloc_md_pages(md_root, 1, delta_nr_be))
 		goto out;
 
 	bvec = kvmalloc(sizeof(*bvec) * nr_segs, GFP_KERNEL);
@@ -364,12 +364,13 @@ int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 
 	file_size = i_size_read(file->f_mapping->host);
 
-	ret = convert_bat_entries(ploop, md_root, delta_nr_be, nr_segs, file_size);
+	ret = ploop_convert_bat_entries(ploop, md_root, delta_nr_be, nr_segs,
+					file_size);
 
 	*delta_nr_be_ret = delta_nr_be;
 out:
 	if (ret)
-		free_md_pages_tree(md_root);
+		ploop_free_md_pages_tree(md_root);
 	if (bvec != &bvec_on_stack)
 		kvfree(bvec);
 	return ret;
@@ -389,8 +390,9 @@ static void ploop_set_not_hole(struct ploop *ploop, u32 dst_clu)
  * ...
  * n)add oldest delta
  */
-static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas,
-				 u32 level, struct rb_root *md_root, u64 nr_be)
+static void ploop_apply_delta_mappings(struct ploop *ploop,
+	struct ploop_delta *deltas, u32 level, struct rb_root *md_root,
+	u64 nr_be)
 {
 	map_index_t *bat_entries, *d_bat_entries = NULL;
 	bool is_top_level, is_raw, stop = false;
@@ -399,10 +401,10 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 	struct rb_node *node;
 
 	is_raw = deltas[level].is_raw;
-	is_top_level = (level == top_level(ploop));
+	is_top_level = (level == ploop_top_level(ploop));
 
 	if (!is_raw)
-		d_md = md_first_entry(md_root);
+		d_md = ploop_md_first_entry(md_root);
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
@@ -419,7 +421,7 @@ static void apply_delta_mappings(struct ploop *ploop, struct ploop_delta *deltas
 		init_be_iter(nr_be, md->id, &i, &end);
 
 		for (; i <= end; i++) {
-			clu = page_clu_idx_to_bat_clu(md->id, i);
+			clu = ploop_page_clu_idx_to_bat_clu(md->id, i);
 			if (clu == nr_be - 1)
 				stop = true;
 
@@ -449,7 +451,7 @@ set_not_hole:
 		if (stop)
 			break;
 		if (!is_raw)
-			d_md = md_next_entry(d_md);
+			d_md = ploop_md_next_entry(d_md);
 	}
 	write_unlock_irq(&ploop->bat_rwlock);
 }
@@ -489,10 +491,10 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 	}
 
 	ret = -EBADSLT; /* Lower delta can't be bigger then upper */
-	if (level != top_level(ploop) && nr_be > deltas[level + 1].nr_be)
+	if (level != ploop_top_level(ploop) && nr_be > deltas[level + 1].nr_be)
 		goto out;
 
-	apply_delta_mappings(ploop, deltas, level, &md_root, nr_be);
+	ploop_apply_delta_mappings(ploop, deltas, level, &md_root, nr_be);
 
 	deltas[level].file = file;
 	deltas[level].file_size = file_size;
@@ -501,6 +503,6 @@ int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_r
 	deltas[level].is_raw = is_raw;
 	ret = 0;
 out:
-	free_md_pages_tree(&md_root);
+	ploop_free_md_pages_tree(&md_root);
 	return ret;
 }
