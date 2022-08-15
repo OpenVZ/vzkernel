@@ -311,13 +311,14 @@ static inline bool ploop_is_ro(struct ploop *ploop)
 	return (dm_table_get_mode(ploop->ti->table) & FMODE_WRITE) == 0;
 }
 
-static inline void remap_to_cluster(struct ploop *ploop, struct pio *pio, u32 clu)
+static inline void ploop_remap_to_cluster(struct ploop *ploop,
+					  struct pio *pio, u32 clu)
 {
 	pio->bi_iter.bi_sector &= ((1 << ploop->cluster_log) - 1);
 	pio->bi_iter.bi_sector |= (clu << ploop->cluster_log);
 }
 
-static inline bool whole_cluster(struct ploop *ploop, struct pio *pio)
+static inline bool ploop_whole_cluster(struct ploop *ploop, struct pio *pio)
 {
 	sector_t end_sector = bvec_iter_end_sector(pio->bi_iter);
 
@@ -332,14 +333,14 @@ static inline bool whole_cluster(struct ploop *ploop, struct pio *pio)
 
 #define BAT_LEVEL_MAX		(U8_MAX - 1)
 #define BAT_LEVEL_INVALID	U8_MAX
-static inline u8 top_level(struct ploop *ploop)
+static inline u8 ploop_top_level(struct ploop *ploop)
 {
 	return ploop->nr_deltas - 1;
 }
 
-static inline struct ploop_delta *top_delta(struct ploop *ploop)
+static inline struct ploop_delta *ploop_top_delta(struct ploop *ploop)
 {
-	return &ploop->deltas[top_level(ploop)];
+	return &ploop->deltas[ploop_top_level(ploop)];
 }
 
 static inline void ploop_hole_set_bit(unsigned long nr, struct ploop *ploop)
@@ -354,7 +355,7 @@ static inline void ploop_hole_clear_bit(u32 nr, struct ploop *ploop)
 		clear_bit(nr, ploop->holes_bitmap);
 }
 
-static inline unsigned int nr_pages_in_cluster(struct ploop *ploop)
+static inline unsigned int ploop_nr_pages_in_cluster(struct ploop *ploop)
 {
 	return 1 << (ploop->cluster_log + 9 - PAGE_SHIFT);
 }
@@ -371,7 +372,7 @@ static inline unsigned int ploop_nr_bat_clusters(struct ploop *ploop,
 	return bat_clusters;
 }
 
-static inline u32 bat_clu_to_page_nr(u32 clu)
+static inline u32 ploop_bat_clu_to_page_nr(u32 clu)
 {
 	u64 byte;
 
@@ -379,30 +380,30 @@ static inline u32 bat_clu_to_page_nr(u32 clu)
 	return byte >> PAGE_SHIFT;
 }
 
-static inline u32 bat_clu_idx_in_page(u32 clu)
+static inline u32 ploop_bat_clu_idx_in_page(u32 clu)
 {
 	return (clu + PLOOP_MAP_OFFSET) % (PAGE_SIZE / sizeof(map_index_t));
 }
 
-static inline u32 page_clu_idx_to_bat_clu(u32 page_id, u32 cluster_rel)
+static inline u32 ploop_page_clu_idx_to_bat_clu(u32 page_id, u32 cluster_rel)
 {
 	unsigned int off;
 	off = (u64)page_id * PAGE_SIZE / sizeof(map_index_t) - PLOOP_MAP_OFFSET;
 	return off + cluster_rel;
 }
 
-static inline struct md_page *md_first_entry(struct rb_root *md_root)
+static inline struct md_page *ploop_md_first_entry(struct rb_root *md_root)
 {
 	struct rb_node *node = rb_first(md_root);
 	return rb_entry(node, struct md_page, node);
 }
-static inline struct md_page *md_next_entry(struct md_page *md)
+static inline struct md_page *ploop_md_next_entry(struct md_page *md)
 {
 	return rb_entry(rb_next(&md->node), struct md_page, node);
 }
 
 
-extern struct md_page * md_page_find(struct ploop *ploop, u32 id);
+extern struct md_page *ploop_md_page_find(struct ploop *ploop, u32 id);
 
 /*
  * This should be called in very rare cases. Avoid this function
@@ -415,12 +416,12 @@ static inline u32 ploop_bat_entries(struct ploop *ploop, u32 clu,
 	u32 *bat_entries, dst_clu, id;
 	struct md_page *md;
 
-	id = bat_clu_to_page_nr(clu);
-	md = md_page_find(ploop, id);
+	id = ploop_bat_clu_to_page_nr(clu);
+	md = ploop_md_page_find(ploop, id);
 	BUG_ON(!md);
 
 	/* Cluster index related to the page[page_id] start */
-	clu = bat_clu_idx_in_page(clu);
+	clu = ploop_bat_clu_idx_in_page(clu);
 
 	if (bat_level)
 		*bat_level = md->bat_levels[clu];
@@ -433,7 +434,7 @@ static inline u32 ploop_bat_entries(struct ploop *ploop, u32 clu,
 	return dst_clu;
 }
 
-static inline bool cluster_is_in_top_delta(struct ploop *ploop, u32 clu)
+static inline bool ploop_cluster_is_in_top_delta(struct ploop *ploop, u32 clu)
 {
 	u32 dst_clu;
 	u8 level;
@@ -442,12 +443,12 @@ static inline bool cluster_is_in_top_delta(struct ploop *ploop, u32 clu)
 		return false;
 	dst_clu = ploop_bat_entries(ploop, clu, &level, NULL);
 
-	if (dst_clu == BAT_ENTRY_NONE || level < top_level(ploop))
+	if (dst_clu == BAT_ENTRY_NONE || level < ploop_top_level(ploop))
 		return false;
 	return true;
 }
 
-static inline bool md_page_cluster_is_in_top_delta(struct ploop *ploop,
+static inline bool ploop_md_page_cluster_is_in_top_delta(struct ploop *ploop,
 					   struct md_page *md, u32 clu)
 {
 	u32 count, *bat_entries;
@@ -462,7 +463,7 @@ static inline bool md_page_cluster_is_in_top_delta(struct ploop *ploop,
 
 	bat_entries = kmap_atomic(md->page);
 	if (bat_entries[clu] == BAT_ENTRY_NONE ||
-	    md->bat_levels[clu] < top_level(ploop))
+	    md->bat_levels[clu] < ploop_top_level(ploop))
 		ret = false;
 	kunmap_atomic(bat_entries);
 	return ret;
@@ -472,7 +473,7 @@ static inline void init_be_iter(u32 nr_be, u32 page_id,
 				u32 *start, u32 *end)
 {
 	unsigned int count = PAGE_SIZE / sizeof(map_index_t);
-	u32 rem, last_page = bat_clu_to_page_nr(nr_be - 1);
+	u32 rem, last_page = ploop_bat_clu_to_page_nr(nr_be - 1);
 
 	*start = 0;
 	if (page_id == 0)
@@ -493,17 +494,17 @@ static inline void ploop_init_be_iter(struct ploop *ploop, u32 page_id,
 	init_be_iter(ploop->nr_bat_entries, page_id, start, end);
 }
 
-extern struct pio *find_pio(struct hlist_head head[], u32 clu);
+extern struct pio *ploop_find_pio(struct hlist_head head[], u32 clu);
 
-extern int prealloc_md_pages(struct rb_root *root, u32 nr_bat_entries,
+extern int ploop_prealloc_md_pages(struct rb_root *root, u32 nr_bat_entries,
 			     u32 new_nr_bat_entries);
 
-static inline struct pio *bio_to_endio_hook(struct bio *bio)
+static inline struct pio *ploop_bio_to_endio_hook(struct bio *bio)
 {
 	return dm_per_bio_data(bio, sizeof(struct pio));
 }
 
-static inline struct pio *pio_list_pop(struct list_head *pio_list)
+static inline struct pio *ploop_pio_list_pop(struct list_head *pio_list)
 {
 	struct pio *pio;
 
@@ -520,7 +521,7 @@ static inline struct hlist_head *ploop_htable_slot(struct hlist_head head[], u32
 	return &head[hash_32(clu, PLOOP_HASH_TABLE_BITS)];
 }
 
-static inline bool fake_merge_pio(struct pio *pio)
+static inline bool ploop_fake_merge_pio(struct pio *pio)
 {
 	if (pio->is_fake_merge) {
 		WARN_ON_ONCE(pio->bi_iter.bi_size ||
@@ -530,51 +531,59 @@ static inline bool fake_merge_pio(struct pio *pio)
 	return false;
 }
 
-static inline struct pio *alloc_pio(struct ploop *ploop, gfp_t flags)
+static inline struct pio *ploop_alloc_pio(struct ploop *ploop, gfp_t flags)
 {
 	return mempool_alloc(ploop->pio_pool, flags);
 }
 
-static inline void free_pio(struct ploop *ploop, struct pio *pio)
+static inline void ploop_free_pio(struct ploop *ploop, struct pio *pio)
 {
 	mempool_free(pio, ploop->pio_pool);
 }
 
-extern void md_page_insert(struct ploop *ploop, struct md_page *md);
+extern void ploop_md_page_insert(struct ploop *ploop, struct md_page *md);
 extern void ploop_free_md_page(struct md_page *md);
-extern void free_md_pages_tree(struct rb_root *root);
-extern bool try_update_bat_entry(struct ploop *ploop, u32 clu,
-				 u8 level, u32 dst_clu);
+extern void ploop_free_md_pages_tree(struct rb_root *root);
+extern bool ploop_try_update_bat_entry(struct ploop *ploop, u32 clu,
+				       u8 level, u32 dst_clu);
 
-extern int ploop_add_delta(struct ploop *ploop, u32 level, struct file *file, bool is_raw);
-extern int ploop_check_delta_length(struct ploop *ploop, struct file *file, loff_t *file_size);
-extern void submit_embedded_pios(struct ploop *ploop, struct list_head *list);
-extern void dispatch_pios(struct ploop *ploop, struct pio *pio, struct list_head *pio_list);
+extern int ploop_add_delta(struct ploop *ploop, u32 level,
+			   struct file *file, bool is_raw);
+extern int ploop_check_delta_length(struct ploop *ploop, struct file *file,
+				    loff_t *file_size);
+extern void ploop_submit_embedded_pios(struct ploop *ploop,
+				       struct list_head *list);
+extern void ploop_dispatch_pios(struct ploop *ploop, struct pio *pio,
+				struct list_head *pio_list);
 extern void do_ploop_work(struct work_struct *ws);
 extern void do_ploop_fsync_work(struct work_struct *ws);
-extern void ploop_event_work(struct work_struct *work);
+extern void do_ploop_event_work(struct work_struct *work);
 extern int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
-		    union map_info *map_context, struct request **clone);
-extern struct pio *find_lk_of_cluster(struct ploop *ploop, u32 clu);
-extern void init_pio(struct ploop *ploop, unsigned int bi_op, struct pio *pio);
+			       union map_info *map_context,
+			       struct request **clone);
+extern struct pio *ploop_find_lk_of_cluster(struct ploop *ploop, u32 clu);
+extern void ploop_init_pio(struct ploop *ploop, unsigned int bi_op,
+			   struct pio *pio);
 extern int ploop_rw_page_sync(unsigned rw, struct file *file,
 			      u64 index, struct page *page);
-extern void map_and_submit_rw(struct ploop *ploop, u32 dst_clu, struct pio *pio, u8 level);
-
-extern int ploop_prepare_reloc_index_wb(struct ploop *, struct md_page **, u32, u32 *);
-extern void ploop_break_bat_update(struct ploop *ploop, struct md_page *);
+extern void ploop_map_and_submit_rw(struct ploop *ploop, u32 dst_clu,
+				    struct pio *pio, u8 level);
+extern int ploop_prepare_reloc_index_wb(struct ploop *ploop,
+					struct md_page **ret_md, u32 clu, u32 *dst_clu);
+extern void ploop_break_bat_update(struct ploop *ploop, struct md_page *md);
 extern void ploop_index_wb_submit(struct ploop *, struct ploop_index_wb *);
 extern int ploop_message(struct dm_target *ti, unsigned int argc, char **argv,
 			 char *result, unsigned int maxlen);
 
-extern struct pio * alloc_pio_with_pages(struct ploop *ploop);
-extern void free_pio_with_pages(struct ploop *ploop, struct pio *pio);
-extern void pio_prepare_offsets(struct ploop *, struct pio *, u32);
+extern struct pio *ploop_alloc_pio_with_pages(struct ploop *ploop);
+extern void ploop_free_pio_with_pages(struct ploop *ploop, struct pio *pio);
+extern void ploop_pio_prepare_offsets(struct ploop *ploop, struct pio *pio, u32 clu);
 
 extern int ploop_setup_metadata(struct ploop *ploop, struct page *page);
 extern int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 				     struct rb_root *md_root, u32 *delta_nr_be);
-extern void ploop_index_wb_init(struct ploop_index_wb *piwb, struct ploop *ploop);
+extern void ploop_index_wb_init(struct ploop_index_wb *piwb,
+				struct ploop *ploop);
 extern void ploop_call_rw_iter(struct file *file, loff_t pos, unsigned rw,
 			       struct iov_iter *iter, struct pio *pio);
 extern void ploop_enospc_timer(struct timer_list *timer);
