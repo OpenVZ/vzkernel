@@ -18,6 +18,7 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/uio.h>
+#include <linux/error-injection.h>
 #include "dm-ploop.h"
 
 #define DM_MSG_PREFIX "ploop"
@@ -104,6 +105,7 @@ int ploop_rw_page_sync(unsigned rw, struct file *file,
 
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_rw_page_sync, ERRNO);
 
 static void ploop_inflight_bios_ref_exit0(struct percpu_ref *ref)
 {
@@ -197,6 +199,7 @@ static struct file *ploop_get_delta_file(int fd)
 
 	return file;
 }
+ALLOW_ERROR_INJECTION(ploop_get_delta_file, ERRNO_NULL);
 
 static int ploop_check_top_delta(struct ploop *ploop, struct file *file)
 {
@@ -235,6 +238,7 @@ out:
 		put_page(page);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_check_top_delta, ERRNO);
 
 static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 {
@@ -294,6 +298,7 @@ err_fput:
 	fput(file);
 	goto out;
 }
+ALLOW_ERROR_INJECTION(ploop_add_deltas_stack, ERRNO);
 
 #define EAT_ARG(argc, argv)					\
 	do {							\
@@ -429,6 +434,7 @@ err:
 	ploop_destroy(ploop);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_ctr, ERRNO);
 
 static void ploop_dtr(struct dm_target *ti)
 {
@@ -540,6 +546,7 @@ static int ploop_preresume(struct dm_target *ti)
 	}
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_preresume, ERRNO);
 
 /*----------------------------------------------------------------*/
 
