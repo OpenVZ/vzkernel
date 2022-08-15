@@ -7,6 +7,7 @@
 
 #include <linux/init.h>
 #include <linux/file.h>
+#include <linux/error-injection.h>
 #include <linux/uio.h>
 #include <linux/ctype.h>
 #include <linux/umh.h>
@@ -119,6 +120,7 @@ static int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable)
 	percpu_ref_reinit(&ploop->inflight_bios_ref[index]);
 	return 0;
 }
+ALLOW_ERROR_INJECTION(ploop_inflight_bios_ref_switch, ERRNO);
 
 static void ploop_resume_submitting_pios(struct ploop *ploop)
 {
@@ -147,6 +149,7 @@ static int ploop_suspend_submitting_pios(struct ploop *ploop)
 		ploop_resume_submitting_pios(ploop);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_suspend_submitting_pios, ERRNO);
 
 /* Find existing BAT clu pointing to dst_clu */
 static u32 ploop_find_bat_entry(struct ploop *ploop, u32 dst_clu, bool *is_locked)
@@ -226,6 +229,7 @@ static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
 
 	return 0;
 }
+ALLOW_ERROR_INJECTION(ploop_read_cluster_sync, ERRNO);
 
 static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 				    u32 dst_clu)
@@ -252,6 +256,7 @@ static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 
 	return vfs_fsync(file, 0);
 }
+ALLOW_ERROR_INJECTION(ploop_write_cluster_sync, ERRNO);
 
 static int ploop_write_zero_cluster_sync(struct ploop *ploop,
 					 struct pio *pio, u32 clu)
@@ -359,6 +364,7 @@ not_occupied:
 out:
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_grow_relocate_cluster, ERRNO);
 
 static int ploop_grow_update_header(struct ploop *ploop,
 				    struct ploop_cmd *cmd)
@@ -412,13 +418,14 @@ static int ploop_grow_update_header(struct ploop *ploop,
 
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_grow_update_header, ERRNO);
 
 static void ploop_add_md_pages(struct ploop *ploop, struct rb_root *from)
 {
 	struct rb_node *node;
-        struct md_page *md;
+	struct md_page *md;
 
-        while ((node = from->rb_node) != NULL) {
+	while ((node = from->rb_node) != NULL) {
 		md = rb_entry(node, struct md_page, node);
 		rb_erase(node, from);
 		ploop_md_page_insert(ploop, md);
@@ -465,6 +472,7 @@ out:
 
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_process_resize_cmd, ERRNO);
 
 struct pio *ploop_alloc_pio_with_pages(struct ploop *ploop)
 {
@@ -496,6 +504,7 @@ err:
 	kfree(pio);
 	return NULL;
 }
+ALLOW_ERROR_INJECTION(ploop_alloc_pio_with_pages, NULL);
 
 void ploop_free_pio_with_pages(struct ploop *ploop, struct pio *pio)
 {
@@ -600,6 +609,8 @@ err:
 	ploop_free_md_pages_tree(&cmd.resize.md_pages_root);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_resize, ERRNO);
+
 static void service_pio_endio(struct pio *pio, void *data, blk_status_t status)
 {
 	struct ploop *ploop = pio->ploop;
@@ -666,6 +677,7 @@ static int ploop_process_merge_latest_snapshot(struct ploop *ploop)
 
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_process_merge_latest_snapshot, ERRNO);
 
 static int ploop_merge_latest_snapshot(struct ploop *ploop)
 {
@@ -701,6 +713,7 @@ static int ploop_merge_latest_snapshot(struct ploop *ploop)
 out:
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_merge_latest_snapshot, ERRNO);
 
 static void notify_delta_merged(struct ploop *ploop, u8 level,
 				struct rb_root *md_root,
@@ -804,6 +817,7 @@ unlock:
 	write_unlock_irq(&ploop->bat_rwlock);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_process_update_delta_index, ERRNO);
 
 static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 				       bool forward)
@@ -849,6 +863,7 @@ out:
 	ploop_free_md_pages_tree(&md_root);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_delta_clusters_merged, ERRNO);
 
 static int ploop_notify_merged(struct ploop *ploop, u8 level, bool forward)
 {
@@ -915,6 +930,7 @@ static int ploop_get_delta_name_cmd(struct ploop *ploop, u8 level,
 out:
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_get_delta_name_cmd, ERRNO_NULL);
 
 static int ploop_update_delta_index(struct ploop *ploop, unsigned int level,
 				    const char *map)
@@ -947,6 +963,7 @@ resume:
 out:
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_update_delta_index, ERRNO);
 
 static int process_flip_upper_deltas(struct ploop *ploop)
 {
