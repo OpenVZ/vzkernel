@@ -13,6 +13,7 @@
 #include <linux/blk-cgroup.h>
 #include <linux/init.h>
 #include <linux/vmalloc.h>
+#include <linux/error-injection.h>
 #include <linux/uio.h>
 #include <linux/blk-mq.h>
 #include <uapi/linux/falloc.h>
@@ -111,6 +112,7 @@ static int ploop_rq_valid(struct ploop *ploop, struct request *rq)
 
 	return 0;
 }
+ALLOW_ERROR_INJECTION(ploop_rq_valid, ERRNO);
 
 static void ploop_init_prq(struct ploop_rq *prq, struct request *rq)
 {
@@ -290,6 +292,7 @@ static struct pio *ploop_split_and_chain_pio(struct ploop *ploop,
 		ploop_pio_advance(pio, len);
 	return split;
 }
+ALLOW_ERROR_INJECTION(ploop_split_and_chain_pio, NULL);
 
 static int ploop_split_pio_to_list(struct ploop *ploop, struct pio *pio,
 			     struct list_head *ret_list)
@@ -327,6 +330,7 @@ err:
 	}
 	return -ENOMEM;
 }
+ALLOW_ERROR_INJECTION(ploop_split_pio_to_list, ERRNO);
 
 static void ploop_dispatch_pio(struct ploop *ploop, struct pio *pio,
 			       bool *is_data, bool *is_flush)
@@ -425,6 +429,7 @@ struct pio *ploop_find_pio(struct hlist_head head[], u32 clu)
 
 	return NULL;
 }
+ALLOW_ERROR_INJECTION(ploop_find_pio, NULL);
 
 static struct pio *ploop_find_inflight_bio(struct ploop *ploop, u32 clu)
 {
@@ -987,6 +992,7 @@ static int ploop_find_dst_clu_bit(struct ploop *ploop, u32 *ret_dst_clu)
 	*ret_dst_clu = dst_clu;
 	return 0;
 }
+ALLOW_ERROR_INJECTION(ploop_find_dst_clu_bit, ERRNO);
 
 static int ploop_truncate_prealloc_safe(struct ploop *ploop,
 					struct ploop_delta *delta,
@@ -1020,6 +1026,7 @@ static int ploop_truncate_prealloc_safe(struct ploop *ploop,
 	delta->file_preallocated_area_start = len;
 	return 0;
 }
+ALLOW_ERROR_INJECTION(ploop_truncate_prealloc_safe, ERRNO);
 
 static int ploop_allocate_cluster(struct ploop *ploop, u32 *dst_clu)
 {
@@ -1076,6 +1083,7 @@ static int ploop_allocate_cluster(struct ploop *ploop, u32 *dst_clu)
 	ploop_hole_clear_bit(*dst_clu, ploop);
 	return 0;
 }
+ALLOW_ERROR_INJECTION(ploop_allocate_cluster, ERRNO);
 
 /*
  * This finds a free dst_clu on origin device, and reflects this
@@ -1305,6 +1313,7 @@ static void ploop_initiate_cluster_cow(struct ploop *ploop, unsigned int level,
 	pio->bi_status = BLK_STS_RESOURCE;
 	ploop_pio_endio(pio);
 }
+ALLOW_ERROR_INJECTION(ploop_submit_cluster_cow, ERRNO);
 
 static void ploop_submit_cluster_write(struct ploop_cow *cow)
 {
@@ -1598,6 +1607,7 @@ static struct bio_vec *ploop_create_bvec_from_rq(struct request *rq)
 out:
 	return bvec;
 }
+ALLOW_ERROR_INJECTION(ploop_create_bvec_from_rq, NULL);
 
 static void ploop_prepare_one_embedded_pio(struct ploop *ploop,
 					   struct pio *pio,
@@ -1938,3 +1948,4 @@ out_reset:
 out_error:
 	return err;
 }
+ALLOW_ERROR_INJECTION(ploop_prepare_reloc_index_wb, ERRNO);

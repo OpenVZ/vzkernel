@@ -8,6 +8,7 @@
 #include <linux/init.h>
 #include <linux/file.h>
 #include <linux/uio.h>
+#include <linux/error-injection.h>
 #include <linux/mm.h>
 #include "dm-ploop.h"
 
@@ -30,6 +31,7 @@ struct md_page *ploop_md_page_find(struct ploop *ploop, u32 id)
 
 	return NULL;
 }
+ALLOW_ERROR_INJECTION(ploop_md_page_find, NULL);
 
 static void __md_page_insert(struct rb_root *root, struct md_page *new_md)
 {
@@ -93,6 +95,7 @@ err_levels:
 	kfree(md);
 	return NULL;
 }
+ALLOW_ERROR_INJECTION(ploop_alloc_md_page, NULL);
 
 void ploop_free_md_page(struct md_page *md)
 {
@@ -175,6 +178,7 @@ static int ploop_setup_holes_bitmap(struct ploop *ploop, u32 bat_clusters)
 
 	return 0;
 }
+ALLOW_ERROR_INJECTION(ploop_setup_holes_bitmap, ERRNO);
 
 int ploop_setup_metadata(struct ploop *ploop, struct page *page)
 {
@@ -228,6 +232,7 @@ out:
 		kunmap(page);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_setup_metadata, ERRNO);
 
 static int ploop_delta_check_header(struct ploop *ploop,
 				    struct rb_root *md_root,
@@ -261,6 +266,7 @@ out:
 	kunmap(md0->page);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_delta_check_header, ERRNO);
 
 static int ploop_convert_bat_entries(struct ploop *ploop, struct rb_root *md_root,
 			       u32 nr_be, u32 nr_pages, loff_t file_size)
@@ -297,6 +303,7 @@ static int ploop_convert_bat_entries(struct ploop *ploop, struct rb_root *md_roo
 
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_convert_bat_entries, ERRNO);
 
 int ploop_read_delta_metadata(struct ploop *ploop, struct file *file,
 			      struct rb_root *md_root, u32 *delta_nr_be_ret)
@@ -375,6 +382,7 @@ out:
 		kvfree(bvec);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_read_delta_metadata, ERRNO);
 
 static void ploop_set_not_hole(struct ploop *ploop, u32 dst_clu)
 {
@@ -465,6 +473,7 @@ int ploop_check_delta_length(struct ploop *ploop, struct file *file, loff_t *fil
 	*file_size = loff;
 	return 0;
 }
+ALLOW_ERROR_INJECTION(ploop_check_delta_length, ERRNO)
 
 /*
  * @fd refers to a new delta, which is placed right before top_delta.
@@ -506,3 +515,4 @@ out:
 	ploop_free_md_pages_tree(&md_root);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(ploop_add_delta, ERRNO);
