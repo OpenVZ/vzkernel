@@ -105,21 +105,21 @@ int ploop_rw_page_sync(unsigned rw, struct file *file,
 	return ret;
 }
 
-static void inflight_bios_ref_exit0(struct percpu_ref *ref)
+static void ploop_inflight_bios_ref_exit0(struct percpu_ref *ref)
 {
 	struct ploop *ploop = container_of(ref, struct ploop,
 					   inflight_bios_ref[0]);
 	complete(&ploop->inflight_bios_ref_comp);
 }
 
-static void inflight_bios_ref_exit1(struct percpu_ref *ref)
+static void ploop_inflight_bios_ref_exit1(struct percpu_ref *ref)
 {
 	struct ploop *ploop = container_of(ref, struct ploop,
 					   inflight_bios_ref[1]);
 	complete(&ploop->inflight_bios_ref_comp);
 }
 
-void free_md_pages_tree(struct rb_root *root)
+void ploop_free_md_pages_tree(struct rb_root *root)
 {
 	struct rb_node *node;
 	struct md_page *md;
@@ -179,11 +179,11 @@ static void ploop_destroy(struct ploop *ploop)
 	mempool_destroy(ploop->prq_pool);
 	kfree(ploop->deltas);
 	kvfree(ploop->holes_bitmap);
-	free_md_pages_tree(&ploop->bat_entries);
+	ploop_free_md_pages_tree(&ploop->bat_entries);
 	kfree(ploop);
 }
 
-static struct file * get_delta_file(int fd)
+static struct file *ploop_get_delta_file(int fd)
 {
 	struct file *file;
 
@@ -198,7 +198,7 @@ static struct file * get_delta_file(int fd)
 	return file;
 }
 
-static int check_top_delta(struct ploop *ploop, struct file *file)
+static int ploop_check_top_delta(struct ploop *ploop, struct file *file)
 {
 	struct dm_target *ti = ploop->ti;
 	struct page *page = NULL;
@@ -226,7 +226,8 @@ static int check_top_delta(struct ploop *ploop, struct file *file)
 	if (ret)
 		goto out;
 
-	ret = prealloc_md_pages(&ploop->bat_entries, 0, ploop->nr_bat_entries);
+	ret = ploop_prealloc_md_pages(&ploop->bat_entries, 0,
+				      ploop->nr_bat_entries);
 	if (ret)
 		goto out;
 out:
@@ -269,14 +270,14 @@ static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 		if (kstrtos32(arg, 10, &delta_fd) < 0)
 			goto out;
 
-		file = get_delta_file(delta_fd);
+		file = ploop_get_delta_file(delta_fd);
 		if (IS_ERR(file)) {
 			ret = PTR_ERR(file);
 			goto out;
 		}
 
 		if (i == argc - 1) { /* Top delta */
-			ret = check_top_delta(ploop, file);
+			ret = ploop_check_top_delta(ploop, file);
 			if (ret)
 				goto err_fput;
 		}
@@ -354,11 +355,12 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	INIT_WORK(&ploop->worker, do_ploop_work);
 	INIT_WORK(&ploop->fsync_worker, do_ploop_fsync_work);
-	INIT_WORK(&ploop->event_work, ploop_event_work);
+	INIT_WORK(&ploop->event_work, do_ploop_event_work);
 	init_completion(&ploop->inflight_bios_ref_comp);
 
 	for (i = 0; i < 2; i++) {
-		release = i ? inflight_bios_ref_exit1 : inflight_bios_ref_exit0;
+		release = i ? ploop_inflight_bios_ref_exit1 :
+			      ploop_inflight_bios_ref_exit0;
 		if (percpu_ref_init(&ploop->inflight_bios_ref[i], release,
 				    PERCPU_REF_ALLOW_REINIT, GFP_KERNEL)) {
 			ret = -ENOMEM;

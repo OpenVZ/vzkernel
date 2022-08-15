@@ -44,7 +44,7 @@ static void ploop_advance_holes_bitmap(struct ploop *ploop,
 		ploop_init_be_iter(ploop, md->id, &i, &end);
 		bat_entries = kmap_atomic(md->page);
 		for (; i <= end; i++) {
-			if (!md_page_cluster_is_in_top_delta(ploop, md, i))
+			if (!ploop_md_page_cluster_is_in_top_delta(ploop, md, i))
 				continue;
 			dst_clu = bat_entries[i];
 			/* This may happen after grow->shrink->(now) grow */
@@ -58,7 +58,7 @@ static void ploop_advance_holes_bitmap(struct ploop *ploop,
 	write_unlock_irq(&ploop->bat_rwlock);
 }
 
-static int wait_for_completion_maybe_killable(struct completion *comp,
+static int ploop_wait_for_completion_maybe_killable(struct completion *comp,
 					      bool killable)
 {
 	int ret = 0;
@@ -95,7 +95,7 @@ static int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable)
 
 	if (ploop->inflight_ref_comp_pending) {
 		/* Previous completion was interrupted */
-		ret = wait_for_completion_maybe_killable(comp, killable);
+		ret = ploop_wait_for_completion_maybe_killable(comp, killable);
 		if (ret)
 			return ret;
 		ploop->inflight_ref_comp_pending = false;
@@ -110,7 +110,7 @@ static int ploop_inflight_bios_ref_switch(struct ploop *ploop, bool killable)
 
 	percpu_ref_kill(&ploop->inflight_bios_ref[index]);
 
-	ret = wait_for_completion_maybe_killable(comp, killable);
+	ret = ploop_wait_for_completion_maybe_killable(comp, killable);
 	if (ret) {
 		ploop->inflight_ref_comp_pending = true;
 		return ret;
@@ -130,7 +130,7 @@ static void ploop_resume_submitting_pios(struct ploop *ploop)
 	list_splice_tail_init(&ploop->suspended_pios, &list);
 	spin_unlock_irq(&ploop->deferred_lock);
 
-	submit_embedded_pios(ploop, &list);
+	ploop_submit_embedded_pios(ploop, &list);
 }
 
 static int ploop_suspend_submitting_pios(struct ploop *ploop)
@@ -162,8 +162,8 @@ static u32 ploop_find_bat_entry(struct ploop *ploop, u32 dst_clu, bool *is_locke
 		for (; i <= end; i++) {
 			if (bat_entries[i] != dst_clu)
 				continue;
-			if (md_page_cluster_is_in_top_delta(ploop, md, i)) {
-				clu = page_clu_idx_to_bat_clu(md->id, i);
+			if (ploop_md_page_cluster_is_in_top_delta(ploop, md, i)) {
+				clu = ploop_page_clu_idx_to_bat_clu(md->id, i);
 				break;
 			}
 		}
@@ -176,16 +176,16 @@ static u32 ploop_find_bat_entry(struct ploop *ploop, u32 dst_clu, bool *is_locke
 	*is_locked = false;
 	if (clu != UINT_MAX) {
 		spin_lock_irq(&ploop->deferred_lock);
-		*is_locked = find_lk_of_cluster(ploop, clu);
+		*is_locked = ploop_find_lk_of_cluster(ploop, clu);
 		spin_unlock_irq(&ploop->deferred_lock);
 	}
 
 	return clu;
 }
 
-void pio_prepare_offsets(struct ploop *ploop, struct pio *pio, u32 clu)
+void ploop_pio_prepare_offsets(struct ploop *ploop, struct pio *pio, u32 clu)
 {
-	int i, nr_pages = nr_pages_in_cluster(ploop);
+	int i, nr_pages = ploop_nr_pages_in_cluster(ploop);
 
 	pio->bi_iter.bi_idx = 0;
 	pio->bi_iter.bi_bvec_done = 0;
@@ -199,7 +199,8 @@ void pio_prepare_offsets(struct ploop *ploop, struct pio *pio, u32 clu)
 	pio->bi_iter.bi_size = CLU_SIZE(ploop);
 }
 
-static void wake_completion(struct pio *pio, void *data, blk_status_t status)
+static void ploop_wake_completion(struct pio *pio, void *data,
+				  blk_status_t status)
 {
 	struct completion *completion = data;
 
@@ -211,13 +212,13 @@ static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
 {
 	DECLARE_COMPLETION_ONSTACK(completion);
 
-	init_pio(ploop, REQ_OP_READ, pio);
-	pio_prepare_offsets(ploop, pio, dst_clu);
+	ploop_init_pio(ploop, REQ_OP_READ, pio);
+	ploop_pio_prepare_offsets(ploop, pio, dst_clu);
 
-	pio->endio_cb = wake_completion;
+	pio->endio_cb = ploop_wake_completion;
 	pio->endio_cb_data = &completion;
 
-	map_and_submit_rw(ploop, dst_clu, pio, top_level(ploop));
+	ploop_map_and_submit_rw(ploop, dst_clu, pio, ploop_top_level(ploop));
 	wait_for_completion(&completion);
 
 	if (pio->bi_status)
@@ -229,7 +230,7 @@ static int ploop_read_cluster_sync(struct ploop *ploop, struct pio *pio,
 static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 				    u32 dst_clu)
 {
-	struct file *file = top_delta(ploop)->file;
+	struct file *file = ploop_top_delta(ploop)->file;
 	DECLARE_COMPLETION_ONSTACK(completion);
 	int ret;
 
@@ -237,13 +238,13 @@ static int ploop_write_cluster_sync(struct ploop *ploop, struct pio *pio,
 	if (ret)
 		return ret;
 
-	init_pio(ploop, REQ_OP_WRITE, pio);
-	pio_prepare_offsets(ploop, pio, dst_clu);
+	ploop_init_pio(ploop, REQ_OP_WRITE, pio);
+	ploop_pio_prepare_offsets(ploop, pio, dst_clu);
 
-	pio->endio_cb = wake_completion;
+	pio->endio_cb = ploop_wake_completion;
 	pio->endio_cb_data = &completion;
 
-	map_and_submit_rw(ploop, dst_clu, pio, top_level(ploop));
+	ploop_map_and_submit_rw(ploop, dst_clu, pio, ploop_top_level(ploop));
 	wait_for_completion(&completion);
 
 	if (pio->bi_status)
@@ -340,7 +341,8 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 
 	/* Update local BAT copy */
 	write_lock_irq(&ploop->bat_rwlock);
-	WARN_ON(!try_update_bat_entry(ploop, clu, top_level(ploop), new_dst));
+	WARN_ON(!ploop_try_update_bat_entry(ploop, clu,
+			ploop_top_level(ploop), new_dst));
 	write_unlock_irq(&ploop->bat_rwlock);
 not_occupied:
 	/*
@@ -419,7 +421,7 @@ static void ploop_add_md_pages(struct ploop *ploop, struct rb_root *from)
         while ((node = from->rb_node) != NULL) {
 		md = rb_entry(node, struct md_page, node);
 		rb_erase(node, from);
-		md_page_insert(ploop, md);
+		ploop_md_page_insert(ploop, md);
 	}
 }
 /*
@@ -428,7 +430,7 @@ static void ploop_add_md_pages(struct ploop *ploop, struct rb_root *from)
  * so be careful(!) and protective. Update indexes only after clu
  * data is written to disk.
  */
-static int process_resize_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
+static int ploop_process_resize_cmd(struct ploop *ploop, struct ploop_cmd *cmd)
 {
 	u32 dst_clu;
 	int ret = 0;
@@ -464,9 +466,9 @@ out:
 	return ret;
 }
 
-struct pio *alloc_pio_with_pages(struct ploop *ploop)
+struct pio *ploop_alloc_pio_with_pages(struct ploop *ploop)
 {
-	int i, nr_pages = nr_pages_in_cluster(ploop);
+	int i, nr_pages = ploop_nr_pages_in_cluster(ploop);
 	struct pio *pio;
 	u32 size;
 
@@ -495,7 +497,7 @@ err:
 	return NULL;
 }
 
-void free_pio_with_pages(struct ploop *ploop, struct pio *pio)
+void ploop_free_pio_with_pages(struct ploop *ploop, struct pio *pio)
 {
 	int i, nr_pages = pio->bi_vcnt;
 	struct page *page;
@@ -504,7 +506,7 @@ void free_pio_with_pages(struct ploop *ploop, struct pio *pio)
 	 * Not a error for this function, but the rest of code
 	 * may expect this. Sanity check.
 	 */
-	WARN_ON_ONCE(nr_pages != nr_pages_in_cluster(ploop));
+	WARN_ON_ONCE(nr_pages != ploop_nr_pages_in_cluster(ploop));
 
 	for (i = 0; i < nr_pages; i++) {
 		page = pio->bi_io_vec[i].bv_page;
@@ -531,7 +533,7 @@ static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 	if (ploop_is_ro(ploop))
 		return -EROFS;
 
-	md0 = md_page_find(ploop, 0);
+	md0 = ploop_md_page_find(ploop, 0);
 	if (WARN_ON(!md0))
 		return -EIO;
 	hdr = kmap(md0->page);
@@ -554,7 +556,7 @@ static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 	nr_bat_entries = SEC_TO_CLU(ploop, new_sectors);
 
 	/* Memory for new md pages */
-	if (prealloc_md_pages(&cmd.resize.md_pages_root,
+	if (ploop_prealloc_md_pages(&cmd.resize.md_pages_root,
 			      ploop->nr_bat_entries, nr_bat_entries) < 0)
 		goto err;
 
@@ -575,7 +577,7 @@ static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 	old_size = DIV_ROUND_UP(ploop->hb_nr, 8);
 	memset(cmd.resize.holes_bitmap + old_size, 0xff, size - old_size);
 
-	cmd.resize.pio = alloc_pio_with_pages(ploop);
+	cmd.resize.pio = ploop_alloc_pio_with_pages(ploop);
 	if (!cmd.resize.pio)
 		goto err;
 
@@ -589,13 +591,13 @@ static int ploop_resize(struct ploop *ploop, sector_t new_sectors)
 	cmd.resize.md0 = md0;
 
 	ploop_suspend_submitting_pios(ploop);
-	ret = process_resize_cmd(ploop, &cmd);
+	ret = ploop_process_resize_cmd(ploop, &cmd);
 	ploop_resume_submitting_pios(ploop);
 err:
 	if (cmd.resize.pio)
-		free_pio_with_pages(ploop, cmd.resize.pio);
+		ploop_free_pio_with_pages(ploop, cmd.resize.pio);
 	kvfree(cmd.resize.holes_bitmap);
-	free_md_pages_tree(&cmd.resize.md_pages_root);
+	ploop_free_md_pages_tree(&cmd.resize.md_pages_root);
 	return ret;
 }
 static void service_pio_endio(struct pio *pio, void *data, blk_status_t status)
@@ -614,7 +616,7 @@ static void service_pio_endio(struct pio *pio, void *data, blk_status_t status)
 		wake_up(&ploop->service_wq);
 }
 
-static int process_merge_latest_snapshot(struct ploop *ploop)
+static int ploop_process_merge_latest_snapshot(struct ploop *ploop)
 {
 	static blk_status_t service_status;
 	struct bio_vec bvec = {0};
@@ -627,12 +629,12 @@ static int process_merge_latest_snapshot(struct ploop *ploop)
 			ret = -EINTR;
 			break;
 		}
-		pio = alloc_pio(ploop, GFP_KERNEL);
+		pio = ploop_alloc_pio(ploop, GFP_KERNEL);
 		if (!pio) {
 			ret = -ENOMEM;
 			break;
 		}
-		init_pio(ploop, REQ_OP_WRITE, pio);
+		ploop_init_pio(ploop, REQ_OP_WRITE, pio);
 		pio->free_on_endio = true;
 		pio->bi_io_vec = &bvec;
 		pio->bi_iter.bi_sector = CLU_TO_SEC(ploop, clu);
@@ -642,9 +644,9 @@ static int process_merge_latest_snapshot(struct ploop *ploop)
 		pio->endio_cb = service_pio_endio;
 		pio->endio_cb_data = &service_status;
 		pio->is_fake_merge = true;
-		WARN_ON_ONCE(!fake_merge_pio(pio));
+		WARN_ON_ONCE(!ploop_fake_merge_pio(pio));
 
-		dispatch_pios(ploop, pio, NULL);
+		ploop_dispatch_pios(ploop, pio, NULL);
 
 		if (atomic_inc_return(&ploop->service_pios) == MERGE_PIOS_MAX) {
 			wait_event(ploop->service_wq,
@@ -678,7 +680,7 @@ static int ploop_merge_latest_snapshot(struct ploop *ploop)
 	if (ploop->nr_deltas < 2)
 		return -ENOENT;
 
-	ret = process_merge_latest_snapshot(ploop);
+	ret = ploop_process_merge_latest_snapshot(ploop);
 	if (ret)
 		goto out;
 
@@ -711,7 +713,7 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 	bool stop = false;
 	u32 clu;
 
-	d_md = md_first_entry(md_root);
+	d_md = ploop_md_first_entry(md_root);
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
@@ -719,7 +721,7 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 		bat_entries = kmap_atomic(md->page);
 		d_bat_entries = kmap_atomic(d_md->page);
 		for (; i <= end; i++) {
-			clu = page_clu_idx_to_bat_clu(md->id, i);
+			clu = ploop_page_clu_idx_to_bat_clu(md->id, i);
 			if (clu == nr_be - 1)
 				stop = true;
 
@@ -754,7 +756,7 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 		kunmap_atomic(d_bat_entries);
 		if (stop)
 			break;
-		d_md = md_next_entry(d_md);
+		d_md = ploop_md_next_entry(d_md);
 	}
 
 	file = ploop->deltas[level].file;
@@ -767,8 +769,8 @@ static void notify_delta_merged(struct ploop *ploop, u8 level,
 	fput(file);
 }
 
-static int process_update_delta_index(struct ploop *ploop, u8 level,
-				      const char *map)
+static int ploop_process_update_delta_index(struct ploop *ploop, u8 level,
+					    const char *map)
 {
 	struct ploop_delta *delta = &ploop->deltas[level];
 	u32 clu, dst_clu, n;
@@ -794,7 +796,7 @@ static int process_update_delta_index(struct ploop *ploop, u8 level,
 	}
 	/* Commit all */
 	while (sscanf(map, "%u:%u;%n", &clu, &dst_clu, &n) == 2) {
-		try_update_bat_entry(ploop, clu, level, dst_clu);
+		ploop_try_update_bat_entry(ploop, clu, level, dst_clu);
 		map += n;
 	}
 	ret = 0;
@@ -827,7 +829,7 @@ static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 		goto out;
 
 	ret = -EFBIG;
-	if (changed_level != top_level(ploop) &&
+	if (changed_level != ploop_top_level(ploop) &&
 	    nr_be > deltas[changed_level + 1].nr_be)
 		goto out;
 
@@ -844,7 +846,7 @@ static int ploop_delta_clusters_merged(struct ploop *ploop, u8 level,
 	ploop_resume_submitting_pios(ploop);
 	ret = 0;
 out:
-	free_md_pages_tree(&md_root);
+	ploop_free_md_pages_tree(&md_root);
 	return ret;
 }
 
@@ -852,13 +854,13 @@ static int ploop_notify_merged(struct ploop *ploop, u8 level, bool forward)
 {
 	if (ploop->maintaince)
 		return -EBUSY;
-	if (level >= top_level(ploop))
+	if (level >= ploop_top_level(ploop))
 		return -ENOENT;
 	if (level == 0 && !forward)
 		return -EINVAL;
 	if (level == 0 && ploop->deltas[0].is_raw)
 		return -ENOTSUPP;
-	if (level == top_level(ploop) - 1 && forward)
+	if (level == ploop_top_level(ploop) - 1 && forward)
 		return -EINVAL;
 	if (ploop->nr_deltas < 3)
 		return -EINVAL;
@@ -923,7 +925,7 @@ static int ploop_update_delta_index(struct ploop *ploop, unsigned int level,
 
 	if (ploop->maintaince)
 		return -EBUSY;
-	if (level >= top_level(ploop))
+	if (level >= ploop_top_level(ploop))
 		return -ENOENT;
 
 	ret = ploop_suspend_submitting_pios(ploop);
@@ -938,7 +940,7 @@ static int ploop_update_delta_index(struct ploop *ploop, unsigned int level,
 	delta->file_size = file_size;
 	delta->file_preallocated_area_start = file_size;
 
-	ret = process_update_delta_index(ploop, level, map);
+	ret = ploop_process_update_delta_index(ploop, level, map);
 
 resume:
 	ploop_resume_submitting_pios(ploop);
@@ -950,7 +952,7 @@ static int process_flip_upper_deltas(struct ploop *ploop)
 {
 	u32 i, end, bat_clusters, hb_nr, *bat_entries;
 	void *holes_bitmap = ploop->holes_bitmap;
-	u8 level = top_level(ploop) - 1;
+	u8 level = ploop_top_level(ploop) - 1;
 	struct rb_node *node;
 	struct md_page *md;
 	u64 size;
@@ -975,9 +977,9 @@ static int process_flip_upper_deltas(struct ploop *ploop)
 			if (bat_entries[i] == BAT_ENTRY_NONE)
 				continue;
 			if (md->bat_levels[i] == level) {
-				md->bat_levels[i] = top_level(ploop);
+				md->bat_levels[i] = ploop_top_level(ploop);
 				clear_bit(bat_entries[i], holes_bitmap);
-			} else if (md->bat_levels[i] == top_level(ploop)) {
+			} else if (md->bat_levels[i] == ploop_top_level(ploop)) {
 				md->bat_levels[i] = level;
 			}
 		}
@@ -1033,14 +1035,14 @@ static int ploop_check_delta_before_flip(struct ploop *ploop, struct file *file)
 	}
 
 	/* Points to hdr since md_page[0] also contains hdr. */
-	d_md = md_first_entry(&md_root);
+	d_md = ploop_md_first_entry(&md_root);
 
 	write_lock_irq(&ploop->bat_rwlock);
 	ploop_for_each_md_page(ploop, md, node) {
 		init_be_iter(nr_be, md->id, &i, &end);
 		d_bat_entries = kmap_atomic(d_md->page);
 		for (; i <= end; i++) {
-			if (md_page_cluster_is_in_top_delta(ploop, md, i) &&
+			if (ploop_md_page_cluster_is_in_top_delta(ploop, md, i) &&
 			    d_bat_entries[i] != BAT_ENTRY_NONE) {
 				ret = -EEXIST;
 				stop = true;
@@ -1048,7 +1050,7 @@ static int ploop_check_delta_before_flip(struct ploop *ploop, struct file *file)
 			}
 		}
 
-		clu = page_clu_idx_to_bat_clu(md->id, i);
+		clu = ploop_page_clu_idx_to_bat_clu(md->id, i);
 		if (clu == nr_be - 1) {
 			stop = true;
 			goto unmap;
@@ -1057,11 +1059,11 @@ unmap:
 		kunmap_atomic(d_bat_entries);
 		if (stop)
 			break;
-		d_md = md_next_entry(d_md);
+		d_md = ploop_md_next_entry(d_md);
 	}
 
 	write_unlock_irq(&ploop->bat_rwlock);
-	free_md_pages_tree(&md_root);
+	ploop_free_md_pages_tree(&md_root);
 out:
 #endif
 	return ret;
