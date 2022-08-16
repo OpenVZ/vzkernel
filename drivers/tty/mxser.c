@@ -1418,7 +1418,8 @@ static void mxser_start(struct tty_struct *tty)
 	spin_unlock_irqrestore(&info->slock, flags);
 }
 
-static void mxser_set_termios(struct tty_struct *tty, struct ktermios *old_termios)
+static void mxser_set_termios(struct tty_struct *tty,
+			      const struct ktermios *old_termios)
 {
 	struct mxser_port *info = tty->driver_data;
 	unsigned long flags;

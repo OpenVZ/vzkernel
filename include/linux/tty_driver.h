@@ -115,7 +115,7 @@
  *
  *	Optional
  * 
- * void (*set_termios)(struct tty_struct *tty, struct ktermios * old);
+ * void (*set_termios)(struct tty_struct *tty, const struct ktermios * old);
  *
  * 	This routine allows the tty driver to be notified when
  * 	device's termios settings have changed.
@@ -263,7 +263,7 @@ struct tty_operations {
 		    unsigned int cmd, unsigned long arg);
 	long (*compat_ioctl)(struct tty_struct *tty,
 			     unsigned int cmd, unsigned long arg);
-	void (*set_termios)(struct tty_struct *tty, struct ktermios * old);
+	void (*set_termios)(struct tty_struct *tty, const struct ktermios *old);
 	void (*throttle)(struct tty_struct * tty);
 	void (*unthrottle)(struct tty_struct * tty);
 	void (*stop)(struct tty_struct *tty);
