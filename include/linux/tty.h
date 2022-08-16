@@ -474,7 +474,7 @@ extern int tty_hung_up_p(struct file *filp);
 extern void do_SAK(struct tty_struct *tty);
 extern void __do_SAK(struct tty_struct *tty);
 extern void no_tty(void);
-extern speed_t tty_termios_baud_rate(struct ktermios *termios);
+extern speed_t tty_termios_baud_rate(const struct ktermios *termios);
 extern void tty_termios_encode_baud_rate(struct ktermios *termios,
 						speed_t ibaud, speed_t obaud);
 extern void tty_encode_baud_rate(struct tty_struct *tty,
