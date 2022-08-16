@@ -175,7 +175,6 @@ int ldsem_down_write_nested(struct ld_semaphore *sem, int subclass,
 		ldsem_down_write(sem, timeout)
 #endif
 
-
 struct tty_ldisc_ops {
 	char	*name;
 	int	num;
@@ -196,7 +195,7 @@ struct tty_ldisc_ops {
 			unsigned long arg);
 	int	(*compat_ioctl)(struct tty_struct *tty, unsigned int cmd,
 			unsigned long arg);
-	void	(*set_termios)(struct tty_struct *tty, struct ktermios *old);
+	void	(*set_termios)(struct tty_struct *tty, const struct ktermios *old);
 	__poll_t (*poll)(struct tty_struct *, struct file *,
 			     struct poll_table_struct *);
 	void	(*hangup)(struct tty_struct *tty);
