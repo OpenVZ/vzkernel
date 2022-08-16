@@ -32,6 +32,7 @@
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <linux/un.h>
+#include <linux/ve.h>
 
 #include <linux/sunrpc/clnt.h>
 #include <linux/sunrpc/addr.h>
@@ -3425,8 +3426,16 @@ static ssize_t write_kill_tasks(struct file *file, const char __user *buf,
 	sn->kill_tasks = !!kill_tasks;
 
 	/* Kill pending tasks */
-	if (sn->kill_tasks && !prev_kill_tasks)
+	if (sn->kill_tasks && !prev_kill_tasks) {
 		rpc_kill_tasks(net);
+		pr_info_ratelimited(
+			"kill-tasks: by task (%s:%d) in net:[%u]%s\n",
+			current->comm, current->pid, net->ns.inum,
+#ifdef CONFIG_VE
+			net->owner_ve == &ve0 ? "(host)" :
+#endif
+			"");
+	}
 
 	return count;
 }
