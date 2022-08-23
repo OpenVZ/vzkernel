@@ -56,10 +56,19 @@ static void configfs_d_iput(struct dentry * dentry,
 	struct configfs_dirent *sd = dentry->d_fsdata;
 
 	if (sd) {
-		BUG_ON(sd->s_dentry != dentry);
 		/* Coordinate with configfs_readdir */
 		spin_lock(&configfs_dirent_lock);
-		sd->s_dentry = NULL;
+		/* Coordinate with configfs_attach_attr where will increase
+		 * sd->s_count and update sd->s_dentry to new allocated one.
+		 * Only set sd->dentry to null when this dentry is the only
+		 * sd owner.
+		 * If not do so, configfs_d_iput may run just after
+		 * configfs_attach_attr and set sd->s_dentry to null
+		 * even it's still in use.
+		 */
+		if (atomic_read(&sd->s_count) <= 2)
+			sd->s_dentry = NULL;
+
 		spin_unlock(&configfs_dirent_lock);
 		configfs_put(sd);
 	}
@@ -387,7 +396,7 @@ static void remove_dir(struct dentry * d)
 	if (d->d_inode)
 		simple_rmdir(parent->d_inode,d);
 
-	pr_debug(" o %s removing done (%d)\n",d->d_name.name, d->d_count);
+	pr_debug(" o %s removing done (%d)\n",d->d_name.name, d_count(d));
 
 	dput(parent);
 }
@@ -426,8 +435,11 @@ static int configfs_attach_attr(struct configfs_dirent * sd, struct dentry * den
 	struct configfs_attribute * attr = sd->s_element;
 	int error;
 
+	spin_lock(&configfs_dirent_lock);
 	dentry->d_fsdata = configfs_get(sd);
 	sd->s_dentry = dentry;
+	spin_unlock(&configfs_dirent_lock);
+
 	error = configfs_create(dentry, (attr->ca_mode & S_IALLUGO) | S_IFREG,
 				configfs_init_file);
 	if (error) {
@@ -707,10 +719,28 @@ static int populate_groups(struct config_group *group)
 				break;
 			}
 		}
+	} else if (!list_empty(&group->default_groups_list)) {
+		list_for_each_entry(new_group, &group->default_groups_list, group_entry) {
+			ret = create_default_group(group, new_group);
+			if (ret) {
+				detach_groups(group);
+				break;
+			}
+		}
 	}
-
 	return ret;
 }
+
+void configfs_remove_default_groups(struct config_group *group)
+{
+	struct config_group *g, *n;
+
+	list_for_each_entry_safe(g, n, &group->default_groups_list, group_entry) {
+		list_del(&g->group_entry);
+		config_item_put(&g->cg_item);
+	}
+}
+EXPORT_SYMBOL(configfs_remove_default_groups);
 
 /*
  * All of link_obj/unlink_obj/link_group/unlink_group require that
@@ -768,7 +798,9 @@ static void unlink_group(struct config_group *group)
 			new_group = group->default_groups[i];
 			unlink_group(new_group);
 		}
-	}
+	} else if (!list_empty(&group->default_groups_list))
+		list_for_each_entry(new_group, &group->default_groups_list, group_entry)
+			unlink_group(new_group);
 
 	group->cg_subsys = NULL;
 	unlink_obj(&group->cg_item);
@@ -795,7 +827,10 @@ static void link_group(struct config_group *parent_group, struct config_group *g
 			new_group = group->default_groups[i];
 			link_group(group, new_group);
 		}
-	}
+	} else if (!list_empty(&group->default_groups_list))
+		list_for_each_entry(new_group, &group->default_groups_list, group_entry)
+			link_group(group, new_group);
+
 }
 
 /*
@@ -1138,8 +1173,7 @@ EXPORT_SYMBOL(configfs_depend_item);
  * configfs_depend_item() because we know that that the client driver is
  * pinned, thus the subsystem is pinned, and therefore configfs is pinned.
  */
-void configfs_undepend_item(struct configfs_subsystem *subsys,
-			    struct config_item *target)
+void configfs_undepend_item(struct config_item *target)
 {
 	struct configfs_dirent *sd;
 
@@ -1663,6 +1697,116 @@ const struct file_operations configfs_dir_operations = {
 	.read		= generic_read_dir,
 	.readdir	= configfs_readdir,
 };
+
+/**
+ * configfs_register_group - creates a parent-child relation between two groups
+ * @parent_group:	parent group
+ * @group:		child group
+ *
+ * link groups, creates dentry for the child and attaches it to the
+ * parent dentry.
+ *
+ * Return: 0 on success, negative errno code on error
+ */
+int configfs_register_group(struct config_group *parent_group,
+			    struct config_group *group)
+{
+	struct configfs_subsystem *subsys = parent_group->cg_subsys;
+	struct dentry *parent;
+	int ret;
+
+	mutex_lock(&subsys->su_mutex);
+	link_group(parent_group, group);
+	mutex_unlock(&subsys->su_mutex);
+
+	parent = parent_group->cg_item.ci_dentry;
+
+	mutex_lock_nested(&d_inode(parent)->i_mutex, I_MUTEX_PARENT);
+	ret = create_default_group(parent_group, group);
+	if (!ret) {
+		spin_lock(&configfs_dirent_lock);
+		configfs_dir_set_ready(group->cg_item.ci_dentry->d_fsdata);
+		spin_unlock(&configfs_dirent_lock);
+	}
+	mutex_unlock(&d_inode(parent)->i_mutex);
+	return ret;
+}
+EXPORT_SYMBOL(configfs_register_group);
+
+/**
+ * configfs_unregister_group() - unregisters a child group from its parent
+ * @group: parent group to be unregistered
+ *
+ * Undoes configfs_register_group()
+ */
+void configfs_unregister_group(struct config_group *group)
+{
+	struct configfs_subsystem *subsys = group->cg_subsys;
+	struct dentry *dentry = group->cg_item.ci_dentry;
+	struct dentry *parent = group->cg_item.ci_parent->ci_dentry;
+
+	mutex_lock_nested(&d_inode(parent)->i_mutex, I_MUTEX_PARENT);
+	spin_lock(&configfs_dirent_lock);
+	configfs_detach_prep(dentry, NULL);
+	spin_unlock(&configfs_dirent_lock);
+
+	configfs_detach_group(&group->cg_item);
+	d_inode(dentry)->i_flags |= S_DEAD;
+	dont_mount(dentry);
+	d_delete(dentry);
+	mutex_unlock(&d_inode(parent)->i_mutex);
+
+	dput(dentry);
+
+	mutex_lock(&subsys->su_mutex);
+	unlink_group(group);
+	mutex_unlock(&subsys->su_mutex);
+}
+EXPORT_SYMBOL(configfs_unregister_group);
+
+/**
+ * configfs_register_default_group() - allocates and registers a child group
+ * @parent_group:	parent group
+ * @name:		child group name
+ * @item_type:		child item type description
+ *
+ * boilerplate to allocate and register a child group with its parent. We need
+ * kzalloc'ed memory because child's default_group is initially empty.
+ *
+ * Return: allocated config group or ERR_PTR() on error
+ */
+struct config_group *
+configfs_register_default_group(struct config_group *parent_group,
+				const char *name,
+				struct config_item_type *item_type)
+{
+	int ret;
+	struct config_group *group;
+
+	group = kzalloc(sizeof(*group), GFP_KERNEL);
+	if (!group)
+		return ERR_PTR(-ENOMEM);
+	config_group_init_type_name(group, name, item_type);
+
+	ret = configfs_register_group(parent_group, group);
+	if (ret) {
+		kfree(group);
+		return ERR_PTR(ret);
+	}
+	return group;
+}
+EXPORT_SYMBOL(configfs_register_default_group);
+
+/**
+ * configfs_unregister_default_group() - unregisters and frees a child group
+ * @group:	the group to act on
+ */
+void configfs_unregister_default_group(struct config_group *group)
+{
+	configfs_unregister_group(group);
+	kfree(group);
+}
+EXPORT_SYMBOL(configfs_unregister_default_group);
 
 int configfs_register_subsystem(struct configfs_subsystem *subsys)
 {

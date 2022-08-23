@@ -1600,12 +1600,8 @@ static irqreturn_t serial8250_interrupt(int irq, void *dev_id)
 
 		l = l->next;
 
-		if (l == i->head && pass_counter++ > PASS_LIMIT) {
-			/* If we hit this, we're dead. */
-			printk_ratelimited(KERN_ERR
-				"serial8250: too much work for irq%d\n", irq);
+		if (l == i->head && pass_counter++ > PASS_LIMIT)
 			break;
-		}
 	} while (l != end);
 
 	spin_unlock(&i->lock);
@@ -1870,6 +1866,7 @@ static void wait_for_xmitr(struct uart_8250_port *up, int bits)
 		if (--tmout == 0)
 			break;
 		udelay(1);
+		touch_nmi_watchdog();
 	}
 
 	/* Wait up to 1s for flow control if necessary */
@@ -2731,6 +2728,24 @@ static struct uart_ops serial8250_pops = {
 };
 
 static struct uart_8250_port serial8250_ports[UART_NR];
+
+/**
+ * serial8250_get_port - retrieve struct uart_8250_port
+ * @line: serial line number
+ *
+ * This function retrieves struct uart_8250_port for the specific line.
+ * This struct *must* *not* be used to perform a 8250 or serial core operation
+ * which is not accessible otherwise. Its only purpose is to make the struct
+ * accessible to the runtime-pm callbacks for context suspend/restore.
+ * The lock assumption made here is none because runtime-pm suspend/resume
+ * callbacks should not be invoked if there is any operation performed on the
+ * port.
+ */
+struct uart_8250_port *serial8250_get_port(int line)
+{
+	return &serial8250_ports[line];
+}
+EXPORT_SYMBOL_GPL(serial8250_get_port);
 
 static void (*serial8250_isa_config)(int port, struct uart_port *up,
 	unsigned short *capabilities);

@@ -103,7 +103,7 @@ MODULE_PARM_DESC(b44_debug, "B44 bitmapped debugging message enable value");
 
 
 #ifdef CONFIG_B44_PCI
-static DEFINE_PCI_DEVICE_TABLE(b44_pci_tbl) = {
+static const struct pci_device_id b44_pci_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401B0) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401B1) },
@@ -809,7 +809,7 @@ static int b44_rx(struct b44 *bp, int budget)
 			struct sk_buff *copy_skb;
 
 			b44_recycle_rx(bp, cons, bp->rx_prod);
-			copy_skb = netdev_alloc_skb_ip_align(bp->dev, len);
+			copy_skb = napi_alloc_skb(&bp->napi, len);
 			if (copy_skb == NULL)
 				goto drop_it_no_recycle;
 
@@ -1636,15 +1636,15 @@ static int b44_close(struct net_device *dev)
 	return 0;
 }
 
-static struct rtnl_link_stats64 *b44_get_stats64(struct net_device *dev,
-					struct rtnl_link_stats64 *nstat)
+static void b44_get_stats64(struct net_device *dev,
+			    struct rtnl_link_stats64 *nstat)
 {
 	struct b44 *bp = netdev_priv(dev);
 	struct b44_hw_stats *hwstat = &bp->hw_stats;
 	unsigned int start;
 
 	do {
-		start = u64_stats_fetch_begin_bh(&hwstat->syncp);
+		start = u64_stats_fetch_begin_irq(&hwstat->syncp);
 
 		/* Convert HW stats into rtnl_link_stats64 stats. */
 		nstat->rx_packets = hwstat->rx_pkts;
@@ -1678,9 +1678,8 @@ static struct rtnl_link_stats64 *b44_get_stats64(struct net_device *dev,
 		/* Carrier lost counter seems to be broken for some devices */
 		nstat->tx_carrier_errors = hwstat->tx_carrier_lost;
 #endif
-	} while (u64_stats_fetch_retry_bh(&hwstat->syncp, start));
+	} while (u64_stats_fetch_retry_irq(&hwstat->syncp, start));
 
-	return nstat;
 }
 
 static int __b44_load_mcast(struct b44 *bp, struct net_device *dev)
@@ -2011,12 +2010,12 @@ static void b44_get_ethtool_stats(struct net_device *dev,
 	do {
 		data_src = &hwstat->tx_good_octets;
 		data_dst = data;
-		start = u64_stats_fetch_begin_bh(&hwstat->syncp);
+		start = u64_stats_fetch_begin_irq(&hwstat->syncp);
 
 		for (i = 0; i < ARRAY_SIZE(b44_gstrings); i++)
 			*data_dst++ = *data_src++;
 
-	} while (u64_stats_fetch_retry_bh(&hwstat->syncp, start));
+	} while (u64_stats_fetch_retry_irq(&hwstat->syncp, start));
 }
 
 static void b44_get_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
@@ -2101,7 +2100,7 @@ static int b44_get_invariants(struct b44 *bp)
 	 * valid PHY address. */
 	bp->phy_addr &= 0x1F;
 
-	memcpy(bp->dev->dev_addr, addr, 6);
+	memcpy(bp->dev->dev_addr, addr, ETH_ALEN);
 
 	if (!is_valid_ether_addr(&bp->dev->dev_addr[0])){
 		pr_err("Invalid MAC address found in EEPROM\n");
@@ -2130,7 +2129,7 @@ static const struct net_device_ops b44_netdev_ops = {
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_do_ioctl		= b44_ioctl,
 	.ndo_tx_timeout		= b44_tx_timeout,
-	.ndo_change_mtu		= b44_change_mtu,
+	.ndo_change_mtu_rh74	= b44_change_mtu,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= b44_poll_controller,
 #endif

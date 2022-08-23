@@ -48,19 +48,20 @@ static inline u32 kvmppc_get_cr(struct kvm_vcpu *vcpu)
 	return vcpu->arch.cr;
 }
 
-static inline void kvmppc_set_xer(struct kvm_vcpu *vcpu, u32 val)
+static inline void kvmppc_set_xer(struct kvm_vcpu *vcpu, ulong val)
 {
 	vcpu->arch.xer = val;
 }
 
-static inline u32 kvmppc_get_xer(struct kvm_vcpu *vcpu)
+static inline ulong kvmppc_get_xer(struct kvm_vcpu *vcpu)
 {
 	return vcpu->arch.xer;
 }
 
-static inline u32 kvmppc_get_last_inst(struct kvm_vcpu *vcpu)
+static inline bool kvmppc_need_byteswap(struct kvm_vcpu *vcpu)
 {
-	return vcpu->arch.last_inst;
+	/* XXX Would need to check TLB entry */
+	return false;
 }
 
 static inline void kvmppc_set_ctr(struct kvm_vcpu *vcpu, ulong val)
@@ -98,8 +99,13 @@ static inline ulong kvmppc_get_fault_dar(struct kvm_vcpu *vcpu)
 	return vcpu->arch.fault_dear;
 }
 
-static inline ulong kvmppc_get_msr(struct kvm_vcpu *vcpu)
+static inline bool kvmppc_supports_magic_page(struct kvm_vcpu *vcpu)
 {
-	return vcpu->arch.shared->msr;
+	/* Magic page is only supported on e500v2 */
+#ifdef CONFIG_KVM_E500V2
+	return true;
+#else
+	return false;
+#endif
 }
 #endif /* __ASM_KVM_BOOKE_H__ */

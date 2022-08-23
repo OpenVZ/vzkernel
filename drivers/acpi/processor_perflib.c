@@ -159,22 +159,9 @@ static int acpi_processor_get_platform_limit(struct acpi_processor *pr)
  */
 static void acpi_processor_ppc_ost(acpi_handle handle, int status)
 {
-	union acpi_object params[2] = {
-		{.type = ACPI_TYPE_INTEGER,},
-		{.type = ACPI_TYPE_INTEGER,},
-	};
-	struct acpi_object_list arg_list = {2, params};
-	acpi_handle temp;
-
-	params[0].integer.value = ACPI_PROCESSOR_NOTIFY_PERFORMANCE;
-	params[1].integer.value =  status;
-
-	/* when there is no _OST , skip it */
-	if (ACPI_FAILURE(acpi_get_handle(handle, "_OST", &temp)))
-		return;
-
-	acpi_evaluate_object(handle, "_OST", &arg_list, NULL);
-	return;
+	if (acpi_has_method(handle, "_OST"))
+		acpi_evaluate_ost(handle, ACPI_PROCESSOR_NOTIFY_PERFORMANCE,
+				  status, NULL);
 }
 
 int acpi_processor_ppc_has_changed(struct acpi_processor *pr, int event_flag)
@@ -468,14 +455,11 @@ static int acpi_processor_get_performance_states(struct acpi_processor *pr)
 int acpi_processor_get_performance_info(struct acpi_processor *pr)
 {
 	int result = 0;
-	acpi_status status = AE_OK;
-	acpi_handle handle = NULL;
 
 	if (!pr || !pr->performance || !pr->handle)
 		return -EINVAL;
 
-	status = acpi_get_handle(pr->handle, "_PCT", &handle);
-	if (ACPI_FAILURE(status)) {
+	if (!acpi_has_method(pr->handle, "_PCT")) {
 		ACPI_DEBUG_PRINT((ACPI_DB_INFO,
 				  "ACPI-based processor performance control unavailable\n"));
 		return -ENODEV;
@@ -501,7 +485,7 @@ int acpi_processor_get_performance_info(struct acpi_processor *pr)
 	 */
  update_bios:
 #ifdef CONFIG_X86
-	if (ACPI_SUCCESS(acpi_get_handle(pr->handle, "_PPC", &handle))){
+	if (acpi_has_method(pr->handle, "_PPC")) {
 		if(boot_cpu_has(X86_FEATURE_EST))
 			printk(KERN_WARNING FW_BUG "BIOS needs update for CPU "
 			       "frequency support\n");
@@ -510,11 +494,33 @@ int acpi_processor_get_performance_info(struct acpi_processor *pr)
 	return result;
 }
 EXPORT_SYMBOL_GPL(acpi_processor_get_performance_info);
-int acpi_processor_notify_smm(struct module *calling_module)
+
+int acpi_processor_pstate_control(void)
 {
 	acpi_status status;
-	static int is_done = 0;
 
+	if (!acpi_gbl_FADT.smi_command || !acpi_gbl_FADT.pstate_control)
+		return 0;
+
+	ACPI_DEBUG_PRINT((ACPI_DB_INFO,
+			  "Writing pstate_control [0x%x] to smi_command [0x%x]\n",
+			  acpi_gbl_FADT.pstate_control, acpi_gbl_FADT.smi_command));
+
+	status = acpi_os_write_port(acpi_gbl_FADT.smi_command,
+				    (u32)acpi_gbl_FADT.pstate_control, 8);
+	if (ACPI_SUCCESS(status))
+		return 1;
+
+	ACPI_EXCEPTION((AE_INFO, status,
+			"Failed to write pstate_control [0x%x] to smi_command [0x%x]",
+			acpi_gbl_FADT.pstate_control, acpi_gbl_FADT.smi_command));
+	return -EIO;
+}
+
+int acpi_processor_notify_smm(struct module *calling_module)
+{
+	static int is_done = 0;
+	int result;
 
 	if (!(acpi_processor_ppc_status & PPC_REGISTERED))
 		return -EBUSY;
@@ -537,26 +543,15 @@ int acpi_processor_notify_smm(struct module *calling_module)
 
 	is_done = -EIO;
 
-	/* Can't write pstate_control to smi_command if either value is zero */
-	if ((!acpi_gbl_FADT.smi_command) || (!acpi_gbl_FADT.pstate_control)) {
+	result = acpi_processor_pstate_control();
+	if (!result) {
 		ACPI_DEBUG_PRINT((ACPI_DB_INFO, "No SMI port or pstate_control\n"));
 		module_put(calling_module);
 		return 0;
 	}
-
-	ACPI_DEBUG_PRINT((ACPI_DB_INFO,
-			  "Writing pstate_control [0x%x] to smi_command [0x%x]\n",
-			  acpi_gbl_FADT.pstate_control, acpi_gbl_FADT.smi_command));
-
-	status = acpi_os_write_port(acpi_gbl_FADT.smi_command,
-				    (u32) acpi_gbl_FADT.pstate_control, 8);
-	if (ACPI_FAILURE(status)) {
-		ACPI_EXCEPTION((AE_INFO, status,
-				"Failed to write pstate_control [0x%x] to "
-				"smi_command [0x%x]", acpi_gbl_FADT.pstate_control,
-				acpi_gbl_FADT.smi_command));
+	if (result < 0) {
 		module_put(calling_module);
-		return status;
+		return result;
 	}
 
 	/* Success. If there's no _PPC, we need to fear nothing, so
@@ -639,7 +634,7 @@ end:
 int acpi_processor_preregister_performance(
 		struct acpi_processor_performance __percpu *performance)
 {
-	int count, count_target;
+	int count_target;
 	int retval = 0;
 	unsigned int i, j;
 	cpumask_var_t covered_cpus;
@@ -711,7 +706,6 @@ int acpi_processor_preregister_performance(
 
 		/* Validate the Domain info */
 		count_target = pdomain->num_processors;
-		count = 1;
 		if (pdomain->coord_type == DOMAIN_COORD_TYPE_SW_ALL)
 			pr->performance->shared_type = CPUFREQ_SHARED_TYPE_ALL;
 		else if (pdomain->coord_type == DOMAIN_COORD_TYPE_HW_ALL)
@@ -745,7 +739,6 @@ int acpi_processor_preregister_performance(
 
 			cpumask_set_cpu(j, covered_cpus);
 			cpumask_set_cpu(j, pr->performance->shared_cpu_map);
-			count++;
 		}
 
 		for_each_possible_cpu(j) {

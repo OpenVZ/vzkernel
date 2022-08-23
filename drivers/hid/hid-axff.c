@@ -75,12 +75,19 @@ static int axff_init(struct hid_device *hid)
 {
 	struct axff_device *axff;
 	struct hid_report *report;
-	struct hid_input *hidinput = list_first_entry(&hid->inputs, struct hid_input, list);
+	struct hid_input *hidinput;
 	struct list_head *report_list =&hid->report_enum[HID_OUTPUT_REPORT].report_list;
-	struct input_dev *dev = hidinput->input;
+	struct input_dev *dev;
 	int field_count = 0;
 	int i, j;
 	int error;
+
+	if (list_empty(&hid->inputs)) {
+		hid_err(hid, "no inputs found\n");
+		return -ENODEV;
+	}
+	hidinput = list_first_entry(&hid->inputs, struct hid_input, list);
+	dev = hidinput->input;
 
 	if (list_empty(report_list)) {
 		hid_err(hid, "no output reports found\n");
@@ -95,7 +102,7 @@ static int axff_init(struct hid_device *hid)
 		}
 	}
 
-	if (field_count < 4) {
+	if (field_count < 4 && hid->product != 0xf705) {
 		hid_err(hid, "not enough fields in the report: %d\n",
 			field_count);
 		return -ENODEV;
@@ -180,6 +187,7 @@ static void ax_remove(struct hid_device *hdev)
 
 static const struct hid_device_id ax_devices[] = {
 	{ HID_USB_DEVICE(USB_VENDOR_ID_ACRUX, 0x0802), },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_ACRUX, 0xf705), },
 	{ }
 };
 MODULE_DEVICE_TABLE(hid, ax_devices);

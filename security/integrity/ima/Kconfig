@@ -9,6 +9,7 @@ config IMA
 	select CRYPTO_HMAC
 	select CRYPTO_MD5
 	select CRYPTO_SHA1
+	select CRYPTO_HASH_INFO
 	select TCG_TPM if HAS_IOMEM && !UML
 	select TCG_TIS if TCG_TPM && X86
 	select TCG_IBMVTPM if TCG_TPM && PPC64
@@ -71,3 +72,13 @@ config IMA_APPRAISE
 	  For more information on integrity appraisal refer to:
 	  <http://linux-ima.sourceforge.net>
 	  If unsure, say N.
+
+config IMA_TRUSTED_KEYRING
+	bool "Require all keys on the .ima keyring be signed"
+	depends on IMA_APPRAISE && SYSTEM_TRUSTED_KEYRING
+	depends on INTEGRITY_ASYMMETRIC_KEYS
+	select KEYS_DEBUG_PROC_KEYS
+	default y
+	help
+	   This option requires that all keys added to the .ima
+	   keyring be signed by a key on the system trusted keyring.

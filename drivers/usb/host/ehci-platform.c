@@ -48,6 +48,12 @@ static int ehci_platform_reset(struct usb_hcd *hcd)
 	ehci->big_endian_desc = pdata->big_endian_desc;
 	ehci->big_endian_mmio = pdata->big_endian_mmio;
 
+	if (pdata->pre_setup) {
+		retval = pdata->pre_setup(hcd);
+		if (retval < 0)
+			return retval;
+	}
+
 	ehci->caps = hcd->regs + pdata->caps_offset;
 	retval = ehci_setup(hcd);
 	if (retval)
@@ -157,8 +163,7 @@ static int ehci_platform_remove(struct platform_device *dev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
-
+#ifdef CONFIG_PM_SLEEP
 static int ehci_platform_suspend(struct device *dev)
 {
 	struct usb_hcd *hcd = dev_get_drvdata(dev);
@@ -169,6 +174,8 @@ static int ehci_platform_suspend(struct device *dev)
 	int ret;
 
 	ret = ehci_suspend(hcd, do_wakeup);
+	if (ret)
+		return ret;
 
 	if (pdata->power_suspend)
 		pdata->power_suspend(pdev);
@@ -192,11 +199,7 @@ static int ehci_platform_resume(struct device *dev)
 	ehci_resume(hcd, false);
 	return 0;
 }
-
-#else /* !CONFIG_PM */
-#define ehci_platform_suspend	NULL
-#define ehci_platform_resume	NULL
-#endif /* CONFIG_PM */
+#endif /* CONFIG_PM_SLEEP */
 
 static const struct of_device_id vt8500_ehci_ids[] = {
 	{ .compatible = "via,vt8500-ehci", },
@@ -210,10 +213,8 @@ static const struct platform_device_id ehci_platform_table[] = {
 };
 MODULE_DEVICE_TABLE(platform, ehci_platform_table);
 
-static const struct dev_pm_ops ehci_platform_pm_ops = {
-	.suspend	= ehci_platform_suspend,
-	.resume		= ehci_platform_resume,
-};
+static SIMPLE_DEV_PM_OPS(ehci_platform_pm_ops, ehci_platform_suspend,
+	ehci_platform_resume);
 
 static struct platform_driver ehci_platform_driver = {
 	.id_table	= ehci_platform_table,

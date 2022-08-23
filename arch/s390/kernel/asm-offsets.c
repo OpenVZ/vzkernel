@@ -7,6 +7,7 @@
 #define ASM_OFFSETS_C
 
 #include <linux/kbuild.h>
+#include <linux/kvm_host.h>
 #include <linux/sched.h>
 #include <asm/cputime.h>
 #include <asm/vdso.h>
@@ -16,8 +17,8 @@
  * Make sure that the compiler is new enough. We want a compiler that
  * is known to work with the "Q" assembler constraint.
  */
-#if __GNUC__ < 3 || (__GNUC__ == 3 && __GNUC_MINOR__ < 3)
-#error Your compiler is too old; please use version 3.3.3 or newer
+#if __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 3)
+#error Your compiler is too old; please use version 4.3 or newer
 #endif
 
 int main(void)
@@ -59,17 +60,26 @@ int main(void)
 	DEFINE(__VDSO_XTIME_STAMP, offsetof(struct vdso_data, xtime_tod_stamp));
 	DEFINE(__VDSO_XTIME_SEC, offsetof(struct vdso_data, xtime_clock_sec));
 	DEFINE(__VDSO_XTIME_NSEC, offsetof(struct vdso_data, xtime_clock_nsec));
+	DEFINE(__VDSO_XTIME_CRS_SEC, offsetof(struct vdso_data, xtime_coarse_sec));
+	DEFINE(__VDSO_XTIME_CRS_NSEC, offsetof(struct vdso_data, xtime_coarse_nsec));
 	DEFINE(__VDSO_WTOM_SEC, offsetof(struct vdso_data, wtom_clock_sec));
 	DEFINE(__VDSO_WTOM_NSEC, offsetof(struct vdso_data, wtom_clock_nsec));
+	DEFINE(__VDSO_WTOM_CRS_SEC, offsetof(struct vdso_data, wtom_coarse_sec));
+	DEFINE(__VDSO_WTOM_CRS_NSEC, offsetof(struct vdso_data, wtom_coarse_nsec));
 	DEFINE(__VDSO_TIMEZONE, offsetof(struct vdso_data, tz_minuteswest));
 	DEFINE(__VDSO_ECTG_OK, offsetof(struct vdso_data, ectg_available));
-	DEFINE(__VDSO_NTP_MULT, offsetof(struct vdso_data, ntp_mult));
+	DEFINE(__VDSO_TK_MULT, offsetof(struct vdso_data, tk_mult));
+	DEFINE(__VDSO_TK_SHIFT, offsetof(struct vdso_data, tk_shift));
 	DEFINE(__VDSO_ECTG_BASE, offsetof(struct vdso_per_cpu_data, ectg_timer_base));
 	DEFINE(__VDSO_ECTG_USER, offsetof(struct vdso_per_cpu_data, ectg_user_time));
 	/* constants used by the vdso */
 	DEFINE(__CLOCK_REALTIME, CLOCK_REALTIME);
 	DEFINE(__CLOCK_MONOTONIC, CLOCK_MONOTONIC);
+	DEFINE(__CLOCK_REALTIME_COARSE, CLOCK_REALTIME_COARSE);
+	DEFINE(__CLOCK_MONOTONIC_COARSE, CLOCK_MONOTONIC_COARSE);
+	DEFINE(__CLOCK_THREAD_CPUTIME_ID, CLOCK_THREAD_CPUTIME_ID);
 	DEFINE(__CLOCK_REALTIME_RES, MONOTONIC_RES_NSEC);
+	DEFINE(__CLOCK_COARSE_RES, LOW_RES_NSEC);
 	BLANK();
 	/* idle data offsets */
 	DEFINE(__CLOCK_IDLE_ENTER, offsetof(struct s390_idle_data, clock_idle_enter));
@@ -77,6 +87,7 @@ int main(void)
 	DEFINE(__TIMER_IDLE_ENTER, offsetof(struct s390_idle_data, timer_idle_enter));
 	DEFINE(__TIMER_IDLE_EXIT, offsetof(struct s390_idle_data, timer_idle_exit));
 	/* lowcore offsets */
+	DEFINE(__LC_MCESAD, offsetof(struct _lowcore, mcesad));
 	DEFINE(__LC_EXT_PARAMS, offsetof(struct _lowcore, ext_params));
 	DEFINE(__LC_EXT_CPU_ADDR, offsetof(struct _lowcore, ext_cpu_addr));
 	DEFINE(__LC_EXT_INT_CODE, offsetof(struct _lowcore, ext_int_code));
@@ -123,6 +134,9 @@ int main(void)
 	DEFINE(__LC_LAST_UPDATE_TIMER, offsetof(struct _lowcore, last_update_timer));
 	DEFINE(__LC_LAST_UPDATE_CLOCK, offsetof(struct _lowcore, last_update_clock));
 	DEFINE(__LC_CURRENT, offsetof(struct _lowcore, current_task));
+#ifdef CONFIG_64BIT
+	DEFINE(__LC_LPP, offsetof(struct _lowcore, lpp));
+#endif
 	DEFINE(__LC_CURRENT_PID, offsetof(struct _lowcore, current_pid));
 	DEFINE(__LC_THREAD_INFO, offsetof(struct _lowcore, thread_info));
 	DEFINE(__LC_KERNEL_STACK, offsetof(struct _lowcore, kernel_stack));
@@ -132,12 +146,14 @@ int main(void)
 	DEFINE(__LC_RESTART_FN, offsetof(struct _lowcore, restart_fn));
 	DEFINE(__LC_RESTART_DATA, offsetof(struct _lowcore, restart_data));
 	DEFINE(__LC_RESTART_SOURCE, offsetof(struct _lowcore, restart_source));
+	DEFINE(__LC_KERNEL_ASCE, offsetof(struct _lowcore, kernel_asce));
 	DEFINE(__LC_USER_ASCE, offsetof(struct _lowcore, user_asce));
 	DEFINE(__LC_INT_CLOCK, offsetof(struct _lowcore, int_clock));
 	DEFINE(__LC_MCCK_CLOCK, offsetof(struct _lowcore, mcck_clock));
 	DEFINE(__LC_MACHINE_FLAGS, offsetof(struct _lowcore, machine_flags));
 	DEFINE(__LC_FTRACE_FUNC, offsetof(struct _lowcore, ftrace_func));
 	DEFINE(__LC_IRB, offsetof(struct _lowcore, irb));
+	DEFINE(__LC_BR_R1, offsetof(struct _lowcore, br_r1_trampoline));
 	DEFINE(__LC_DUMP_REIPL, offsetof(struct _lowcore, ipib));
 	BLANK();
 	DEFINE(__LC_CPU_TIMER_SAVE_AREA, offsetof(struct _lowcore, cpu_timer_save_area));
@@ -156,11 +172,14 @@ int main(void)
 	DEFINE(__LC_PASTE, offsetof(struct _lowcore, paste));
 	DEFINE(__LC_FP_CREG_SAVE_AREA, offsetof(struct _lowcore, fpt_creg_save_area));
 	DEFINE(__LC_LAST_BREAK, offsetof(struct _lowcore, breaking_event_addr));
+	DEFINE(__LC_PERCPU_OFFSET, offsetof(struct _lowcore, percpu_offset));
 	DEFINE(__LC_VDSO_PER_CPU, offsetof(struct _lowcore, vdso_per_cpu_data));
 	DEFINE(__LC_GMAP, offsetof(struct _lowcore, gmap));
 	DEFINE(__LC_PGM_TDB, offsetof(struct _lowcore, pgm_tdb));
 	DEFINE(__THREAD_trap_tdb, offsetof(struct task_struct, thread.trap_tdb));
 	DEFINE(__GMAP_ASCE, offsetof(struct gmap, asce));
+	DEFINE(__SIE_PROG0C, offsetof(struct kvm_s390_sie_block, prog0c));
+	DEFINE(__SIE_PROG20, offsetof(struct kvm_s390_sie_block, prog20));
 #endif /* CONFIG_32BIT */
 	return 0;
 }

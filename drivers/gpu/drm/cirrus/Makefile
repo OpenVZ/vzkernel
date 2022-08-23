@@ -1,4 +1,5 @@
 ccflags-y := -Iinclude/drm
+ccflags-y += -include drm/drm_backport.h
 cirrus-y  := cirrus_main.o cirrus_mode.o \
 	cirrus_drv.o cirrus_fbdev.o cirrus_ttm.o
 

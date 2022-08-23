@@ -40,6 +40,7 @@ cacheit=
 binary=
 gzip=.gz
 pie=
+format=
 
 # cross-compilation prefix
 CROSS=
@@ -136,6 +137,36 @@ if [ -z "$kernel" ]; then
     kernel=vmlinux
 fi
 
+elfformat="`${CROSS}objdump -p "$kernel" | grep 'file format' | awk '{print $4}'`"
+case "$elfformat" in
+    elf64-powerpcle)	format=elf64lppc	;;
+    elf64-powerpc)	format=elf32ppc	;;
+    elf32-powerpc)	format=elf32ppc	;;
+esac
+
+ld_version()
+{
+    # Poached from scripts/ld-version.sh, but we don't want to call that because
+    # this script (wrapper) is distributed separately from the kernel source.
+    # Extract linker version number from stdin and turn into single number.
+    awk '{
+	gsub(".*\\)", "");
+	gsub(".*version ", "");
+	gsub("-.*", "");
+	split($1,a, ".");
+	print a[1]*100000000 + a[2]*1000000 + a[3]*10000;
+	exit
+    }'
+}
+
+# Do not include PT_INTERP segment when linking pie. Non-pie linking
+# just ignores this option.
+LD_VERSION=$(${CROSS}ld --version | ld_version)
+LD_NO_DL_MIN_VERSION=$(echo 2.26 | ld_version)
+if [ "$LD_VERSION" -ge "$LD_NO_DL_MIN_VERSION" ] ; then
+	nodl="--no-dynamic-linker"
+fi
+
 platformo=$object/"$platform".o
 lds=$object/zImage.lds
 ext=strip
@@ -147,21 +178,33 @@ link_address='0x400000'
 make_space=y
 
 case "$platform" in
+of)
+    platformo="$object/of.o $object/epapr.o"
+    make_space=n
+    ;;
 pseries)
-    platformo=$object/of.o
+    platformo="$object/pseries-head.o $object/of.o $object/epapr.o"
     link_address='0x4000000'
+    if [ "$format" != "elf32ppc" ]; then
+	link_address=
+	pie=-pie
+    fi
+    make_space=n
     ;;
 maple)
-    platformo=$object/of.o
+    platformo="$object/of.o $object/epapr.o"
     link_address='0x400000'
+    make_space=n
     ;;
 pmac|chrp)
-    platformo=$object/of.o
+    platformo="$object/of.o $object/epapr.o"
+    make_space=n
     ;;
 coff)
-    platformo="$object/crt0.o $object/of.o"
+    platformo="$object/crt0.o $object/of.o $object/epapr.o"
     lds=$object/zImage.coff.lds
     link_address='0x500000'
+    make_space=n
     pie=
     ;;
 miboot|uboot*)
@@ -253,6 +296,7 @@ treeboot-iss4xx-mpic)
     platformo="$object/treeboot-iss4xx.o"
     ;;
 epapr)
+    platformo="$object/epapr.o $object/epapr-wrapper.o"
     link_address='0x20000000'
     pie=-pie
     ;;
@@ -366,7 +410,8 @@ if [ "$platform" != "miboot" ]; then
     if [ -n "$link_address" ] ; then
         text_start="-Ttext $link_address"
     fi
-    ${CROSS}ld -m elf32ppc -T $lds $text_start $pie -o "$ofile" \
+#link everything
+    ${CROSS}ld -m $format -T $lds $text_start $pie $nodl -o "$ofile" \
 	$platformo $tmp $object/wrapper.a
     rm $tmp
 fi

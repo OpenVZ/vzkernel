@@ -79,25 +79,15 @@ config INTEL_IOP_ADMA
 	help
 	  Enable support for the Intel(R) IOP Series RAID engines.
 
-config DW_DMAC
-	tristate "Synopsys DesignWare AHB DMA support"
-	depends on GENERIC_HARDIRQS
+source "drivers/dma/dw/Kconfig"
+
+config IDMA64
+	tristate "Intel integrated DMA 64-bit support"
 	select DMA_ENGINE
-	default y if CPU_AT32AP7000
+	select DMA_VIRTUAL_CHANNELS
 	help
-	  Support the Synopsys DesignWare AHB DMA controller.  This
-	  can be integrated in chips such as the Atmel AT32ap7000.
-
-config DW_DMAC_BIG_ENDIAN_IO
-	bool "Use big endian I/O register access"
-	default y if AVR32
-	depends on DW_DMAC
-	help
-	  Say yes here to use big endian I/O access when reading and writing
-	  to the DMA controller registers. This is needed on some platforms,
-	  like the Atmel AVR32 architecture.
-
-	  If unsure, use the default setting.
+	  Enable DMA support for Intel Low Power Subsystem such as found on
+	  Intel Skylake PCH.
 
 config AT_HDMAC
 	tristate "Atmel AHB DMA support"
@@ -329,16 +319,9 @@ config DMA_OF
 comment "DMA Clients"
 	depends on DMA_ENGINE
 
-config NET_DMA
-	bool "Network: TCP receive copy offload"
+config NET_DMA_RH_KABI
+	bool "Preserve Red Hat kABI after NET_DMA removal"
 	depends on DMA_ENGINE && NET
-	default (INTEL_IOATDMA || FSL_DMA)
-	help
-	  This enables the use of DMA engines in the network stack to
-	  offload receive copy-to-user operations, freeing CPU cycles.
-
-	  Say Y here if you enabled INTEL_IOATDMA or FSL_DMA, otherwise
-	  say N.
 
 config ASYNC_TX_DMA
 	bool "Async_tx: Offload support for the async_tx api"

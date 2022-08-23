@@ -36,6 +36,9 @@ struct dst_ops {
 
 	struct kmem_cache	*kmem_cachep;
 
+	RH_KABI_FILL_HOLE(void	(*confirm_neigh)(const struct dst_entry *dst,
+						 const void *daddr))
+
 	struct percpu_counter	pcpuc_entries ____cacheline_aligned_in_smp;
 };
 
@@ -63,7 +66,7 @@ static inline void dst_entries_add(struct dst_ops *dst, int val)
 
 static inline int dst_entries_init(struct dst_ops *dst)
 {
-	return percpu_counter_init(&dst->pcpuc_entries, 0);
+	return percpu_counter_init(&dst->pcpuc_entries, 0, GFP_KERNEL);
 }
 
 static inline void dst_entries_destroy(struct dst_ops *dst)
