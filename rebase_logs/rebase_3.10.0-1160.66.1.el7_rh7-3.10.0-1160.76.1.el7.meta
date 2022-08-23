@@ -1,0 +1,26 @@
+# command:
+# git-check-rebase --meta rebase_3.10.0-1160.66.1.el7_rh7-3.10.0-1160.76.1.el7.meta --rows-hide-level show_all --columns full vz7.188.x:rh7-3.10.0-1160.66.1.el7..rh7-3.10.0-1160.66.1.vz7.188.11 vz7.189.x:rh7-3.10.0-1160.76.1.el7..2a709cd369f2 > rebase_3.10.0-1160.66.1.el7_rh7-3.10.0-1160.76.1.el7.log
+#
+
+drop:
+OpenVZ kernel rh7-3.10.0-1160.66.1.vz7.188.11
+
+###################################################################
+ok:
+ms/mm: per-thread vma caching
+=mm: per-thread vma caching
+
+ve: initial patch
+  (two commits with identical subject - to be merged on next rebase)
+
+# context
+ve: Add VZVERSION suffix to kernel release
+sched: Add cpulimit base interfaces
+sched: other changes
+ve/sched: port vcpu hotslice
+sched: Port cpustat related patches
+ubc: initial patch
+ms/mm: memcontrol: fold mem_cgroup_do_charge()
+mm/memcg: reclaim memory on reaching kmem limit.
+Makefile: Define the default EXTRAVERSION value
+
