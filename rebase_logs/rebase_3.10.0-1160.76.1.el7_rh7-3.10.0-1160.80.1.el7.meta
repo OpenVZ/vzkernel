@@ -1,0 +1,20 @@
+# commands:
+# git-check-rebase --meta rebase_3.10.0-1160.76.1.el7_rh7-3.10.0-1160.80.1.el7.meta --rows-hide-level show_all --columns full vz7.189.x:rh7-3.10.0-1160.76.1.el7..rh7-3.10.0-1160.76.1.vz7.189.9 vz7.190.x:rh7-3.10.0-1160.80.1.el7..c5e8f6f89313 --rows-hide-level hide_equal
+#
+# git-check-rebase --meta rebase_3.10.0-1160.76.1.el7_rh7-3.10.0-1160.80.1.el7.meta --rows-hide-level show_all --columns full vz7.189.x:rh7-3.10.0-1160.76.1.el7..rh7-3.10.0-1160.76.1.vz7.189.9 vz7.190.x:rh7-3.10.0-1160.80.1.el7..c5e8f6f89313 > rebase_3.10.0-1160.76.1.el7_rh7-3.10.0-1160.80.1.el7.log
+#
+
+drop:
+OpenVZ kernel rh7-3.10.0-1160.76.1.vz7.189.9
+
+###################################################################
+ok:
+
+# context
+ve: Add VZVERSION suffix to kernel release
+ve: initial patch
+ms/x86_64: add KASan support
+arch/x86: introduce cpuid override
+ms/kernel: add kcov code coverage
+ms/objtool: Fix memory leak in decode_instructions()
+Makefile: Define the default EXTRAVERSION value
