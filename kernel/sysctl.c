@@ -119,6 +119,9 @@ extern int sysctl_nr_trim_pages;
 
 int ve_allow_module_load = 1;
 EXPORT_SYMBOL(ve_allow_module_load);
+int __read_mostly lazytime_default = 1;
+EXPORT_SYMBOL(lazytime_default);
+
 int trusted_exec = 0;
 static int __init set_trusted_exec(char *str)
 {
@@ -1743,6 +1746,15 @@ static struct ctl_table fs_table[] = {
 		.maxlen		= sizeof(unsigned),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
+	},
+        {
+		.procname       = "lazytime_default",
+		.data           = &lazytime_default,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = &proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
 	},
 	{
 		.procname	= "inode-nr",
