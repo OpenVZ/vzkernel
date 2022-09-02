@@ -10,6 +10,7 @@
 #include <linux/virtio_balloon.h>
 #include <linux/swap.h>
 #include <linux/workqueue.h>
+#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/module.h>
@@ -724,6 +725,55 @@ static void report_free_page_func(struct work_struct *work)
 	}
 }
 
+/*
+ * DEBUGFS Interface
+ */
+#ifdef CONFIG_DEBUG_FS
+
+static int virtio_balloon_debug_show(struct seq_file *f, void *offset)
+{
+	struct virtio_balloon *vb = f->private;
+	u64 inflated_kb = vb->num_pages << (VIRTIO_BALLOON_PFN_SHIFT - 10);
+	u64 inflated_total = 0;
+	u64 inflated_free = 0;
+
+	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_DEFLATE_ON_OOM))
+		inflated_free = inflated_kb;
+	else
+		inflated_total = inflated_kb;
+
+	seq_printf(f, "InflatedTotal: %lld kB\n", inflated_total);
+	seq_printf(f, "InflatedFree: %lld kB\n", inflated_free);
+
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(virtio_balloon_debug);
+
+static void  virtio_balloon_debugfs_init(struct virtio_balloon *b)
+{
+	debugfs_create_file("virtio-balloon", 0444, NULL, b,
+			&virtio_balloon_debug_fops);
+}
+
+static void  virtio_balloon_debugfs_exit(struct virtio_balloon *b)
+{
+	debugfs_remove(debugfs_lookup("virtio-balloon", NULL));
+}
+
+#else
+
+static inline void virtio_balloon_debugfs_init(struct virtio_balloon *b)
+{
+}
+
+static inline void virtio_balloon_debugfs_exit(struct virtio_balloon *b)
+{
+}
+
+#endif /* CONFIG_DEBUG_FS */
+
+
 #ifdef CONFIG_BALLOON_COMPACTION
 /*
  * virtballoon_migratepage - perform the balloon page migration on behalf of
@@ -988,6 +1038,8 @@ static int virtballoon_probe(struct virtio_device *vdev)
 
 	if (towards_target(vb))
 		virtballoon_changed(vdev);
+	virtio_balloon_debugfs_init(vb);
+
 	return 0;
 
 out_unregister_oom:
@@ -1028,6 +1080,7 @@ static void virtballoon_remove(struct virtio_device *vdev)
 {
 	struct virtio_balloon *vb = vdev->priv;
 
+	virtio_balloon_debugfs_exit(vb);
 	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_REPORTING))
 		page_reporting_unregister(&vb->pr_dev_info);
 	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_DEFLATE_ON_OOM))
