@@ -150,4 +150,9 @@
 /* Get the valid iova range */
 #define VHOST_VDPA_GET_IOVA_RANGE	_IOR(VHOST_VIRTIO, 0x78, \
 					     struct vhost_vdpa_iova_range)
+
+/* VHOST_BLK specific defines */
+#define VHOST_BLK_SET_BACKEND		_IOW(VHOST_VIRTIO, 0xFF, \
+					     struct vhost_vring_file)
+
 #endif
