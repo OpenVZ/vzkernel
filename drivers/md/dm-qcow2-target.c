@@ -5,6 +5,7 @@
 #include <linux/prandom.h>
 #include <linux/uio.h>
 #include <linux/file.h>
+#include <linux/fs.h>
 
 #include "dm.h"
 #include "dm-qcow2.h"
@@ -123,11 +124,9 @@ void call_rw_iter(struct qcow2 *qcow2, loff_t pos, unsigned int rw,
 	struct file *file = qcow2->file;
 	int ret;
 
+	init_sync_kiocb(iocb, file);
 	iocb->ki_pos = pos;
-	iocb->ki_filp = file;
 	iocb->ki_complete = qcow2_aio_complete;
-	iocb->ki_flags = IOCB_DIRECT;
-	iocb->ki_ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0);
 
 	atomic_set(&qio->aio_ref, 2);
 
