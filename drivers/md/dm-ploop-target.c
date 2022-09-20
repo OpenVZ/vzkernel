@@ -185,19 +185,43 @@ static void ploop_destroy(struct ploop *ploop)
 	kfree(ploop);
 }
 
-static struct file *ploop_get_delta_file(int fd)
+static struct file *ploop_get_delta_file(struct ploop *ploop, int fd)
 {
+	struct dm_target *ti = ploop->ti;
 	struct file *file;
+	int ret;
 
 	file = fget(fd);
-	if (!file)
-		return ERR_PTR(-ENOENT);
+	if (!file) {
+		ti->error = "No image file set";
+		ret = -ENOENT;
+		goto out;
+	}
+
+	if (!S_ISREG(file_inode(file)->i_mode)) {
+		ti->error = "Image file is not a regular file";
+		ret = -EINVAL;
+		goto out_err;
+	}
+
+	if (!(file->f_flags & O_DIRECT)) {
+		ti->error = "Image file is opened in cached mode";
+		ret = -EINVAL;
+		goto out_err;
+	}
+
 	if (!(file->f_mode & FMODE_READ)) {
-		fput(file);
-		return ERR_PTR(-EBADF);
+		ti->error = "Image file is opened with READ flag missing";
+		ret = -EACCES;
+		goto out_err;
 	}
 
 	return file;
+out_err:
+	fput(file);
+out:
+	return ERR_PTR(ret);
+
 }
 ALLOW_ERROR_INJECTION(ploop_get_delta_file, ERRNO_NULL);
 
@@ -274,7 +298,7 @@ static int ploop_add_deltas_stack(struct ploop *ploop, char **argv, int argc)
 		if (kstrtos32(arg, 10, &delta_fd) < 0)
 			goto out;
 
-		file = ploop_get_delta_file(delta_fd);
+		file = ploop_get_delta_file(ploop, delta_fd);
 		if (IS_ERR(file)) {
 			ret = PTR_ERR(file);
 			goto out;
