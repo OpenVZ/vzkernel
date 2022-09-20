@@ -673,16 +673,28 @@ static int qcow2_attach_file(struct dm_target *ti, struct qcow2_target *tgt,
 	fmode_t mode;
 
 	file = qcow2->file = fget(fd);
-	if (!file) /* In case of further errors, cleanup is made by caller */
+	/* In case of further errors, cleanup is made by caller */
+	if (!file) {
+		ti->error = "No image file set";
 		return -ENOENT;
+	}
 
-	if (!S_ISREG(file_inode(file)->i_mode))
+	if (!S_ISREG(file_inode(file)->i_mode)) {
+		ti->error = "Image file is not a regular file";
 		return -EINVAL;
+	}
+
+	if (!(file->f_flags & O_DIRECT)) {
+		ti->error = "Image file is opened in cached mode";
+		return -EINVAL;
+	}
 
 	mode = tgt->top != qcow2 ? FMODE_READ : dm_table_get_mode(ti->table);
 	mode &= (FMODE_READ|FMODE_WRITE);
-	if (mode & ~(file->f_mode & (FMODE_READ|FMODE_WRITE)))
+	if (mode & ~(file->f_mode & (FMODE_READ|FMODE_WRITE))) {
+		ti->error = "Image file is opened in a wrong mode";
 		return -EACCES;
+	}
 
 	return 0;
 }
@@ -809,7 +821,8 @@ static int qcow2_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 		ret = qcow2_attach_file(ti, tgt, qcow2, fd);
 		if (ret) {
-			ti->error = "Error attaching file";
+			if (!ti->error)
+				ti->error = "Error attaching file";
 			goto err;
 		}
 
