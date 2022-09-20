@@ -15,6 +15,7 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/file.h>
+#include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/uio.h>
@@ -56,11 +57,9 @@ void ploop_call_rw_iter(struct file *file, loff_t pos, unsigned rw,
 	struct kiocb *iocb = &pio->iocb;
 	int ret;
 
+	init_sync_kiocb(iocb, file);
 	iocb->ki_pos = pos;
-	iocb->ki_filp = file;
 	iocb->ki_complete = ploop_aio_complete;
-	iocb->ki_flags = IOCB_DIRECT;
-	iocb->ki_ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0);
 
 	atomic_set(&pio->aio_ref, 2);
 
