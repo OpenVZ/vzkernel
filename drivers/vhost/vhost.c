@@ -284,7 +284,7 @@ void vhost_work_flush_vq(struct vhost_virtqueue *vq)
 {
 	struct vhost_worker *w = READ_ONCE(vq->worker);
 
-	if (!w)
+	if (!w || !w->worker)
 		return;
 
 	vhost_worker_flush(w);
