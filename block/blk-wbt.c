@@ -124,15 +124,11 @@ static void rwb_wake_all(struct rq_wb *rwb)
 	}
 }
 
-void __wbt_done(struct rq_wb *rwb, enum wbt_flags wb_acct)
+static void wbt_rqw_done(struct rq_wb *rwb, struct rq_wait *rqw,
+			 enum wbt_flags wb_acct)
 {
-	struct rq_wait *rqw;
 	int inflight, limit;
 
-	if (!(wb_acct & WBT_TRACKED))
-		return;
-
-	rqw = get_rq_wait(rwb, wb_acct & WBT_KSWAPD);
 	inflight = atomic_dec_return(&rqw->inflight);
 
 	/*
@@ -165,6 +161,17 @@ void __wbt_done(struct rq_wb *rwb, enum wbt_flags wb_acct)
 		if (!inflight || diff >= rwb->wb_background / 2)
 			wake_up(&rqw->wait);
 	}
+}
+
+void __wbt_done(struct rq_wb *rwb, enum wbt_flags wb_acct)
+{
+	struct rq_wait *rqw;
+
+	if (!(wb_acct & WBT_TRACKED))
+		return;
+
+	rqw = get_rq_wait(rwb, wb_acct & WBT_KSWAPD);
+	wbt_rqw_done(rwb, rqw, wb_acct);
 }
 
 /*
