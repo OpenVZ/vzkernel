@@ -159,7 +159,7 @@ static void wbt_rqw_done(struct rq_wb *rwb, struct rq_wait *rqw,
 		int diff = limit - inflight;
 
 		if (!inflight || diff >= rwb->wb_background / 2)
-			wake_up(&rqw->wait);
+			wake_up_all(&rqw->wait);
 	}
 }
 
@@ -518,26 +518,76 @@ static inline unsigned int get_limit(struct rq_wb *rwb, unsigned long rw)
 	return limit;
 }
 
+struct wbt_wait_data {
+	struct __wait_queue wq;
+	struct task_struct *task;
+	struct rq_wb *rwb;
+	struct rq_wait *rqw;
+	unsigned long rw;
+	bool got_token;
+};
+
+static int wbt_wake_function(struct __wait_queue *curr, unsigned int mode,
+			     int wake_flags, void *key)
+{
+	struct wbt_wait_data *data = container_of(curr, struct wbt_wait_data,
+							wq);
+
+	/*
+	 * If we fail to get a budget, return -1 to interrupt the wake up
+	 * loop in __wake_up_common.
+	 */
+	if (!rq_wait_inc_below(data->rqw, get_limit(data->rwb, data->rw)))
+		return -1;
+
+	data->got_token = true;
+	list_del_init(&curr->task_list);
+	wake_up_process(data->task);
+	return 1;
+}
+
 /*
  * Block if we will exceed our limit, or if we are currently waiting for
  * the timer to kick off queuing again.
  */
-static void __wbt_wait(struct rq_wb *rwb, unsigned long rw, spinlock_t *lock)
+static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
+		       unsigned long rw, spinlock_t *lock)
 {
 	struct rq_wait *rqw = get_rq_wait(rwb, current_is_kswapd());
-	DECLARE_WAITQUEUE(wait, current);
+	struct wbt_wait_data data = {
+		.wq = {
+			.func = wbt_wake_function,
+			.task_list = LIST_HEAD_INIT(data.wq.task_list),
+		},
+		.task = current,
+		.rwb = rwb,
+		.rqw = rqw,
+		.rw = rw,
+	};
 	bool has_sleeper;
 
 	has_sleeper = wq_has_sleeper(&rqw->wait);
 	if (!has_sleeper && rq_wait_inc_below(rqw, get_limit(rwb, rw)))
 		return;
 
-	add_wait_queue_exclusive(&rqw->wait, &wait);
+	prepare_to_wait_exclusive(&rqw->wait, &data.wq, TASK_UNINTERRUPTIBLE);
 	do {
-		set_current_state(TASK_UNINTERRUPTIBLE);
-
-		if (!has_sleeper && rq_wait_inc_below(rqw, get_limit(rwb, rw)))
+		if (data.got_token)
 			break;
+
+		if (!has_sleeper &&
+		    rq_wait_inc_below(rqw, get_limit(rwb, rw))) {
+			finish_wait(&rqw->wait, &data.wq);
+
+			/*
+			 * We raced with wbt_wake_function() getting a token,
+			 * which means we now have two. Put our local token
+			 * and wake anyone else potentially waiting for one.
+			 */
+			if (data.got_token)
+				wbt_rqw_done(rwb, rqw, wb_acct);
+			break;
+		}
 
 		if (lock)
 			spin_unlock_irq(lock);
@@ -550,8 +600,7 @@ static void __wbt_wait(struct rq_wb *rwb, unsigned long rw, spinlock_t *lock)
 		has_sleeper = false;
 	} while (1);
 
-	__set_current_state(TASK_RUNNING);
-	remove_wait_queue(&rqw->wait, &wait);
+	finish_wait(&rqw->wait, &data.wq);
 }
 
 static inline bool wbt_should_throttle(struct rq_wb *rwb, struct bio *bio)
@@ -595,13 +644,13 @@ unsigned int wbt_wait(struct rq_wb *rwb, struct bio *bio, spinlock_t *lock)
 		return ret;
 	}
 
-	__wbt_wait(rwb, bio->bi_rw, lock);
+	if (current_is_kswapd())
+		ret |= WBT_KSWAPD;
+
+	__wbt_wait(rwb, ret, bio->bi_rw, lock);
 
 	if (!blk_stat_is_active(rwb->cb))
 		rwb_arm_timer(rwb);
-
-	if (current_is_kswapd())
-		ret |= WBT_KSWAPD;
 
 	return ret | WBT_TRACKED;
 }
