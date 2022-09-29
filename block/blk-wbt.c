@@ -598,7 +598,7 @@ static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
 		if (lock)
 			spin_lock_irq(lock);
 
-		has_sleeper = false;
+		has_sleeper = true;
 	} while (1);
 
 	finish_wait(&rqw->wait, &data.wq);
