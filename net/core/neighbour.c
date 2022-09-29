@@ -244,7 +244,7 @@ static void pneigh_queue_purge(struct sk_buff_head *list, struct net *net)
 			__skb_unlink(skb, list);
 
 			dev_put(dev);
-			dev_kfree_skb_irq(skb);
+			kfree_skb(skb);
 		}
 		skb = skb_next;
 	}
