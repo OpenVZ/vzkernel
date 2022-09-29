@@ -124,6 +124,19 @@ static inline int waitqueue_active(wait_queue_head_t *q)
 }
 
 /**
+ * wq_has_single_sleeper - check if there is only one sleeper
+ * @wq_head: wait queue head
+ *
+ * Returns true of wq_head has only one sleeper on the list.
+ *
+ * Please refer to the comment for waitqueue_active.
+ */
+static inline bool wq_has_single_sleeper(wait_queue_head_t *q)
+{
+	return list_is_singular(&q->task_list);
+}
+
+/**
  * wq_has_sleeper - check if there are any waiting processes
  * @wq: wait queue head
  *
