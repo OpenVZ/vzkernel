@@ -43,6 +43,7 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <asm/hypervisor.h>
+#include <linux/balloon_compaction.h>
 
 MODULE_AUTHOR("VMware, Inc.");
 MODULE_DESCRIPTION("VMware Memory Control (Balloon) Driver");
@@ -916,6 +917,7 @@ static void vmballoon_inflate(struct vmballoon *b)
 
 	vmballoon_release_refused_pages(b, true);
 	vmballoon_release_refused_pages(b, false);
+	balloon_set_inflated_free(atomic64_read(&b->size) << 2);
 }
 
 /*
@@ -952,8 +954,10 @@ static void vmballoon_deflate(struct vmballoon *b)
 				error = b->ops->unlock(b, num_pages,
 						is_2m_pages, &b->target);
 				num_pages = 0;
-				if (error)
+				if (error) {
+					balloon_set_inflated_free(atomic64_read(&b->size) << 2);
 					return;
+				}
 			}
 
 			cond_resched();
@@ -962,6 +966,7 @@ static void vmballoon_deflate(struct vmballoon *b)
 		if (num_pages > 0)
 			b->ops->unlock(b, num_pages, is_2m_pages, &b->target);
 	}
+	balloon_set_inflated_free(atomic64_read(&b->size) << 2);
 }
 
 static const struct vmballoon_ops vmballoon_basic_ops = {
