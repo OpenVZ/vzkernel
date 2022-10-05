@@ -9,6 +9,9 @@
 #include <linux/nmi.h>
 #include <linux/quicklist.h>
 #include <linux/module.h>
+#ifdef CONFIG_MEMORY_BALLOON
+#include <linux/balloon_compaction.h>
+#endif
 
 void show_mem(unsigned int filter)
 {
@@ -46,6 +49,11 @@ void show_mem(unsigned int filter)
 #ifdef CONFIG_QUICKLIST
 	printk("%lu pages in pagetable cache\n",
 		quicklist_total_size());
+#endif
+#ifdef CONFIG_MEMORY_BALLOON
+       printk("Balloon InflatedTotal:%ldkB InflatedFree:%ldkB\n",
+               atomic_long_read(&mem_balloon_inflated_total_kb),
+               atomic_long_read(&mem_balloon_inflated_free_kb));
 #endif
 }
 EXPORT_SYMBOL(show_mem);
