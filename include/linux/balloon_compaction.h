@@ -246,4 +246,11 @@ static inline struct page *balloon_page_pop(struct list_head *pages)
 	list_del(&page->lru);
 	return page;
 }
+
+extern atomic_long_t mem_balloon_inflated_total_kb;
+extern atomic_long_t mem_balloon_inflated_free_kb;
+
+void balloon_set_inflated_total(long inflated_kb);
+void balloon_set_inflated_free(long inflated_kb);
+
 #endif /* _LINUX_BALLOON_COMPACTION_H */
