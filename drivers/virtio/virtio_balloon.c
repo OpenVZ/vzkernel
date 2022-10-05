@@ -341,6 +341,7 @@ static inline s64 towards_target(struct virtio_balloon *vb)
 static void update_balloon_size(struct virtio_balloon *vb)
 {
 	u32 actual = vb->num_pages;
+	long inflated_kb = actual << (VIRTIO_BALLOON_PFN_SHIFT - 10);
 
 	/* Legacy balloon config space is LE, unlike all other devices. */
 	if (!virtio_has_feature(vb->vdev, VIRTIO_F_VERSION_1))
@@ -348,6 +349,10 @@ static void update_balloon_size(struct virtio_balloon *vb)
 
 	virtio_cwrite(vb->vdev, struct virtio_balloon_config, actual,
 		      &actual);
+	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_DEFLATE_ON_OOM))
+		balloon_set_inflated_free(inflated_kb);
+	else
+		balloon_set_inflated_total(inflated_kb);
 }
 
 /*
