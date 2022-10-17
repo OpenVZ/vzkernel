@@ -1499,6 +1499,8 @@ static void vmballoon_work(struct work_struct *work)
 	}
 
 	up_read(&b->conf_sem);
+	if (change != 0)
+		balloon_set_inflated_free(atomic64_read(&b->size) << 2);
 
 	/*
 	 * We are using a freezable workqueue so that balloon operations are
