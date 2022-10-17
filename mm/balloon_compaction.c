@@ -255,4 +255,19 @@ const struct movable_operations balloon_mops = {
 };
 EXPORT_SYMBOL_GPL(balloon_mops);
 
+atomic_long_t mem_balloon_inflated_total_kb = ATOMIC_LONG_INIT(0);
+atomic_long_t mem_balloon_inflated_free_kb = ATOMIC_LONG_INIT(0);
+
+void balloon_set_inflated_total(long inflated_kb)
+{
+	atomic_long_set(&mem_balloon_inflated_total_kb, inflated_kb);
+}
+EXPORT_SYMBOL(balloon_set_inflated_total);
+
+void balloon_set_inflated_free(long inflated_kb)
+{
+	atomic_long_set(&mem_balloon_inflated_free_kb, inflated_kb);
+}
+EXPORT_SYMBOL(balloon_set_inflated_free);
+
 #endif /* CONFIG_BALLOON_COMPACTION */
