@@ -26,6 +26,7 @@
 #include <linux/percpu_counter.h>
 #include <linux/page_reporting.h>
 
+#include <linux/balloon_compaction.h>
 #include <linux/hyperv.h>
 #include <asm/hyperv-tlfs.h>
 
@@ -1284,6 +1285,14 @@ static unsigned int alloc_balloon_pages(struct hv_dynmem_device *dm,
 	return i * alloc_unit;
 }
 
+static void report_ballooned_pages(struct hv_dynmem_device *dm)
+{
+	u32 actual = dm->num_pages_ballooned;
+	long inflated_kb = actual << (HV_HYP_PAGE_SHIFT - 10);
+
+	balloon_set_inflated_total(inflated_kb);
+}
+
 static void balloon_up(struct work_struct *dummy)
 {
 	unsigned int num_pages = dm_device.balloon_wrk.num_pages;
@@ -1372,6 +1381,7 @@ static void balloon_up(struct work_struct *dummy)
 		}
 	}
 
+	report_ballooned_pages(&dm_device);
 }
 
 static void balloon_down(struct hv_dynmem_device *dm,
@@ -1390,6 +1400,8 @@ static void balloon_down(struct hv_dynmem_device *dm,
 
 	pr_debug("Freed %u ballooned pages.\n",
 		prev_pages_ballooned - dm->num_pages_ballooned);
+
+	report_ballooned_pages(dm);
 
 	if (req->more_pages == 1)
 		return;
