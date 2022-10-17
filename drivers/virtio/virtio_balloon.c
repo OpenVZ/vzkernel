@@ -458,10 +458,15 @@ static void virtballoon_changed(struct virtio_device *vdev)
 static void update_balloon_size(struct virtio_balloon *vb)
 {
 	u32 actual = vb->num_pages;
+	long inflated_kb = actual << (VIRTIO_BALLOON_PFN_SHIFT - 10);
 
 	/* Legacy balloon config space is LE, unlike all other devices. */
 	virtio_cwrite_le(vb->vdev, struct virtio_balloon_config, actual,
 			 &actual);
+	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_DEFLATE_ON_OOM))
+		balloon_set_inflated_free(inflated_kb);
+	else
+		balloon_set_inflated_total(inflated_kb);
 }
 
 static void update_balloon_stats_func(struct work_struct *work)
