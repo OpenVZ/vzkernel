@@ -7,6 +7,9 @@
 
 #include <linux/mm.h>
 #include <linux/cma.h>
+#ifdef CONFIG_MEMORY_BALLOON
+#include <linux/balloon_compaction.h>
+#endif
 
 void show_mem(unsigned int filter, nodemask_t *nodemask)
 {
@@ -40,5 +43,10 @@ void show_mem(unsigned int filter, nodemask_t *nodemask)
 #endif
 #ifdef CONFIG_MEMORY_FAILURE
 	printk("%lu pages hwpoisoned\n", atomic_long_read(&num_poisoned_pages));
+#endif
+#ifdef CONFIG_MEMORY_BALLOON
+	printk("Balloon InflatedTotal:%ldkB InflatedFree:%ldkB\n",
+		atomic_long_read(&mem_balloon_inflated_total_kb),
+		atomic_long_read(&mem_balloon_inflated_free_kb));
 #endif
 }
