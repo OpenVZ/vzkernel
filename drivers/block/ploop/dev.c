@@ -76,6 +76,8 @@ static DEFINE_MUTEX(ploop_devices_mutex);
 static LIST_HEAD(ploop_formats);
 static DEFINE_MUTEX(ploop_formats_mutex);
 
+extern struct static_key ploop_standby_check;
+
 int ploop_register_format(struct ploop_delta_ops * ops)
 {
 	mutex_lock(&ploop_formats_mutex);
@@ -985,9 +987,11 @@ static void ploop_make_request(struct request_queue *q, struct bio *bio)
 	hd_struct_put(part);
 	part_stat_unlock();
 
-	if (blk_queue_standby(plo->queue)) {
-		BIO_ENDIO(q, bio, -EIO);
-		return;
+	if (static_key_false(&ploop_standby_check)) {
+		if (blk_queue_standby(plo->queue)) {
+			BIO_ENDIO(q, bio, -EIO);
+			return;
+		}
 	}
 
 	if (unlikely(bio->bi_size == 0)) {
