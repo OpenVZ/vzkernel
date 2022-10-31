@@ -23,6 +23,7 @@
 
 #define KAIO_MAX_PAGES_PER_REQ 32	  /* 128 KB */
 
+extern struct static_key ploop_standby_check;
 /* This will be used as flag "ploop_kaio_open() succeeded" */
 static struct extent_map_tree
 {
@@ -116,6 +117,9 @@ static void check_standby_mode(long res, struct ploop_device *plo) {
 	struct request_queue *q = plo->queue;
 	int prev;
 
+	if (!blk_queue_standby_en(q))
+		return;
+
 	/* move to standby if delta lease was stolen or mount is gone */
 	if (res != -EBUSY && res != -ENOTCONN && res != -EIO) {
 		return;
@@ -146,8 +150,8 @@ static void kaio_rw_aio_complete(u64 data, long res)
 		bio_list_for_each(b, &preq->bl)
 			printk(" bio=%p: bi_sector=%ld bi_size=%d\n",
 			       b, b->bi_sector, b->bi_size);
-
-		check_standby_mode(res, preq->plo);
+		if (static_key_false(&ploop_standby_check))
+			check_standby_mode(res, preq->plo);
 		PLOOP_REQ_SET_ERROR(preq, res);
 	}
 
@@ -560,7 +564,8 @@ static int kaio_fsync_thread(void * data)
 				       "on ploop%d)\n",
 				       err, io->files.inode->i_ino,
 				       io2level(io), plo->index);
-				check_standby_mode(err, plo);
+				if (static_key_false(&ploop_standby_check))
+					check_standby_mode(err, plo);
 				PLOOP_REQ_SET_ERROR(preq, -EIO);
 			} else if (preq->req_rw & REQ_FLUSH) {
 				BUG_ON(!preq->req_size);
