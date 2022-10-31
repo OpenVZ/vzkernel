@@ -357,6 +357,15 @@ static ssize_t queue_wb_lat_store(struct request_queue *q, const char *page,
 	wbt_update_limits(q->rq_wb);
 	return count;
 }
+
+static ssize_t queue_standby_show(struct request_queue *q, char *page)
+{
+	if (!blk_queue_standby_en(q))
+		return sprintf(page, "not supported\n");
+	return sprintf(page, "%s\n",
+		blk_queue_standby(q) ? "on" : "off");
+}
+
 static struct queue_sysfs_entry queue_requests_entry = {
 	.attr = {.name = "nr_requests", .mode = S_IRUGO | S_IWUSR },
 	.show = queue_requests_show,
@@ -488,6 +497,11 @@ static struct queue_sysfs_entry queue_wb_lat_entry = {
 	.store = queue_wb_lat_store,
 };
 
+static struct queue_sysfs_entry queue_standby_entry = {
+	.attr = {.name = "standby", .mode = S_IRUGO },
+	.show = queue_standby_show,
+};
+
 static struct attribute *default_attrs[] = {
 	&queue_requests_entry.attr,
 	&queue_ra_entry.attr,
@@ -513,6 +527,7 @@ static struct attribute *default_attrs[] = {
 	&queue_iostats_entry.attr,
 	&queue_random_entry.attr,
 	&queue_wb_lat_entry.attr,
+	&queue_standby_entry.attr,
 	NULL,
 };
 

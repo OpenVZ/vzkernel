@@ -76,6 +76,14 @@ MODULE_PARM_DESC(ve_allow_ioctl_fitrim,
 		 "Allow ioctl(FITRIM) from inside VE. Only ext4 is supported now");
 EXPORT_SYMBOL(ve_allow_ioctl_fitrim);
 
+/*
+ * This static key is used to enable queue standby flags checks in ploop code.
+ * These checks used by drivers that support managing the queue flags.
+ * But to avoid creating inter module dependencies leave key here.
+ */
+struct static_key ploop_standby_check = STATIC_KEY_INIT_FALSE;
+EXPORT_SYMBOL(ploop_standby_check);
+
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
 
 struct ve_struct ve0 = {

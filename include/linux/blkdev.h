@@ -643,6 +643,7 @@ struct request_queue {
 #define QUEUE_FLAG_SCSI_PASSTHROUGH 30	/* queue supports SCSI commands */
 
 #define QUEUE_FLAG_STANDBY     31	/* unable to handle read/write requests */
+#define QUEUE_FLAG_STANDBY_EN  32	/* enable standby queue flag */
 
 #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_STACKABLE)	|	\
@@ -739,6 +740,7 @@ static inline void queue_flag_clear(unsigned int flag, struct request_queue *q)
 #define blk_queue_scsi_passthrough(q)	\
 	test_bit(QUEUE_FLAG_SCSI_PASSTHROUGH, &(q)->queue_flags)
 #define blk_queue_standby(q)	test_bit(QUEUE_FLAG_STANDBY, &(q)->queue_flags)
+#define blk_queue_standby_en(q)	test_bit(QUEUE_FLAG_STANDBY_EN, &(q)->queue_flags)
 
 extern int blk_set_preempt_only(struct request_queue *q);
 extern void blk_clear_preempt_only(struct request_queue *q);
