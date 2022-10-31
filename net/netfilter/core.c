@@ -66,6 +66,67 @@ EXPORT_SYMBOL(nf_hooks_needed);
 static DEFINE_MUTEX(nf_hook_mutex);
 #include <net/netfilter/nf_tables.h>
 #include <net/netfilter/nf_nat.h>
+
+/* removal requests are queued in the commit_list, but not acted upon
+ * until after all new rules are in place.
+ *
+ * Therefore, nf_register_net_hook(net, &nat_hook) runs before pending
+ * nf_unregister_net_hook().
+ *
+ * nf_register_net_hook thus fails if a nat hook is already in place
+ * even if the conflicting hook is about to be removed.
+ *
+ * If collision is detected, search commit_log for DELCHAIN matching
+ * the new nat hooknum; if we find one collision is temporary:
+ *
+ * Either transaction is aborted (new/colliding hook is removed), or
+ * transaction is committed (old hook is removed).
+ *
+ * -- OpenVZ specific:
+ * - reworked not to use struct nf_hook_ops "nat_hook" field which is absent
+ * in our kernels.
+ * - rebased to RHEL7 kernel
+ *
+ * Please refer to original commit:
+ * https://github.com/torvalds/linux/commit/ae6153b50f9bf75a4952050f32fe168f68cdd657
+ * ("netfilter: nf_tables: permit second nat hook if colliding hook is going away")
+ */
+static bool nf_tables_allow_nat_conflict(const struct net *net,
+					 const struct nft_base_chain *basechain)
+{
+	const struct nft_trans *trans;
+	const struct nf_hook_ops *ops = &basechain->ops[0];
+	bool ret = false;
+
+	list_for_each_entry(trans, &net->nft.commit_list, list) {
+		const struct nf_hook_ops *pending_ops;
+		struct nft_base_chain *pending_chain;
+		const struct nft_chain *pending;
+
+		if (trans->msg_type != NFT_MSG_NEWCHAIN &&
+		    trans->msg_type != NFT_MSG_DELCHAIN)
+			continue;
+
+		pending = trans->ctx.chain;
+		if (!(pending->flags & NFT_BASE_CHAIN))
+			continue;
+
+		pending_chain = nft_base_chain(pending);
+		pending_ops = &pending_chain->ops[0];
+		if ((pending_chain->type->type == NFT_CHAIN_T_NAT) &&
+		    pending_ops->pf == ops->pf &&
+		    pending_ops->hooknum == ops->hooknum) {
+			/* other hook registration already pending? */
+			if (trans->msg_type == NFT_MSG_NEWCHAIN)
+				return false;
+
+			ret = true;
+		}
+	}
+
+	return ret;
+}
+
 int nf_register_hook(struct nf_hook_ops *reg)
 {
 	struct nf_hook_ops *elem;
@@ -75,11 +136,29 @@ int nf_register_hook(struct nf_hook_ops *reg)
 		if (reg->priority < elem->priority)
 			break;
 		else if ((reg->priority == elem->priority) && reg->is_nft_ops) {
-			const struct nft_chain *c = reg->priv;
-			struct net *net = read_pnet(&nft_base_chain(c)->pnet);
+			const struct nft_chain *c;
+			struct nft_base_chain *basechain;
+			struct net *net;
+
+			/* reg->is_nft_ops is true */
+			c = reg->priv;
+
+			/* to access nft_base_chain(c) in a safe way */
+			if (!(c->flags & NFT_BASE_CHAIN))
+				continue;
+
+			basechain = nft_base_chain(c);
+			net = read_pnet(&basechain->pnet);
+
+			/* we only interested in nat hooks */
+			if (basechain->type->type != NFT_CHAIN_T_NAT)
+				continue;
 
 			/* fail if netns already have enabled nft/ipt nat */
 			if (netns_nat_check(elem, reg->pf, net)) {
+				if (elem->is_nft_ops && nf_tables_allow_nat_conflict(net, basechain))
+					continue;
+
 				mutex_unlock(&nf_hook_mutex);
 				return -EBUSY;
 			}
