@@ -21,6 +21,7 @@
 #include <linux/uio.h>
 #include <linux/error-injection.h>
 #include "dm-ploop.h"
+#include "dm-core.h"
 
 #define DM_MSG_PREFIX "ploop"
 
