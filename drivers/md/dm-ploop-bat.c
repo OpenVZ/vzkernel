@@ -215,12 +215,12 @@ int ploop_setup_metadata(struct ploop *ploop, struct page *page)
 	/* Clusters from start of file to first data block */
 	offset_clusters = SEC_TO_CLU(ploop, le32_to_cpu(m_hdr->m_FirstBlockOffset));
 	if (bat_clusters != offset_clusters) {
-		pr_err("ploop: custom FirstBlockOffset\n");
+		PL_ERR("custom FirstBlockOffset");
 		goto out;
 	}
 	ret = -EBADSLT;
 	if (le64_to_cpu(m_hdr->m_SizeInSectors_v2) < ti->len) {
-		pr_err("ploop: Too short BAT\n");
+		PL_ERR("Too short BAT");
 		goto out;
 	}
 	kunmap(page);
