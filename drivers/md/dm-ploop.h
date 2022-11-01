@@ -10,6 +10,7 @@
 
 #include <linux/device-mapper.h>
 #include <linux/bio.h>
+#include "dm-core.h"
 
 #define PLOOP_MAP_OFFSET 16
 typedef u32 map_index_t;
@@ -540,6 +541,15 @@ static inline void ploop_free_pio(struct ploop *ploop, struct pio *pio)
 {
 	mempool_free(pio, ploop->pio_pool);
 }
+
+static inline const char *ploop_device_name(struct ploop *ploop)
+{
+	return ploop->ti->table->md->disk->disk_name;
+}
+
+#define PL_FMT(fmt) "ploop: %s: " fmt "\n"
+#define PL_ERR(fmt, ...) pr_err(PL_FMT(fmt), ploop_device_name(ploop), ##__VA_ARGS__)
+#define PL_INFO(fmt, ...) pr_info(PL_FMT(fmt), ploop_device_name(ploop), ##__VA_ARGS__)
 
 extern void ploop_md_page_insert(struct ploop *ploop, struct md_page *md);
 extern void ploop_free_md_page(struct md_page *md);
