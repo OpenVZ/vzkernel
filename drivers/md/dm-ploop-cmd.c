@@ -311,13 +311,13 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	/* Read full clu sync */
 	ret = ploop_read_cluster_sync(ploop, pio, dst_clu);
 	if (ret < 0) {
-		pr_err("ploop: reloc: failed read: %d\n", ret);
+		PL_ERR("reloc: failed read: %d", ret);
 		goto out;
 	}
 
 	ret = ploop_prepare_reloc_index_wb(ploop, &md, clu, &new_dst);
 	if (ret < 0) {
-		pr_err("ploop: reloc: can't prepare it: %d\n", ret);
+		PL_ERR("reloc: can't prepare it: %d", ret);
 		goto out;
 	}
 	piwb = md->piwb;
@@ -325,7 +325,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 	/* Write clu to new destination */
 	ret = ploop_write_cluster_sync(ploop, pio, new_dst);
 	if (ret) {
-		pr_err("ploop: reloc: failed write: %d\n", ret);
+		PL_ERR("reloc: failed write: %d", ret);
 		ploop_break_bat_update(ploop, md);
 		goto out;
 	}
@@ -340,7 +340,7 @@ static int ploop_grow_relocate_cluster(struct ploop *ploop,
 
 	ret = blk_status_to_errno(bi_status);
 	if (ret) {
-		pr_err("ploop: reloc: failed md page write: %d\n", ret);
+		PL_ERR("reloc: failed md page write: %d", ret);
 		goto out;
 	}
 
@@ -360,7 +360,7 @@ not_occupied:
 	/* Zero new BAT entries on disk. */
 	ret = ploop_write_zero_cluster_sync(ploop, pio, dst_clu);
 	if (ret)
-		pr_err("ploop: reloc: failed zero: %d\n", ret);
+		PL_ERR("reloc: failed zero: %d", ret);
 out:
 	return ret;
 }
@@ -413,7 +413,7 @@ static int ploop_grow_update_header(struct ploop *ploop,
 		hdr->m_FirstBlockOffset = offset;
 		kunmap_atomic(hdr);
 	} else {
-		pr_err("ploop: Failed to update hdr: %d\n", ret);
+		PL_ERR("Failed to update hdr: %d", ret);
 	}
 
 	return ret;
@@ -1047,7 +1047,7 @@ static int ploop_check_delta_before_flip(struct ploop *ploop, struct file *file)
 
 	ret = ploop_read_delta_metadata(ploop, file, &md_root, &nr_be);
 	if (ret) {
-		pr_err("Error reading metadata\n");
+		PL_ERR("Error reading metadata");
 		goto out;
 	}
 
