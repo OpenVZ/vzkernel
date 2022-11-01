@@ -172,7 +172,8 @@ static bool ploop_try_delay_enospc(struct ploop_rq *prq, struct pio *pio)
 
 	ploop_init_prq_and_embedded_pio(ploop, prq->rq, prq, pio);
 
-	pr_err_once("ploop: underlying disk is almost full\n");
+	pr_err_once(PL_FMT("underlying disk is almost full"),
+		ploop_device_name(ploop));
 	ploop->event_enospc = true;
 	list_add_tail(&pio->list, &ploop->enospc_pios);
 unlock:
@@ -639,7 +640,8 @@ static void ploop_handle_discard_pio(struct ploop *ploop, struct pio *pio,
 
 	if (inflight_h) {
 		/* @pio will be requeued on inflight_h's pio end */
-		pr_err_once("ploop: delayed discard: device is used as raw?\n");
+		pr_err_once(PL_FMT("delayed discard: device is used as raw?"),
+			ploop_device_name(ploop));
 		return;
 	}
 
@@ -1012,13 +1014,13 @@ static int ploop_truncate_prealloc_safe(struct ploop *ploop,
 	else
 		ret = vfs_fallocate(file, 0, old_len, new_len - old_len);
 	if (ret) {
-		pr_err("ploop: %s->prealloc: %d\n", func, ret);
+		PL_ERR("%s->prealloc: %d", func, ret);
 		return ret;
 	}
 
 	ret = vfs_fsync(file, 0);
 	if (ret) {
-		pr_err("ploop: %s->fsync(): %d\n", func, ret);
+		PL_ERR("%s->fsync(): %d", func, ret);
 		return ret;
 	}
 
@@ -1051,7 +1053,7 @@ static int ploop_allocate_cluster(struct ploop *ploop, u32 *dst_clu)
 		else
 			ret = ploop_zero_range(file, pos, off - pos);
 		if (ret) {
-			pr_err("ploop: punch/zero area: %d\n", ret);
+			PL_ERR("punch/zero area: %d", ret);
 			return ret;
 		}
 	}
@@ -1068,7 +1070,7 @@ static int ploop_allocate_cluster(struct ploop *ploop, u32 *dst_clu)
 		 */
 		ret = vfs_fsync(file, 0);
 		if (ret) {
-			pr_err("ploop: fsync: %d\n", ret);
+			PL_ERR("fsync: %d", ret);
 			return ret;
 		}
 	}
@@ -1918,7 +1920,7 @@ int ploop_prepare_reloc_index_wb(struct ploop *ploop,
 
 	err = -EIO;
 	if ((md->status & (MD_DIRTY|MD_WRITEBACK))) {
-		pr_err("ploop: Unexpected md status: %x\n", md->status);
+		PL_ERR("Unexpected md status: %x", md->status);
 		goto out_error;
 	}
 	err = ploop_prepare_bat_update(ploop, md, type);
