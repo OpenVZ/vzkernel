@@ -130,7 +130,7 @@ static int cbt_page_alloc(struct cbt_info  **cbt_pp, unsigned long idx,
 	if (in_rcu)
 		rcu_read_lock();
 	spin_lock_irq(&cbt->lock);
-	if (unlikely(!cbt->count-- && test_bit(CBT_DEAD, &cbt->flags))) {
+	if (unlikely(!--(cbt->count) && test_bit(CBT_DEAD, &cbt->flags))) {
 		spin_unlock_irq(&cbt->lock);
 		call_rcu(&cbt->rcu, &cbt_release_callback);
 		if (page)
