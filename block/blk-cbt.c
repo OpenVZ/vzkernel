@@ -687,7 +687,7 @@ void blk_cbt_release(struct request_queue *q)
 	rcu_assign_pointer(q->cbt, NULL);
 	in_use = cbt->count;
 	spin_unlock(&cbt->lock);
-	if (in_use)
+	if (!in_use)
 		call_rcu(&cbt->rcu, &cbt_release_callback);
 }
 
