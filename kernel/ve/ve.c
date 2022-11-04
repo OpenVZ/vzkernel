@@ -53,6 +53,14 @@ extern struct kmapset_set sysfs_ve_perms_set;
 
 static struct kmem_cache *ve_cachep;
 
+/*
+ * This static key is used to enable queue standby flags checks in ploop code.
+ * These checks used by drivers that support managing the queue flags.
+ * But to avoid creating inter module dependencies leave key here.
+ */
+DEFINE_STATIC_KEY_FALSE(ploop_standby_check);
+EXPORT_SYMBOL(ploop_standby_check);
+
 static DEFINE_PER_CPU(struct kstat_lat_pcpu_snap_struct, ve0_lat_stats);
 
 struct ve_struct ve0 = {

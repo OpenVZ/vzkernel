@@ -28,6 +28,8 @@ static void ploop_prq_endio(struct pio *pio, void *prq_ptr,
 
 #define DM_MSG_PREFIX "ploop"
 
+extern struct static_key_false ploop_standby_check;
+
 static unsigned int ploop_pio_nr_segs(struct pio *pio)
 {
 	struct bvec_iter bi = {
@@ -1165,6 +1167,26 @@ static void ploop_queue_resubmit(struct pio *pio)
 	queue_work(ploop->wq, &ploop->worker);
 }
 
+static void ploop_check_standby_mode(struct ploop *ploop, long res)
+{
+	struct request_queue *q = ploop_blk_queue(ploop);
+	int prev;
+
+	if (!blk_queue_standby_en(q))
+		return;
+
+	/* move to standby if delta lease was stolen or mount is gone */
+	if (res != -EBUSY && res != -ENOTCONN && res != -EIO)
+		return;
+
+	spin_lock_irq(&q->queue_lock);
+	prev = blk_queue_flag_test_and_set(QUEUE_FLAG_STANDBY, q);
+	spin_unlock_irq(&q->queue_lock);
+
+	if (!prev)
+		PL_INFO("was switched into the standby mode");
+}
+
 static void ploop_data_rw_complete(struct pio *pio)
 {
 	bool completed;
@@ -1177,6 +1199,8 @@ static void ploop_data_rw_complete(struct pio *pio)
 			ploop_queue_resubmit(pio);
 			return;
 		}
+		if (static_branch_unlikely(&ploop_standby_check))
+			ploop_check_standby_mode(pio->ploop, pio->ret);
 		pio->bi_status = errno_to_blk_status(pio->ret);
 	}
 
@@ -1817,8 +1841,11 @@ void do_ploop_fsync_work(struct work_struct *ws)
 	ret = vfs_fsync(file, 0);
 
 	while ((pio = ploop_pio_list_pop(&flush_pios)) != NULL) {
-		if (unlikely(ret))
+		if (unlikely(ret)) {
 			pio->bi_status = errno_to_blk_status(ret);
+			if (static_branch_unlikely(&ploop_standby_check))
+				ploop_check_standby_mode(ploop, ret);
+		}
 		ploop_pio_endio(pio);
 	}
 }
@@ -1870,6 +1897,12 @@ int ploop_clone_and_map(struct dm_target *ti, struct request *rq,
 	struct ploop *ploop = ti->private;
 	struct ploop_rq *prq;
 	struct pio *pio;
+
+
+	if (static_branch_unlikely(&ploop_standby_check)) {
+		if (blk_queue_standby(ploop_blk_queue(ploop)))
+			return DM_MAPIO_KILL;
+	}
 
 	if (blk_rq_bytes(rq) && ploop_rq_valid(ploop, rq) < 0)
 		return DM_MAPIO_KILL;
