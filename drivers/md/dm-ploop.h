@@ -231,6 +231,7 @@ struct ploop {
 	struct timer_list enospc_timer;
 	bool event_enospc;
 };
+#define ploop_blk_queue(p) ((p)->ti->table->md->queue)
 
 struct ploop_rq {
 	struct request *rq;
