@@ -21,7 +21,6 @@
 #include <linux/uio.h>
 #include <linux/error-injection.h>
 #include "dm-ploop.h"
-#include "dm-core.h"
 
 #define DM_MSG_PREFIX "ploop"
 
@@ -33,6 +32,7 @@ MODULE_PARM_DESC(ignore_signature_disk_in_use,
 static struct kmem_cache *prq_cache;
 static struct kmem_cache *pio_cache;
 struct kmem_cache *cow_cache;
+extern struct static_key_false ploop_standby_check;
 
 static void ploop_aio_do_completion(struct pio *pio)
 {
@@ -406,6 +406,36 @@ static int ploop_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	ti->private = ploop;
 	ploop->ti = ti;
+
+	BUILD_BUG_ON_MSG(
+		sizeof(ploop_blk_queue(ploop)->queue_flags) * 8 < BITS_PER_LONG
+		|| BITS_PER_LONG < 64,
+		"queue_flags require 64 bit storage variable");
+	/*
+	 * Static branch and standby_en bit act as two fuses.
+	 * We only touch standby bit if both are set.
+	 */
+	if (static_branch_unlikely(&ploop_standby_check)) {
+		if (blk_queue_standby_en(ploop_blk_queue(ploop))) {
+			PL_INFO("standby support enabled\n");
+			if (blk_queue_standby(ploop_blk_queue(ploop))) {
+				blk_queue_flag_clear(QUEUE_FLAG_STANDBY,
+						ploop_blk_queue(ploop));
+				PL_INFO("recovering device from standby\n");
+			}
+		}
+	} else {
+		struct request_queue *q = ploop_blk_queue(ploop);
+#define W_FMT "ploop_standby_check is off on %s but it has bits set: %s%s%s\n"
+		/* queue flags sanity checks - warn if something looks wrong */
+		WARN_ONCE(blk_queue_standby(q) || blk_queue_standby_en(q),
+			W_FMT, ploop_device_name(ploop),
+			(blk_queue_standby(q) ? "standby" : ""),
+			(blk_queue_standby(q) && blk_queue_standby_en(q) ?
+				", " : ""),
+			(blk_queue_standby_en(q) ? "standby_en" : ""));
+#undef W_FMT
+	}
 
 	if (kstrtou32(argv[0], 10, &ploop->cluster_log) < 0) {
 		ret = -EINVAL;
