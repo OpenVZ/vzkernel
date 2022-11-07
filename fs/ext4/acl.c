@@ -210,17 +210,6 @@ ext4_set_acl(handle_t *handle, struct inode *inode, int type,
 	switch (type) {
 	case ACL_TYPE_ACCESS:
 		name_index = EXT4_XATTR_INDEX_POSIX_ACL_ACCESS;
-		if (acl) {
-			error = posix_acl_equiv_mode(acl, &inode->i_mode);
-			if (error < 0)
-				return error;
-			else {
-				inode->i_ctime = ext4_current_time(inode);
-				ext4_mark_inode_dirty(handle, inode);
-				if (error == 0)
-					acl = NULL;
-			}
-		}
 		break;
 
 	case ACL_TYPE_DEFAULT:
@@ -242,8 +231,9 @@ ext4_set_acl(handle_t *handle, struct inode *inode, int type,
 				      value, size, 0);
 
 	kfree(value);
-	if (!error)
+	if (!error) {
 		set_cached_acl(inode, type, acl);
+	}
 
 	return error;
 }
@@ -307,10 +297,12 @@ cleanup:
 int
 ext4_acl_chmod(struct inode *inode)
 {
-	struct posix_acl *acl;
+	struct posix_acl *acl, *real_acl;
 	handle_t *handle;
 	int retries = 0;
 	int error;
+	int update_mode = 0;
+	umode_t mode = inode->i_mode;
 
 
 	if (S_ISLNK(inode->i_mode))
@@ -331,7 +323,20 @@ retry:
 		ext4_std_error(inode->i_sb, error);
 		goto out;
 	}
-	error = ext4_set_acl(handle, inode, ACL_TYPE_ACCESS, acl);
+	real_acl = acl;
+	if (acl) {
+		error = posix_acl_update_mode(inode, &mode, &real_acl);
+		if (error)
+			goto out_stop;
+		update_mode = 1;
+	}
+	error = ext4_set_acl(handle, inode, ACL_TYPE_ACCESS, real_acl);
+	if (!error && update_mode) {
+		inode->i_mode = mode;
+		inode->i_ctime = ext4_current_time(inode);
+		ext4_mark_inode_dirty(handle, inode);
+	}
+out_stop:
 	ext4_journal_stop(handle);
 	if (error == -ENOSPC &&
 	    ext4_should_retry_alloc(inode->i_sb, &retries))
@@ -399,8 +404,10 @@ ext4_xattr_set_acl(struct dentry *dentry, const char *name, const void *value,
 {
 	struct inode *inode = dentry->d_inode;
 	handle_t *handle;
-	struct posix_acl *acl;
+	struct posix_acl *acl, *real_acl;
 	int error, retries = 0;
+	int update_mode = 0;
+	umode_t mode = inode->i_mode;
 
 	if (strcmp(name, "") != 0)
 		return -EINVAL;
@@ -414,7 +421,7 @@ ext4_xattr_set_acl(struct dentry *dentry, const char *name, const void *value,
 		if (IS_ERR(acl))
 			return PTR_ERR(acl);
 		else if (acl) {
-			error = posix_acl_valid(acl);
+			error = posix_acl_valid(inode->i_sb->s_user_ns, acl);
 			if (error)
 				goto release_and_out;
 		}
@@ -428,7 +435,20 @@ retry:
 		error = PTR_ERR(handle);
 		goto release_and_out;
 	}
-	error = ext4_set_acl(handle, inode, type, acl);
+	real_acl = acl;
+	if ((type == ACL_TYPE_ACCESS) && real_acl) {
+		error = posix_acl_update_mode(inode, &mode, &real_acl);
+		if (error)
+			goto out_stop;
+		update_mode = 1;
+	}
+	error = ext4_set_acl(handle, inode, type, real_acl);
+	if (!error && update_mode) {
+		inode->i_mode = mode;
+		inode->i_ctime = ext4_current_time(inode);
+		ext4_mark_inode_dirty(handle, inode);
+	}
+out_stop:
 	ext4_journal_stop(handle);
 	if (error == -ENOSPC && ext4_should_retry_alloc(inode->i_sb, &retries))
 		goto retry;

@@ -114,6 +114,7 @@ struct smc_private {
     struct mii_if_info		mii_if;
     int				duplex;
     int				rx_ovrn;
+    unsigned long		last_rx;
 };
 
 /* Special definitions for Megahertz multifunction cards */
@@ -1176,7 +1177,7 @@ static void smc_hardware_send_packet(struct net_device * dev)
 
     smc->saved_skb = NULL;
     dev_kfree_skb_irq(skb);
-    dev->trans_start = jiffies;
+    netif_trans_update(dev);
     netif_start_queue(dev);
 }
 
@@ -1191,7 +1192,7 @@ static void smc_tx_timeout(struct net_device *dev)
 		  inw(ioaddr)&0xff, inw(ioaddr + 2));
     dev->stats.tx_errors++;
     smc_reset(dev);
-    dev->trans_start = jiffies; /* prevent tx timeout */
+    netif_trans_update(dev); /* prevent tx timeout */
     smc->saved_skb = NULL;
     netif_wake_queue(dev);
 }
@@ -1497,6 +1498,7 @@ static void smc_rx(struct net_device *dev)
     if (!(rx_status & RS_ERRORS)) {		
 	/* do stuff to make a new packet */
 	struct sk_buff *skb;
+	struct smc_private *smc = netdev_priv(dev);
 	
 	/* Note: packet_length adds 5 or 6 extra bytes here! */
 	skb = netdev_alloc_skb(dev, packet_length+2);
@@ -1515,7 +1517,7 @@ static void smc_rx(struct net_device *dev)
 	skb->protocol = eth_type_trans(skb, dev);
 	
 	netif_rx(skb);
-	dev->last_rx = jiffies;
+	smc->last_rx = jiffies;
 	dev->stats.rx_packets++;
 	dev->stats.rx_bytes += packet_length;
 	if (rx_status & RS_MULTICAST)
@@ -1796,7 +1798,7 @@ static void media_check(u_long arg)
     }
 
     /* Ignore collisions unless we've had no rx's recently */
-    if (time_after(jiffies, dev->last_rx + HZ)) {
+    if (time_after(jiffies, smc->last_rx + HZ)) {
 	if (smc->tx_err || (smc->media_status & EPH_16COL))
 	    media |= EPH_16COL;
     }

@@ -5,6 +5,7 @@
 #include <linux/kexec.h>
 #include <linux/proc_fs.h>
 #include <linux/elf.h>
+#include <uapi/linux/vmcore.h>
 
 #define ELFCORE_ADDR_MAX	(-1ULL)
 #define ELFCORE_ADDR_ERR	(-2ULL)
@@ -12,8 +13,20 @@
 extern unsigned long long elfcorehdr_addr;
 extern unsigned long long elfcorehdr_size;
 
+extern int __weak elfcorehdr_alloc(unsigned long long *addr,
+				   unsigned long long *size);
+extern void __weak elfcorehdr_free(unsigned long long addr);
+extern ssize_t __weak elfcorehdr_read(char *buf, size_t count, u64 *ppos);
+extern ssize_t __weak elfcorehdr_read_notes(char *buf, size_t count, u64 *ppos);
+extern int __weak remap_oldmem_pfn_range(struct vm_area_struct *vma,
+					 unsigned long from, unsigned long pfn,
+					 unsigned long size, pgprot_t prot);
+
 extern ssize_t copy_oldmem_page(unsigned long, char *, size_t,
 						unsigned long, int);
+extern ssize_t copy_oldmem_page_encrypted(unsigned long pfn, char *buf,
+					 size_t csize, unsigned long offset,
+					 int userbuf);
 
 /* Architecture code defines this if there are other possible ELF
  * machine types, e.g. on bi-arch capable hardware. */
@@ -77,4 +90,35 @@ static inline int is_kdump_kernel(void) { return 0; }
 #endif /* CONFIG_CRASH_DUMP */
 
 extern unsigned long saved_max_pfn;
+
+/* Device Dump information to be filled by drivers */
+struct vmcoredd_data {
+	char dump_name[VMCOREDD_MAX_NAME_BYTES]; /* Unique name of the dump */
+	unsigned int size;                       /* Size of the dump */
+	/* Driver's registered callback to be invoked to collect dump */
+	int (*vmcoredd_callback)(struct vmcoredd_data *data, void *buf);
+};
+
+#ifdef CONFIG_PROC_VMCORE_DEVICE_DUMP
+int vmcore_add_device_dump(struct vmcoredd_data *data);
+#else
+static inline int vmcore_add_device_dump(struct vmcoredd_data *data)
+{
+	return -EOPNOTSUPP;
+}
+#endif /* CONFIG_PROC_VMCORE_DEVICE_DUMP */
+
+#ifdef CONFIG_PROC_VMCORE
+ssize_t read_from_oldmem(char *buf, size_t count,
+			 u64 *ppos, int userbuf,
+			 bool encrypted);
+#else
+static inline ssize_t read_from_oldmem(char *buf, size_t count,
+				       u64 *ppos, int userbuf,
+				       bool encrypted)
+{
+	return -EOPNOTSUPP;
+}
+#endif /* CONFIG_PROC_VMCORE */
+
 #endif /* LINUX_CRASHDUMP_H */

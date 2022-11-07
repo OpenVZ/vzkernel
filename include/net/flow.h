@@ -10,6 +10,13 @@
 #include <linux/socket.h>
 #include <linux/in6.h>
 #include <linux/atomic.h>
+#include <net/flow_dissector.h>
+#include <linux/rh_kabi.h>
+#include <net/flow_dissector.h>
+
+struct flowi_tunnel {
+	__be64			tun_id;
+};
 
 struct flowi_common {
 	int	flowic_oif;
@@ -20,8 +27,10 @@ struct flowi_common {
 	__u8	flowic_proto;
 	__u8	flowic_flags;
 #define FLOWI_FLAG_ANYSRC		0x01
-#define FLOWI_FLAG_CAN_SLEEP		0x02
+/* This has changed to 0x02 upstream. Preserved here to remain ABI compatible. */
 #define FLOWI_FLAG_KNOWN_NH		0x04
+#define FLOWI_FLAG_EXTENDED4		0x40
+#define FLOWI_FLAG_EXTENDED6		0x80
 	__u32	flowic_secid;
 };
 
@@ -49,6 +58,13 @@ union flowi_uli {
 	} mht;
 };
 
+
+struct flowi_extended {
+	struct flowi_tunnel flowic_tun_key;
+	/* kABI: use these reserved fields to add new items.  */
+	u32 rh_reserved[4];
+};
+
 struct flowi4 {
 	struct flowi_common	__fl_common;
 #define flowi4_oif		__fl_common.flowic_oif
@@ -72,7 +88,16 @@ struct flowi4 {
 #define fl4_ipsec_spi		uli.spi
 #define fl4_mh_type		uli.mht.type
 #define fl4_gre_key		uli.gre_key
+	/* kABI: use these reserved fields to add new items. */
+	RH_KABI_EXTEND(u32 rh_reserved[4])
+	RH_KABI_EXTEND(struct flowi_extended __fl_extended)
 } __attribute__((__aligned__(BITS_PER_LONG/8)));
+
+static inline void flowi4_tun_id_set(struct flowi4 *fl, __be64 tun_id)
+{
+	fl->flowi4_flags |= FLOWI_FLAG_EXTENDED4;
+	fl->__fl_extended.flowic_tun_key.tun_id = tun_id;
+}
 
 static inline void flowi4_init_output(struct flowi4 *fl4, int oif,
 				      __u32 mark, __u8 tos, __u8 scope,
@@ -88,6 +113,7 @@ static inline void flowi4_init_output(struct flowi4 *fl4, int oif,
 	fl4->flowi4_proto = proto;
 	fl4->flowi4_flags = flags;
 	fl4->flowi4_secid = 0;
+	flowi4_tun_id_set(fl4, 0);
 	fl4->daddr = daddr;
 	fl4->saddr = saddr;
 	fl4->fl4_dport = dport;
@@ -126,7 +152,16 @@ struct flowi6 {
 #define fl6_ipsec_spi		uli.spi
 #define fl6_mh_type		uli.mht.type
 #define fl6_gre_key		uli.gre_key
+	/* kABI: use these reserved fields to add new items. */
+	RH_KABI_EXTEND(u32 rh_reserved[4])
+	RH_KABI_EXTEND(struct flowi_extended __fl_extended)
 } __attribute__((__aligned__(BITS_PER_LONG/8)));
+
+static inline void flowi6_tun_id_set(struct flowi6 *fl, __be64 tun_id)
+{
+	fl->flowi6_flags |= FLOWI_FLAG_EXTENDED6;
+	fl->__fl_extended.flowic_tun_key.tun_id = tun_id;
+}
 
 struct flowidn {
 	struct flowi_common	__fl_common;
@@ -159,6 +194,16 @@ struct flowi {
 #define flowi_flags	u.__fl_common.flowic_flags
 #define flowi_secid	u.__fl_common.flowic_secid
 } __attribute__((__aligned__(BITS_PER_LONG/8)));
+
+static inline __be64 flowi_tun_id_get(struct flowi *fl)
+{
+	if (fl->flowi_flags & FLOWI_FLAG_EXTENDED4)
+		return fl->u.ip4.__fl_extended.flowic_tun_key.tun_id;
+	else if (fl->flowi_flags & FLOWI_FLAG_EXTENDED6)
+		return fl->u.ip6.__fl_extended.flowic_tun_key.tun_id;
+	else
+		return 0;
+}
 
 static inline struct flowi *flowi4_to_flowi(struct flowi4 *fl4)
 {
@@ -215,12 +260,33 @@ typedef struct flow_cache_object *(*flow_resolve_t)(
 		struct net *net, const struct flowi *key, u16 family,
 		u8 dir, struct flow_cache_object *oldobj, void *ctx);
 
-extern struct flow_cache_object *flow_cache_lookup(
-		struct net *net, const struct flowi *key, u16 family,
-		u8 dir, flow_resolve_t resolver, void *ctx);
+struct flow_cache_object *flow_cache_lookup(struct net *net,
+					    const struct flowi *key, u16 family,
+					    u8 dir, flow_resolve_t resolver,
+					    void *ctx);
+int flow_cache_init(struct net *net);
+void flow_cache_fini(struct net *net);
 
-extern void flow_cache_flush(void);
-extern void flow_cache_flush_deferred(void);
+void flow_cache_flush(struct net *net);
+void flow_cache_flush_deferred(struct net *net);
 extern atomic_t flow_cache_genid;
+
+__u32 __get_hash_from_flowi6(const struct flowi6 *fl6, struct flow_keys *keys);
+
+static inline __u32 get_hash_from_flowi6(const struct flowi6 *fl6)
+{
+	struct flow_keys keys;
+
+	return __get_hash_from_flowi6(fl6, &keys);
+}
+
+__u32 __get_hash_from_flowi4(const struct flowi4 *fl4, struct flow_keys *keys);
+
+static inline __u32 get_hash_from_flowi4(const struct flowi4 *fl4)
+{
+	struct flow_keys keys;
+
+	return __get_hash_from_flowi4(fl4, &keys);
+}
 
 #endif

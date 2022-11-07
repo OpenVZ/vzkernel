@@ -220,7 +220,7 @@ static void freezer_attach(struct cgroup *new_cgrp, struct cgroup_taskset *tset)
 	}
 }
 
-static void freezer_fork(struct task_struct *task)
+static void freezer_fork(struct task_struct *task, void *private)
 {
 	struct freezer *freezer;
 

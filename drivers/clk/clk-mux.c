@@ -42,7 +42,7 @@ static u8 clk_mux_get_parent(struct clk_hw *hw)
 	 * OTOH, pmd_trace_clk_mux_ck uses a separate bit for each clock, so
 	 * val = 0x4 really means "bit 2, index starts at bit 0"
 	 */
-	val = readl(mux->reg) >> mux->shift;
+	val = clk_readl(mux->reg) >> mux->shift;
 	val &= mux->mask;
 
 	if (mux->table) {
