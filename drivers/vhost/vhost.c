@@ -246,15 +246,19 @@ static void vhost_work_queue_at_worker(struct vhost_worker *w,
 
 void vhost_work_dev_flush(struct vhost_dev *dev)
 {
-	struct vhost_flush_struct flush;
+	struct vhost_flush_struct flush[VHOST_MAX_WORKERS];
+	int i, nworkers;
 
-	if (dev->workers[0].worker) {
-		init_completion(&flush.wait_event);
-		vhost_work_init(&flush.work, vhost_flush_work);
+	nworkers = READ_ONCE(dev->nworkers);
 
-		vhost_work_queue(dev, &flush.work);
-		wait_for_completion(&flush.wait_event);
+	for (i = 0; i < nworkers; i++) {
+		init_completion(&flush[i].wait_event);
+		vhost_work_init(&flush[i].work, vhost_flush_work);
+		vhost_work_queue_at_worker(&dev->workers[i], &flush[i].work);
 	}
+
+	for (i = 0; i < nworkers; i++)
+		wait_for_completion(&flush[i].wait_event);
 }
 EXPORT_SYMBOL_GPL(vhost_work_dev_flush);
 
