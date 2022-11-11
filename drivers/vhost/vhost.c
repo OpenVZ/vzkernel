@@ -625,53 +625,65 @@ static void vhost_detach_mm(struct vhost_dev *dev)
 	dev->mm = NULL;
 }
 
-/* Caller should have device mutex */
-long vhost_dev_set_owner(struct vhost_dev *dev)
+static int vhost_add_worker(struct vhost_dev *dev)
 {
+	struct vhost_worker *w = &dev->workers[dev->nworkers];
 	struct task_struct *worker;
 	int err;
 
+	if (dev->nworkers >= VHOST_MAX_WORKERS)
+		return -E2BIG;
+
+	worker = kthread_create(vhost_worker, w,
+				"vhost-%d-%d", current->pid, dev->nworkers);
+	if (IS_ERR(worker))
+		return PTR_ERR(worker);
+
+	w->worker = worker;
+	wake_up_process(worker); /* avoid contributing to loadavg */
+
+	err = vhost_worker_attach_cgroups(w);
+	if (err)
+		goto cleanup;
+
+	dev->nworkers++;
+	return 0;
+
+cleanup:
+	kthread_stop(worker);
+	w->worker = NULL;
+
+	return err;
+}
+
+/* Caller should have device mutex */
+long vhost_dev_set_owner(struct vhost_dev *dev)
+{
+	int err;
+
 	/* Is there an owner already? */
-	if (vhost_dev_has_owner(dev)) {
-		err = -EBUSY;
-		goto err_mm;
-	}
+	if (vhost_dev_has_owner(dev))
+		return -EBUSY;
 
 	vhost_attach_mm(dev);
 
 	dev->kcov_handle = kcov_common_handle();
 	if (dev->use_worker) {
-		worker = kthread_create(vhost_worker, dev,
-					"vhost-%d", current->pid);
-		if (IS_ERR(worker)) {
-			err = PTR_ERR(worker);
-			goto err_worker;
-		}
-
-		dev->workers[0].worker = worker;
-		dev->nworkers = 1;
-		wake_up_process(worker); /* avoid contributing to loadavg */
-
-		err = vhost_worker_attach_cgroups(&dev->workers[0]);
+		err = vhost_add_worker(dev);
 		if (err)
-			goto err_cgroup;
+			goto err_mm;
 	}
 
 	err = vhost_dev_alloc_iovecs(dev);
 	if (err)
-		goto err_cgroup;
+		goto err_worker;
 
 	return 0;
-err_cgroup:
-	dev->nworkers = 0;
-	if (dev->workers[0].worker) {
-		kthread_stop(dev->workers[0].worker);
-		dev->workers[0].worker = NULL;
-	}
 err_worker:
+	vhost_cleanup_workers(dev);
+err_mm:
 	vhost_detach_mm(dev);
 	dev->kcov_handle = 0;
-err_mm:
 	return err;
 }
 EXPORT_SYMBOL_GPL(vhost_dev_set_owner);
