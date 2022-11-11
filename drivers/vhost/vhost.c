@@ -656,6 +656,25 @@ cleanup:
 	return err;
 }
 
+static int vhost_set_workers(struct vhost_dev *dev, int n)
+{
+	int i, ret;
+
+	if (n > dev->nvqs)
+		n = dev->nvqs;
+
+	if (n > VHOST_MAX_WORKERS)
+		n = VHOST_MAX_WORKERS;
+
+	for (i = 0; i < n - dev->nworkers ; i++) {
+		ret = vhost_add_worker(dev);
+		if (ret)
+			break;
+	}
+
+	return ret;
+}
+
 /* Caller should have device mutex */
 long vhost_dev_set_owner(struct vhost_dev *dev)
 {
@@ -1822,7 +1841,7 @@ long vhost_dev_ioctl(struct vhost_dev *d, unsigned int ioctl, void __user *argp)
 	struct eventfd_ctx *ctx;
 	u64 p;
 	long r;
-	int i, fd;
+	int i, fd, n;
 
 	/* If you are not the owner, you can become one */
 	if (ioctl == VHOST_SET_OWNER) {
@@ -1878,6 +1897,17 @@ long vhost_dev_ioctl(struct vhost_dev *d, unsigned int ioctl, void __user *argp)
 		}
 		if (ctx)
 			eventfd_ctx_put(ctx);
+		break;
+	case VHOST_SET_NWORKERS:
+		r = get_user(n, (int __user *)argp);
+		if (r < 0)
+			break;
+		if (n < d->nworkers) {
+			r = -EINVAL;
+			break;
+		}
+
+		r = vhost_set_workers(d, n);
 		break;
 	default:
 		r = -ENOIOCTLCMD;
