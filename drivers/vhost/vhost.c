@@ -272,6 +272,17 @@ static void vhost_worker_flush(struct vhost_worker *w)
 	wait_for_completion(&flush.wait_event);
 }
 
+void vhost_work_flush_vq(struct vhost_virtqueue *vq)
+{
+	struct vhost_worker *w = READ_ONCE(vq->worker);
+
+	if (!w)
+		return;
+
+	vhost_worker_flush(w);
+}
+EXPORT_SYMBOL_GPL(vhost_work_flush_vq);
+
 /* Flush any work that has been scheduled. When calling this, don't hold any
  * locks that are also used by the callback. */
 void vhost_poll_flush(struct vhost_poll *poll)
@@ -290,6 +301,17 @@ void vhost_work_queue(struct vhost_dev *dev, struct vhost_work *work)
 	vhost_work_queue_at_worker(w, work);
 }
 EXPORT_SYMBOL_GPL(vhost_work_queue);
+
+void vhost_work_queue_vq(struct vhost_virtqueue *vq, struct vhost_work *work)
+{
+	struct vhost_worker *w = READ_ONCE(vq->worker);
+
+	if (!w)
+		return;
+
+	vhost_work_queue_at_worker(w, work);
+}
+EXPORT_SYMBOL_GPL(vhost_work_queue_vq);
 
 /* A lockless hint for busy polling code to exit the loop */
 bool vhost_has_work(struct vhost_dev *dev)
