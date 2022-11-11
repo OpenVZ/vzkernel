@@ -361,6 +361,7 @@ static void vhost_vq_reset(struct vhost_dev *dev,
 	vq->iotlb = NULL;
 	vhost_vring_call_reset(&vq->call_ctx);
 	__vhost_vq_meta_reset(vq);
+	vq->worker = NULL;
 }
 
 static void vhost_worker_reset(struct vhost_worker *w)
@@ -675,6 +676,17 @@ static int vhost_set_workers(struct vhost_dev *dev, int n)
 	return ret;
 }
 
+static void vhost_assign_workers(struct vhost_dev *dev)
+{
+	int i, j = 0;
+
+	for (i = 0; i < dev->nvqs; i++) {
+		dev->vqs[i]->worker = &dev->workers[j];
+		if (++j >= dev->nworkers)
+			j = 0;
+	}
+}
+
 /* Caller should have device mutex */
 long vhost_dev_set_owner(struct vhost_dev *dev)
 {
@@ -697,6 +709,7 @@ long vhost_dev_set_owner(struct vhost_dev *dev)
 	if (err)
 		goto err_worker;
 
+	vhost_assign_workers(dev);
 	return 0;
 err_worker:
 	vhost_cleanup_workers(dev);
@@ -1908,6 +1921,7 @@ long vhost_dev_ioctl(struct vhost_dev *d, unsigned int ioctl, void __user *argp)
 		}
 
 		r = vhost_set_workers(d, n);
+		vhost_assign_workers(d);
 		break;
 	default:
 		r = -ENOIOCTLCMD;
