@@ -89,4 +89,16 @@ config VHOST_CROSS_ENDIAN_LEGACY
 
 	  If unsure, say "N".
 
+config VHOST_BLK
+	tristate "Host kernel accelerator for virtio-blk"
+	depends on BLOCK && EVENTFD
+	select VHOST
+	default n
+	help
+	  This kernel module can be loaded in host kernel to accelerate
+	  guest vm with virtio-blk driver.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called vhost_blk.
+
 endif
