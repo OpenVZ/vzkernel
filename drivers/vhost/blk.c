@@ -161,7 +161,6 @@ static inline int vhost_blk_set_status(struct vhost_blk_req *req, u8 status)
 static void vhost_blk_req_done(struct bio *bio)
 {
 	struct vhost_blk_req *req = bio->bi_private;
-	struct vhost_blk *blk = req->blk;
 	int err;
 
 	err = blk_status_to_errno(bio->bi_status);
@@ -170,7 +169,7 @@ static void vhost_blk_req_done(struct bio *bio)
 
 	if (atomic_dec_and_test(&req->bio_nr)) {
 		llist_add(&req->llnode, &req->blk_vq->llhead);
-		vhost_work_queue(&blk->dev, &req->blk_vq->work);
+		vhost_work_queue_vq(&req->blk_vq->vq, &req->blk_vq->work);
 	}
 
 	bio_put(bio);
