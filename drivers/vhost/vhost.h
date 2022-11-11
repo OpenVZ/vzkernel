@@ -40,7 +40,7 @@ struct vhost_poll {
 	wait_queue_entry_t	wait;
 	struct vhost_work	work;
 	__poll_t		mask;
-	struct vhost_dev	*dev;
+	struct vhost_virtqueue	*vq;
 };
 
 void vhost_work_init(struct vhost_work *work, vhost_work_fn_t fn);
@@ -49,6 +49,8 @@ bool vhost_has_work(struct vhost_dev *dev);
 
 void vhost_poll_init(struct vhost_poll *poll, vhost_work_fn_t fn,
 		     __poll_t mask, struct vhost_dev *dev);
+void vhost_poll_init_vq(struct vhost_poll *poll, vhost_work_fn_t fn,
+		     __poll_t mask, struct vhost_virtqueue *vq);
 int vhost_poll_start(struct vhost_poll *poll, struct file *file);
 void vhost_poll_stop(struct vhost_poll *poll);
 void vhost_poll_flush(struct vhost_poll *poll);
