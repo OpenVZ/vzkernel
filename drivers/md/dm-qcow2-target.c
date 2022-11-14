@@ -189,7 +189,7 @@ void qcow2_flush_deferred_activity(struct qcow2_target *tgt, struct qcow2 *qcow2
 		md = rb_entry(node, struct md_page, node);
 		/* FIXME: call md_make_dirty() and try once again? */
 		if (md->status & MD_WRITEBACK_ERROR) {
-			pr_err("qcow2: Failed to write dirty pages\n");
+			QC_ERR(tgt->ti, "qcow2: Failed to write dirty pages");
 			tgt->md_writeback_error = true;
 			break;
 		}
@@ -721,7 +721,7 @@ static int qcow2_parse_header(struct dm_target *ti, struct qcow2 *qcow2,
 		new_size = PAGE_ALIGN(qcow2->file_size);
 		ret = qcow2_truncate_safe(file, new_size);
 		if (ret) {
-			pr_err("qcow2: Can't truncate file\n");
+			QC_ERR(ti, "qcow2: Can't truncate file");
 			return ret;
 		} /* See md_page_read_complete() */
 		qcow2->file_size = new_size;
@@ -794,7 +794,7 @@ static int qcow2_parse_metadata(struct dm_target *ti, struct qcow2_target *tgt)
 	ret = 0;
 out:
 	if (ret)
-		pr_err("dm-qcow2: Can't parse metadata\n");
+		QC_ERR(ti, "dm-qcow2: Can't parse metadata");
 	return ret;
 }
 
@@ -846,6 +846,7 @@ static int qcow2_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->num_flush_bios = 1;
 	ti->discards_supported = true;
 	ti->num_discard_bios = 1;
+	QC_INFO(ti, "created");
 	return 0;
 err:
 	qcow2_tgt_destroy(tgt);
@@ -874,7 +875,7 @@ static void qcow2_truncate_preallocations(struct dm_target *ti)
 
 	ret = qcow2_truncate_safe(qcow2->file, end);
 	if (ret) {
-		pr_err("dm-qcow2: Can't truncate preallocations\n");
+		QC_ERR(ti, "dm-qcow2: Can't truncate preallocations");
 		tgt->truncate_error = true;
 		return;
 	}
@@ -958,7 +959,7 @@ static void qcow2_postsuspend(struct dm_target *ti)
 	if (dm_table_get_mode(ti->table) & FMODE_WRITE) {
 		ret = qcow2_set_image_file_features(qcow2, false);
 		if (ret)
-			pr_err("qcow2: Can't set features\n");
+			QC_ERR(ti, "qcow2: Can't set features");
 	}
 }
 static int qcow2_preresume(struct dm_target *ti)
@@ -967,7 +968,7 @@ static int qcow2_preresume(struct dm_target *ti)
 	int ret = 0;
 
 	if (qcow2_wants_check(tgt)) {
-		pr_err("qcow2: image check and target reload are required\n");
+		QC_ERR(ti, "qcow2: image check and target reload are required");
 		return -EIO;
 	}
 
@@ -988,7 +989,7 @@ static int qcow2_preresume(struct dm_target *ti)
 	if (dm_table_get_mode(ti->table) & FMODE_WRITE) {
 		ret = qcow2_set_image_file_features(tgt->top, true);
 		if (ret)
-			pr_err("qcow2: Can't set features\n");
+			QC_ERR(ti, "qcow2: Can't set features");
 	}
 	if (!ret)
 		qcow2_set_wants_suspend(ti, false);
