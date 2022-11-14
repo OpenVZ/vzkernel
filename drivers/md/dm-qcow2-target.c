@@ -6,6 +6,7 @@
 #include <linux/uio.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/error-injection.h>
 
 #include "dm.h"
 #include "dm-qcow2.h"
@@ -34,7 +35,7 @@ static void qcow2_set_wants_suspend(struct dm_target *ti, bool wants)
 	spin_unlock_irq(&tgt->event_lock);
 }
 
-static int rw_pages_sync(unsigned int rw, struct qcow2 *qcow2,
+static int qcow2_rw_pages_sync(unsigned int rw, struct qcow2 *qcow2,
 			 u64 index, struct page *pages[], int nr)
 {
 	struct bio_vec *bvec, bvec_on_stack;
@@ -71,7 +72,7 @@ static int rw_pages_sync(unsigned int rw, struct qcow2 *qcow2,
 	} else if (ret > 0 && pos == qcow2->file_size &&
 		 from + size - qcow2->file_size < PAGE_SIZE) {
 		/* Read near EOF? */
-		zero_fill_page_from(pages[nr-1], ret % PAGE_SIZE);
+		qcow2_zero_fill_page_from(pages[nr-1], ret % PAGE_SIZE);
 		ret = 0;
 	} else if (ret >= 0) {
 		ret = -ENODATA;
@@ -81,13 +82,14 @@ static int rw_pages_sync(unsigned int rw, struct qcow2 *qcow2,
 		kfree(bvec);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(qcow2_rw_pages_sync, ERRNO);
 
-int rw_page_sync(unsigned int rw, struct qcow2 *qcow2,
+int qcow2_rw_page_sync(unsigned int rw, struct qcow2 *qcow2,
 		 u64 index, struct page *page)
 {
 	struct page *pages[] = {page};
 
-	return rw_pages_sync(rw, qcow2, index, pages, 1);
+	return qcow2_rw_pages_sync(rw, qcow2, index, pages, 1);
 }
 
 static bool should_fail_rw(struct qcow2 *qcow2)
@@ -117,7 +119,7 @@ static void qcow2_aio_complete(struct kiocb *iocb, long ret)
 	qcow2_aio_do_completion(qio);
 }
 
-void call_rw_iter(struct qcow2 *qcow2, loff_t pos, unsigned int rw,
+void qcow2_call_rw_iter(struct qcow2 *qcow2, loff_t pos, unsigned int rw,
 		  struct iov_iter *iter, struct qio *qio)
 {
 	struct kiocb *iocb = &qio->iocb;
@@ -143,14 +145,14 @@ void call_rw_iter(struct qcow2 *qcow2, loff_t pos, unsigned int rw,
 		iocb->ki_complete(iocb, ret);
 }
 
-void free_md_page(struct md_page *md)
+void qcow2_free_md_page(struct md_page *md)
 {
 	WARN_ON_ONCE(md->wbd || md->lockd);
 	put_page(md->page);
 	kfree(md);
 }
 
-static void free_md_pages_tree(struct rb_root *root)
+static void qcow2_free_md_pages_tree(struct rb_root *root)
 {
 	struct rb_node *node;
 	struct md_page *md;
@@ -158,12 +160,12 @@ static void free_md_pages_tree(struct rb_root *root)
 	while ((node = root->rb_node) != NULL) {
 		md = rb_entry(node, struct md_page, node);
 		rb_erase(node, root);
-		free_md_page(md);
+		qcow2_free_md_page(md);
 	}
 }
 
 /* This flushes activity remaining after qios endio (delayed md pages wb */
-void flush_deferred_activity(struct qcow2_target *tgt, struct qcow2 *qcow2)
+void qcow2_flush_deferred_activity(struct qcow2_target *tgt, struct qcow2 *qcow2)
 {
 	struct rb_node *node;
 	struct md_page *md;
@@ -175,7 +177,7 @@ void flush_deferred_activity(struct qcow2_target *tgt, struct qcow2 *qcow2)
 	 */
 	for (i = 0; i < 2; i++) {
 		del_timer_sync(&qcow2->slow_wb_timer);
-		slow_wb_timer_fn(&qcow2->slow_wb_timer);
+		qcow2_slow_wb_timer_fn(&qcow2->slow_wb_timer);
 		/* Start md writeback */
 		flush_workqueue(tgt->wq);
 		/* Wait AIO of md wb */
@@ -196,21 +198,21 @@ void flush_deferred_activity(struct qcow2_target *tgt, struct qcow2 *qcow2)
 	spin_unlock_irq(&qcow2->md_pages_lock);
 }
 
-static void flush_deferred_activity_all(struct qcow2_target *tgt)
+static void qcow2_flush_deferred_activity_all(struct qcow2_target *tgt)
 {
 	struct qcow2 *qcow2 = tgt->top;
 
 	while (qcow2) {
-		flush_deferred_activity(tgt, qcow2);
+		qcow2_flush_deferred_activity(tgt, qcow2);
 		qcow2 = qcow2->lower;
 	}
 }
-static void free_md_pages_all(struct qcow2_target *tgt)
+static void qcow2_free_md_pages_all(struct qcow2_target *tgt)
 {
 	struct qcow2 *qcow2 = tgt->top;
 
 	while (qcow2) {
-		free_md_pages_tree(&qcow2->md_pages);
+		qcow2_free_md_pages_tree(&qcow2->md_pages);
 		qcow2 = qcow2->lower;
 	}
 }
@@ -228,7 +230,7 @@ void qcow2_destroy(struct qcow2 *qcow2)
 		!list_empty(&qcow2->slow_wb_batch_list) ||
 		timer_pending(&qcow2->slow_wb_timer));
 
-	free_md_pages_tree(&qcow2->md_pages);
+	qcow2_free_md_pages_tree(&qcow2->md_pages);
 	if (qcow2->file)
 		fput(qcow2->file);
 
@@ -245,7 +247,7 @@ static void qcow2_tgt_destroy(struct qcow2_target *tgt)
 		 * All activity from DM bios are already done,
 		 * since DM waits them. Complete our deferred:
 		 */
-		flush_deferred_activity_all(tgt);
+		qcow2_flush_deferred_activity_all(tgt);
 		/* Now kill the queue */
 		destroy_workqueue(tgt->wq);
 	}
@@ -285,7 +287,7 @@ static struct md_page *__md_page_find(struct qcow2 *qcow2, unsigned int id)
 	return NULL;
 }
 
-static struct md_page *md_page_find(struct qcow2 *qcow2, unsigned int id)
+static struct md_page *qcow2_md_page_find(struct qcow2 *qcow2, unsigned int id)
 {
 	struct md_page *md;
 
@@ -299,7 +301,7 @@ static struct md_page *md_page_find(struct qcow2 *qcow2, unsigned int id)
  * This returns md if it's found and up to date, or NULL.
  * @qio is zeroed if it's postponed.
  */
-struct md_page *md_page_find_or_postpone(struct qcow2 *qcow2, unsigned int id,
+struct md_page *qcow2_md_page_find_or_postpone(struct qcow2 *qcow2, unsigned int id,
 					 struct qio **qio)
 {
 	struct md_page *md;
@@ -344,13 +346,13 @@ static int md_page_try_insert(struct qcow2 *qcow2, struct md_page *new_md)
 	return 0;
 }
 
-void md_page_erase(struct qcow2 *qcow2, struct md_page *md)
+void qcow2_md_page_erase(struct qcow2 *qcow2, struct md_page *md)
 {
 	lockdep_assert_held(&qcow2->md_pages_lock);
 	rb_erase(&md->node, &qcow2->md_pages);
 }
 
-struct md_page *md_page_renumber(struct qcow2 *qcow2, unsigned int id,
+struct md_page *qcow2_md_page_renumber(struct qcow2 *qcow2, unsigned int id,
 						      unsigned int new_id)
 {
 	struct md_page *md;
@@ -359,7 +361,7 @@ struct md_page *md_page_renumber(struct qcow2 *qcow2, unsigned int id,
 	md = __md_page_find(qcow2, id);
 	if (md) {
 		WARN_ON_ONCE(!list_empty(&md->wait_list));
-		md_page_erase(qcow2, md);
+		qcow2_md_page_erase(qcow2, md);
 		md->id = new_id;
 		if (WARN_ON(md_page_try_insert(qcow2, md) < 0))
 			md = NULL;
@@ -367,7 +369,7 @@ struct md_page *md_page_renumber(struct qcow2 *qcow2, unsigned int id,
 	return md;
 }
 
-void zero_fill_page_from(struct page *page, unsigned int from)
+void qcow2_zero_fill_page_from(struct page *page, unsigned int from)
 {
 	void *addr = kmap_atomic(page);
 
@@ -375,7 +377,7 @@ void zero_fill_page_from(struct page *page, unsigned int from)
 	kunmap_atomic(addr);
 }
 
-int alloc_and_insert_md_page(struct qcow2 *qcow2, u64 index, struct md_page **md)
+int qcow2_alloc_and_insert_md_page(struct qcow2 *qcow2, u64 index, struct md_page **md)
 {
 	int ret = -ENOMEM;
 
@@ -434,7 +436,7 @@ static void qcow2_enospc_timer(struct timer_list *timer)
 	list_splice_init(&tgt->enospc_qios, &list);
 	spin_unlock_irqrestore(&tgt->event_lock, flags);
 
-	submit_embedded_qios(tgt, &list);
+	qcow2_submit_embedded_qios(tgt, &list);
 }
 
 static void qcow2_event_work(struct work_struct *ws)
@@ -579,7 +581,7 @@ static int qcow2_check_convert_hdr(struct dm_target *ti,
 	return 0;
 }
 
-void calc_cached_parameters(struct qcow2 *qcow2, struct QCowHeader *hdr)
+void qcow2_calc_cached_parameters(struct qcow2 *qcow2, struct QCowHeader *hdr)
 {
 	s64 clu_size, reftable_clus = hdr->refcount_table_clusters;
 	loff_t pos, tmp, max;
@@ -618,7 +620,7 @@ int qcow2_set_image_file_features(struct qcow2 *qcow2, bool dirty)
 	if (is_ro)
 		return 0;
 
-	md = md_page_find(qcow2, 0);
+	md = qcow2_md_page_find(qcow2, 0);
 	if (WARN_ON_ONCE(!md || !(md->status & MD_UPTODATE)))
 		return -EIO;
 
@@ -632,7 +634,7 @@ int qcow2_set_image_file_features(struct qcow2 *qcow2, bool dirty)
 	}
 	kunmap(md->page);
 
-	return rw_page_sync(WRITE, qcow2, md->id, md->page);
+	return qcow2_rw_page_sync(WRITE, qcow2, md->id, md->page);
 }
 
 static struct qcow2 *qcow2_alloc_delta(struct qcow2_target *tgt, struct qcow2 *upper)
@@ -653,7 +655,7 @@ static struct qcow2 *qcow2_alloc_delta(struct qcow2_target *tgt, struct qcow2 *u
 	INIT_LIST_HEAD(&qcow2->slow_wb_batch_list);
 	spin_lock_init(&qcow2->deferred_lock);
 	spin_lock_init(&qcow2->md_pages_lock);
-	timer_setup(&qcow2->slow_wb_timer, slow_wb_timer_fn, 0);
+	timer_setup(&qcow2->slow_wb_timer, qcow2_slow_wb_timer_fn, 0);
 	INIT_WORK(&qcow2->worker, do_qcow2_work);
 	INIT_WORK(&qcow2->fsync_worker, do_qcow2_fsync_work);
 
@@ -719,10 +721,10 @@ static int qcow2_parse_header(struct dm_target *ti, struct qcow2 *qcow2,
 	}
 	qcow2->file_preallocated_area_start = qcow2->file_size;
 
-	ret = alloc_and_insert_md_page(qcow2, 0, &md);
+	ret = qcow2_alloc_and_insert_md_page(qcow2, 0, &md);
 	if (ret)
 		return ret;
-	ret = rw_page_sync(READ, qcow2, md->id, md->page);
+	ret = qcow2_rw_page_sync(READ, qcow2, md->id, md->page);
 	if (ret)
 		return ret;
 	md->status |= MD_UPTODATE;
@@ -739,7 +741,7 @@ static int qcow2_parse_header(struct dm_target *ti, struct qcow2 *qcow2,
 	if (ret < 0)
 		goto out;
 
-	calc_cached_parameters(qcow2, hdr);
+	qcow2_calc_cached_parameters(qcow2, hdr);
 	ret = -EOPNOTSUPP;
 	if (qcow2->clu_size < PAGE_SIZE ||
 	    (qcow2->ext_l2 && qcow2->clu_size < PAGE_SIZE * 32))
@@ -941,7 +943,7 @@ static void qcow2_postsuspend(struct dm_target *ti)
 	struct qcow2 *qcow2 = top_qcow2_protected(ti);
 	int ret;
 
-	flush_deferred_activity_all(to_qcow2_target(ti));
+	qcow2_flush_deferred_activity_all(to_qcow2_target(ti));
 	qcow2_truncate_preallocations(ti);
 
 	if (dm_table_get_mode(ti->table) & FMODE_WRITE) {
@@ -960,7 +962,7 @@ static int qcow2_preresume(struct dm_target *ti)
 		return -EIO;
 	}
 
-	free_md_pages_all(tgt);
+	qcow2_free_md_pages_all(tgt);
 	/*
 	 * Reading metadata here allows userspace to modify images
 	 * of suspended device without reloading target. We also
