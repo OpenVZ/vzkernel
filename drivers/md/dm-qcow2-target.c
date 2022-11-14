@@ -296,6 +296,7 @@ static struct md_page *qcow2_md_page_find(struct qcow2 *qcow2, unsigned int id)
 	spin_unlock_irq(&qcow2->md_pages_lock);
 	return md;
 }
+ALLOW_ERROR_INJECTION(qcow2_md_page_find, NULL);
 
 /*
  * This returns md if it's found and up to date, or NULL.
@@ -318,6 +319,7 @@ struct md_page *qcow2_md_page_find_or_postpone(struct qcow2 *qcow2, unsigned int
 
 	return md;
 }
+ALLOW_ERROR_INJECTION(qcow2_md_page_find_or_postpone, NULL);
 
 static int md_page_try_insert(struct qcow2 *qcow2, struct md_page *new_md)
 {
@@ -368,6 +370,7 @@ struct md_page *qcow2_md_page_renumber(struct qcow2 *qcow2, unsigned int id,
 	}
 	return md;
 }
+ALLOW_ERROR_INJECTION(qcow2_md_page_renumber, NULL);
 
 void qcow2_zero_fill_page_from(struct page *page, unsigned int from)
 {
@@ -411,6 +414,7 @@ err_kfree:
 	kfree(*md);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(qcow2_alloc_and_insert_md_page, ERRNO);
 
 static void inflight_ref_exit0(struct percpu_ref *ref)
 {
@@ -580,6 +584,7 @@ static int qcow2_check_convert_hdr(struct dm_target *ti,
 
 	return 0;
 }
+ALLOW_ERROR_INJECTION(qcow2_check_convert_hdr, ERRNO);
 
 void qcow2_calc_cached_parameters(struct qcow2 *qcow2, struct QCowHeader *hdr)
 {
@@ -636,6 +641,7 @@ int qcow2_set_image_file_features(struct qcow2 *qcow2, bool dirty)
 
 	return qcow2_rw_page_sync(WRITE, qcow2, md->id, md->page);
 }
+ALLOW_ERROR_INJECTION(qcow2_set_image_file_features, ERRNO);
 
 static struct qcow2 *qcow2_alloc_delta(struct qcow2_target *tgt, struct qcow2 *upper)
 {
@@ -666,6 +672,7 @@ static struct qcow2 *qcow2_alloc_delta(struct qcow2_target *tgt, struct qcow2 *u
 
 	return qcow2;
 }
+ALLOW_ERROR_INJECTION(qcow2_alloc_delta, NULL);
 
 static int qcow2_attach_file(struct dm_target *ti, struct qcow2_target *tgt,
 			     struct qcow2 *qcow2, int fd)
@@ -699,6 +706,7 @@ static int qcow2_attach_file(struct dm_target *ti, struct qcow2_target *tgt,
 
 	return 0;
 }
+ALLOW_ERROR_INJECTION(qcow2_attach_file, ERRNO);
 
 static int qcow2_parse_header(struct dm_target *ti, struct qcow2 *qcow2,
 			      struct qcow2 *upper, bool is_bottom)
@@ -762,6 +770,7 @@ static int qcow2_parse_header(struct dm_target *ti, struct qcow2 *qcow2,
 out:
 	return ret;
 }
+ALLOW_ERROR_INJECTION(qcow2_parse_header, ERRNO);
 
 static int qcow2_parse_metadata(struct dm_target *ti, struct qcow2_target *tgt)
 {
@@ -843,6 +852,7 @@ err:
 	qcow2_tgt_destroy(tgt);
 	return ret;
 }
+ALLOW_ERROR_INJECTION(qcow2_ctr, ERRNO);
 
 static void qcow2_dtr(struct dm_target *ti)
 {
@@ -986,6 +996,8 @@ static int qcow2_preresume(struct dm_target *ti)
 
 	return ret;
 }
+ALLOW_ERROR_INJECTION(qcow2_preresume, ERRNO);
+
 static void qcow2_resume(struct dm_target *ti)
 {
 	qcow2_set_service_operations(ti, true);
