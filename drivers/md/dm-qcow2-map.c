@@ -77,9 +77,9 @@ struct qcow2_bvec {
 	struct bio_vec bvec[0];
 };
 
-static int handle_r1r2_maps(struct qcow2 *qcow2, loff_t pos, struct qio **qio,
+static int qcow2_handle_r1r2_maps(struct qcow2 *qcow2, loff_t pos, struct qio **qio,
 	struct qcow2_map_item *r1, struct qcow2_map_item *r2, bool compressed);
-static int punch_hole(struct file *file, loff_t pos, loff_t len);
+static int qcow2_punch_hole(struct file *file, loff_t pos, loff_t len);
 static void handle_cleanup_mask(struct qio *qio);
 static void process_read_qio(struct qcow2 *qcow2, struct qio *qio,
 			     struct qcow2_map *map);
@@ -312,7 +312,7 @@ static unsigned int qio_nr_segs(struct qio *qio)
 	return nr_segs;
 }
 
-struct qio *alloc_qio(mempool_t *pool, bool zero)
+struct qio *qcow2_alloc_qio(mempool_t *pool, bool zero)
 {
 	struct qio *qio;
 
@@ -324,7 +324,7 @@ struct qio *alloc_qio(mempool_t *pool, bool zero)
 	return qio;
 }
 
-void init_qio(struct qio *qio, unsigned int bi_op, struct qcow2 *qcow2)
+void qcow2_init_qio(struct qio *qio, unsigned int bi_op, struct qcow2 *qcow2)
 {
 	qio->qcow2 = qcow2;
 	qio->queue_list_id = QLIST_DEFERRED;
@@ -343,7 +343,7 @@ void init_qio(struct qio *qio, unsigned int bi_op, struct qcow2 *qcow2)
 	qio->bi_status = BLK_STS_OK;
 }
 
-static int alloc_qio_ext(struct qio *qio)
+static int qcow2_alloc_qio_ext(struct qio *qio)
 {
 	if (WARN_ON_ONCE(qio->ext))
 		return -EIO;
@@ -362,7 +362,7 @@ static void finalize_qio_ext(struct qio *qio)
 	}
 }
 
-static void free_qio(struct qio *qio, mempool_t *pool)
+static void qcow2_free_qio(struct qio *qio, mempool_t *pool)
 {
 	mempool_free(qio, pool);
 }
@@ -387,7 +387,7 @@ static void do_qio_endio(struct qio *qio)
 	if (ref_index < REF_INDEX_INVALID)
 		qcow2_ref_dec(tgt, ref_index);
 	if (flags & QIO_FREE_ON_ENDIO_FL)
-		free_qio(qio, tgt->qio_pool);
+		qcow2_free_qio(qio, tgt->qio_pool);
 }
 
 static void qio_endio(struct qio *qio)
@@ -397,7 +397,7 @@ static void qio_endio(struct qio *qio)
 	do_qio_endio(qio);
 }
 
-static void dispatch_qio(struct qcow2 *qcow2, struct qio *qio)
+static void qcow2_dispatch_qio(struct qcow2 *qcow2, struct qio *qio)
 {
 	WARN_ON_ONCE(qcow2 != qio->qcow2 ||
 		     qio->queue_list_id >= QLIST_INVALID);
@@ -406,7 +406,7 @@ static void dispatch_qio(struct qcow2 *qcow2, struct qio *qio)
 	list_add_tail(&qio->link, &qcow2->qios[qio->queue_list_id]);
 }
 
-void dispatch_qios(struct qcow2 *qcow2, struct qio *qio,
+void qcow2_dispatch_qios(struct qcow2 *qcow2, struct qio *qio,
 		   struct list_head *qio_list)
 {
 	unsigned long flags;
@@ -416,10 +416,10 @@ void dispatch_qios(struct qcow2 *qcow2, struct qio *qio,
 
 	spin_lock_irqsave(&qcow2->deferred_lock, flags);
 	if (qio)
-		dispatch_qio(qcow2, qio);
+		qcow2_dispatch_qio(qcow2, qio);
 	if (qio_list) {
 		while ((qio = qio_list_pop(qio_list)) != NULL)
-			dispatch_qio(qcow2, qio);
+			qcow2_dispatch_qio(qcow2, qio);
 	}
 
 	spin_unlock_irqrestore(&qcow2->deferred_lock, flags);
@@ -476,11 +476,11 @@ static struct qio *split_and_chain_qio(struct qcow2 *qcow2,
 {
 	struct qio *split;
 
-	split = alloc_qio(qcow2->tgt->qio_pool, true);
+	split = qcow2_alloc_qio(qcow2->tgt->qio_pool, true);
 	if (!split)
 		return NULL;
 
-	init_qio(split, qio->bi_op, qcow2);
+	qcow2_init_qio(split, qio->bi_op, qcow2);
 	split->queue_list_id = qio->queue_list_id;
 	split->flags |= QIO_FREE_ON_ENDIO_FL;
 	split->flags |= (qio->flags & QIO_SPLIT_INHERITED_FLAGS);
@@ -495,7 +495,7 @@ static struct qio *split_and_chain_qio(struct qcow2 *qcow2,
 	return split;
 }
 
-static int split_qio_to_list(struct qcow2 *qcow2, struct qio *qio,
+static int qcow2_split_qio_to_list(struct qcow2 *qcow2, struct qio *qio,
 			     struct list_head *ret_list)
 {
 	u32 clu_size = qcow2->clu_size;
@@ -553,7 +553,7 @@ static void dec_wpc_readers(struct qcow2 *qcow2, struct md_page *md)
 	if (last) {
 		list_splice_tail_init(&md->wpc_readers_wait_list, &wait_list);
 		spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
-		dispatch_qios(qcow2, NULL, &wait_list);
+		qcow2_dispatch_qios(qcow2, NULL, &wait_list);
 	}
 }
 
@@ -759,7 +759,7 @@ static int count_cow_pages(loff_t start, loff_t end, void *nr_pages_p,
 	return 0;
 }
 
-static struct qcow2_bvec *alloc_qvec_with_data(u32 nr_vecs, void **data, u32 data_sz)
+static struct qcow2_bvec *qcow2_alloc_qvec_with_data(u32 nr_vecs, void **data, u32 data_sz)
 {
 	struct qcow2_bvec *qvec = NULL;
 	unsigned int size;
@@ -773,7 +773,7 @@ static struct qcow2_bvec *alloc_qvec_with_data(u32 nr_vecs, void **data, u32 dat
 	return qvec;
 }
 
-static void free_qvec_with_pages(struct qcow2_bvec *qvec)
+static void qcow2_free_qvec_with_pages(struct qcow2_bvec *qvec)
 {
 	if (qvec) {
 		while (qvec->nr_pages-- > 0)
@@ -782,13 +782,13 @@ static void free_qvec_with_pages(struct qcow2_bvec *qvec)
 	}
 }
 
-static struct qcow2_bvec *alloc_qvec_with_pages(ushort nr_pages, bool wants_pages)
+static struct qcow2_bvec *qcow2_alloc_qvec_with_pages(ushort nr_pages, bool wants_pages)
 {
 	struct qcow2_bvec *qvec;
 	struct bio_vec *bvec;
 	int i;
 
-	qvec = alloc_qvec_with_data(nr_pages, NULL, 0);
+	qvec = qcow2_alloc_qvec_with_data(nr_pages, NULL, 0);
 	if (!qvec || !wants_pages)
 		return qvec;
 
@@ -804,28 +804,28 @@ static struct qcow2_bvec *alloc_qvec_with_pages(ushort nr_pages, bool wants_page
 	return qvec;
 err:
 	qvec->nr_pages = i;
-	free_qvec_with_pages(qvec);
+	qcow2_free_qvec_with_pages(qvec);
 	return NULL;
 }
 
-static struct qio *alloc_qio_with_qvec(struct qcow2 *qcow2, u32 nr_pages,
+static struct qio *qcow2_alloc_qio_with_qvec(struct qcow2 *qcow2, u32 nr_pages,
 				       unsigned int bi_op, bool wants_pages,
 				       struct qcow2_bvec **qvec)
 {
 	struct qcow2_target *tgt = qcow2->tgt;
 	struct qio *qio;
 
-	qio = alloc_qio(tgt->qio_pool, true);
+	qio = qcow2_alloc_qio(tgt->qio_pool, true);
 	if (!qio)
 		return NULL;
 
-	*qvec = alloc_qvec_with_pages(nr_pages, wants_pages);
+	*qvec = qcow2_alloc_qvec_with_pages(nr_pages, wants_pages);
 	if (!*qvec) {
-		free_qio(qio, tgt->qio_pool);
+		qcow2_free_qio(qio, tgt->qio_pool);
 		return NULL;
 	}
 
-	init_qio(qio, bi_op, qcow2);
+	qcow2_init_qio(qio, bi_op, qcow2);
 	qio->bi_io_vec = (*qvec)->bvec;
 	qio->bi_iter.bi_size = nr_pages << PAGE_SHIFT;
 	qio->bi_iter.bi_idx = 0;
@@ -867,7 +867,7 @@ err:
 	return NULL;
 }
 
-void slow_wb_timer_fn(struct timer_list *t)
+void qcow2_slow_wb_timer_fn(struct timer_list *t)
 {
 	struct qcow2 *qcow2 = from_timer(qcow2, t, slow_wb_timer);
 	unsigned long flags;
@@ -882,7 +882,7 @@ void slow_wb_timer_fn(struct timer_list *t)
 		queue_work(qcow2->tgt->wq, &qcow2->worker);
 }
 
-static bool md_make_dirty(struct qcow2 *qcow2, struct md_page *md, bool is_refs)
+static bool qcow2_md_make_dirty(struct qcow2 *qcow2, struct md_page *md, bool is_refs)
 {
 	struct list_head *head;
 	bool new = false;
@@ -984,7 +984,7 @@ static void calc_page_id_and_index(loff_t pos, u64 *page_id, u32 *index_in_page)
 	*index_in_page = (pos & ~PAGE_MASK) / sizeof(u64);
 }
 
-static int calc_cluster_map(struct qcow2 *qcow2, struct qio *qio,
+static int qcow2_calc_cluster_map(struct qcow2 *qcow2, struct qio *qio,
 			    struct qcow2_map *map)
 {
 	loff_t start = to_bytes(qio->bi_iter.bi_sector);
@@ -1193,7 +1193,7 @@ static void mark_cluster_used(struct qcow2 *qcow2, struct md_page *r2_md,
 	set_r2_entry(qcow2, r2_md, r2_index_in_page, 1);
 	WARN_ON_ONCE(get_r2_entry(qcow2, r2_md, r2_index_in_page) != 1);
 
-	md_make_dirty(qcow2, r2_md, true);
+	qcow2_md_make_dirty(qcow2, r2_md, true);
 	spin_unlock_irq(&qcow2->md_pages_lock);
 }
 
@@ -1207,7 +1207,7 @@ static void mark_cluster_unused(struct qcow2 *qcow2, struct md_page *r2_md,
 	set_r2_entry(qcow2, r2_md, r2_index_in_page, 0);
 	WARN_ON_ONCE(get_r2_entry(qcow2, r2_md, r2_index_in_page) != 0);
 
-	md_make_dirty(qcow2, r2_md, true);
+	qcow2_md_make_dirty(qcow2, r2_md, true);
 	if (qcow2->free_cluster_search_pos > pos)
 		qcow2->free_cluster_search_pos = pos;
 	spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
@@ -1226,7 +1226,7 @@ static void dec_cluster_usage(struct qcow2 *qcow2, struct md_page *r2_md,
 	set_r2_entry(qcow2, r2_md, r2_index_in_page, val);
 	WARN_ON_ONCE(get_r2_entry(qcow2, r2_md, r2_index_in_page) != val);
 
-	md_make_dirty(qcow2, r2_md, true);
+	qcow2_md_make_dirty(qcow2, r2_md, true);
 	if (!val && qcow2->free_cluster_search_pos > pos)
 		qcow2->free_cluster_search_pos = pos;
 	spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
@@ -1246,7 +1246,7 @@ static void __submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio, u32 nr_segs
 	iov_iter_bvec(&iter, rw, bvec, nr_segs, qio->bi_iter.bi_size);
 	iter.iov_offset = qio->bi_iter.bi_bvec_done;
 
-	call_rw_iter(qcow2, pos, rw, &iter, qio);
+	qcow2_call_rw_iter(qcow2, pos, rw, &iter, qio);
 }
 
 static void submit_rw_mapped(struct qcow2 *qcow2, struct qio *qio)
@@ -1272,7 +1272,7 @@ static void do_md_page_read_complete(int ret, struct qcow2 *qcow2,
 
 	spin_lock_irqsave(&qcow2->md_pages_lock, flags);
 	if (ret < 0)
-		md_page_erase(qcow2, md);
+		qcow2_md_page_erase(qcow2, md);
 	else
 		md->status |= MD_UPTODATE;
 
@@ -1280,10 +1280,10 @@ static void do_md_page_read_complete(int ret, struct qcow2 *qcow2,
 	spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
 
 	if (ret < 0) {
-		free_md_page(md);
+		qcow2_free_md_page(md);
 		end_qios(&wait_list, errno_to_blk_status(ret));
 	} else {
-		dispatch_qios(qcow2, NULL, &wait_list);
+		qcow2_dispatch_qios(qcow2, NULL, &wait_list);
 	}
 }
 
@@ -1319,7 +1319,7 @@ static void revert_clusters_alloc(struct qcow2 *qcow2, struct wb_desc *wbd)
 		 * R1/R2 should be cached, since we was able
 		 * to submit cluster allocation.
 		 */
-		ret = handle_r1r2_maps(qcow2, pos, NULL, &r1, &r2, false);
+		ret = qcow2_handle_r1r2_maps(qcow2, pos, NULL, &r1, &r2, false);
 		if (WARN_ON_ONCE(ret <= 0))
 			continue;
 
@@ -1365,7 +1365,7 @@ static void complete_wbd(struct qcow2 *qcow2, struct wb_desc *wbd)
 				       &wait_list, &end_list);
 		spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
 
-		dispatch_qios(qcow2, NULL, &wait_list);
+		qcow2_dispatch_qios(qcow2, NULL, &wait_list);
 		end_qios(&end_list, errno_to_blk_status(wbd->ret));
 	}
 	free_wbd(wbd);
@@ -1409,7 +1409,7 @@ static void do_md_page_write_complete(int ret, struct qcow2 *qcow2,
 	spin_unlock_irq(&qcow2->md_pages_lock);
 
 	end_qios(&end_list, errno_to_blk_status(ret));
-	dispatch_qios(qcow2, NULL, &wait_list);
+	qcow2_dispatch_qios(qcow2, NULL, &wait_list);
 	if (finalize_wbd)
 		complete_wbd(qcow2, wbd);
 }
@@ -1430,7 +1430,7 @@ static void md_page_read_complete(struct qio *qio)
 
 		mode = qcow2->file->f_mode;
 		if (pos == qcow2->file_size && !(mode & FMODE_WRITE)) {
-			zero_fill_page_from(md->page, ret);
+			qcow2_zero_fill_page_from(md->page, ret);
 			ret = PAGE_SIZE;
 		}
 	}
@@ -1481,10 +1481,10 @@ static void submit_rw_md_page(unsigned int rw, struct qcow2 *qcow2,
 		 * Note, this is fake qio, and qio_endio()
 		 * can't be called on it!
 		 */
-		qio = alloc_qio_with_qvec(qcow2, 1, bi_op, false, &qvec);
-		if (!qio || alloc_qio_ext(qio)) {
+		qio = qcow2_alloc_qio_with_qvec(qcow2, 1, bi_op, false, &qvec);
+		if (!qio || qcow2_alloc_qio_ext(qio)) {
 			if (qio)
-				free_qio(qio, tgt->qio_pool);
+				qcow2_free_qio(qio, tgt->qio_pool);
 			err = -ENOMEM;
 		}
 	}
@@ -1528,7 +1528,7 @@ static int submit_read_md_page(struct qcow2 *qcow2, struct qio **qio,
 	lockdep_assert_held(&qcow2->md_pages_lock);
 	spin_unlock_irq(&qcow2->md_pages_lock);
 
-	ret = alloc_and_insert_md_page(qcow2, page_id, &md);
+	ret = qcow2_alloc_and_insert_md_page(qcow2, page_id, &md);
 	if (ret < 0)
 		goto out_lock;
 
@@ -1556,7 +1556,7 @@ static int __handle_md_page(struct qcow2 *qcow2, u64 page_id,
 	struct md_page *md;
 
 	lockdep_assert_held(&qcow2->md_pages_lock);
-	md = md_page_find_or_postpone(qcow2, page_id, qio);
+	md = qcow2_md_page_find_or_postpone(qcow2, page_id, qio);
 	if (!md) {
 		if (qio && *qio)
 			return submit_read_md_page(qcow2, qio, page_id);
@@ -1919,7 +1919,7 @@ unlock:
  * Sanity check is disabled on clusters containing compressed
  * clusters (their refcount is equal to num of compressed users).
  */
-static int handle_r1r2_maps(struct qcow2 *qcow2, loff_t pos, struct qio **qio,
+static int qcow2_handle_r1r2_maps(struct qcow2 *qcow2, loff_t pos, struct qio **qio,
 	struct qcow2_map_item *r1, struct qcow2_map_item *r2, bool compressed)
 {
 	u64 entry;
@@ -1958,7 +1958,7 @@ static int parse_metadata(struct qcow2 *qcow2, struct qio **qio,
 	s64 ret;
 
 	WARN_ON_ONCE(map->data_clu_pos != 0);
-	if (calc_cluster_map(qcow2, *qio, map) < 0)
+	if (qcow2_calc_cluster_map(qcow2, *qio, map) < 0)
 		return -EIO;
 	spin_lock_irq(&qcow2->md_pages_lock);
 again:
@@ -2005,7 +2005,7 @@ unlock:
 		return 0;
 
 	/* Now refcounters table/block */
-	ret = handle_r1r2_maps(qcow2, pos, qio, &map->r1,
+	ret = qcow2_handle_r1r2_maps(qcow2, pos, qio, &map->r1,
 			       &map->r2, map->compressed);
 	return ret < 0 ? ret : 0;
 }
@@ -2023,23 +2023,23 @@ static int place_r2(struct qcow2 *qcow2, struct qcow2_map_item *r1,
 	if (delay_if_writeback(qcow2, r1->md, r1->index_in_page, qio, true))
 		return 0;
 
-	ret = punch_hole(qcow2->file, r2_pos, qcow2->clu_size);
+	ret = qcow2_punch_hole(qcow2->file, r2_pos, qcow2->clu_size);
 	if (ret) {
 		pr_err("qcow2: punch hole: %d\n", ret);
 		return ret;
 	}
 
-	ret = alloc_and_insert_md_page(qcow2, page_id, &r2->md);
+	ret = qcow2_alloc_and_insert_md_page(qcow2, page_id, &r2->md);
 	if (ret < 0) {
 		pr_err("Can't alloc: ret=%d, page_id=%llu\n", ret, page_id);
 		return ret;
 	}
 
-	zero_fill_page_from(r2->md->page, 0);
+	qcow2_zero_fill_page_from(r2->md->page, 0);
 
 	spin_lock_irq(&qcow2->md_pages_lock);
 	set_u64_to_be_page(r1->md->page, r1->index_in_page, r2_pos);
-	md_make_dirty(qcow2, r1->md, true);
+	qcow2_md_make_dirty(qcow2, r1->md, true);
 	r2->md->status |= MD_UPTODATE;
 	spin_unlock_irq(&qcow2->md_pages_lock);
 
@@ -2168,7 +2168,7 @@ static int truncate_prealloc_safe(struct qcow2 *qcow2, loff_t len, const char *f
 	return 0;
 }
 
-static int punch_hole(struct file *file, loff_t pos, loff_t len)
+static int qcow2_punch_hole(struct file *file, loff_t pos, loff_t len)
 {
 	return vfs_fallocate(file, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,
 			     pos, len);
@@ -2253,7 +2253,7 @@ static int relocate_refcount_table(struct qcow2 *qcow2, struct qio **qio)
 
 	/* Cache R1/R2 pages covering clusters of old reftable (R1) */
 	for (i = old_pos; i < old_end; i += PAGE_SIZE) {
-		ret = handle_r1r2_maps(qcow2, i, qio, &r1, &r2, false);
+		ret = qcow2_handle_r1r2_maps(qcow2, i, qio, &r1, &r2, false);
 		if (ret <= 0)
 			return ret;
 		if (delay_if_writeback(qcow2, r1.md, -1, qio, true))
@@ -2277,18 +2277,18 @@ static int relocate_refcount_table(struct qcow2 *qcow2, struct qio **qio)
 
 	/* Alloc R1/R2 pages covering clusters of new R1 and new R2 */
 	for (i = pos + (u64)old_clus * clu_size; i < r2_end; i += PAGE_SIZE) {
-		ret = alloc_and_insert_md_page(qcow2, i >> PAGE_SHIFT, &md);
+		ret = qcow2_alloc_and_insert_md_page(qcow2, i >> PAGE_SHIFT, &md);
 		if (ret < 0)
 			goto err_free_r2_pages;
 		spin_lock_irq(&qcow2->md_pages_lock);
-		zero_fill_page_from(md->page, 0);
+		qcow2_zero_fill_page_from(md->page, 0);
 		md->status |= MD_UPTODATE;
 		spin_unlock_irq(&qcow2->md_pages_lock);
 	}
 
 	set_reftable_in_raw_hdr(md0->page, pos, clus);
 	/* Write new hdr: last potential failing operation */
-	ret = rw_page_sync(WRITE, qcow2, 0, md0->page);
+	ret = qcow2_rw_page_sync(WRITE, qcow2, 0, md0->page);
 	if (ret) {
 		/* Restore old R1 */
 		set_reftable_in_raw_hdr(md0->page, old_pos, old_clus);
@@ -2303,15 +2303,15 @@ static int relocate_refcount_table(struct qcow2 *qcow2, struct qio **qio)
 	/* Update cached values */
 	qcow2->hdr.refcount_table_offset = pos;
 	qcow2->hdr.refcount_table_clusters = clus;
-	calc_cached_parameters(qcow2, &qcow2->hdr);
+	qcow2_calc_cached_parameters(qcow2, &qcow2->hdr);
 
 	/* Now renumber R1 cached pages to point new place and mark dirty */
 	index = old_pos / PAGE_SIZE;
 	delta = (pos - old_pos) / PAGE_SIZE;
 	for (i = 0; i < nr_pages; i++, index++) {
-		md = md_page_renumber(qcow2, index, index + delta);
+		md = qcow2_md_page_renumber(qcow2, index, index + delta);
 		if (!WARN_ON_ONCE(!md))
-			md_make_dirty(qcow2, md, true);
+			qcow2_md_make_dirty(qcow2, md, true);
 		if (!md)
 			break; /* goto err_free_r2_pages */
 	}
@@ -2330,13 +2330,13 @@ static int relocate_refcount_table(struct qcow2 *qcow2, struct qio **qio)
 			goto err_free_r2_pages;
 		spin_lock_irq(&qcow2->md_pages_lock);
 		set_u64_to_be_page(md->page, r1.index_in_page, i);
-		md_make_dirty(qcow2, md, true);
+		qcow2_md_make_dirty(qcow2, md, true);
 		spin_unlock_irq(&qcow2->md_pages_lock);
 	}
 
 	/* Mark used new R1 and R2 clusters */
 	for (i = pos; i < r2_end; i += clu_size) {
-		ret = handle_r1r2_maps(qcow2, i, NULL, &r1, &r2, false);
+		ret = qcow2_handle_r1r2_maps(qcow2, i, NULL, &r1, &r2, false);
 		if (WARN_ON_ONCE(ret <= 0))
 			goto err_free_r2_pages;
 		mark_cluster_used(qcow2, r2.md, r2.index_in_page);
@@ -2344,7 +2344,7 @@ static int relocate_refcount_table(struct qcow2 *qcow2, struct qio **qio)
 
 	/* Mark unused old reftable (R1) clusters */
 	for (i = old_pos; i < old_end; i += clu_size) {
-		ret = handle_r1r2_maps(qcow2, i, NULL, &r1, &r2, false);
+		ret = qcow2_handle_r1r2_maps(qcow2, i, NULL, &r1, &r2, false);
 		if (WARN_ON_ONCE(ret <= 0))
 			goto err_free_r2_pages;
 		mark_cluster_unused(qcow2, r2.md, r2.index_in_page, i);
@@ -2358,9 +2358,9 @@ err_free_r2_pages:
 		if (ret <= 0)
 			break;
 		spin_lock_irq(&qcow2->md_pages_lock);
-		md_page_erase(qcow2, md);
+		qcow2_md_page_erase(qcow2, md);
 		spin_unlock_irq(&qcow2->md_pages_lock);
-		free_md_page(md);
+		qcow2_free_md_page(md);
 	}
 	/* TODO: switch to RO */
 	return -EIO;
@@ -2397,7 +2397,7 @@ again:
 	if (pos < qcow2->file_preallocated_area_start) {
 		/* Clu at @pos may contain dirty data */
 		off = min_t(loff_t, old_size, end);
-		ret = punch_hole(file, pos, off - pos);
+		ret = qcow2_punch_hole(file, pos, off - pos);
 		if (ret) {
 			pr_err("qcow2: punch hole: %d\n", ret);
 			return ret;
@@ -2476,7 +2476,7 @@ static int prepare_l_entry_update(struct qcow2 *qcow2, struct qio *qio,
 	}
 
 	spin_lock_irq(&qcow2->md_pages_lock);
-	if (md_make_dirty(qcow2, md, false))
+	if (qcow2_md_make_dirty(qcow2, md, false))
 		md->wbd = new_wbd;
 	else
 		WARN_ON_ONCE(new_wbd);
@@ -2583,7 +2583,7 @@ static int prepare_l_entry_cow(struct qcow2 *qcow2, struct qcow2_map *map,
 	struct lock_desc *lockd = NULL;
 	struct qio_ext *ext;
 
-	if (alloc_qio_ext(qio))
+	if (qcow2_alloc_qio_ext(qio))
 		return -ENOMEM;
 
 	ext = qio->ext;
@@ -2645,7 +2645,7 @@ static void backward_merge_write_complete(struct qcow2_target *tgt, struct qio *
 	qio->flags |= QIO_IS_DISCARD_FL;
 
 	qio->queue_list_id = QLIST_COW_INDEXES;
-	dispatch_qios(qcow2, qio, NULL);
+	qcow2_dispatch_qios(qcow2, qio, NULL);
 }
 
 static void backward_merge_read_complete(struct qcow2_target *tgt, struct qio *unused,
@@ -2661,7 +2661,7 @@ static void backward_merge_read_complete(struct qcow2_target *tgt, struct qio *u
 	}
 
 	qio->queue_list_id = QLIST_BMERGE_WRITE;
-	dispatch_qios(qcow2, qio, NULL);
+	qcow2_dispatch_qios(qcow2, qio, NULL);
 }
 
 static void requeue_if_ok(struct qcow2_target *tgt, struct qio *unused,
@@ -2675,7 +2675,7 @@ static void requeue_if_ok(struct qcow2_target *tgt, struct qio *unused,
 		return;
 	}
 
-	dispatch_qios(qio->qcow2, qio, NULL);
+	qcow2_dispatch_qios(qio->qcow2, qio, NULL);
 }
 
 static int prepare_backward_merge(struct qcow2 *qcow2, struct qio **qio,
@@ -2693,7 +2693,7 @@ static int prepare_backward_merge(struct qcow2 *qcow2, struct qio **qio,
 		WARN_ON_ONCE(!maybe_mapped_in_lower_delta(qcow2, *qio));
 		WARN_ON_ONCE((*qio)->queue_list_id != QLIST_DEFERRED);
 		(*qio)->qcow2 = qcow2->lower;
-		dispatch_qios((*qio)->qcow2, *qio, NULL);
+		qcow2_dispatch_qios((*qio)->qcow2, *qio, NULL);
 		return 0;
 	}
 
@@ -2703,13 +2703,13 @@ static int prepare_backward_merge(struct qcow2 *qcow2, struct qio **qio,
 		 * We can't read lower delta after prepare_l1l2_cow()
 		 * prepares us.
 		 */
-		aux_qio = alloc_qio(qcow2->tgt->qio_pool, true);
+		aux_qio = qcow2_alloc_qio(qcow2->tgt->qio_pool, true);
 		if (!aux_qio) {
 			(*qio)->bi_status = BLK_STS_RESOURCE;
 			goto endio;
 		}
 
-		init_qio(aux_qio, REQ_OP_WRITE, qcow2);
+		qcow2_init_qio(aux_qio, REQ_OP_WRITE, qcow2);
 		aux_qio->flags = QIO_IS_MERGE_FL|QIO_FREE_ON_ENDIO_FL;
 		aux_qio->bi_io_vec = (*qio)->bi_io_vec;
 		aux_qio->bi_iter = (*qio)->bi_iter;
@@ -2851,7 +2851,7 @@ static void cow_read_endio(struct qcow2_target *tgt, struct qio *unused,
 	}
 
 	qio->queue_list_id = QLIST_COW_DATA;
-	dispatch_qios(qio->qcow2, qio, NULL);
+	qcow2_dispatch_qios(qio->qcow2, qio, NULL);
 }
 
 static void submit_read_whole_cow_clu(struct qcow2_map *map, struct qio *qio)
@@ -2867,7 +2867,7 @@ static void submit_read_whole_cow_clu(struct qcow2_map *map, struct qio *qio)
 	WARN_ON_ONCE(map->level & L2_LEVEL);
 
 	nr_pages = clu_size >> PAGE_SHIFT;
-	read_qio = alloc_qio_with_qvec(qcow2, nr_pages, REQ_OP_READ, true, &qvec);
+	read_qio = qcow2_alloc_qio_with_qvec(qcow2, nr_pages, REQ_OP_READ, true, &qvec);
 	if (!read_qio) {
 		qio->bi_status = BLK_STS_RESOURCE;
 		qio_endio(qio); /* Frees ext */
@@ -3035,7 +3035,7 @@ static void compressed_read_endio(struct qcow2_target *tgt, struct qio *unused,
 	}
 
 	qio->queue_list_id = QLIST_ZREAD;
-	dispatch_qios(qcow2, qio, NULL);
+	qcow2_dispatch_qios(qcow2, qio, NULL);
 }
 
 static void submit_read_compressed(struct qcow2_map *map, struct qio *qio,
@@ -3070,13 +3070,13 @@ static void submit_read_compressed(struct qcow2_map *map, struct qio *qio,
 		qio->ext->cow_segs = nr_segs;
 	}
 
-	read_qio = alloc_qio_with_qvec(qcow2, nr_alloc, REQ_OP_READ,
+	read_qio = qcow2_alloc_qio_with_qvec(qcow2, nr_alloc, REQ_OP_READ,
 				       true, &qvec);
 	/* COW may already allocate qio->ext */
-	if (!read_qio || (!qio->ext && alloc_qio_ext(qio) < 0)) {
+	if (!read_qio || (!qio->ext && qcow2_alloc_qio_ext(qio) < 0)) {
 		if (read_qio) {
-			free_qvec_with_pages(qvec);
-			free_qio(read_qio, tgt->qio_pool);
+			qcow2_free_qvec_with_pages(qvec);
+			qcow2_free_qio(read_qio, tgt->qio_pool);
 		}
 		qio->bi_status = BLK_STS_RESOURCE;
 		qio_endio(qio); /* Frees ext */
@@ -3102,7 +3102,7 @@ static void submit_read_compressed(struct qcow2_map *map, struct qio *qio,
 		 * updates qvec. Also skips extract part.
 		 */
 		cow_read_endio(qcow2->tgt, NULL, qio, BLK_STS_OK);
-		free_qio(read_qio, tgt->qio_pool);
+		qcow2_free_qio(read_qio, tgt->qio_pool);
 		return;
 	}
 
@@ -3129,7 +3129,7 @@ static void sliced_cow_read_complete(struct qcow2_target *tgt, struct qio *read_
 		qio_endio(qio);
 	} else {
 		qio->queue_list_id = QLIST_COW_DATA;
-		dispatch_qios(qcow2, qio, NULL);
+		qcow2_dispatch_qios(qcow2, qio, NULL);
 	}
 }
 
@@ -3199,7 +3199,7 @@ static void submit_read_sliced_clu(struct qcow2_map *map, struct qio *qio,
 		goto out;
 	}
 
-	read_qio = alloc_qio_with_qvec(qcow2, nr_pages, REQ_OP_READ, true, &qvec);
+	read_qio = qcow2_alloc_qio_with_qvec(qcow2, nr_pages, REQ_OP_READ, true, &qvec);
 	if (!read_qio)
 		goto err_alloc;
 	read_qio->flags |= QIO_FREE_ON_ENDIO_FL;
@@ -3270,7 +3270,7 @@ static void issue_discard(struct qcow2_map *map, struct qio *qio)
 
 	WARN_ON_ONCE(!(map->level & L2_LEVEL));
 	pos = bio_sector_to_file_pos(qcow2, qio, map);
-	ret = punch_hole(qcow2->file, pos, qio->bi_iter.bi_size);
+	ret = qcow2_punch_hole(qcow2->file, pos, qio->bi_iter.bi_size);
 
 	if (ret)
 		qio->bi_status = errno_to_blk_status(ret);
@@ -3377,7 +3377,7 @@ static void process_read_qio(struct qcow2 *qcow2, struct qio *qio,
 			shorten_and_zero_qio_tail(qcow2->lower, qio);
 			qio->qcow2 = qcow2->lower;
 			WARN_ON_ONCE(qio->queue_list_id != QLIST_DEFERRED);
-			dispatch_qios(qio->qcow2, qio, NULL);
+			qcow2_dispatch_qios(qio->qcow2, qio, NULL);
 		} else {
 			/* Mapped */
 			perform_rw_mapped(map, qio);
@@ -3485,7 +3485,7 @@ skip_bvec:
 	qio->bi_io_vec = bvec;
 	qio->queue_list_id = QLIST_DEFERRED;
 
-	ret = split_qio_to_list(qcow2, qio, deferred_qios);
+	ret = qcow2_split_qio_to_list(qcow2, qio, deferred_qios);
 	if (unlikely(ret < 0))
 		goto err;
 
@@ -3644,10 +3644,10 @@ static int prepare_sliced_data_write(struct qcow2 *qcow2, struct qio *qio,
 
 	WARN_ON_ONCE(qio->bi_op == REQ_OP_READ && nr_segs == 0);
 
-	write_qio = alloc_qio(tgt->qio_pool, true);
+	write_qio = qcow2_alloc_qio(tgt->qio_pool, true);
 	if (!write_qio)
 		goto err_qio;
-	init_qio(write_qio, REQ_OP_WRITE, qcow2);
+	qcow2_init_qio(write_qio, REQ_OP_WRITE, qcow2);
 	write_qio->flags |= QIO_FREE_ON_ENDIO_FL;
 	write_qio->endio_cb = endio;
 	write_qio->endio_cb_data = qio;
@@ -3658,7 +3658,7 @@ static int prepare_sliced_data_write(struct qcow2 *qcow2, struct qio *qio,
 		if (nr_segs) {
 			aux_qio = split_and_chain_qio(qcow2, write_qio, 0);
 			if (!aux_qio) {
-				free_qio(write_qio, tgt->qio_pool);
+				qcow2_free_qio(write_qio, tgt->qio_pool);
 				goto err_qio;
 			}
 			list_add(&aux_qio->link, list);
@@ -3708,7 +3708,7 @@ static void process_backward_merge_write(struct qcow2 *qcow2, struct list_head *
 					      &list, endio) < 0)
 			continue;
 
-		dispatch_qios(qcow2->lower, NULL, &list);
+		qcow2_dispatch_qios(qcow2->lower, NULL, &list);
 	}
 }
 
@@ -3726,7 +3726,7 @@ static void cow_data_write_endio(struct qcow2_target *tgt, struct qio *unused,
 		qio_endio(qio);
 	} else {
 		qio->queue_list_id = QLIST_COW_INDEXES;
-		dispatch_qios(qcow2, qio, NULL);
+		qcow2_dispatch_qios(qcow2, qio, NULL);
 	}
 }
 
@@ -3737,13 +3737,13 @@ static void submit_cow_data_write(struct qcow2 *qcow2, struct qio *qio, loff_t p
 	u32 clu_size = qcow2->clu_size;
 	struct qio *write_qio;
 
-	write_qio = alloc_qio(tgt->qio_pool, true);
+	write_qio = qcow2_alloc_qio(tgt->qio_pool, true);
 	if (!write_qio) {
 		qio->bi_status = BLK_STS_RESOURCE;
 		qio_endio(qio);
 		return;
 	}
-	init_qio(write_qio, REQ_OP_WRITE, qcow2);
+	qcow2_init_qio(write_qio, REQ_OP_WRITE, qcow2);
 
 	write_qio->flags |= QIO_FREE_ON_ENDIO_FL;
 	write_qio->bi_io_vec = qvec->bvec;
@@ -3774,7 +3774,7 @@ static void sliced_cow_data_write_complete(struct qcow2_target *tgt, struct qio 
 		qio_endio(qio);
 	} else {
 		qio->queue_list_id = QLIST_COW_INDEXES;
-		dispatch_qios(qcow2, qio, NULL);
+		qcow2_dispatch_qios(qcow2, qio, NULL);
 	}
 }
 
@@ -3951,7 +3951,7 @@ next:		qio = qio_list_pop(qio_list);
 			finalize_qio_ext(qio);
 			/* COW on L1 completed, it's time for COW on L2 */
 			qio->queue_list_id = QLIST_DEFERRED;
-			dispatch_qios(qcow2, qio, NULL);
+			qcow2_dispatch_qios(qcow2, qio, NULL);
 		} else {
 			/*
 			 * This qio was already written together with clu.
@@ -4098,13 +4098,13 @@ static void init_qrq_and_embedded_qio(struct qcow2_target *tgt, struct request *
 				      struct qcow2_rq *qrq, struct qio *qio)
 {
 	init_qrq(qrq, rq);
-	init_qio(qio, req_op(rq), NULL);
+	qcow2_init_qio(qio, req_op(rq), NULL);
 
 	qio->endio_cb = qrq_endio;
 	qio->endio_cb_data = qrq;
 }
 
-void submit_embedded_qio(struct qcow2_target *tgt, struct qio *qio)
+void qcow2_submit_embedded_qio(struct qcow2_target *tgt, struct qio *qio)
 {
 	struct qcow2_rq *qrq = qio->endio_cb_data;
 	struct request *rq = qrq->rq;
@@ -4142,12 +4142,12 @@ void submit_embedded_qio(struct qcow2_target *tgt, struct qio *qio)
 		queue_work(tgt->wq, worker);
 }
 
-void submit_embedded_qios(struct qcow2_target *tgt, struct list_head *list)
+void qcow2_submit_embedded_qios(struct qcow2_target *tgt, struct list_head *list)
 {
 	struct qio *qio;
 
 	while ((qio = qio_list_pop(list)) != NULL)
-		submit_embedded_qio(tgt, qio);
+		qcow2_submit_embedded_qio(tgt, qio);
 }
 
 int qcow2_clone_and_map(struct dm_target *ti, struct request *rq,
@@ -4167,7 +4167,7 @@ int qcow2_clone_and_map(struct dm_target *ti, struct request *rq,
 	 * Note, this qcow2_clone_and_map() may be called from atomic
 	 * context, so here we just delegate qio splitting to kwork.
 	 */
-	submit_embedded_qio(tgt, qio);
+	qcow2_submit_embedded_qio(tgt, qio);
 	return DM_MAPIO_SUBMITTED;
 }
 
@@ -4190,7 +4190,7 @@ static void handle_cleanup_mask(struct qio *qio)
 			swap(md->lockd, lockd);
 		list_splice_init(&md->wait_list, &qio_list);
 		spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
-		dispatch_qios(qcow2, NULL, &qio_list);
+		qcow2_dispatch_qios(qcow2, NULL, &qio_list);
 		kfree(lockd);
 		ext->cleanup_mask &= ~MD_INDEX_SET_UNLOCKED;
 	}
@@ -4204,14 +4204,14 @@ static void handle_cleanup_mask(struct qio *qio)
 			list_splice_init(&md->wait_list, &qio_list);
 		spin_unlock_irqrestore(&qcow2->md_pages_lock, flags);
 		if (last)
-			dispatch_qios(qcow2, NULL, &qio_list);
+			qcow2_dispatch_qios(qcow2, NULL, &qio_list);
 		ext->cleanup_mask &= ~DEC_WPC_NOREAD_COUNT;
 	}
 
 	if (ext->cleanup_mask & FREE_QIO_DATA_QVEC) {
 		struct qcow2_bvec *qvec = qio->data;
 
-		free_qvec_with_pages(qvec);
+		qcow2_free_qvec_with_pages(qvec);
 		qio->data = NULL;
 		ext->cleanup_mask &= ~FREE_QIO_DATA_QVEC;
 	}
