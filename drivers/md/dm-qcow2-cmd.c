@@ -5,6 +5,7 @@
 #include <linux/device-mapper.h>
 #include <linux/sched/signal.h>
 #include <linux/file.h>
+#include <linux/error-injection.h>
 #include "dm-qcow2.h"
 
 #define SERVICE_QIOS_MAX 64
@@ -99,6 +100,7 @@ static int qcow2_service_iter(struct qcow2_target *tgt, struct qcow2 *qcow2,
 
 	return ret;
 }
+ALLOW_ERROR_INJECTION(qcow2_service_iter, ERRNO);
 
 static int qcow2_merge_common(struct qcow2_target *tgt)
 {
@@ -121,6 +123,7 @@ static int qcow2_merge_forward(struct qcow2_target *tgt)
 {
 	return -ENOTTY; /* TODO */
 }
+ALLOW_ERROR_INJECTION(qcow2_merge_forward, ERRNO);
 
 static int qcow2_break_l1cow(struct qcow2_target *tgt)
 {
@@ -216,6 +219,7 @@ static int qcow2_merge_backward(struct qcow2_target *tgt)
 out:
 	return ret;
 }
+ALLOW_ERROR_INJECTION(qcow2_merge_backward, ERRNO);
 
 static struct qcow2 *qcow2_get_img(struct qcow2_target *tgt, u32 img_id, u8 *ref_index)
 {
@@ -232,6 +236,7 @@ static struct qcow2 *qcow2_get_img(struct qcow2_target *tgt, u32 img_id, u8 *ref
 	}
 	return qcow2;
 }
+ALLOW_ERROR_INJECTION(qcow2_get_img, NULL);
 
 static int qcow2_get_img_fd(struct qcow2_target *tgt, u32 img_id,
 			    char *result, unsigned int maxlen)
