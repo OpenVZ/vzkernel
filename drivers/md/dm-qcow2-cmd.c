@@ -67,21 +67,21 @@ static int qcow2_service_iter(struct qcow2_target *tgt, struct qcow2 *qcow2,
 			break;
 		}
 
-		qio = alloc_qio(tgt->qio_pool, true);
+		qio = qcow2_alloc_qio(tgt->qio_pool, true);
 		if (!qio) {
 			ret = -ENOMEM;
 			break;
 		}
 
 		/* See fake_service_qio() */
-		init_qio(qio, bi_op, qcow2);
+		qcow2_init_qio(qio, bi_op, qcow2);
 		qio->flags |= qio_flags|QIO_FREE_ON_ENDIO_FL;
 		qio->bi_iter.bi_sector = to_sector(pos);
 		/* The rest is zeroed in alloc_qio() */
 		qio->endio_cb = service_qio_endio;
 		qio->endio_cb_data = &service_status;
 
-		dispatch_qios(qcow2, qio, NULL);
+		qcow2_dispatch_qios(qcow2, qio, NULL);
 		if (atomic_inc_return(&tgt->service_qios) == SERVICE_QIOS_MAX) {
 			wait_event(tgt->service_wq,
 				   atomic_read(&tgt->service_qios) < SERVICE_QIOS_MAX);
@@ -155,7 +155,7 @@ static void set_backward_merge_in_process(struct qcow2_target *tgt,
 	list_splice_init(&qcow2->paused_qios, &list);
 	spin_unlock_irq(&qcow2->deferred_lock);
 
-	submit_embedded_qios(tgt, &list);
+	qcow2_submit_embedded_qios(tgt, &list);
 }
 
 static int qcow2_merge_backward(struct qcow2_target *tgt)
@@ -206,7 +206,7 @@ static int qcow2_merge_backward(struct qcow2_target *tgt)
 	tgt->top = lower;
 	smp_wmb(); /* Pairs with qcow2_ref_inc() */
 	qcow2_inflight_ref_switch(tgt); /* Pending qios */
-	flush_deferred_activity(tgt, qcow2); /* Delayed md pages */
+	qcow2_flush_deferred_activity(tgt, qcow2); /* Delayed md pages */
 	qcow2->lower = NULL;
 
 	ret2 = qcow2_set_image_file_features(qcow2, false);
