@@ -8,6 +8,7 @@
 #include <uapi/linux/falloc.h>
 #include <linux/blk-mq.h>
 #include <linux/zlib.h>
+#include <linux/error-injection.h>
 
 #include "dm.h"
 #include "dm-rq.h"
@@ -323,6 +324,7 @@ struct qio *qcow2_alloc_qio(mempool_t *pool, bool zero)
 	}
 	return qio;
 }
+ALLOW_ERROR_INJECTION(qcow2_alloc_qio, NULL);
 
 void qcow2_init_qio(struct qio *qio, unsigned int bi_op, struct qcow2 *qcow2)
 {
@@ -352,6 +354,7 @@ static int qcow2_alloc_qio_ext(struct qio *qio)
 		return -ENOMEM;
 	return 0;
 }
+ALLOW_ERROR_INJECTION(qcow2_alloc_qio_ext, ERRNO);
 
 static void finalize_qio_ext(struct qio *qio)
 {
@@ -531,6 +534,7 @@ err:
 	}
 	return -ENOMEM;
 }
+ALLOW_ERROR_INJECTION(qcow2_split_qio_to_list, ERRNO);
 
 static void perform_zero_read(struct qio *qio, u32 size)
 {
