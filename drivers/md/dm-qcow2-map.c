@@ -1477,8 +1477,8 @@ static void submit_rw_md_page(unsigned int rw, struct qcow2 *qcow2,
 	bi_op = (rw == READ ? REQ_OP_READ : REQ_OP_WRITE);
 
 	if (pos > qcow2->file_size) {
-		pr_err_once("qcow2: rw=%x pos=%lld behind EOF %lld\n",
-			     rw, pos, qcow2->file_size);
+		pr_err_once(QCOW2_FMT("rw=%x pos=%lld behind EOF %lld"),
+			qcow2_device_name(tgt->ti), rw, pos, qcow2->file_size);
 		err = -EIO;
 	} else {
 		/*
@@ -1926,6 +1926,7 @@ unlock:
 static int qcow2_handle_r1r2_maps(struct qcow2 *qcow2, loff_t pos, struct qio **qio,
 	struct qcow2_map_item *r1, struct qcow2_map_item *r2, bool compressed)
 {
+	struct dm_target *ti = qcow2->tgt->ti;
 	u64 entry;
 	int ret;
 
@@ -1937,7 +1938,7 @@ static int qcow2_handle_r1r2_maps(struct qcow2 *qcow2, loff_t pos, struct qio **
 		entry = get_r2_entry(qcow2, r2->md, r2->index_in_page);
 		/* Sanity check */
 		if (unlikely(entry > 1)) {
-			pr_err("refblock=%llu, while no snapshots\n", entry);
+			QC_ERR(ti, "refblock=%llu, while no snapshots", entry);
 			return -EIO;
 		}
 	}
@@ -2021,6 +2022,7 @@ unlock:
 static int place_r2(struct qcow2 *qcow2, struct qcow2_map_item *r1,
 		    struct qcow2_map_item *r2, loff_t r2_pos, struct qio **qio)
 {
+	struct dm_target *ti = qcow2->tgt->ti;
 	u64 page_id = r2_pos >> PAGE_SHIFT;
 	int ret;
 
@@ -2029,13 +2031,13 @@ static int place_r2(struct qcow2 *qcow2, struct qcow2_map_item *r1,
 
 	ret = qcow2_punch_hole(qcow2->file, r2_pos, qcow2->clu_size);
 	if (ret) {
-		pr_err("qcow2: punch hole: %d\n", ret);
+		QC_ERR(ti, "punch hole: %d", ret);
 		return ret;
 	}
 
 	ret = qcow2_alloc_and_insert_md_page(qcow2, page_id, &r2->md);
 	if (ret < 0) {
-		pr_err("Can't alloc: ret=%d, page_id=%llu\n", ret, page_id);
+		QC_ERR(ti, "Can't alloc: ret=%d, page_id=%llu", ret, page_id);
 		return ret;
 	}
 
@@ -2163,7 +2165,7 @@ static int truncate_prealloc_safe(struct qcow2 *qcow2, loff_t len, const char *f
 
 	ret = qcow2_truncate_safe(file, new_len);
 	if (ret) {
-		pr_err("qcow2: %s->truncate: %d\n", func, ret);
+		QC_ERR(qcow2->tgt->ti, "%s->truncate: %d", func, ret);
 		return ret;
 	}
 
@@ -2229,7 +2231,8 @@ static int relocate_refcount_table(struct qcow2 *qcow2, struct qio **qio)
 	old_clus = qcow2->hdr.refcount_table_clusters;
 	clus = min_t(u32, old_clus + 1, REFCOUNT_TABLE_MAX_SIZE / clu_size);
 	if (clus <= old_clus) {
-		pr_debug_ratelimited("qcow2: maximal refcount table size\n");
+		pr_debug_ratelimited(QCOW2_FMT("maximal refcount table size"),
+			qcow2_device_name(qcow2->tgt->ti));
 		return -ENFILE;
 	}
 
@@ -2403,7 +2406,7 @@ again:
 		off = min_t(loff_t, old_size, end);
 		ret = qcow2_punch_hole(file, pos, off - pos);
 		if (ret) {
-			pr_err("qcow2: punch hole: %d\n", ret);
+			QC_ERR(qcow2->tgt->ti, "punch hole: %d", ret);
 			return ret;
 		}
 	}
@@ -3565,7 +3568,8 @@ static int complete_metadata_writeback(struct qcow2 *qcow2)
 	fsync_ret = vfs_fsync(qcow2->file, 0);
 	/* FIXME: We should reread md page on error */
 	if (unlikely(fsync_ret))
-		pr_err_ratelimited("qcow2: can't sync md: %d\n", fsync_ret);
+		pr_err_ratelimited(QCOW2_FMT("can't sync md: %d"),
+			qcow2_device_name(qcow2->tgt->ti), fsync_ret);
 
 	while ((qio = qio_list_pop(&wb_list)) != NULL) {
 		md = qio->ext->md;
@@ -3909,6 +3913,7 @@ set_ext_l2:
 /* Finalize successful COW */
 static void process_cow_end(struct qcow2 *qcow2, struct list_head *qio_list)
 {
+	struct dm_target *ti = qcow2->tgt->ti;
 	u32 mask, clu_size = qcow2->clu_size;
 	struct qcow2_map_item r1, r2;
 	struct qio_ext *ext;
@@ -3940,7 +3945,7 @@ next:		qio = qio_list_pop(qio_list);
 			if (ret == 0) /* We never shrink md pages, impossible */
 				goto next;
 			if (WARN_ON_ONCE(ret < 0))
-				pr_err("qcow2: clu at %lld leaked\n", pos);
+				QC_ERR(ti, "clu at %lld leaked", pos);
 			else
 				dec_cluster_usage(qcow2, r2.md, r2.index_in_page, pos);
 			ext->cow_clu_pos += clu_size;
@@ -4054,7 +4059,8 @@ static bool qcow2_try_delay_enospc(struct qcow2_target *tgt, struct qcow2_rq *qr
 
 	init_qrq_and_embedded_qio(tgt, qrq->rq, qrq, qio);
 
-	pr_err_once("qcow2: underlying disk is almost full\n");
+	pr_err_once(QCOW2_FMT("underlying disk is almost full"),
+			qcow2_device_name(tgt->ti));
 	tgt->event_enospc = true;
 	list_add_tail(&qio->link, &tgt->enospc_qios);
 unlock:
