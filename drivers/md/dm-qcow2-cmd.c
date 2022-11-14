@@ -186,13 +186,13 @@ static int qcow2_merge_backward(struct qcow2_target *tgt)
 	 */
 	ret = qcow2_break_l1cow(tgt);
 	if (ret) {
-		pr_err("dm-qcow2: Can't break L1 COW\n");
+		QC_ERR(tgt->ti, "Can't break L1 COW");
 		goto out;
 	}
 
 	ret = qcow2_set_image_file_features(lower, true);
 	if (ret) {
-		pr_err("dm-qcow2: Can't set dirty bit\n");
+		QC_ERR(tgt->ti, "Can't set dirty bit");
 		goto out;
 	}
 	set_backward_merge_in_process(tgt, qcow2, true);
@@ -203,7 +203,7 @@ static int qcow2_merge_backward(struct qcow2_target *tgt)
 		set_backward_merge_in_process(tgt, qcow2, false);
 		ret2 = qcow2_set_image_file_features(lower, false);
 		if (ret2 < 0)
-			pr_err("dm-qcow2: Can't unuse lower (%d)\n", ret2);
+			QC_ERR(tgt->ti, "Can't unuse lower (%d)", ret2);
 		goto out;
 	}
 	tgt->top = lower;
@@ -214,7 +214,7 @@ static int qcow2_merge_backward(struct qcow2_target *tgt)
 
 	ret2 = qcow2_set_image_file_features(qcow2, false);
 	if (ret2 < 0)
-		pr_err("dm-qcow2: Can't unuse merged img (%d)\n", ret2);
+		QC_ERR(tgt->ti, "Can't unuse merged img (%d)", ret2);
 	qcow2_destroy(qcow2);
 out:
 	return ret;
