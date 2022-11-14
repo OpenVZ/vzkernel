@@ -288,26 +288,30 @@ int qcow2_clone_and_map(struct dm_target *ti, struct request *rq,
 
 void do_qcow2_work(struct work_struct *ws);
 void do_qcow2_fsync_work(struct work_struct *ws);
-int alloc_and_insert_md_page(struct qcow2 *qcow2, u64 index, struct md_page **md);
-struct md_page *md_page_find_or_postpone(struct qcow2 *qcow2, unsigned int id, struct qio **qio);
-struct md_page *md_page_renumber(struct qcow2 *qcow2, unsigned int id, unsigned int new_id);
-void md_page_erase(struct qcow2 *qcow2, struct md_page *md);
-void free_md_page(struct md_page *md);
-void zero_fill_page_from(struct page *page, unsigned int from);
-int rw_page_sync(unsigned int rw, struct qcow2 *qcow2, u64 index, struct page *page);
-void call_rw_iter(struct qcow2 *qcow2, loff_t pos, unsigned int rw,
+int qcow2_alloc_and_insert_md_page(struct qcow2 *qcow2, u64 index,
+					struct md_page **md);
+struct md_page *qcow2_md_page_find_or_postpone(struct qcow2 *qcow2,
+					unsigned int id, struct qio **qio);
+struct md_page *qcow2_md_page_renumber(struct qcow2 *qcow2, unsigned int id,
+					unsigned int new_id);
+void qcow2_md_page_erase(struct qcow2 *qcow2, struct md_page *md);
+void qcow2_free_md_page(struct md_page *md);
+void qcow2_zero_fill_page_from(struct page *page, unsigned int from);
+int qcow2_rw_page_sync(unsigned int rw, struct qcow2 *qcow2, u64 index,
+			struct page *page);
+void qcow2_call_rw_iter(struct qcow2 *qcow2, loff_t pos, unsigned int rw,
 		  struct iov_iter *iter, struct qio *qio);
-void calc_cached_parameters(struct qcow2 *qcow2, struct QCowHeader *hdr);
-void slow_wb_timer_fn(struct timer_list *t);
-struct qio *alloc_qio(mempool_t *pool, bool zero);
-void init_qio(struct qio *qio, unsigned int bi_op, struct qcow2 *qcow2);
-void dispatch_qios(struct qcow2 *qcow2, struct qio *qio,
+void qcow2_calc_cached_parameters(struct qcow2 *qcow2, struct QCowHeader *hdr);
+void qcow2_slow_wb_timer_fn(struct timer_list *t);
+struct qio *qcow2_alloc_qio(mempool_t *pool, bool zero);
+void qcow2_init_qio(struct qio *qio, unsigned int bi_op, struct qcow2 *qcow2);
+void qcow2_dispatch_qios(struct qcow2 *qcow2, struct qio *qio,
 		   struct list_head *qio_list);
-void submit_embedded_qios(struct qcow2_target *tgt, struct list_head *list);
+void qcow2_submit_embedded_qios(struct qcow2_target *tgt, struct list_head *list);
 struct qcow2 *qcow2_ref_inc(struct qcow2_target *tgt, u8 *ref_index);
 void qcow2_ref_dec(struct qcow2_target *tgt, u8 ref_index);
 int qcow2_inflight_ref_switch(struct qcow2_target *tgt);
-void flush_deferred_activity(struct qcow2_target *tgt, struct qcow2 *qcow2);
+void qcow2_flush_deferred_activity(struct qcow2_target *tgt, struct qcow2 *qcow2);
 int qcow2_truncate_safe(struct file *file, loff_t new_len);
 
 static inline struct qcow2_target *to_qcow2_target(struct dm_target *ti)
