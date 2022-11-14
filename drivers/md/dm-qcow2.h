@@ -5,6 +5,7 @@
 #include <linux/percpu-refcount.h>
 #include <linux/device-mapper.h>
 #include <linux/fs.h>
+#include "dm-core.h"
 
 #define DM_MSG_PREFIX "qcow2"
 
@@ -200,6 +201,19 @@ struct qcow2 {
 	struct work_struct worker;
 	struct work_struct fsync_worker;
 };
+
+static inline const char *qcow2_device_name(struct dm_target *ti)
+{
+	return ti ? ti->table->md->disk->disk_name : "-";
+}
+
+#define QCOW2_FMT(fmt) "dm-qcow2: %s: " fmt "\n"
+#define QC_ERR(dmti, fmt, ...)  pr_err (QCOW2_FMT(fmt),			\
+				        qcow2_device_name(dmti),	\
+				        ##__VA_ARGS__)
+#define QC_INFO(dmti, fmt, ...) pr_info(QCOW2_FMT(fmt),			\
+					qcow2_device_name(dmti),	\
+					##__VA_ARGS__)
 
 /*
  * struct qio is embedded in every incoming bio, so we keep it
