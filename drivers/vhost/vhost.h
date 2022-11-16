@@ -25,13 +25,6 @@ struct vhost_work {
 	unsigned long		flags;
 };
 
-#define VHOST_MAX_WORKERS 4
-struct vhost_worker {
-	struct task_struct *worker;
-	struct llist_head work_list;
-	struct vhost_dev *dev;
-};
-
 /* Poll a file (eventfd or socket) */
 /* Note: there's nothing vhost specific about this structure. */
 struct vhost_poll {
@@ -156,8 +149,7 @@ struct vhost_dev {
 	int nvqs;
 	struct eventfd_ctx *log_ctx;
 	struct llist_head work_list;
-	struct vhost_worker workers[VHOST_MAX_WORKERS];
-	int nworkers;
+	struct task_struct *worker;
 	struct vhost_iotlb *umem;
 	struct vhost_iotlb *iotlb;
 	spinlock_t iotlb_lock;
