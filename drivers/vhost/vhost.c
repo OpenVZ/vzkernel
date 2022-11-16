@@ -170,7 +170,7 @@ static int vhost_poll_wakeup(wait_queue_entry_t *wait, unsigned mode, int sync,
 	if (!(key_to_poll(key) & poll->mask))
 		return 0;
 
-	if (!poll->vq->dev->use_worker)
+	if (!poll->dev->use_worker)
 		work->fn(work);
 	else
 		vhost_poll_queue(poll);
@@ -185,27 +185,19 @@ void vhost_work_init(struct vhost_work *work, vhost_work_fn_t fn)
 }
 EXPORT_SYMBOL_GPL(vhost_work_init);
 
+/* Init poll structure */
 void vhost_poll_init(struct vhost_poll *poll, vhost_work_fn_t fn,
 		     __poll_t mask, struct vhost_dev *dev)
-{
-	vhost_poll_init_vq(poll, fn, mask, dev->vqs[0]);
-}
-EXPORT_SYMBOL_GPL(vhost_poll_init);
-
-
-/* Init poll structure */
-void vhost_poll_init_vq(struct vhost_poll *poll, vhost_work_fn_t fn,
-		     __poll_t mask, struct vhost_virtqueue *vq)
 {
 	init_waitqueue_func_entry(&poll->wait, vhost_poll_wakeup);
 	init_poll_funcptr(&poll->table, vhost_poll_func);
 	poll->mask = mask;
-	poll->vq = vq;
+	poll->dev = dev;
 	poll->wqh = NULL;
 
 	vhost_work_init(&poll->work, fn);
 }
-EXPORT_SYMBOL_GPL(vhost_poll_init_vq);
+EXPORT_SYMBOL_GPL(vhost_poll_init);
 
 /* Start polling a file. We add ourselves to file's wait queue. The caller must
  * keep a reference to a file until after vhost_poll_stop is called. */
@@ -295,7 +287,7 @@ EXPORT_SYMBOL_GPL(vhost_work_flush_vq);
  * locks that are also used by the callback. */
 void vhost_poll_flush(struct vhost_poll *poll)
 {
-	vhost_work_flush_vq(poll->vq);
+	vhost_work_dev_flush(poll->dev);
 }
 EXPORT_SYMBOL_GPL(vhost_poll_flush);
 
@@ -330,7 +322,7 @@ EXPORT_SYMBOL_GPL(vhost_has_work);
 
 void vhost_poll_queue(struct vhost_poll *poll)
 {
-	vhost_work_queue_vq(poll->vq, &poll->work);
+	vhost_work_queue(poll->dev, &poll->work);
 }
 EXPORT_SYMBOL_GPL(vhost_poll_queue);
 
@@ -579,8 +571,8 @@ void vhost_dev_init(struct vhost_dev *dev,
 		mutex_init(&vq->mutex);
 		vhost_vq_reset(dev, vq);
 		if (vq->handle_kick)
-			vhost_poll_init_vq(&vq->poll, vq->handle_kick,
-					   EPOLLIN, vq);
+			vhost_poll_init(&vq->poll, vq->handle_kick,
+					EPOLLIN, dev);
 	}
 }
 EXPORT_SYMBOL_GPL(vhost_dev_init);
