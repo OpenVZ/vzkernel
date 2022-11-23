@@ -576,22 +576,16 @@ bool oom_trylock(struct mem_cgroup *memcg)
 			return false;
 		} else if (ctx->owner || ctx->victim) {
 			/*
-			 * Timeout. Release the context and dump stack
-			 * trace of the stuck process.
+			 * Timeout. Release the context.
 			 *
-			 * To avoid dumping stack trace of the same task
-			 * more than once, we mark the context that
-			 * contained the victim when it was killed (see
-			 * mark_oom_victim).
+			 * Here was a stack trace of the stuck process, but it
+			 * has been removed because:
+			 *
+			 * 1. We had a crash here due to stale ctx->victim, we
+			 *    have fixed that, but as a burnt child we dread
+			 *    the fire.
+			 * 2. The stack trace here is not useful anyway.
 			 */
-			struct task_struct *p = ctx->victim;
-
-			if (p && ctx->marked) {
-				pr_err("OOM kill timeout: %d (%s)\n",
-				       task_pid_nr(p), p->comm);
-				show_stack(p, NULL);
-			}
-
 			__release_oom_context(ctx);
 		}
 	} while ((iter = mem_cgroup_iter(memcg, iter, NULL)));
