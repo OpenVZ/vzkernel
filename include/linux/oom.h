@@ -125,8 +125,22 @@ static inline void oom_killer_enable(void)
 
 extern struct task_struct *find_lock_task_mm(struct task_struct *p);
 
+/*
+ * Caller has to make sure that task->mm is stable (hold task_lock or
+ * it operates on the current).
+ */
 static inline bool task_will_free_mem(struct task_struct *task)
 {
+	struct mm_struct *mm = task->mm;
+
+	/*
+	 * Skip tasks without mm because it might have passed its exit_mm and
+	 * exit_oom_victim. oom_reaper could have rescued that but do not rely
+	 * on that for now. We can consider find_lock_task_mm in future.
+	 */
+	if (!mm)
+		return false;
+
 	/*
 	 * A coredumping process may sleep for an extended period in exit_mm(),
 	 * so the oom killer cannot assume that the process will promptly exit
