@@ -133,6 +133,8 @@ static inline bool task_will_free_mem(struct task_struct *task)
 {
 	struct mm_struct *mm = task->mm;
 
+	lockdep_assert(lockdep_is_held(&task->alloc_lock) || task == current);
+
 	/*
 	 * Skip tasks without mm because it might have passed its exit_mm and
 	 * exit_oom_victim. oom_reaper could have rescued that but do not rely
