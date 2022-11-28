@@ -485,12 +485,12 @@ int __init devtmpfs_init(void)
 		wait_for_completion(&setup_done);
 	} else {
 		err = PTR_ERR(thread);
-		thread = NULL;
 	}
 
 	if (err) {
 		printk(KERN_ERR "devtmpfs: unable to create devtmpfs %i\n", err);
 		unregister_filesystem(&dev_fs_type);
+		thread = NULL;
 		return err;
 	}
 
