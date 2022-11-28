@@ -113,6 +113,13 @@ static void proc_kill_sb(struct super_block *sb)
 	if (ns->proc_self)
 		dput(ns->proc_self);
 	kill_anon_super(sb);
+
+	/* Make the pid namespace safe for the next mount of proc */
+	ns->proc_self = NULL;
+	ns->pid_gid = GLOBAL_ROOT_GID;
+	ns->hide_pid = 0;
+	ns->hide_pidns = 0;
+
 	put_pid_ns(ns);
 }
 
