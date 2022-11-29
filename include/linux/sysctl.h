@@ -189,6 +189,8 @@ struct ctl_path {
 extern int ve_allow_module_load;
 extern int __read_mostly lazytime_default;
 extern int trusted_exec;
+#define DEFAULT_FREEZE_TIMEOUT (30 * HZ)
+extern int sysctl_freeze_timeout;
 
 #ifdef CONFIG_SYSCTL
 
