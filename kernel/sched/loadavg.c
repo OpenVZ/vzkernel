@@ -113,7 +113,7 @@ extern spinlock_t load_ve_lock;
 
 void calc_load_ve(void)
 {
-	unsigned long nr_unint, nr_active;
+	long nr_unint, nr_active;
 	struct task_group *tg;
 	int i;
 
@@ -133,13 +133,22 @@ void calc_load_ve(void)
 			 * overhead for activate/deactivate operations. So, we
 			 * don't account child cgroup unint tasks here.
 			 */
-			nr_active += tg->cfs_rq[i]->nr_unint;
+			nr_active += (int)tg->cfs_rq[i]->nr_unint;
 #endif
 #ifdef CONFIG_RT_GROUP_SCHED
 			nr_active += tg->rt_rq[i]->rt_nr_running;
 #endif
 		}
-		nr_active *= FIXED_1;
+		/*
+		 * Unless we screwed somewhere, nr_active must always be >= 0,
+		 * because we can have no runnable tasks and no tasks in
+		 * uninterruptible sleep.
+		 */
+		if (WARN_ON_ONCE(nr_active < 0)) {
+			nr_active = 0;
+		} else {
+			nr_active *= FIXED_1;
+		}
 
 		tg->avenrun[0] = calc_load(tg->avenrun[0], EXP_1, nr_active);
 		tg->avenrun[1] = calc_load(tg->avenrun[1], EXP_5, nr_active);
