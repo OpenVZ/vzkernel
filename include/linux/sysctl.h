@@ -215,6 +215,8 @@ struct ctl_path {
 };
 
 extern int trusted_exec;
+#define DEFAULT_FREEZE_TIMEOUT (30 * HZ)
+extern int sysctl_freeze_timeout;
 
 extern int ve_allow_module_load;
 

@@ -22,6 +22,10 @@
 #include <linux/freezer.h>
 #include <linux/seq_file.h>
 #include <linux/mutex.h>
+#include <linux/jiffies.h>
+#include <linux/ratelimit.h>
+#include <linux/stacktrace.h>
+#include <linux/sysctl.h>
 
 /*
  * A cgroup is freezing if any FREEZING flags are set.  FREEZING_SELF is
@@ -43,6 +47,7 @@ enum freezer_state_flags {
 struct freezer {
 	struct cgroup_subsys_state	css;
 	unsigned int			state;
+	unsigned long			freeze_jiffies;
 };
 
 static DEFINE_MUTEX(freezer_mutex);
@@ -225,6 +230,60 @@ static void freezer_fork(struct task_struct *task)
 	mutex_unlock(&freezer_mutex);
 }
 
+#define MAX_STACK_TRACE_DEPTH   64
+
+static void check_freezer_timeout(struct cgroup_subsys_state *css,
+				  struct task_struct *task)
+
+{
+	static DEFINE_RATELIMIT_STATE(freeze_timeout_rs,
+				      DEFAULT_FREEZE_TIMEOUT, 1);
+	int __freeze_timeout = READ_ONCE(sysctl_freeze_timeout);
+	struct freezer *freezer = css_freezer(css);
+	unsigned long nr_entries;
+	unsigned long *entries;
+	char *freezer_cg_name;
+	pid_t tgid;
+	int i;
+
+	if (!freezer->freeze_jiffies ||
+	    freezer->freeze_jiffies + __freeze_timeout > get_jiffies_64())
+		return;
+
+	if (!__ratelimit(&freeze_timeout_rs))
+		return;
+
+	freezer_cg_name = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!freezer_cg_name)
+		return;
+
+	if (cgroup_path(css->cgroup, freezer_cg_name, PATH_MAX) < 0)
+		goto free_cg_name;
+
+	tgid = task_pid_nr_ns(task, &init_pid_ns);
+
+	printk(KERN_WARNING "Freeze of %s took %d sec, "
+	       "due to unfreezable process %d:%s, stack:\n",
+	       freezer_cg_name, __freeze_timeout/HZ, tgid, task->comm);
+
+	entries = kmalloc(MAX_STACK_TRACE_DEPTH * sizeof(*entries),
+			  GFP_KERNEL);
+	if (!entries)
+		goto free_cg_name;
+
+	nr_entries = stack_trace_save_tsk(task, entries,
+					  MAX_STACK_TRACE_DEPTH, 0);
+
+	for (i = 0; i < nr_entries; i++) {
+		printk(KERN_WARNING "[<%pK>] %pB\n",
+		       (void *)entries[i], (void *)entries[i]);
+	}
+
+	kfree(entries);
+free_cg_name:
+	kfree(freezer_cg_name);
+}
+
 /**
  * update_if_frozen - update whether a cgroup finished freezing
  * @css: css of interest
@@ -278,8 +337,10 @@ static void update_if_frozen(struct cgroup_subsys_state *css)
 			 * completion.  Consider it frozen in addition to
 			 * the usual frozen condition.
 			 */
-			if (!frozen(task) && !freezer_should_skip(task))
+			if (!frozen(task) && !freezer_should_skip(task)) {
+				check_freezer_timeout(css, task);
 				goto out_iter_end;
+			}
 		}
 	}
 
@@ -356,8 +417,10 @@ static void freezer_apply_state(struct freezer *freezer, bool freeze,
 		return;
 
 	if (freeze) {
-		if (!(freezer->state & CGROUP_FREEZING))
+		if (!(freezer->state & CGROUP_FREEZING)) {
 			atomic_inc(&system_freezing_cnt);
+			freezer->freeze_jiffies = get_jiffies_64();
+		}
 		freezer->state |= state;
 		freeze_cgroup(freezer);
 	} else {
@@ -366,8 +429,10 @@ static void freezer_apply_state(struct freezer *freezer, bool freeze,
 		freezer->state &= ~state;
 
 		if (!(freezer->state & CGROUP_FREEZING)) {
-			if (was_freezing)
+			if (was_freezing) {
+				freezer->freeze_jiffies = 0;
 				atomic_dec(&system_freezing_cnt);
+			}
 			freezer->state &= ~CGROUP_FROZEN;
 			unfreeze_cgroup(freezer);
 		}
