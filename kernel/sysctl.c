@@ -100,6 +100,8 @@
 int ve_allow_module_load = 1;
 EXPORT_SYMBOL(ve_allow_module_load);
 
+int sysctl_freeze_timeout = DEFAULT_FREEZE_TIMEOUT;
+
 /* Constants used for minimum and  maximum */
 
 #ifdef CONFIG_PERF_EVENTS
@@ -2255,6 +2257,14 @@ static struct ctl_table kern_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 #endif
+	{
+		.procname	= "freeze_cgroup_timeout",
+		.data		= &sysctl_freeze_timeout,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+	},
 	{ }
 };
 
