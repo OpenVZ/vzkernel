@@ -2908,10 +2908,14 @@ void get_avenrun(unsigned long *loads, unsigned long offset, int shift)
 
 void get_avenrun_ve(unsigned long *loads, unsigned long offset, int shift)
 {
-	struct task_group *tg = task_group(current);
-	loads[0] = (tg->avenrun[0] + offset) << shift;
-	loads[1] = (tg->avenrun[1] + offset) << shift;
-	loads[2] = (tg->avenrun[2] + offset) << shift;
+	struct ve_struct *ve = get_exec_env();
+
+	if (ve_get_cpu_avenrun(ve, loads))
+		return;
+
+	loads[0] = (loads[0] + offset) << shift;
+	loads[1] = (loads[1] + offset) << shift;
+	loads[2] = (loads[2] + offset) << shift;
 }
 
 static long calc_load_fold_active(struct rq *this_rq)
