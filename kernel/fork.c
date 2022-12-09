@@ -483,6 +483,14 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 			continue;
 		}
 		charge = 0;
+		/*
+		 * Don't duplicate many vmas if we've been oom-killed (for
+		 * example)
+		 */
+		if (fatal_signal_pending(current)) {
+			retval = -EINTR;
+			goto out;
+		}
 		if (ub_memory_charge(mm, mpnt->vm_end - mpnt->vm_start,
 					mpnt->vm_flags & ~VM_LOCKED,
 					mpnt->vm_file, UB_HARD))
