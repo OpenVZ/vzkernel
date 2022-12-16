@@ -1795,26 +1795,39 @@ out:
 
 #ifdef CONFIG_VE
 
-static ssize_t module_sysfs_perm_set_ve(struct module *mod, char *subdir, int mask)
+static ssize_t module_sysfs_perm_set_ve_real(struct module *mod,
+						const char *subdir, int mask)
 {
-	static char path[PATH_MAX];
+	/*
+	 * To avoid using 4K stack space we can calculate max possible path
+	 * If new users came this must be updated but it will be quickly catched
+	 * since they would not see their new subdirs.
+	 * currently the only subdir is holders
+	 */
+#define VE_LONGEST_SUBDIR "holders"
+#define PERM_PATH_LEN (sizeof("module") + 2 + sizeof(VE_LONGEST_SUBDIR) + \
+				MODULE_NAME_LEN + 1)
+	char path[PERM_PATH_LEN+1];
 
 	if (snprintf(path, sizeof(path) - 1, "module/%s/%s",
 		     mod->name, (subdir) ? subdir : "") >= sizeof(path) - 1)
 		return -E2BIG;
-
 	return sysfs_set_def_perms(path, mask);
+#undef PERM_PATH_LEN
 }
 
-static ssize_t module_sysfs_hide_dir_ve(struct module *mod, char *subdir)
-{
-	return module_sysfs_perm_set_ve(mod, subdir, -1);
-}
+#define module_sysfs_perm_set_ve(mod, subdir, mask)				\
+	({									\
+		BUILD_BUG_ON_MSG(sizeof(subdir) > sizeof(VE_LONGEST_SUBDIR),	\
+			"Please, update VE_LONGEST_SUBDIR to:" # subdir);	\
+		module_sysfs_perm_set_ve_real(mod, subdir, mask);		\
+	})
 
-static ssize_t module_sysfs_expose_dir_ve(struct module *mod, char *subdir)
-{
-	return module_sysfs_perm_set_ve(mod, subdir, MAY_READ | MAY_EXEC);
-}
+
+#define module_sysfs_hide_dir_ve(mod, subdir) 					\
+		module_sysfs_perm_set_ve(mod, subdir, -1)
+#define module_sysfs_expose_dir_ve(mod, subdir) 				\
+		module_sysfs_perm_set_ve(mod, subdir, MAY_READ | MAY_EXEC)
 
 static int module_sysfs_ve_init(struct module *mod)
 {
