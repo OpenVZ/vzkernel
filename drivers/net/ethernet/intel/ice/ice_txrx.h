@@ -23,7 +23,6 @@
 #define ICE_MAX_DATA_PER_TXD_ALIGNED \
 	(~(ICE_MAX_READ_REQ_SIZE - 1) & ICE_MAX_DATA_PER_TXD)
 
-#define ICE_RX_BUF_WRITE	16	/* Must be power of 2 */
 #define ICE_MAX_TXQ_PER_TXQG	128
 
 /* Attempt to maximize the headroom available for incoming frames. We use a 2K
@@ -111,6 +110,8 @@ static inline int ice_skb_pad(void)
 	(u16)((((R)->next_to_clean > (R)->next_to_use) ? 0 : (R)->count) + \
 	      (R)->next_to_clean - (R)->next_to_use - 1)
 
+#define ICE_RING_QUARTER(R) ((R)->count >> 2)
+
 #define ICE_TX_FLAGS_TSO	BIT(0)
 #define ICE_TX_FLAGS_HW_VLAN	BIT(1)
 #define ICE_TX_FLAGS_SW_VLAN	BIT(2)
@@ -122,6 +123,7 @@ static inline int ice_skb_pad(void)
 #define ICE_TX_FLAGS_IPV4	BIT(5)
 #define ICE_TX_FLAGS_IPV6	BIT(6)
 #define ICE_TX_FLAGS_TUNNEL	BIT(7)
+#define ICE_TX_FLAGS_HW_OUTER_SINGLE_VLAN	BIT(8)
 #define ICE_TX_FLAGS_VLAN_M	0xffff0000
 #define ICE_TX_FLAGS_VLAN_PR_M	0xe0000000
 #define ICE_TX_FLAGS_VLAN_PR_S	29
@@ -164,17 +166,10 @@ struct ice_tx_offload_params {
 };
 
 struct ice_rx_buf {
-	union {
-		struct {
-			dma_addr_t dma;
-			struct page *page;
-			unsigned int page_offset;
-			u16 pagecnt_bias;
-		};
-		struct {
-			struct xdp_buff *xdp;
-		};
-	};
+	dma_addr_t dma;
+	struct page *page;
+	unsigned int page_offset;
+	u16 pagecnt_bias;
 };
 
 struct ice_q_stats {
@@ -269,6 +264,7 @@ struct ice_rx_ring {
 	u8 __iomem *tail;
 	union {
 		struct ice_rx_buf *rx_buf;
+		struct xdp_buff **xdp_buf;
 	};
 	/* CL2 - 2nd cacheline starts here */
 	struct xdp_rxq_info xdp_rxq;
@@ -292,7 +288,9 @@ struct ice_rx_ring {
 
 	struct rcu_head rcu;		/* to avoid race on free */
 	/* CL4 - 3rd cacheline starts here */
+	struct ice_channel *ch;
 	struct bpf_prog *xdp_prog;
+	struct ice_tx_ring *xdp_ring;
 	struct xsk_buff_pool *xsk_pool;
 	struct sk_buff *skb;
 	dma_addr_t dma;			/* physical address of ring */
@@ -315,25 +313,31 @@ struct ice_tx_ring {
 	struct ice_vsi *vsi;		/* Backreference to associated VSI */
 	/* CL2 - 2nd cacheline starts here */
 	dma_addr_t dma;			/* physical address of ring */
+	struct xsk_buff_pool *xsk_pool;
 	u16 next_to_use;
 	u16 next_to_clean;
-	u16 count;			/* Number of descriptors */
-	u16 q_index;			/* Queue number of ring */
-	struct xsk_buff_pool *xsk_pool;
-
-	/* stats structs */
-	struct ice_q_stats	stats;
-	struct u64_stats_sync syncp;
-	struct ice_txq_stats tx_stats;
-
-	/* CL3 - 3rd cacheline starts here */
-	struct rcu_head rcu;		/* to avoid race on free */
-	DECLARE_BITMAP(xps_state, ICE_TX_NBITS);	/* XPS Config State */
-	struct ice_ptp_tx *tx_tstamps;
-	u32 txq_teid;			/* Added Tx queue TEID */
+	u16 next_rs;
+	u16 next_dd;
 	u16 q_handle;			/* Queue handle per TC */
 	u16 reg_idx;			/* HW register index of the ring */
+	u16 count;			/* Number of descriptors */
+	u16 q_index;			/* Queue number of ring */
+	/* stats structs */
+	struct ice_txq_stats tx_stats;
+	/* CL3 - 3rd cacheline starts here */
+	struct ice_q_stats	stats;
+	struct u64_stats_sync syncp;
+	struct rcu_head rcu;		/* to avoid race on free */
+	DECLARE_BITMAP(xps_state, ICE_TX_NBITS);	/* XPS Config State */
+	struct ice_channel *ch;
+	struct ice_ptp_tx *tx_tstamps;
+	spinlock_t tx_lock;
+	u32 txq_teid;			/* Added Tx queue TEID */
+	/* CL4 - 4th cacheline starts here */
+	u16 xdp_tx_active;
 #define ICE_TX_FLAGS_RING_XDP		BIT(0)
+#define ICE_TX_FLAGS_RING_VLAN_L2TAG1	BIT(1)
+#define ICE_TX_FLAGS_RING_VLAN_L2TAG2	BIT(2)
 	u8 flags;
 	u8 dcb_tc;			/* Traffic class of ring */
 	u8 ptp_tx;
@@ -352,6 +356,11 @@ static inline void ice_set_ring_build_skb_ena(struct ice_rx_ring *ring)
 static inline void ice_clear_ring_build_skb_ena(struct ice_rx_ring *ring)
 {
 	ring->flags &= ~ICE_RX_FLAGS_RING_BUILD_SKB;
+}
+
+static inline bool ice_ring_ch_enabled(struct ice_tx_ring *ring)
+{
+	return !!ring->ch;
 }
 
 static inline bool ice_ring_is_xdp(struct ice_tx_ring *ring)
@@ -375,9 +384,14 @@ struct ice_ring_container {
 	/* this matches the maximum number of ITR bits, but in usec
 	 * values, so it is shifted left one bit (bit zero is ignored)
 	 */
-	u16 itr_setting:13;
-	u16 itr_reserved:2;
-	u16 itr_mode:1;
+	union {
+		struct {
+			u16 itr_setting:13;
+			u16 itr_reserved:2;
+			u16 itr_mode:1;
+		};
+		u16 itr_settings;
+	};
 	enum ice_container_type type;
 };
 
