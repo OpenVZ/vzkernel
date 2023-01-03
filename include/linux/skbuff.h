@@ -319,6 +319,16 @@ enum skb_drop_reason {
 	SKB_DROP_REASON_TCP_FILTER,
 	SKB_DROP_REASON_UDP_CSUM,
 	SKB_DROP_REASON_NETFILTER_DROP, /* dropped by netfilter */
+	SKB_DROP_REASON_OTHERHOST,      /* packet don't belong to current
+					 * host (interface is in promisc
+					 * mode)
+					 */
+	SKB_DROP_REASON_IP_CSUM,        /* IP checksum error */
+	SKB_DROP_REASON_IP_INHDR,       /* there is something wrong with
+					 * IP header (see
+					 * IPSTATS_MIB_INHDRERRORS)
+					 */
+
 	SKB_DROP_REASON_MAX,
 };
 
