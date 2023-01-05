@@ -3623,6 +3623,9 @@ static int ploop_replace_delta(struct ploop_device * plo, unsigned long arg)
 	spin_lock_irq(plo->queue->queue_lock);
 	queue_flag_clear(QUEUE_FLAG_STANDBY, plo->queue);
 	spin_unlock_irq(plo->queue->queue_lock);
+	BUILD_BUG_ON_MSG(sizeof(plo->queue->queue_flags) * 8 < BITS_PER_LONG ||
+					 BITS_PER_LONG < 64,
+			"queue_flags require 64 bit storage variable");
 
 	ploop_relax(plo);
 
