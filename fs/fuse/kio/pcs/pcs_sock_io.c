@@ -758,6 +758,24 @@ static int pcs_sock_send_buf(struct socket *sock, void *buf, size_t size)
 	return ret < 0 ? ret : 0;
 }
 
+static int pcs_sock_set_rcv_timeo(struct socket * sock, int tmo)
+{
+	if (sock->sk == NULL)
+		return -EINVAL;
+
+	/* No need to lock the socket. We own it and this option does not
+	 * affect protocol.
+	 */
+
+	if (tmo <= 0) {
+		sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
+	} else {
+		sock->sk->sk_rcvtimeo = tmo;
+	}
+
+	return 0;
+}
+
 static int pcs_sock_recv_buf(struct socket *sock, void *buf, size_t size)
 {
 	struct msghdr msg = {
@@ -784,16 +802,22 @@ static int pcs_sock_sync_send(struct pcs_netio *netio, struct pcs_msg *msg)
 static int pcs_sock_sync_recv(struct pcs_netio *netio, struct pcs_msg **msg)
 {
 	struct pcs_sockio *sio = sio_from_netio(netio);
+	struct pcs_rpc *ep = netio->parent;
 	struct pcs_rpc_hdr hdr;
 	int err;
 
-	err = pcs_sock_recv_buf(sio->socket, &hdr, sizeof(hdr));
+	err = pcs_sock_set_rcv_timeo(sio->socket, ep->params.connect_timeout);
 	if (err)
 		return err;
 
+	err = pcs_sock_recv_buf(sio->socket, &hdr, sizeof(hdr));
+	if (err)
+		goto out;
+
+	err = -ENOMEM;
 	*msg = pcs_rpc_alloc_output_msg(hdr.len);
 	if (!*msg)
-		return -ENOMEM;
+		goto out;
 
 	memcpy((*msg)->_inline_buffer, &hdr, sizeof(hdr));
 
@@ -802,10 +826,11 @@ static int pcs_sock_sync_recv(struct pcs_netio *netio, struct pcs_msg **msg)
 	if (err) {
 		pcs_free_msg(*msg);
 		*msg = NULL;
-		return err;
 	}
 
-	return 0;
+out:
+	(void)pcs_sock_set_rcv_timeo(sio->socket, -1);
+	return err;
 }
 
 struct pcs_netio_tops pcs_sock_netio_tops = {
