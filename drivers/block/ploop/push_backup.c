@@ -129,8 +129,8 @@ int ploop_pb_cbt_map_release(struct ploop_pushbackup_desc *pbd, bool do_merge)
 					pbd->cbt_block_max,
 					pbd->cbt_block_bits);
 		if (ret)
-			pr_warn("ploop(%d): blk_cbt_map_merge() failed with "
-			       "%d\n", pbd->plo->index, ret);
+			PL_WARN(pbd->plo, "blk_cbt_map_merge() failed with "
+			       "%d\n", ret);
 	}
 
 	ploop_pb_map_free(pbd->cbt_map, pbd->cbt_block_max);
@@ -326,7 +326,7 @@ static int convert_map_to_map(struct ploop_pushbackup_desc *pbd)
 	u64 from_blk, to_blk;
 
 	if ((u64)from_max << from_bits != (u64)to_max << to_bits) {
-		pr_warn("mismatch in map convert: %lu %lu ---> %u %d\n",
+		PL_WARN(pbd->plo, "mismatch in map convert: %lu %lu ---> %u %d\n",
 		       from_max, from_bits, to_max, to_bits);
 		return -EINVAL;
 	}
@@ -426,9 +426,9 @@ void ploop_pb_fini(struct ploop_pushbackup_desc *pbd)
 		return;
 
 	if (!RB_EMPTY_ROOT(&pbd->pending_set.tree))
-		pr_warn("ploop_pb_fini: pending_tree is not empty!\n");
+		PL_WARN(pbd->plo, "ploop_pb_fini: pending_tree is not empty!\n");
 	if (!RB_EMPTY_ROOT(&pbd->reported_set.tree))
-		pr_warn("ploop_pb_fini: reported_tree is not empty!\n");
+		PL_WARN(pbd->plo, "ploop_pb_fini: reported_tree is not empty!\n");
 
 	if (pbd->health_monitor_thread) {
 		kthread_stop(pbd->health_monitor_thread);
@@ -491,7 +491,7 @@ static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
 		mod_timer(&pbs->timer, preq->tstamp + timeout + 1);
 
 	if (pbs->list.prev->next != &pbs->list) {
-		pr_warn("list_add corruption. pbs->list.prev->next should be "
+		PL_WARN(preq->plo, "list_add corruption. pbs->list.prev->next should be "
 		       "&pbs->list (%p), but was %p. (pbs->list.prev=%p)."
 		       " preq=%p\n",
 		       &pbs->list, pbs->list.prev->next, pbs->list.prev, preq);
@@ -1046,10 +1046,9 @@ static bool ploop_pb_set_expired(struct pb_set *pbs)
 	spin_unlock_irqrestore(&pbd->ppb_lock, flags);
 
 	if (ret)
-		pr_warn("Abort push_backup for ploop%d: found "
+		PL_WARN(plo, "Abort push_backup found "
 		       "preq (clu=%d) in %s tree delayed for %u msecs\n",
-		       plo->index, clu, pbs->name,
-		       jiffies_to_msecs(jiffies - tstamp));
+		       clu, pbs->name, jiffies_to_msecs(jiffies - tstamp));
 
 	return ret;
 }
