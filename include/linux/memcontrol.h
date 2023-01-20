@@ -247,6 +247,7 @@ struct mem_cgroup {
 	/* Legacy consumer-oriented counters */
 	struct page_counter kmem;		/* v1 only */
 	struct page_counter tcpmem;		/* v1 only */
+	struct page_counter cache;
 
 	/* Range enforcement for interrupt charges */
 	struct work_struct high_work;
@@ -390,8 +391,10 @@ enum page_memcg_data_flags {
 	MEMCG_DATA_OBJCGS = (1UL << 0),
 	/* page has been accounted as a non-slab kernel page */
 	MEMCG_DATA_KMEM = (1UL << 1),
+	/* page has been accounted as a cache page */
+	MEMCG_DATA_PGCACHE = (1UL << 2),
 	/* the next bit after the last actual flag */
-	__NR_MEMCG_DATA_FLAGS  = (1UL << 2),
+	__NR_MEMCG_DATA_FLAGS  = (1UL << 3),
 };
 
 #define MEMCG_DATA_FLAGS_MASK (__NR_MEMCG_DATA_FLAGS - 1)
@@ -708,9 +711,23 @@ int __mem_cgroup_charge(struct folio *folio, struct mm_struct *mm, gfp_t gfp);
 static inline int mem_cgroup_charge(struct folio *folio, struct mm_struct *mm,
 				    gfp_t gfp)
 {
-	if (mem_cgroup_disabled())
-		return 0;
 	return __mem_cgroup_charge(folio, mm, gfp);
+}
+
+int mem_cgroup_charge_cache(struct folio *folio, struct mm_struct *mm,
+			    gfp_t gfp);
+
+/*
+ * folio_memcg_cache - Check if the folio has the pgcache flag set.
+ * @folio: Pointer to the folio.
+ *
+ * Checks if the folio has page cache flag set. The caller must ensure
+ * that the folio has an associated memory cgroup. It's not safe to call
+ * this function against some types of folios, e.g. slab folios.
+ */
+static inline bool folio_memcg_cache(struct folio *folio)
+{
+	return folio->memcg_data & MEMCG_DATA_PGCACHE;
 }
 
 int mem_cgroup_swapin_charge_page(struct page *page, struct mm_struct *mm,
@@ -1293,6 +1310,12 @@ static inline bool mem_cgroup_below_min(struct mem_cgroup *memcg)
 
 static inline int mem_cgroup_charge(struct folio *folio,
 		struct mm_struct *mm, gfp_t gfp)
+{
+	return 0;
+}
+
+static inline int mem_cgroup_charge_cache(struct folio *folio,
+					 struct mm_struct *mm, gfp_t gfp)
 {
 	return 0;
 }
