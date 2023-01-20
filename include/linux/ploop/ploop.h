@@ -983,4 +983,10 @@ extern void ploop_msg_once(struct ploop_device *plo, const char *, ...)
 #define __TRACE(a...)  do { } while (0)
 #endif
 
+#define PL_FMT(fmt) "ploop%d: " fmt
+#define PL_DEV_IDX(plo) (plo ? plo->index : 0)
+#define PL_ERR(plo, fmt, ...) pr_err(PL_FMT(fmt), PL_DEV_IDX(plo), ##__VA_ARGS__)
+#define PL_INFO(plo, fmt, ...) pr_info(PL_FMT(fmt), PL_DEV_IDX(plo), ##__VA_ARGS__)
+#define PL_WARN(plo, fmt, ...) pr_warn(PL_FMT(fmt), PL_DEV_IDX(plo), ##__VA_ARGS__)
+
 #endif /* _LINUX_PLOOP_H_ */
