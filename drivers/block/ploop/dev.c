@@ -1968,7 +1968,7 @@ ploop_entry_zero_req(struct ploop_request *preq)
 
 	level = map_get_index(preq, preq->req_cluster, &iblk);
 	if (level != top_delta->level) {
-		printk("Can't zero index on wrong level=%d "
+		pr_warn("Can't zero index on wrong level=%d "
 		       "(top_level=%d req_cluster=%u iblk=%u/%u)\n",
 		       level, top_delta->level, preq->req_cluster,
 		       iblk, preq->iblock);
@@ -2104,14 +2104,14 @@ ploop_entry_reloc_s_req(struct ploop_request *preq, iblock_t *iblk)
 
 	level = map_get_index(preq, preq->req_cluster, iblk);
 	if (level != top_delta->level) {
-		printk("Can't relocate block on wrong level=%d "
+		pr_warn("Can't relocate block on wrong level=%d "
 		       "(top_level=%d req_cluster=%u iblk=%u/%u)\n",
 		       level, top_delta->level, preq->req_cluster,
 		       *iblk, preq->iblock);
 		return -EIO;
 	}
 	if (preq->src_iblock != *iblk) {
-		printk("Can't relocate block due to wrong mapping: "
+		pr_warn("Can't relocate block due to wrong mapping: "
 		       "req_cluster=%u should point to iblk=%u while "
 		       "map_get_index() calculated iblk=%u\n",
 		       preq->req_cluster, preq->src_iblock, *iblk);
@@ -2251,7 +2251,7 @@ static int ploop_entry_discard_req(struct ploop_request *preq)
 			preq->dst_iblock = 0;
 			if (err) {
 				if (err == -EINVAL) {
-					printk("ploop_entry_discard_req1: "
+					pr_warn("ploop_entry_discard_req1: "
 					       "(%lu %u; %u %u; %u %u)\n",
 					       preq->req_sector, preq->req_size,
 					       preq->req_cluster, preq->iblock,
@@ -2273,7 +2273,7 @@ static int ploop_entry_discard_req(struct ploop_request *preq)
 		err = ploop_fb_add_free_extent(plo->fbd, preq->dst_cluster,
 						preq->dst_iblock, len);
 		if (err == -EINVAL) {
-			printk("ploop_entry_discard_req2: "
+			pr_warn("ploop_entry_discard_req2: "
 			       "(%lu %u; %u %u; %u %u)\n",
 			       preq->req_sector, preq->req_size,
 			       preq->req_cluster, preq->iblock,
@@ -2826,7 +2826,7 @@ restart:
 	case PLOOP_E_COMPLETE:
 		if (unlikely(test_bit(PLOOP_REQ_RELOC_S, &preq->state) &&
 			     preq->error)) {
-			printk("RELOC_S completed with err %d"
+			pr_warn("RELOC_S completed with err %d"
 			       " (%u %u %u %u %u)\n",
 			       preq->error, preq->req_cluster, preq->iblock,
 			       preq->src_iblock, preq->dst_cluster,
@@ -3984,7 +3984,7 @@ static void rename_deltas(struct ploop_device * plo, int level)
 				  "%d", delta->level);
 #endif
 		if (err)
-			printk("rename_deltas: %d %d %d\n", err, level, delta->level);
+			pr_warn("rename_deltas: %d %d %d\n", err, level, delta->level);
 	}
 }
 
@@ -4014,7 +4014,7 @@ static int ploop_del_delta(struct ploop_device * plo, unsigned long arg)
 		return -EBUSY;
 
 	if (level == 0 && test_bit(PLOOP_S_RUNNING, &plo->state)) {
-		printk(KERN_INFO "Can't del base delta on running ploop%d\n",
+		pr_info("Can't del base delta on running ploop%d\n",
 		       plo->index);
 		return -EBUSY;
 	}
@@ -4196,7 +4196,7 @@ static int ploop_merge(struct ploop_device * plo)
 
 	err = ploop_prepare_merge(next, &sd);
 	if (err) {
-		printk(KERN_WARNING "prepare_merge for ploop%d failed (%d)\n",
+		pr_warn("prepare_merge for ploop%d failed (%d)\n",
 		       plo->index, err);
 		goto out;
 	}
@@ -4222,7 +4222,7 @@ static int ploop_merge(struct ploop_device * plo)
 		 * in prepare_merge. Failed start_merge means
 		 * abort of the device.
 		 */
-		printk(KERN_WARNING "start_merge for ploop%d failed (%d)\n",
+		pr_warn("start_merge for ploop%d failed (%d)\n",
 		       plo->index, err);
 		set_bit(PLOOP_S_ABORT, &plo->state);
 	}
@@ -4250,7 +4250,7 @@ already:
 	delta = map_top_delta(plo->trans_map);
 
 	if (test_bit(PLOOP_S_ABORT, &plo->state)) {
-		printk(KERN_WARNING "merge for ploop%d failed (state ABORT)\n",
+		pr_warn("merge for ploop%d failed (state ABORT)\n",
 		       plo->index);
 		err = -EIO;
 	}
@@ -4314,8 +4314,7 @@ static int ploop_bd_full(struct backing_dev_info *bdi, long long nr, int root)
 			static unsigned long full_warn_time;
 
 			if (printk_timed_ratelimit(&full_warn_time, 60*60*HZ))
-				printk(KERN_WARNING
-				       "ploop%d: host disk is almost full "
+				pr_warn("ploop%d: host disk is almost full "
 				       "(%llu < %llu); CT sees -ENOSPC !\n",
 				       plo->index, buf.f_bfree * buf.f_bsize,
 				       reserved + nr);
@@ -4418,7 +4417,7 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 
 	if (bdev != bdev->bd_contains) {
 		if (printk_ratelimit())
-			printk(KERN_INFO "stop ploop%d failed (wrong bdev)\n",
+			pr_info("stop ploop%d failed (wrong bdev)\n",
 			       plo->index);
 		return -ENODEV;
 	}
@@ -4440,7 +4439,7 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 		return -EINVAL;
 
 	if (list_empty(&plo->map.delta_list)) {
-		printk(KERN_INFO "stop ploop%d failed (no deltas)\n",
+		pr_info("stop ploop%d failed (no deltas)\n",
 		       plo->index);
 		return -ENOENT;
 	}
@@ -4448,7 +4447,7 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 	cnt = atomic_read(&plo->open_count);
 	if (cnt > 1) {
 		if (printk_ratelimit())
-			printk(KERN_INFO "stop ploop%d failed (cnt=%d)\n",
+			pr_info("stop ploop%d failed (cnt=%d)\n",
 			       plo->index, cnt);
 		return -EBUSY;
 	}
@@ -4456,7 +4455,7 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 	cnt = atomic_read(&plo->maintenance_cnt);
 	if (plo->maintenance_type != PLOOP_MNTN_OFF && cnt) {
 		if (printk_ratelimit())
-			printk(KERN_INFO "stop ploop%d failed "
+			pr_info("stop ploop%d failed "
 			       "(type=%d cnt=%d)\n",
 			       plo->index, plo->maintenance_type, cnt);
 		return -EBUSY;
@@ -4464,7 +4463,7 @@ static int ploop_stop(struct ploop_device * plo, struct block_device *bdev)
 
 	if (plo->freeze_state != PLOOP_F_NORMAL) {
 		if (printk_ratelimit())
-			printk(KERN_INFO "stop ploop%d failed (freeze_state=%d)\n",
+			pr_info("stop ploop%d failed (freeze_state=%d)\n",
 			       plo->index, plo->freeze_state);
 		return -EBUSY;
 	}
@@ -4581,20 +4580,20 @@ static int ploop_clear(struct ploop_device * plo, struct block_device * bdev)
 
 	if (test_bit(PLOOP_S_RUNNING, &plo->state)) {
 		if (printk_ratelimit())
-			printk(KERN_INFO "clear ploop%d failed (RUNNING)\n",
+			pr_info("clear ploop%d failed (RUNNING)\n",
 			       plo->index);
 		return -EBUSY;
 	}
 	if (plo->maintenance_type == PLOOP_MNTN_TRACK) {
 		if (printk_ratelimit())
-			printk(KERN_INFO "clear ploop%d failed (TRACK)\n",
+			pr_info("clear ploop%d failed (TRACK)\n",
 			       plo->index);
 		return -EBUSY;
 	}
 	cnt = atomic_read(&plo->maintenance_cnt);
 	if (plo->maintenance_type != PLOOP_MNTN_OFF && cnt) {
 		if (printk_ratelimit())
-			printk(KERN_INFO "clear ploop%d failed "
+			pr_info("clear ploop%d failed "
 			       "(type=%d cnt=%d)\n",
 			       plo->index, plo->maintenance_type, cnt);
 		return -EBUSY;
@@ -4963,14 +4962,14 @@ static int ploop_freeblks_ioc(struct ploop_device *plo, unsigned long arg)
 					extent.iblk, extent.len);
 		if (rc) {
 			if (rc == -EINVAL) {
-				printk("ploop_freeblks_ioc: n=%d\n", ctl.n_extents);
+				pr_warn("ploop_freeblks_ioc: n=%d\n", ctl.n_extents);
 				for (i = 0; i < ctl.n_extents; i++) {
 					if (copy_from_user(&extent, &extents[i],
 							   sizeof(extent))) {
-						printk("copy failed: i=%d\n", i);
+						pr_warn("copy failed: i=%d\n", i);
 						break;
 					}
-					printk("ploop_freeblks_ioc: i=%d: %u %u %u\n",
+					pr_warn("ploop_freeblks_ioc: i=%d: %u %u %u\n",
 					       i, extent.clu, extent.iblk, extent.len);
 				}
 				WARN_ONCE(1, "add_free_extent failed\n");
@@ -5444,7 +5443,7 @@ static int ploop_push_backup_io(struct ploop_device *plo, unsigned long arg)
 		return -EINVAL;
 
 	if (ploop_pb_check_uuid(pbd, ctl.cbt_uuid)) {
-		printk("ploop(%d): PUSH_BACKUP_IO uuid mismatch\n",
+		pr_warn("ploop(%d): PUSH_BACKUP_IO uuid mismatch\n",
 		       plo->index);
 		return -EINVAL;
 	}
@@ -5474,7 +5473,7 @@ static int ploop_push_backup_stop(struct ploop_device *plo, unsigned long arg)
 		return -EFAULT;
 
 	if (pbd && ploop_pb_check_uuid(pbd, ctl.cbt_uuid)) {
-		printk("ploop(%d): PUSH_BACKUP_STOP uuid mismatch\n",
+		pr_warn("ploop(%d): PUSH_BACKUP_STOP uuid mismatch\n",
 		       plo->index);
 		return -EINVAL;
 	}
@@ -6073,7 +6072,7 @@ static int __init ploop_mod_init(void)
 			 proc_vz_dir, &proc_ploop_minor))
 		goto out_err2;
 
-	printk(KERN_INFO "ploop_dev: module loaded\n");
+	pr_info("ploop_dev: module loaded\n");
 	return 0;
 
 out_err2:
