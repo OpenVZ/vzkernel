@@ -379,14 +379,14 @@ static inline void purge_lru_warn(struct extent_map_tree *tree)
 
 	ratio /= images_size;
 
-	printk(KERN_WARNING "Purging lru entry from extent tree for inode %ld "
+	pr_warn("Purging lru entry from extent tree for inode %ld "
 	       "(map_size=%d ratio=%lld%%)\n",
 	       tree->mapping->host->i_ino, tree->map_size, ratio);
 
 	/* Claim FS as 'too fragmented' if average_extent_size < 8MB */
 	if ((u64)max_entries * (8 * 1024 * 1024) <
 	    atomic_long_read(&ploop_io_images_size))
-		printk(KERN_WARNING "max_extent_map_pages=%d is too low for "
+		pr_warn("max_extent_map_pages=%d is too low for "
 		       "ploop_io_images_size=%ld bytes\n",
 		       max_extent_map_pages,
 		       atomic_long_read(&ploop_io_images_size));
@@ -394,7 +394,7 @@ static inline void purge_lru_warn(struct extent_map_tree *tree)
 		loff_t avg_siz = i_size_read(tree->mapping->host);
 		do_div(avg_siz, tree->map_size);
 
-		printk(KERN_WARNING "host fs is too fragmented: average extent"
+		pr_warn("host fs is too fragmented: average extent"
 		       " size is lesser than %lld bytes\n", avg_siz);
 	}
 }
@@ -635,7 +635,7 @@ again:
 	    (fi_extent.fe_physical >> 9) == 0) {
 		/* see how ext4_fill_fiemap_extents() implemented */
 		if (!(fi_extent.fe_flags & FIEMAP_EXTENT_DELALLOC)) {
-			printk("bad fiemap(%ld,%ld) on inode=%p &fieinfo=%p"
+			pr_warn("bad fiemap(%ld,%ld) on inode=%p &fieinfo=%p"
 			" i_size=%lld\n", start, len, inode, &fieinfo,
 			i_size_read(inode));
 			BUG();
@@ -782,8 +782,7 @@ void dump_extent_map(struct extent_map_tree *tree)
 
 	while (r) {
 		struct extent_map *em0 = rb_entry(r, struct extent_map, rb_node);
-		printk("N=%ld %ld -> %ld\n", (long)em0->start, (long)(em0->end - em0->start), (long)em0->block_start);
+		pr_warn("N=%ld %ld -> %ld\n", (long)em0->start, (long)(em0->end - em0->start), (long)em0->block_start);
 		r = rb_next(r);
 	}
 }
-

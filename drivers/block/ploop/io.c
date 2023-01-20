@@ -144,7 +144,7 @@ void ploop_io_report_fn(struct file * file, char * msg)
 			fn = "?";
 	}
 
-	printk("%s: %s\n", msg, fn);
+	pr_warn("%s: %s\n", msg, fn);
 
 	if (path)
 		free_page((unsigned long)path);
