@@ -594,7 +594,7 @@ ploop1_start_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 		return err;
 
 	if (test_bit(PLOOP_S_ABORT, &delta->plo->state)) {
-		printk(KERN_WARNING "ploop1_start_merge for ploop%d failed "
+		pr_warn("ploop1_start_merge for ploop%d failed "
 		       "(state ABORT)\n", delta->plo->index);
 		return -EIO;
 	}
@@ -814,7 +814,7 @@ static int ploop1_complete_grow(struct ploop_delta * delta, u64 new_size)
 	vh_bsize = le32_to_cpu(vh->m_Sectors);
 
 	if (vh_bsize != (1 << delta->io.plo->cluster_log)) {
-		printk("grow: vh->m_Sectors=%u != 1<<plo->cluster_log=%u\n",
+		pr_warn("grow: vh->m_Sectors=%u != 1<<plo->cluster_log=%u\n",
 		       vh_bsize, 1 << delta->io.plo->cluster_log);
 		return -EINVAL;
 	}
