@@ -57,7 +57,7 @@ raw_open(struct ploop_delta * delta)
 	delta->io.alloc_head = pos >> (cluster_log + 9);
 
 	if (!delta->io.alloc_head) {
-		pr_err("ploop: zero length file\n");
+		PL_ERR(delta->plo, "zero length file\n");
 		return -EINVAL;
 	}
 
@@ -85,11 +85,11 @@ raw_refresh(struct ploop_delta * delta)
 
 	pos = delta->io.ops->i_size_read(&delta->io);
 	if (pos & (cluster_size_in_bytes(delta->plo) - 1)) {
-		pr_warn("raw delta is not aligned (%llu bytes)\n", pos);
+		PL_WARN(delta->plo, "raw delta is not aligned (%llu bytes)\n", pos);
 		return -EINVAL;
 	}
 	if ((pos >> (cluster_log + 9)) < delta->io.alloc_head) {
-		pr_warn("raw delta was corrupted "
+		PL_WARN(delta->plo, "raw delta was corrupted "
 		       "(old_size=%u new_size=%llu iblocks)\n",
 		       delta->io.alloc_head,
 		       pos >> (cluster_log + 9));
@@ -198,8 +198,7 @@ raw_start_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 		return err;
 
 	if (test_bit(PLOOP_S_ABORT, &delta->plo->state)) {
-		pr_warn(KERN_WARNING "raw_start_merge for ploop%d failed "
-		       "(state ABORT)\n", delta->plo->index);
+		PL_WARN(delta->plo, "raw_start_merge failed (state ABORT)\n");
 		return -EIO;
 	}
 
