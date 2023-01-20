@@ -34,7 +34,7 @@ static void ploop_set_holes_bitmap_bit(unsigned int nr, struct ploop_delta *delt
 	struct ploop1_private *ph = delta->priv;
 
 	if (WARN_ON_ONCE(nr >= ph->nr_clusters_in_bitmap)) {
-		pr_err("nr=%u, nr_clusters=%u\n", nr, ph->nr_clusters_in_bitmap);
+		PL_ERR(delta->plo, "nr=%u, nr_clusters=%u\n", nr, ph->nr_clusters_in_bitmap);
 		return;
 	}
 
@@ -46,7 +46,7 @@ static void ploop_clear_holes_bitmap_bit(unsigned int nr, struct ploop_delta *de
 	struct ploop1_private *ph = delta->priv;
 
 	if (WARN_ON_ONCE(nr >= ph->nr_clusters_in_bitmap)) {
-		pr_err("nr=%u, nr_clusters=%u\n", nr, ph->nr_clusters_in_bitmap);
+		PL_ERR(delta->plo, "nr=%u, nr_clusters=%u\n", nr, ph->nr_clusters_in_bitmap);
 		return;
 	}
 
@@ -221,8 +221,7 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 			 * This may be a result of shrinking large disk
 			 * to a small size.
 			 */
-			pr_err("ploop%u: bat is bigger than disk size\n",
-				delta->plo->index);
+			PL_ERR(delta->plo, "bat is bigger than disk size\n");
 			goto out;
 		}
 		/* Images with big BAT and small data may be shorter than nr_all_pages */
@@ -230,7 +229,7 @@ static int populate_holes_bitmap(struct ploop_delta *delta,
 				(ph->l1_off << 9) / PAGE_SIZE - consumed);
 		ret = delta->io.ops->sync_read_many(&delta->io, pages, count, sec);
 		if (ret) {
-			pr_err("ploop: too short BAT\n");
+			PL_ERR(delta->plo, "too short BAT\n");
 			goto out;
 		}
 
@@ -594,8 +593,8 @@ ploop1_start_merge(struct ploop_delta * delta, struct ploop_snapdata * sd)
 		return err;
 
 	if (test_bit(PLOOP_S_ABORT, &delta->plo->state)) {
-		pr_warn("ploop1_start_merge for ploop%d failed "
-		       "(state ABORT)\n", delta->plo->index);
+		PL_WARN(delta->plo, "ploop1_start_merge failed "
+		       "(state ABORT)\n");
 		return -EIO;
 	}
 
@@ -698,7 +697,7 @@ static int expand_holes_bitmap(struct ploop_delta *delta,
 
 	holes_bitmap = kvmalloc(size, GFP_KERNEL);
 	if (!holes_bitmap) {
-		pr_err("Can't allocate holes_bitmap\n");
+		PL_ERR(delta->plo, "Can't allocate holes_bitmap\n");
 		return -ENOMEM;
 	}
 
@@ -814,7 +813,7 @@ static int ploop1_complete_grow(struct ploop_delta * delta, u64 new_size)
 	vh_bsize = le32_to_cpu(vh->m_Sectors);
 
 	if (vh_bsize != (1 << delta->io.plo->cluster_log)) {
-		pr_warn("grow: vh->m_Sectors=%u != 1<<plo->cluster_log=%u\n",
+		PL_WARN(delta->plo, "grow: vh->m_Sectors=%u != 1<<plo->cluster_log=%u\n",
 		       vh_bsize, 1 << delta->io.plo->cluster_log);
 		return -EINVAL;
 	}
