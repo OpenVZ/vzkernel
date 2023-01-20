@@ -880,7 +880,7 @@ retry:
 		struct ploop_device *plo = io->plo;
 		struct block_device *dm_crypt_bdev;
 
-		pr_warn("PLOOP: failed to invalidate page cache %d/%d\n", err, attempt2);
+		PL_WARN(plo, "failed to invalidate page cache %d/%d\n", err, attempt2);
 		if (attempt2)
 			return err;
 		attempt2 = 1;
@@ -915,7 +915,7 @@ static int dio_release_prealloced(struct ploop_io * io)
 
 	ret = dio_truncate(io, io->files.file, io->alloc_head);
 	if (ret)
-		pr_warn("Can't release %llu prealloced bytes: "
+		PL_WARN(io->plo, "Can't release %llu prealloced bytes: "
 		       "truncate to %llu failed (%d)\n",
 		       io->prealloced_size - end_pos, end_pos, ret);
 	else
@@ -1764,7 +1764,7 @@ static int dio_autodetect(struct ploop_io *io, unsigned int id)
 		return -1;
 
 	if (inode->i_sb->s_bdev == NULL) {
-		pr_warn("File on FS EXT(%s) without backing device\n", s_id);
+		PL_WARN(io->plo, "File on FS EXT(%s) without backing device\n", s_id);
 		return -1;
 	}
 
@@ -1773,12 +1773,12 @@ static int dio_autodetect(struct ploop_io *io, unsigned int id)
 					"File on FS w/o fallocate");
 
 	if (!file->f_op->unlocked_ioctl) {
-		pr_warn("Cannot run on EXT4(%s): no unlocked_ioctl\n", s_id);
+		PL_WARN(io->plo, "Cannot run on EXT4(%s): no unlocked_ioctl\n", s_id);
 		return -1;
 	}
 
 	if (!file->f_op->fsync) {
-		pr_warn("Cannot run on EXT4(%s): no fsync\n", s_id);
+		PL_WARN(io->plo, "Cannot run on EXT4(%s): no fsync\n", s_id);
 		return -1;
 	}
 
@@ -1789,7 +1789,7 @@ static int dio_autodetect(struct ploop_io *io, unsigned int id)
 	set_fs(fs);
 
 	if (err != 0) {
-		pr_warn("Cannot run on EXT4(%s): failed FS_IOC_GETFLAGS (%d)\n",
+		PL_WARN(io->plo, "Cannot run on EXT4(%s): failed FS_IOC_GETFLAGS (%d)\n",
 		       s_id, err);
 		return -1;
 	}
