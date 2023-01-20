@@ -218,6 +218,7 @@ enum res_type {
 	_OOM_TYPE,
 	_KMEM,
 	_TCP,
+	_CACHE,
 };
 
 #define MEMFILE_PRIVATE(x, val)	((x) << 16 | (val))
@@ -2207,6 +2208,7 @@ struct memcg_stock_pcp {
 	int nr_slab_unreclaimable_b;
 #endif
 
+	unsigned int cache_nr_pages;
 	struct work_struct work;
 	unsigned long flags;
 #define FLUSHING_CACHED_CHARGE	0
@@ -2248,7 +2250,8 @@ static void memcg_account_kmem(struct mem_cgroup *memcg, int nr_pages)
  *
  * returns true if successful, false otherwise.
  */
-static bool consume_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
+static bool consume_stock(struct mem_cgroup *memcg, unsigned int nr_pages,
+			  bool cache)
 {
 	struct memcg_stock_pcp *stock;
 	unsigned long flags;
@@ -2260,9 +2263,16 @@ static bool consume_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
 	local_lock_irqsave(&memcg_stock.stock_lock, flags);
 
 	stock = this_cpu_ptr(&memcg_stock);
-	if (memcg == stock->cached && stock->nr_pages >= nr_pages) {
-		stock->nr_pages -= nr_pages;
-		ret = true;
+	if (memcg == stock->cached) {
+		if (cache && stock->cache_nr_pages >= nr_pages) {
+			stock->cache_nr_pages -= nr_pages;
+			ret = true;
+		}
+
+		if (!cache && stock->nr_pages >= nr_pages) {
+			stock->nr_pages -= nr_pages;
+			ret = true;
+		}
 	}
 
 	local_unlock_irqrestore(&memcg_stock.stock_lock, flags);
@@ -2276,15 +2286,20 @@ static bool consume_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
 static void drain_stock(struct memcg_stock_pcp *stock)
 {
 	struct mem_cgroup *old = stock->cached;
+	unsigned long nr_pages = stock->nr_pages + stock->cache_nr_pages;
 
 	if (!old)
 		return;
 
-	if (stock->nr_pages) {
-		page_counter_uncharge(&old->memory, stock->nr_pages);
+	if (stock->cache_nr_pages)
+		page_counter_uncharge(&old->cache, stock->cache_nr_pages);
+
+	if (nr_pages) {
+		page_counter_uncharge(&old->memory, nr_pages);
 		if (do_memsw_account())
-			page_counter_uncharge(&old->memsw, stock->nr_pages);
+			page_counter_uncharge(&old->memsw, nr_pages);
 		stock->nr_pages = 0;
+		stock->cache_nr_pages = 0;
 	}
 
 	css_put(&old->css);
@@ -2318,9 +2333,11 @@ static void drain_local_stock(struct work_struct *dummy)
  * Cache charges(val) to local per_cpu area.
  * This will be consumed by consume_stock() function, later.
  */
-static void __refill_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
+static void __refill_stock(struct mem_cgroup *memcg, unsigned int nr_pages,
+			   bool cache)
 {
 	struct memcg_stock_pcp *stock;
+	unsigned long stock_nr_pages;
 
 	stock = this_cpu_ptr(&memcg_stock);
 	if (stock->cached != memcg) { /* reset if necessary */
@@ -2328,18 +2345,23 @@ static void __refill_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
 		css_get(&memcg->css);
 		stock->cached = memcg;
 	}
-	stock->nr_pages += nr_pages;
+	if (!cache)
+		stock->nr_pages += nr_pages;
+	else
+		stock->cache_nr_pages += nr_pages;
 
-	if (stock->nr_pages > MEMCG_CHARGE_BATCH)
+	stock_nr_pages = stock->nr_pages + stock->cache_nr_pages;
+	if (stock_nr_pages > MEMCG_CHARGE_BATCH)
 		drain_stock(stock);
 }
 
-static void refill_stock(struct mem_cgroup *memcg, unsigned int nr_pages)
+static void refill_stock(struct mem_cgroup *memcg, unsigned int nr_pages,
+			 bool cache)
 {
 	unsigned long flags;
 
 	local_lock_irqsave(&memcg_stock.stock_lock, flags);
-	__refill_stock(memcg, nr_pages);
+	__refill_stock(memcg, nr_pages, cache);
 	local_unlock_irqrestore(&memcg_stock.stock_lock, flags);
 }
 
@@ -2366,10 +2388,12 @@ static void drain_all_stock(struct mem_cgroup *root_memcg)
 		struct memcg_stock_pcp *stock = &per_cpu(memcg_stock, cpu);
 		struct mem_cgroup *memcg;
 		bool flush = false;
+		unsigned long nr_pages = stock->nr_pages +
+					 stock->cache_nr_pages;
 
 		rcu_read_lock();
 		memcg = stock->cached;
-		if (memcg && stock->nr_pages &&
+		if (memcg && nr_pages &&
 		    mem_cgroup_is_descendant(memcg, root_memcg))
 			flush = true;
 		else if (obj_stock_flush_required(stock, root_memcg))
@@ -2406,17 +2430,27 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
 
 	do {
 		unsigned long pflags;
+		long cache_overused;
 
-		if (page_counter_read(&memcg->memory) <=
-		    READ_ONCE(memcg->memory.high))
-			continue;
+		if (page_counter_read(&memcg->memory) >
+		    READ_ONCE(memcg->memory.high)) {
+			memcg_memory_event(memcg, MEMCG_HIGH);
 
-		memcg_memory_event(memcg, MEMCG_HIGH);
+			psi_memstall_enter(&pflags);
+			nr_reclaimed += try_to_free_mem_cgroup_pages(memcg,
+					nr_pages, gfp_mask, true);
+			psi_memstall_leave(&pflags);
+		}
 
-		psi_memstall_enter(&pflags);
-		nr_reclaimed += try_to_free_mem_cgroup_pages(memcg, nr_pages,
-							     gfp_mask, true);
-		psi_memstall_leave(&pflags);
+		cache_overused = page_counter_read(&memcg->cache) -
+				 memcg->cache.max;
+
+		if (cache_overused > 0) {
+			psi_memstall_enter(&pflags);
+			nr_reclaimed += try_to_free_mem_cgroup_pages(memcg,
+					cache_overused, gfp_mask, false);
+			psi_memstall_leave(&pflags);
+		}
 	} while ((memcg = parent_mem_cgroup(memcg)) &&
 		 !mem_cgroup_is_root(memcg));
 
@@ -2652,7 +2686,7 @@ out:
 }
 
 static int try_charge_memcg(struct mem_cgroup *memcg, gfp_t gfp_mask,
-			unsigned int nr_pages)
+			    unsigned int nr_pages, bool cache_charge)
 {
 	unsigned int batch = max(MEMCG_CHARGE_BATCH, nr_pages);
 	int nr_retries = MAX_RECLAIM_RETRIES;
@@ -2666,8 +2700,8 @@ static int try_charge_memcg(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	unsigned long pflags;
 
 retry:
-	if (consume_stock(memcg, nr_pages))
-		return 0;
+	if (consume_stock(memcg, nr_pages, cache_charge))
+		goto done;
 
 	if (!do_memsw_account() ||
 	    page_counter_try_charge(&memcg->memsw, batch, &counter)) {
@@ -2780,13 +2814,19 @@ force:
 	page_counter_charge(&memcg->memory, nr_pages);
 	if (do_memsw_account())
 		page_counter_charge(&memcg->memsw, nr_pages);
+	if (cache_charge)
+		page_counter_charge(&memcg->cache, nr_pages);
 
 	return 0;
 
 done_restock:
-	if (batch > nr_pages)
-		refill_stock(memcg, batch - nr_pages);
+	if (cache_charge)
+		page_counter_charge(&memcg->cache, batch);
 
+	if (batch > nr_pages)
+		refill_stock(memcg, batch - nr_pages, cache_charge);
+
+done:
 	/*
 	 * If the hierarchy is above the normal consumption range, schedule
 	 * reclaim on returning to userland.  We can perform reclaim here
@@ -2826,6 +2866,9 @@ done_restock:
 			current->memcg_nr_pages_over_high += batch;
 			set_notify_resume(current);
 			break;
+		} else if (page_counter_read(&memcg->cache) > memcg->cache.max) {
+			if (!work_pending(&memcg->high_work))
+				schedule_work(&memcg->high_work);
 		}
 	} while ((memcg = parent_mem_cgroup(memcg)));
 
@@ -2833,12 +2876,12 @@ done_restock:
 }
 
 static inline int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
-			     unsigned int nr_pages)
+			     unsigned int nr_pages, bool cache_charge)
 {
 	if (mem_cgroup_is_root(memcg))
 		return 0;
 
-	return try_charge_memcg(memcg, gfp_mask, nr_pages);
+	return try_charge_memcg(memcg, gfp_mask, nr_pages, cache_charge);
 }
 
 static inline void cancel_charge(struct mem_cgroup *memcg, unsigned int nr_pages)
@@ -3024,7 +3067,7 @@ static void obj_cgroup_uncharge_pages(struct obj_cgroup *objcg,
 	memcg = get_mem_cgroup_from_objcg(objcg);
 
 	memcg_account_kmem(memcg, -nr_pages);
-	refill_stock(memcg, nr_pages);
+	refill_stock(memcg, nr_pages, false);
 
 	css_put(&memcg->css);
 }
@@ -3045,7 +3088,7 @@ static int obj_cgroup_charge_pages(struct obj_cgroup *objcg, gfp_t gfp,
 
 	memcg = get_mem_cgroup_from_objcg(objcg);
 
-	ret = try_charge_memcg(memcg, gfp, nr_pages);
+	ret = try_charge_memcg(memcg, gfp, nr_pages, false);
 	if (ret)
 		goto out;
 
@@ -3204,7 +3247,7 @@ static struct obj_cgroup *drain_obj_stock(struct memcg_stock_pcp *stock)
 			memcg = get_mem_cgroup_from_objcg(old);
 
 			memcg_account_kmem(memcg, -nr_pages);
-			__refill_stock(memcg, nr_pages);
+			__refill_stock(memcg, nr_pages, false);
 
 			css_put(&memcg->css);
 		}
@@ -3352,7 +3395,7 @@ int memcg_charge_kmem(struct mem_cgroup *memcg, gfp_t gfp,
 {
 	int ret = 0;
 
-	ret = try_charge(memcg, gfp, nr_pages);
+	ret = try_charge(memcg, gfp, nr_pages, false);
 	if (!ret)
 		page_counter_charge(&memcg->kmem, nr_pages);
 
@@ -3711,6 +3754,9 @@ static u64 mem_cgroup_read_u64(struct cgroup_subsys_state *css,
 	case _TCP:
 		counter = &memcg->tcpmem;
 		break;
+	case _CACHE:
+		counter = &memcg->cache;
+		break;
 	default:
 		BUG();
 	}
@@ -3829,6 +3875,44 @@ out:
 	return ret;
 }
 
+static int memcg_update_cache_max(struct mem_cgroup *memcg,
+				  unsigned long limit)
+{
+	unsigned long nr_pages;
+	bool enlarge = false;
+	int ret;
+
+	do {
+		if (signal_pending(current)) {
+			ret = -EINTR;
+			break;
+		}
+		mutex_lock(&memcg_max_mutex);
+
+		if (limit > memcg->cache.max)
+			enlarge = true;
+
+		ret = page_counter_set_max(&memcg->cache, limit);
+		mutex_unlock(&memcg_max_mutex);
+
+		if (!ret)
+			break;
+
+		nr_pages = max_t(long, 1,
+				 page_counter_read(&memcg->cache) - limit);
+		if (!try_to_free_mem_cgroup_pages(memcg, nr_pages,
+						  GFP_KERNEL, false)) {
+			ret = -EBUSY;
+			break;
+		}
+	} while (1);
+
+	if (!ret && enlarge)
+		memcg_oom_recover(memcg);
+
+	return ret;
+}
+
 /*
  * The user of this function is...
  * RES_LIMIT.
@@ -3865,6 +3949,9 @@ static ssize_t mem_cgroup_write(struct kernfs_open_file *of,
 		case _TCP:
 			ret = memcg_update_tcp_max(memcg, nr_pages);
 			break;
+		case _CACHE:
+			ret = memcg_update_cache_max(memcg, nr_pages);
+			break;
 		}
 		break;
 	case RES_SOFT_LIMIT:
@@ -3897,6 +3984,9 @@ static ssize_t mem_cgroup_reset(struct kernfs_open_file *of, char *buf,
 		break;
 	case _TCP:
 		counter = &memcg->tcpmem;
+		break;
+	case _CACHE:
+		counter = &memcg->cache;
 		break;
 	default:
 		BUG();
@@ -5541,6 +5631,17 @@ static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "pressure_level",
 	},
+	{
+		.name = "cache.limit_in_bytes",
+		.private = MEMFILE_PRIVATE(_CACHE, RES_LIMIT),
+		.write = mem_cgroup_write,
+		.read_u64 = mem_cgroup_read_u64,
+	},
+	{
+		.name = "cache.usage_in_bytes",
+		.private = MEMFILE_PRIVATE(_CACHE, RES_USAGE),
+		.read_u64 = mem_cgroup_read_u64,
+	},
 #ifdef CONFIG_NUMA
 	{
 		.name = "numa_stat",
@@ -5825,11 +5926,13 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		page_counter_init(&memcg->swap, &parent->swap);
 		page_counter_init(&memcg->kmem, &parent->kmem);
 		page_counter_init(&memcg->tcpmem, &parent->tcpmem);
+		page_counter_init(&memcg->cache, &parent->cache);
 	} else {
 		page_counter_init(&memcg->memory, NULL);
 		page_counter_init(&memcg->swap, NULL);
 		page_counter_init(&memcg->kmem, NULL);
 		page_counter_init(&memcg->tcpmem, NULL);
+		page_counter_init(&memcg->cache, NULL);
 
 		root_mem_cgroup = memcg;
 		return &memcg->css;
@@ -5950,6 +6053,7 @@ static void mem_cgroup_css_reset(struct cgroup_subsys_state *css)
 	page_counter_set_max(&memcg->swap, PAGE_COUNTER_MAX);
 	page_counter_set_max(&memcg->kmem, PAGE_COUNTER_MAX);
 	page_counter_set_max(&memcg->tcpmem, PAGE_COUNTER_MAX);
+	page_counter_set_max(&memcg->cache, PAGE_COUNTER_MAX);
 	page_counter_set_min(&memcg->memory, 0);
 	page_counter_set_low(&memcg->memory, 0);
 	page_counter_set_high(&memcg->memory, PAGE_COUNTER_MAX);
@@ -6051,7 +6155,8 @@ static int mem_cgroup_do_precharge(unsigned long count)
 	int ret;
 
 	/* Try a single bulk charge without reclaim first, kswapd may wake */
-	ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_DIRECT_RECLAIM, count);
+	ret = try_charge(mc.to, GFP_KERNEL & ~__GFP_DIRECT_RECLAIM, count,
+			 false);
 	if (!ret) {
 		mc.precharge += count;
 		return ret;
@@ -6059,7 +6164,7 @@ static int mem_cgroup_do_precharge(unsigned long count)
 
 	/* Try charges one by one with reclaim, but do not retry */
 	while (count--) {
-		ret = try_charge(mc.to, GFP_KERNEL | __GFP_NORETRY, 1);
+		ret = try_charge(mc.to, GFP_KERNEL | __GFP_NORETRY, 1, false);
 		if (ret)
 			return ret;
 		mc.precharge++;
@@ -7285,18 +7390,27 @@ void mem_cgroup_calculate_protection(struct mem_cgroup *root,
 }
 
 static int charge_memcg(struct folio *folio, struct mem_cgroup *memcg,
-			gfp_t gfp)
+			gfp_t gfp, bool cache_charge)
 {
 	long nr_pages = folio_nr_pages(folio);
 	int ret;
 
-	ret = try_charge(memcg, gfp, nr_pages);
+	ret = try_charge(memcg, gfp, nr_pages, cache_charge);
 	if (ret)
 		goto out;
 
 	css_get(&memcg->css);
 	commit_charge(folio, memcg);
 
+	/*
+	 * We always cleanup this flag on uncharging, it means
+	 * that during charging we shouldn't have this flag set
+	 */
+
+	VM_BUG_ON(folio_memcg_cache(folio));
+	if (cache_charge)
+		WRITE_ONCE(folio->memcg_data,
+			READ_ONCE(folio->memcg_data) | MEMCG_DATA_PGCACHE);
 	local_irq_disable();
 	mem_cgroup_charge_statistics(memcg, nr_pages);
 	memcg_check_events(memcg, folio_nid(folio));
@@ -7305,16 +7419,30 @@ out:
 	return ret;
 }
 
-int __mem_cgroup_charge(struct folio *folio, struct mm_struct *mm, gfp_t gfp)
+static int __mem_cgroup_charge_gen(struct folio *folio, struct mm_struct *mm,
+					gfp_t gfp_mask, bool cache_charge)
 {
 	struct mem_cgroup *memcg;
 	int ret;
 
+	if (mem_cgroup_disabled())
+		return 0;
+
 	memcg = get_mem_cgroup_from_mm(mm);
-	ret = charge_memcg(folio, memcg, gfp);
+	ret = charge_memcg(folio, memcg, gfp_mask, cache_charge);
 	css_put(&memcg->css);
 
 	return ret;
+}
+
+int __mem_cgroup_charge(struct folio *folio, struct mm_struct *mm, gfp_t gfp)
+{
+	return __mem_cgroup_charge_gen(folio, mm, gfp, false);
+}
+
+int mem_cgroup_charge_cache(struct folio *folio, struct mm_struct *mm, gfp_t gfp)
+{
+	return __mem_cgroup_charge_gen(folio, mm, gfp, true);
 }
 
 /**
@@ -7347,7 +7475,7 @@ int mem_cgroup_swapin_charge_page(struct page *page, struct mm_struct *mm,
 		memcg = get_mem_cgroup_from_mm(mm);
 	rcu_read_unlock();
 
-	ret = charge_memcg(folio, memcg, gfp);
+	ret = charge_memcg(folio, memcg, gfp, false);
 
 	css_put(&memcg->css);
 	return ret;
@@ -7391,6 +7519,7 @@ struct uncharge_gather {
 	unsigned long nr_memory;
 	unsigned long pgpgout;
 	unsigned long nr_kmem;
+	unsigned long nr_pgcache;
 	int nid;
 };
 
@@ -7409,6 +7538,9 @@ static void uncharge_batch(const struct uncharge_gather *ug)
 			page_counter_uncharge(&ug->memcg->memsw, ug->nr_memory);
 		if (ug->nr_kmem)
 			memcg_account_kmem(ug->memcg, -ug->nr_kmem);
+		if (ug->nr_pgcache)
+			page_counter_uncharge(&ug->memcg->cache, ug->nr_pgcache);
+
 		memcg_oom_recover(ug->memcg);
 	}
 
@@ -7470,6 +7602,8 @@ static void uncharge_folio(struct folio *folio, struct uncharge_gather *ug)
 		folio->memcg_data = 0;
 		obj_cgroup_put(objcg);
 	} else {
+		if (folio_memcg_cache(folio))
+			ug->nr_pgcache += nr_pages;
 		/* LRU pages aren't accounted at the root level */
 		if (!mem_cgroup_is_root(memcg))
 			ug->nr_memory += nr_pages;
@@ -7553,6 +7687,12 @@ void mem_cgroup_migrate(struct folio *old, struct folio *new)
 			page_counter_charge(&memcg->memsw, nr_pages);
 	}
 
+	WARN_ON((!PageAnon(&new->page) && !PageSwapBacked(&new->page)) |
+		folio_memcg_cache(new));
+
+	if (folio_memcg_cache(new))
+		page_counter_charge(&memcg->cache, nr_pages);
+
 	css_get(&memcg->css);
 	commit_charge(new, memcg);
 
@@ -7621,7 +7761,7 @@ bool mem_cgroup_charge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages,
 		return false;
 	}
 
-	if (try_charge(memcg, gfp_mask, nr_pages) == 0) {
+	if (try_charge(memcg, gfp_mask, nr_pages, false) == 0) {
 		mod_memcg_state(memcg, MEMCG_SOCK, nr_pages);
 		return true;
 	}
@@ -7643,7 +7783,7 @@ void mem_cgroup_uncharge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages)
 
 	mod_memcg_state(memcg, MEMCG_SOCK, -nr_pages);
 
-	refill_stock(memcg, nr_pages);
+	refill_stock(memcg, nr_pages, false);
 }
 
 static int __init cgroup_memory(char *s)
