@@ -130,7 +130,7 @@ static void check_standby_mode(long res, struct ploop_device *plo) {
 	spin_unlock_irq(q->queue_lock);
 
 	if (!prev)
-		printk("ploop%d was switched into "
+		pr_warn("ploop%d was switched into "
 		       "the standby mode\n", plo->index);
 }
 
@@ -141,14 +141,14 @@ static void kaio_rw_aio_complete(u64 data, long res)
 	if (unlikely(res < 0)) {
 		struct bio *b = preq->aux_bio;
 
-		printk("kaio_rw_aio_complete: kaio failed with err=%ld "
+		pr_warn("kaio_rw_aio_complete: kaio failed with err=%ld "
 		       "(rw=%s; state=%ld/0x%lx; clu=%d; iblk=%d; aux=%ld)\n",
 		       res, (preq->req_rw & REQ_WRITE) ? "WRITE" : "READ",
 		       preq->eng_state, preq->state, preq->req_cluster,
 		       preq->iblock, b ? b->bi_sector : -1);
 
 		bio_list_for_each(b, &preq->bl)
-			printk(" bio=%p: bi_sector=%ld bi_size=%d\n",
+			pr_warn(" bio=%p: bi_sector=%ld bi_size=%d\n",
 			       b, b->bi_sector, b->bi_size);
 		if (static_key_false(&ploop_standby_check))
 			check_standby_mode(res, preq->plo);
@@ -216,7 +216,7 @@ static int kaio_kernel_submit(struct file *file, struct kaio_req *kreq,
 
 	err = aio_kernel_submit(iocb);
 	if (err)
-		printk("kaio_kernel_submit: aio_kernel_submit failed with "
+		pr_warn("kaio_kernel_submit: aio_kernel_submit failed with "
 		       "err=%d (rw=%s; state=%ld/0x%lx; pos=%lld; len=%ld)\n",
 		       err, (rw & REQ_WRITE) ? "WRITE" : "READ",
 		       kreq->preq->eng_state, kreq->preq->state, pos, count);
@@ -480,7 +480,7 @@ static int kaio_resubmit(struct ploop_request * preq)
 		preq->eng_state = PLOOP_E_DELTA_COPIED; /* skip bcopy() */
 		return 0;
 	default:
-		printk("Resubmit bad state %lu\n", preq->eng_state);
+		pr_warn("Resubmit bad state %lu\n", preq->eng_state);
 		BUG();
 	}
 
@@ -559,7 +559,7 @@ static int kaio_fsync_thread(void * data)
 			struct file *file = io->files.file;
 			err = vfs_fsync(file, 1);
 			if (err) {
-				printk("kaio_fsync_thread: vfs_fsync failed "
+				pr_warn("kaio_fsync_thread: vfs_fsync failed "
 				       "with err=%d (i_ino=%ld of level=%d "
 				       "on ploop%d)\n",
 				       err, io->files.inode->i_ino,
@@ -648,7 +648,7 @@ static int kaio_release_prealloced(struct ploop_io * io)
 
 	ret = kaio_truncate(io, io->files.file, io->alloc_head);
 	if (ret)
-		printk("Can't release %llu prealloced bytes: "
+		pr_warn("Can't release %llu prealloced bytes: "
 		       "truncate to %llu failed (%d)\n",
 		       io->prealloced_size - end_pos, end_pos, ret);
 	else
@@ -747,7 +747,7 @@ kaio_io_page(struct ploop_io * io, int op, struct ploop_request * preq,
 
 	err = aio_kernel_submit(iocb);
 	if (err) {
-		printk("kaio_io_page: aio_kernel_submit failed with "
+		pr_warn("kaio_io_page: aio_kernel_submit failed with "
 		       "err=%d (rw=%s; state=%ld/0x%lx; pos=%lld)\n",
 		       err, (op == IOCB_CMD_WRITE_ITER) ? "WRITE" : "READ",
 		       preq->eng_state, preq->state, pos);
@@ -862,7 +862,7 @@ kaio_sync_io(struct ploop_io * io, int op, struct page **pages,
 
 	err = aio_kernel_submit(iocb);
 	if (err) {
-		printk("kaio_sync_io: aio_kernel_submit failed with "
+		pr_warn("kaio_sync_io: aio_kernel_submit failed with "
 		       "err=%d (rw=%s; pos=%lld; len=%d off=%d)\n",
 		       err, (op == IOCB_CMD_WRITE_ITER) ? "WRITE" : "READ",
 		       pos, len, off);
@@ -877,7 +877,7 @@ kaio_sync_io(struct ploop_io * io, int op, struct page **pages,
 	wait_for_completion(&comp.comp);
 
 	if (!err && comp.error)
-		printk("kaio_sync_io: kaio failed with err=%d "
+		pr_warn("kaio_sync_io: kaio failed with err=%d "
 		       "(rw=%s; pos=%lld; len=%d off=%d)\n",
 		       comp.error,
 		       (op == IOCB_CMD_WRITE_ITER) ? "WRITE" : "READ",
@@ -1157,7 +1157,7 @@ static int __kaio_truncate(struct ploop_io * io, struct file * file, u64 pos)
 	mutex_unlock(&io->files.inode->i_mutex);
 
 	if (err) {
-		printk("__kaio_truncate(i_ino=%ld of level=%d on ploop%d, "
+		pr_warn("__kaio_truncate(i_ino=%ld of level=%d on ploop%d, "
 		       "pos=%lld): notify_change failed with err=%d "
 		       "(i_size=%lld)\n",
 		       io->files.inode->i_ino, io2level(io), io->plo->index,
@@ -1168,7 +1168,7 @@ static int __kaio_truncate(struct ploop_io * io, struct file * file, u64 pos)
 	err = vfs_fsync(file, 0);
 
 	if (err)
-		printk("__kaio_truncate(i_ino=%ld of level=%d on ploop%d, "
+		pr_warn("__kaio_truncate(i_ino=%ld of level=%d on ploop%d, "
 		       "pos=%lld): vfs_fsync failed with err=%d\n",
 		       io->files.inode->i_ino, io2level(io), io->plo->index,
 		       pos, err);
