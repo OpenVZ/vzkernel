@@ -358,7 +358,7 @@ static u32 show_aborted(struct ploop_device * plo)
 
 static int store_aborted(struct ploop_device * plo, u32 val)
 {
-	printk(KERN_INFO "ploop: Force %s aborted state for ploop%d\n",
+	pr_warn("ploop: Force %s aborted state for ploop%d\n",
 	       val ? "set" : "clear", plo->index);
 
 	if (val)
@@ -799,21 +799,21 @@ void ploop_sysfs_init(struct ploop_device * plo)
 	plo->pstat_dir = kobject_add_attr(plo->disk, "pstat", &pstat_ktype);
 	if (plo->pstat_dir) {
 		if (sysfs_create_group(plo->pstat_dir, &stats_group))
-			printk("ploop: were not able to create pstat dir\n");
+			pr_warn("ploop: were not able to create pstat dir\n");
 	}
 	plo->pstate_dir = kobject_add_attr(plo->disk, "pstate", &pattr_ktype);
 	if (plo->pstate_dir) {
 		if (sysfs_create_group(plo->pstate_dir, &state_group))
-			printk("ploop: were not able to create pstate dir\n");
+			pr_warn("ploop: were not able to create pstate dir\n");
 	}
 	plo->ptune_dir = kobject_add_attr(plo->disk, "ptune", &pattr_ktype);
 	if (plo->ptune_dir) {
 		if (sysfs_create_group(plo->ptune_dir, &tune_group))
-			printk("ploop: were not able to create ptune dir\n");
+			pr_warn("ploop: were not able to create ptune dir\n");
 	}
 
 	if (kobject_add(&plo->kobj, kobject_get(&disk_to_dev(plo->disk)->kobj), "%s", "pdelta"))
-		printk("ploop: were not able to create pdelta dir\n");
+		pr_warn("ploop: were not able to create pdelta dir\n");
 }
 
 void ploop_sysfs_uninit(struct ploop_device * plo)

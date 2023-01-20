@@ -320,7 +320,7 @@ map_create(struct ploop_map * map, cluster_t block)
 		else if (block > entry->mn_end)
 			p = &(*p)->rb_right;
 		else
-			printk("map_create: Oops! block=%u; mn_range=[%u..%u]\n",
+			pr_warn("map_create: Oops! block=%u; mn_range=[%u..%u]\n",
 			       block, entry->mn_start, entry->mn_end);
 	}
 
@@ -700,7 +700,7 @@ void ploop_update_map(struct ploop_map * map, int level,
 		if (lvl == level)
 			p[idx] = iblk << ploop_map_log(map->plo);
 		else if (lvl < level)
-			printk("Unexpected condition: uptodate map_node %p "
+			pr_warn("Unexpected condition: uptodate map_node %p "
 			       "covering range %u..%u maps %u to %u on level "
 			       "%d, while user-space merge detected mapping "
 			       "on level %d\n", m, m->mn_start, m->mn_end,
@@ -943,7 +943,7 @@ void ploop_index_update(struct ploop_request * preq)
 
 	BUG_ON (test_bit(PLOOP_REQ_ZERO, &preq->state) && preq->iblock);
 	if (test_bit(PLOOP_REQ_ZERO, &preq->state) && !blk) {
-		printk("Either map_node is corrupted or bug in "
+		pr_warn("Either map_node is corrupted or bug in "
 		       "ploop-balloon (%u)\n", preq->req_cluster);
 		PLOOP_REQ_SET_ERROR(preq, -EIO);
 		goto corrupted;

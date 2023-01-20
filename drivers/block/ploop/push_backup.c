@@ -129,7 +129,7 @@ int ploop_pb_cbt_map_release(struct ploop_pushbackup_desc *pbd, bool do_merge)
 					pbd->cbt_block_max,
 					pbd->cbt_block_bits);
 		if (ret)
-			printk("ploop(%d): blk_cbt_map_merge() failed with "
+			pr_warn("ploop(%d): blk_cbt_map_merge() failed with "
 			       "%d\n", pbd->plo->index, ret);
 	}
 
@@ -268,7 +268,7 @@ static bool check_bit_in_map(struct page **map, u64 map_max, u64 blk)
 static void set_bits_in_map(struct page **map, u64 map_max, u64 blk, u64 cnt)
 {
 	if (blk + cnt > map_max) {
-		printk("set_bits_in_map: extent [%llu, %llu) is out of range"
+		pr_warn("set_bits_in_map: extent [%llu, %llu) is out of range"
 		       " [0, %llu)\n", blk, blk + cnt, map_max);
 		return;
 	}
@@ -326,7 +326,7 @@ static int convert_map_to_map(struct ploop_pushbackup_desc *pbd)
 	u64 from_blk, to_blk;
 
 	if ((u64)from_max << from_bits != (u64)to_max << to_bits) {
-		printk("mismatch in map convert: %lu %lu ---> %u %d\n",
+		pr_warn("mismatch in map convert: %lu %lu ---> %u %d\n",
 		       from_max, from_bits, to_max, to_bits);
 		return -EINVAL;
 	}
@@ -426,9 +426,9 @@ void ploop_pb_fini(struct ploop_pushbackup_desc *pbd)
 		return;
 
 	if (!RB_EMPTY_ROOT(&pbd->pending_set.tree))
-		printk("ploop_pb_fini: pending_tree is not empty!\n");
+		pr_warn("ploop_pb_fini: pending_tree is not empty!\n");
 	if (!RB_EMPTY_ROOT(&pbd->reported_set.tree))
-		printk("ploop_pb_fini: reported_tree is not empty!\n");
+		pr_warn("ploop_pb_fini: reported_tree is not empty!\n");
 
 	if (pbd->health_monitor_thread) {
 		kthread_stop(pbd->health_monitor_thread);
@@ -491,7 +491,7 @@ static void ploop_pb_add_req_to_tree(struct ploop_request *preq,
 		mod_timer(&pbs->timer, preq->tstamp + timeout + 1);
 
 	if (pbs->list.prev->next != &pbs->list) {
-		printk("list_add corruption. pbs->list.prev->next should be "
+		pr_warn("list_add corruption. pbs->list.prev->next should be "
 		       "&pbs->list (%p), but was %p. (pbs->list.prev=%p)."
 		       " preq=%p\n",
 		       &pbs->list, pbs->list.prev->next, pbs->list.prev, preq);
@@ -1046,7 +1046,7 @@ static bool ploop_pb_set_expired(struct pb_set *pbs)
 	spin_unlock_irqrestore(&pbd->ppb_lock, flags);
 
 	if (ret)
-		printk(KERN_WARNING "Abort push_backup for ploop%d: found "
+		pr_warn("Abort push_backup for ploop%d: found "
 		       "preq (clu=%d) in %s tree delayed for %u msecs\n",
 		       plo->index, clu, pbs->name,
 		       jiffies_to_msecs(jiffies - tstamp));
