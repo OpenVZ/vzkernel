@@ -1102,6 +1102,7 @@ out:
 	return ipgre_tunnel_validate(tb, data, extack);
 }
 
+#ifndef CONFIG_VE
 static int erspan_validate(struct nlattr *tb[], struct nlattr *data[],
 			   struct netlink_ext_ack *extack)
 {
@@ -1141,6 +1142,7 @@ static int erspan_validate(struct nlattr *tb[], struct nlattr *data[],
 
 	return 0;
 }
+#endif
 
 static int ipgre_netlink_parms(struct net_device *dev,
 				struct nlattr *data[],
@@ -1209,6 +1211,7 @@ static int ipgre_netlink_parms(struct net_device *dev,
 	return 0;
 }
 
+#ifndef CONFIG_VE
 static int erspan_netlink_parms(struct net_device *dev,
 				struct nlattr *data[],
 				struct nlattr *tb[],
@@ -1252,6 +1255,7 @@ static int erspan_netlink_parms(struct net_device *dev,
 
 	return 0;
 }
+#endif
 
 /* This function returns true when ENCAP attributes are present in the nl msg */
 static bool ipgre_netlink_encap_parms(struct nlattr *data[],
@@ -1390,6 +1394,7 @@ static int ipgre_newlink(struct net *src_net, struct net_device *dev,
 	return ip_tunnel_newlink(dev, tb, &p, fwmark);
 }
 
+#ifndef CONFIG_VE
 static int erspan_newlink(struct net *src_net, struct net_device *dev,
 			  struct nlattr *tb[], struct nlattr *data[],
 			  struct netlink_ext_ack *extack)
@@ -1407,6 +1412,7 @@ static int erspan_newlink(struct net *src_net, struct net_device *dev,
 		return err;
 	return ip_tunnel_newlink(dev, tb, &p, fwmark);
 }
+#endif
 
 static int ipgre_changelink(struct net_device *dev, struct nlattr *tb[],
 			    struct nlattr *data[],
@@ -1437,6 +1443,7 @@ static int ipgre_changelink(struct net_device *dev, struct nlattr *tb[],
 	return 0;
 }
 
+#ifndef CONFIG_VE
 static int erspan_changelink(struct net_device *dev, struct nlattr *tb[],
 			     struct nlattr *data[],
 			     struct netlink_ext_ack *extack)
@@ -1463,6 +1470,7 @@ static int erspan_changelink(struct net_device *dev, struct nlattr *tb[],
 
 	return 0;
 }
+#endif
 
 static size_t ipgre_get_size(const struct net_device *dev)
 {
@@ -1558,6 +1566,7 @@ nla_put_failure:
 	return -EMSGSIZE;
 }
 
+#ifndef CONFIG_VE
 static int erspan_fill_info(struct sk_buff *skb, const struct net_device *dev)
 {
 	struct ip_tunnel *t = netdev_priv(dev);
@@ -1598,6 +1607,7 @@ static void erspan_setup(struct net_device *dev)
 	ip_tunnel_setup(dev, erspan_net_id);
 	t->erspan_ver = 1;
 }
+#endif
 
 static const struct nla_policy ipgre_policy[IFLA_GRE_MAX + 1] = {
 	[IFLA_GRE_LINK]		= { .type = NLA_U32 },
@@ -1653,6 +1663,7 @@ static struct rtnl_link_ops ipgre_tap_ops __read_mostly = {
 	.get_link_net	= ip_tunnel_get_link_net,
 };
 
+#ifndef CONFIG_VE
 static struct rtnl_link_ops erspan_link_ops __read_mostly = {
 	.kind		= "erspan",
 	.maxtype	= IFLA_GRE_MAX,
@@ -1667,6 +1678,7 @@ static struct rtnl_link_ops erspan_link_ops __read_mostly = {
 	.fill_info	= erspan_fill_info,
 	.get_link_net	= ip_tunnel_get_link_net,
 };
+#endif
 
 struct net_device *gretap_fb_dev_create(struct net *net, const char *name,
 					u8 name_assign_type)
@@ -1736,6 +1748,7 @@ static struct pernet_operations ipgre_tap_net_ops = {
 	.size = sizeof(struct ip_tunnel_net),
 };
 
+#ifndef CONFIG_VE
 static int __net_init erspan_init_net(struct net *net)
 {
 	return ip_tunnel_init_net(net, erspan_net_id,
@@ -1753,6 +1766,7 @@ static struct pernet_operations erspan_net_ops = {
 	.id   = &erspan_net_id,
 	.size = sizeof(struct ip_tunnel_net),
 };
+#endif
 
 static int __init ipgre_init(void)
 {
@@ -1767,11 +1781,11 @@ static int __init ipgre_init(void)
 	err = register_pernet_device(&ipgre_tap_net_ops);
 	if (err < 0)
 		goto pnet_tap_failed;
-
+#ifndef CONFIG_VE
 	err = register_pernet_device(&erspan_net_ops);
 	if (err < 0)
 		goto pnet_erspan_failed;
-
+#endif
 	err = gre_add_protocol(&ipgre_protocol, GREPROTO_CISCO);
 	if (err < 0) {
 		pr_info("%s: can't add protocol\n", __func__);
@@ -1785,22 +1799,27 @@ static int __init ipgre_init(void)
 	err = rtnl_link_register(&ipgre_tap_ops);
 	if (err < 0)
 		goto tap_ops_failed;
-
+#ifndef CONFIG_VE
 	err = rtnl_link_register(&erspan_link_ops);
 	if (err < 0)
 		goto erspan_link_failed;
+#endif
 
 	return 0;
 
+#ifndef CONFIG_VE
 erspan_link_failed:
+#endif
 	rtnl_link_unregister(&ipgre_tap_ops);
 tap_ops_failed:
 	rtnl_link_unregister(&ipgre_link_ops);
 rtnl_link_failed:
 	gre_del_protocol(&ipgre_protocol, GREPROTO_CISCO);
 add_proto_failed:
+#ifndef CONFIG_VE
 	unregister_pernet_device(&erspan_net_ops);
 pnet_erspan_failed:
+#endif
 	unregister_pernet_device(&ipgre_tap_net_ops);
 pnet_tap_failed:
 	unregister_pernet_device(&ipgre_net_ops);
@@ -1811,11 +1830,15 @@ static void __exit ipgre_fini(void)
 {
 	rtnl_link_unregister(&ipgre_tap_ops);
 	rtnl_link_unregister(&ipgre_link_ops);
+#ifndef CONFIG_VE
 	rtnl_link_unregister(&erspan_link_ops);
+#endif
 	gre_del_protocol(&ipgre_protocol, GREPROTO_CISCO);
 	unregister_pernet_device(&ipgre_tap_net_ops);
 	unregister_pernet_device(&ipgre_net_ops);
+#ifndef CONFIG_VE
 	unregister_pernet_device(&erspan_net_ops);
+#endif
 }
 
 module_init(ipgre_init);
@@ -1823,7 +1846,9 @@ module_exit(ipgre_fini);
 MODULE_LICENSE("GPL");
 MODULE_ALIAS_RTNL_LINK("gre");
 MODULE_ALIAS_RTNL_LINK("gretap");
+#ifndef CONFIG_VE
 MODULE_ALIAS_RTNL_LINK("erspan");
+MODULE_ALIAS_NETDEV("erspan0");
+#endif
 MODULE_ALIAS_NETDEV("gre0");
 MODULE_ALIAS_NETDEV("gretap0");
-MODULE_ALIAS_NETDEV("erspan0");
