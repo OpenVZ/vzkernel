@@ -820,7 +820,7 @@ void transfer_sync_data(struct pcs_cs_list * new_cs_list, struct pcs_cs_list * o
 		for (k = 0; k < old_cs_list->nsrv; k++) {
 			if (old_cs_list->cs[k].info.id.val == new_cs_list->cs[i].info.id.val) {
 				new_cs_list->cs[i].sync = old_cs_list->cs[k].sync;
-				new_cs_list->cs[i].dirty_ts = old_cs_list->cs[i].dirty_ts;
+				new_cs_list->cs[i].dirty_ts = old_cs_list->cs[k].dirty_ts;
 				break;
 			}
 		}
