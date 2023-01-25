@@ -1,0 +1,130 @@
+# command:
+# git-check-rebase --meta rebase_5.14.0-70.22.1.el9_5.14.0-162.6.1.el9.meta --rows-hide-level show_all --columns full rhel9:rh9-5.14.0-70.22.1.el9..rh9-5.14.0-70.22.1.vz9.17.12 rhel9.1:rh9-5.14.0-162.6.1.el9..rh9-5.14.0-162.6.1.vz9.18.1
+
+ok:
+ve: Add ve cgroup and ve_hook subsys
+   (added header from later fix)
+ve: Link net and ve_struct
+   (initialization moved from static struct to net_ns_init() function)
+mm: introduce transcendent file cache (tcache)
+   (page_cache_get_speculative() -> folio_try_get_rcu())
+dm: Add push backup driver
+   (blk_get_request() -> blk_mq_alloc_request(); blk_put_request() -> blk_mq_free_request())
+dm: Add dm-tracking target
+   (blk_get_request() -> blk_mq_alloc_request(); blk_put_request() -> blk_mq_free_request())
+ve: Implement current_user_ns_initial() helper
+   (added header from later fix)
+proc/net: proc_net_*() helpers introduced
+   (patch merged: functions rename)
+ve/proc/net: virtualize all the network proc entries
+   (functions rename)
+ve/proc: restricted proc-entries scope
+   (functions rename)
+ve/proc: virtualize /proc/meminfo in a Container
+   (functions rename)
+cbt: introduce changed block tracking
+   (submit_bio_checks() has been merged into submit_bio_noacct() in ms code, so the blk_cbt_bio_queue() has been also moved there)
+connector: containerize "connector" proc entry
+   (functions rename)
+fuse kio: logging improvements
+   (patch merged)
+cgroup-v1: Allow setting release_agent from root Container user_ns
+   (cgroup_release_agent_write() check logic has been changed a bit in ms code; new file_ns_ve_capable() wrapper has been introduced)
+drivers/vhost: vhost-blk accelerator for virtio-blk guests
+   (bio_alloc() now has extra arguments for tracking io)
+ploop: port and fix the standby mode feature
+   (define QUEUE_FLAG_STANDBY_EN has increased up to 32)
+cgroup_freezer: Print information about unfreezable process
+   (new patch)
+
+
+###################################################################
+# context changed
+###################################################################
+ve: Add veowner: skeleton for vz specific sysctl and /proc/ entries
+net: Add NETIF_F_VIRTUAL feature to mask devices allowed in CT
+ve/net/ppp: introduce VE_FEATURE_PPP feature
+ve/cgroups: fake num_cgroups in /proc/cgroups output
+dm-ploop: Add ploop target driver
+ve/net: restrict ethtool to CT root userns and prohibit EEPROM change
+sched: Add ve name to sched_show_task()
+sched: Port CONFIG_CFS_CPULIMIT feature
+device_cgroup: add device visibility virtualization in CT
+ve/kernel: allow to increase rlimit from inside container
+ve/uevent: Use own uevent_seqnum for every VE
+ve/net: introduce vz_security_*_check checks
+memcg: do not allow to disable oom from inside a container
+oom: resurrect berserker mode
+oom: make berserker more aggressive
+vzstat: Add base kstat structures and variables
+vzstat,sched: Track sched_lat_ve
+fs/ve: add new FS_VE_MOUNT flag to allow mount in container init userns
+fs: Mask appropriate filesystems FS_VIRTUALIZED
+ve/block: add ve_capable to check capabilities relative to the current VE
+trace/osnoise: Fix compiler complain about using "main" local variable
+introduce ve_net_hide_sysctl helper
+mm: introduce kvmalloc_check() for safe calls to kvmalloc()
+mm: issue panic() on bad page/pte bugs if panic_on_warn is set
+ve/mm: introduce min threshold for dcache
+mm: memcontrol: add swapin/out stats
+mm/swap: activate swapped in pages on fault
+ve/mm: add heuristic check for memory overcommit
+ve/printk: Virtualize log_wait queue
+ve/kthreadd: add per-ve kthreads creation interface
+sunrpc: add "kill-tasks" proc entry
+sunrpc: pending tasks kill helper added
+vzstat: Add kstat_glob.nr_unint_avg real accounting
+userns: associate user_struct with the user_namespace
+trusted/block: Added trusted flag to struct genhd
+trusted/ve/fs/exec: Don't allow a privileged user to execute untrusted files
+ve/proc: Added separate start time field to task_struct to show in container
+ve: Add interface for ve::clock_[monotonic|bootbased] adjustment
+ve/net: allow to rename devices in non-ve namespaces
+ext4: Teach the fs where the balloon inode is
+ve/sched/stat: Introduce functions to calculate vcpustat data
+arch/x86: introduce cpuid override
+x86: make ARCH_[SET|GET]_CPUID friends with /proc/vz/cpuid_override
+ext4: add generic uevent infrastructure
+fs: Make ext4_event_type more generic
+fs: Introduce fs_events_wq to use instead ext4's rsv_conversion_wq
+ve/cgroup: Hide ve cgroup in Containers
+ve/tty: Provide interface for current tty inheritance
+ve/devtmpfs: lightweight virtualization
+ve/proc/block: show /proc/diskstats inside a Container
+mm/backing-dev: associate writeback with correct blkcg
+core: Add glob_kstat, percpu kstat and account mm stat
+/proc/<pid>/vz_latency: Add scheduling stats
+ve/netfilter: Implement pernet expect_max / virtualize "net.netfilter.nf_conntrack_expect_max" sysctl
+ve/netfilter: Implement pernet net->ct.max / virtualize "nf_conntrack_max" sysctl
+net: Primitives to enable conntrack allocation
+net: Mark conntrack users in xtables
+kvm/x86: add log printing on emulation failure
+kvm/x86: extend info on emualation failure
+mm: fix hanging shrinker management on long do_shrink_slab
+ve/cgroup: Set release_agent_path for root cgroups separately
+ve/net/features: put per-ve netdev features to separate struct member
+veth: Functionality to disable MAC changing and MAC filtering feature
+dm-tracking: Track request after it completed
+fuse: Turn writeback cache on
+fuse: direct_enable mount option
+fuse: fuse-ve-odirect sysctl
+fuse: reimplement synchronous close
+fuse: make umount synchronous
+fuse: add mount option to disable close_wait
+fuse: do not flush files opened ro
+fuse: the list of all opened files
+fuse: invalidate_files backward compatibility mode
+fuse: separate iqueue for clones
+fuse: add kdirect io engine v0.1
+fuse kio: Introduce cached_op
+fuse: Prohibit kio engine from containers
+fs/fuse kio: align CS messages to 512 bytes
+fuse: don't declare FUSE FIEMAP support for any FUSE fs
+ve/nf_log_syslog: virtualize packet logging per-ve
+ve/nf_log_syslog: allow packet logging in ve init netns
+ms/memcg: enable accounting for nft objects
+neighbour: make proxy_queue.qlen limit per-device
+hv_balloon: Create debugfs file with hyper-v balloon usage information
+
+OpenVZ kernel rh9-5.14.0-70.22.1.vz9.17.12
+OpenVZ kernel rh9-5.14.0-162.6.1.vz9.18.1
