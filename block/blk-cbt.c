@@ -262,9 +262,6 @@ static struct cbt_info* do_cbt_alloc(struct request_queue *q, __u8 *uuid,
 				     loff_t size, loff_t blocksize)
 {
 	struct cbt_info *cbt;
-	struct cbt_extent *ex;
-	int i;
-
 
 	cbt = kzalloc(sizeof(*cbt), GFP_KERNEL);
 	if (!cbt)
@@ -277,11 +274,6 @@ static struct cbt_info* do_cbt_alloc(struct request_queue *q, __u8 *uuid,
 	cbt->cache = alloc_percpu(struct cbt_extent);
 	if (!cbt->cache)
 		goto err_cbt;
-
-	for_each_possible_cpu(i) {
-		ex = per_cpu_ptr(cbt->cache, i);
-		memset(ex, 0, sizeof (*ex));
-	}
 
 	cbt->map = vmalloc(NR_PAGES(cbt->block_max) * sizeof(void*));
 	if (!cbt->map)
