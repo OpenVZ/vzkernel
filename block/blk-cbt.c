@@ -17,6 +17,7 @@
 #include <linux/spinlock.h>
 #include <linux/pagemap.h>
 #include <linux/vmalloc.h>
+#include <linux/log2.h>
 #include <asm/atomic.h>
 #include <asm/uaccess.h>
 
@@ -484,7 +485,7 @@ static int cbt_ioc_init(struct block_device *bdev, struct blk_user_cbt_info __us
 	if (copy_from_user(&ci, ucbt_ioc, sizeof(ci)))
 		return -EFAULT;
 
-	if (((ci.ci_blksize -1) & ci.ci_blksize))
+	if (!is_power_of_2(ci.ci_blksize))
 		return -EINVAL;
 
 	q = bdev_get_queue(bdev);
