@@ -6635,26 +6635,20 @@ static void update_cr8_intercept(struct kvm_vcpu *vcpu)
 static int inject_pending_event(struct kvm_vcpu *vcpu)
 {
 	int r;
-	bool can_inject = true;
 
 	/* try to reinject previous events if any */
 
-	if (vcpu->arch.exception.injected) {
+	if (vcpu->arch.exception.injected)
 		kvm_x86_ops->queue_exception(vcpu);
-		can_inject = false;
-	}
 	/*
 	 * Exceptions must be injected immediately, or the exception
 	 * frame will have the address of the NMI or interrupt handler.
 	 */
 	else if (!vcpu->arch.exception.pending) {
-		if (vcpu->arch.nmi_injected) {
+		if (vcpu->arch.nmi_injected)
 			kvm_x86_ops->set_nmi(vcpu);
-			can_inject = false;
-		} else if (vcpu->arch.interrupt.pending) {
+		else if (vcpu->arch.interrupt.pending)
 			kvm_x86_ops->set_irq(vcpu);
-			can_inject = false;
-		}
 	}
 
 	/*
@@ -6690,11 +6684,10 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
 		}
 
 		kvm_x86_ops->queue_exception(vcpu);
-		can_inject = false;
 	}
 
-	/* Finish re-injection before considering new events */
-	if (!can_inject)
+	/* Don't consider new event if we re-injected an event */
+	if (kvm_event_needs_reinjection(vcpu))
 		return 0;
 
 	if (vcpu->arch.smi_pending && kvm_x86_ops->smi_allowed(vcpu, true)) {
