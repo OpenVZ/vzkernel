@@ -2465,14 +2465,12 @@ static int can_be_granted(struct dlm_rsb *r, struct dlm_lkb *lkb, int now,
 		if (lkb->lkb_exflags & DLM_LKF_CONVDEADLK) {
 			lkb->lkb_grmode = DLM_LOCK_NL;
 			lkb->lkb_sbflags |= DLM_SBF_DEMOTED;
-		} else if (!(lkb->lkb_exflags & DLM_LKF_NODLCKWT)) {
-			if (err)
-				*err = -EDEADLK;
-			else {
-				log_print("can_be_granted deadlock %x now %d",
-					  lkb->lkb_id, now);
-				dlm_dump_rsb(r);
-			}
+		} else if (err) {
+			*err = -EDEADLK;
+		} else {
+			log_print("can_be_granted deadlock %x now %d",
+				  lkb->lkb_id, now);
+			dlm_dump_rsb(r);
 		}
 		goto out;
 	}
@@ -2500,13 +2498,6 @@ static int can_be_granted(struct dlm_rsb *r, struct dlm_lkb *lkb, int now,
  out:
 	return rv;
 }
-
-/* FIXME: I don't think that can_be_granted() can/will demote or find deadlock
-   for locks pending on the convert list.  Once verified (watch for these
-   log_prints), we should be able to just call _can_be_granted() and not
-   bother with the demote/deadlk cases here (and there's no easy way to deal
-   with a deadlk here, we'd have to generate something like grant_lock with
-   the deadlk error.) */
 
 /* Returns the highest requested mode of all blocked conversions; sets
    cw if there's a blocked conversion to DLM_LOCK_CW. */
@@ -2545,9 +2536,22 @@ static int grant_pending_convert(struct dlm_rsb *r, int high, int *cw,
 		}
 
 		if (deadlk) {
-			log_print("WARN: pending deadlock %x node %d %s",
-				  lkb->lkb_id, lkb->lkb_nodeid, r->res_name);
-			dlm_dump_rsb(r);
+			/*
+			 * If DLM_LKB_NODLKWT flag is set and conversion
+			 * deadlock is detected, we request blocking AST and
+			 * down (or cancel) conversion.
+			 */
+			if (lkb->lkb_exflags & DLM_LKF_NODLCKWT) {
+				if (lkb->lkb_highbast < lkb->lkb_rqmode) {
+					queue_bast(r, lkb, lkb->lkb_rqmode);
+					lkb->lkb_highbast = lkb->lkb_rqmode;
+				}
+			} else {
+				log_print("WARN: pending deadlock %x node %d %s",
+					  lkb->lkb_id, lkb->lkb_nodeid,
+					  r->res_name);
+				dlm_dump_rsb(r);
+			}
 			continue;
 		}
 
@@ -3123,7 +3127,7 @@ static int do_convert(struct dlm_rsb *r, struct dlm_lkb *lkb)
 	   deadlock, so we leave it on the granted queue and return EDEADLK in
 	   the ast for the convert. */
 
-	if (deadlk) {
+	if (deadlk && !(lkb->lkb_exflags & DLM_LKF_NODLCKWT)) {
 		/* it's left on the granted queue */
 		revert_lock(r, lkb);
 		queue_cast(r, lkb, -EDEADLK);
@@ -5885,6 +5889,78 @@ int dlm_user_convert(struct dlm_ls *ls, struct dlm_user_args *ua_tmp,
 	return error;
 }
 
+/*
+ * The caller asks for an orphan lock on a given resource with a given mode.
+ * If a matching lock exists, it's moved to the owner's list of locks and
+ * the lkid is returned.
+ */
+
+int dlm_user_adopt_orphan(struct dlm_ls *ls, struct dlm_user_args *ua_tmp,
+		     int mode, uint32_t flags, void *name, unsigned int namelen,
+		     unsigned long timeout_cs, uint32_t *lkid)
+{
+	struct dlm_lkb *lkb;
+	struct dlm_user_args *ua;
+	int found_other_mode = 0;
+	int found = 0;
+	int rv = 0;
+
+	mutex_lock(&ls->ls_orphans_mutex);
+	list_for_each_entry(lkb, &ls->ls_orphans, lkb_ownqueue) {
+		if (lkb->lkb_resource->res_length != namelen)
+			continue;
+		if (memcmp(lkb->lkb_resource->res_name, name, namelen))
+			continue;
+		if (lkb->lkb_grmode != mode) {
+			found_other_mode = 1;
+			continue;
+		}
+
+		found = 1;
+		list_del_init(&lkb->lkb_ownqueue);
+		lkb->lkb_flags &= ~DLM_IFL_ORPHAN;
+		*lkid = lkb->lkb_id;
+		break;
+	}
+	mutex_unlock(&ls->ls_orphans_mutex);
+
+	if (!found && found_other_mode) {
+		rv = -EAGAIN;
+		goto out;
+	}
+
+	if (!found) {
+		rv = -ENOENT;
+		goto out;
+	}
+
+	lkb->lkb_exflags = flags;
+	lkb->lkb_ownpid = (int) current->pid;
+
+	ua = lkb->lkb_ua;
+
+	ua->proc = ua_tmp->proc;
+	ua->xid = ua_tmp->xid;
+	ua->castparam = ua_tmp->castparam;
+	ua->castaddr = ua_tmp->castaddr;
+	ua->bastparam = ua_tmp->bastparam;
+	ua->bastaddr = ua_tmp->bastaddr;
+	ua->user_lksb = ua_tmp->user_lksb;
+
+	/*
+	 * The lkb reference from the ls_orphans list was not
+	 * removed above, and is now considered the reference
+	 * for the proc locks list.
+	 */
+
+	spin_lock(&ua->proc->locks_spin);
+	list_add_tail(&lkb->lkb_ownqueue, &ua->proc->locks);
+	spin_unlock(&ua->proc->locks_spin);
+ out:
+	kfree(ua_tmp);
+	return rv;
+}
+
 int dlm_user_unlock(struct dlm_ls *ls, struct dlm_user_args *ua_tmp,
 		    uint32_t flags, uint32_t lkid, char *lvb_in)
 {
@@ -6028,7 +6104,7 @@ static int orphan_proc_lock(struct dlm_ls *ls, struct dlm_lkb *lkb)
 	struct dlm_args args;
 	int error;
 
-	hold_lkb(lkb);
+	hold_lkb(lkb); /* reference for the ls_orphans list */
 	mutex_lock(&ls->ls_orphans_mutex);
 	list_add_tail(&lkb->lkb_ownqueue, &ls->ls_orphans);
 	mutex_unlock(&ls->ls_orphans_mutex);
@@ -6216,7 +6292,7 @@ int dlm_user_purge(struct dlm_ls *ls, struct dlm_user_proc *proc,
 {
 	int error = 0;
 
-	if (nodeid != dlm_our_nodeid()) {
+	if (nodeid && (nodeid != dlm_our_nodeid())) {
 		error = send_purge(ls, nodeid, pid);
 	} else {
 		dlm_lock_recovery(ls);

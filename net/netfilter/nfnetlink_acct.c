@@ -121,8 +121,10 @@ nfnl_acct_fill_info(struct sk_buff *skb, u32 portid, u32 seq, u32 type,
 		pkts = atomic64_read(&acct->pkts);
 		bytes = atomic64_read(&acct->bytes);
 	}
-	if (nla_put_be64(skb, NFACCT_PKTS, cpu_to_be64(pkts)) ||
-	    nla_put_be64(skb, NFACCT_BYTES, cpu_to_be64(bytes)) ||
+	if (nla_put_be64(skb, NFACCT_PKTS, cpu_to_be64(pkts),
+			 NFACCT_PAD) ||
+	    nla_put_be64(skb, NFACCT_BYTES, cpu_to_be64(bytes),
+			 NFACCT_PAD) ||
 	    nla_put_be32(skb, NFACCT_USE, htonl(atomic_read(&acct->refcnt))))
 		goto nla_put_failure;
 

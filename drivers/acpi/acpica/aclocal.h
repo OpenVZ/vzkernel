@@ -162,12 +162,12 @@ struct acpi_namespace_node {
 	union acpi_operand_object *object;	/* Interpreter object */
 	u8 descriptor_type;	/* Differentiate object descriptor types */
 	u8 type;		/* ACPI Type associated with this name */
-	u8 flags;		/* Miscellaneous flags */
-	acpi_owner_id owner_id;	/* Node creator */
+	u16 flags;		/* Miscellaneous flags */
 	union acpi_name_union name;	/* ACPI Name, always 4 chars per ACPI spec */
 	struct acpi_namespace_node *parent;	/* Parent node */
 	struct acpi_namespace_node *child;	/* First child */
 	struct acpi_namespace_node *peer;	/* First peer */
+	acpi_owner_id owner_id;	/* Node creator */
 
 	/*
 	 * The following fields are used by the ASL compiler and disassembler only
@@ -362,23 +362,6 @@ union acpi_predefined_info {
 
 #pragma pack()
 
-/* Data block used during object validation */
-
-struct acpi_predefined_data {
-	char *pathname;
-	const union acpi_predefined_info *predefined;
-	union acpi_operand_object *parent_package;
-	struct acpi_namespace_node *node;
-	u32 flags;
-	u32 return_btype;
-	u8 node_flags;
-};
-
-/* Defines for Flags field above */
-
-#define ACPI_OBJECT_REPAIRED    1
-#define ACPI_OBJECT_WRAPPED     2
-
 /* Return object auto-repair info */
 
 typedef acpi_status(*acpi_object_converter) (union acpi_operand_object
@@ -452,6 +435,7 @@ struct acpi_gpe_event_info {
 	u8 flags;		/* Misc info about this GPE */
 	u8 gpe_number;		/* This GPE */
 	u8 runtime_count;	/* References to a run GPE */
+	u8 disable_for_dispatch;	/* Masked during dispatching */
 };
 
 /* Information about a GPE register pair, one per each status/enable pair in an array */
@@ -462,6 +446,8 @@ struct acpi_gpe_register_info {
 	u8 enable_for_wake;	/* GPEs to keep enabled when sleeping */
 	u8 enable_for_run;	/* GPEs to keep enabled when running */
 	u8 base_gpe_number;	/* Base GPE number for this register */
+	u8 mask_for_run;	/* GPEs to keep masked when running */
+	u8 enable_mask;		/* Current mask of enabled GPEs */
 };
 
 /*
@@ -471,6 +457,7 @@ struct acpi_gpe_register_info {
 struct acpi_gpe_block_info {
 	struct acpi_namespace_node *node;
 	struct acpi_gpe_block_info *previous;
+	u8 enable_mask;		/* Current mask of enabled GPEs */
 	struct acpi_gpe_block_info *next;
 	struct acpi_gpe_xrupt_info *xrupt_block;	/* Backpointer to interrupt block */
 	struct acpi_gpe_register_info *register_info;	/* One per GPE register pair */
@@ -742,7 +729,8 @@ union acpi_parse_value {
 #define ACPI_DASM_MATCHOP               0x06	/* Parent opcode is a Match() operator */
 #define ACPI_DASM_LNOT_PREFIX           0x07	/* Start of a Lnot_equal (etc.) pair of opcodes */
 #define ACPI_DASM_LNOT_SUFFIX           0x08	/* End  of a Lnot_equal (etc.) pair of opcodes */
-#define ACPI_DASM_IGNORE                0x09	/* Not used at this time */
+#define ACPI_DASM_HID_STRING            0x09	/* String is a _HID or _CID */
+#define ACPI_DASM_IGNORE                0x0A	/* Not used at this time */
 
 /*
  * Generic operation (for example:  If, While, Store)
@@ -948,19 +936,6 @@ struct acpi_bit_register_info {
 
 /* Structs and definitions for _OSI support and I/O port validation */
 
-#define ACPI_OSI_WIN_2000               0x01
-#define ACPI_OSI_WIN_XP                 0x02
-#define ACPI_OSI_WIN_XP_SP1             0x03
-#define ACPI_OSI_WINSRV_2003            0x04
-#define ACPI_OSI_WIN_XP_SP2             0x05
-#define ACPI_OSI_WINSRV_2003_SP1        0x06
-#define ACPI_OSI_WIN_VISTA              0x07
-#define ACPI_OSI_WINSRV_2008            0x08
-#define ACPI_OSI_WIN_VISTA_SP1          0x09
-#define ACPI_OSI_WIN_VISTA_SP2          0x0A
-#define ACPI_OSI_WIN_7                  0x0B
-#define ACPI_OSI_WIN_8                  0x0C
-
 #define ACPI_ALWAYS_ILLEGAL             0x00
 
 struct acpi_interface_info {
@@ -972,6 +947,9 @@ struct acpi_interface_info {
 
 #define ACPI_OSI_INVALID                0x01
 #define ACPI_OSI_DYNAMIC                0x02
+#define ACPI_OSI_FEATURE                0x04
+#define ACPI_OSI_DEFAULT_INVALID        0x08
+#define ACPI_OSI_OPTIONAL_FEATURE       (ACPI_OSI_FEATURE | ACPI_OSI_DEFAULT_INVALID | ACPI_OSI_INVALID)
 
 struct acpi_port_info {
 	char *name;
@@ -1161,6 +1139,16 @@ struct ah_predefined_name {
 #ifndef ACPI_ASL_COMPILER
 	char *action;
 #endif
+};
+
+struct ah_device_id {
+	char *name;
+	char *description;
+};
+
+struct ah_uuid {
+	char *description;
+	char *string;
 };
 
 #endif				/* __ACLOCAL_H__ */

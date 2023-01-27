@@ -33,6 +33,7 @@
 struct snd_seq_user_client {
 	struct file *file;	/* file struct of client */
 	/* ... */
+	struct pid *owner;
 	
 	/* fifo */
 	struct snd_seq_fifo *fifo;	/* queue for incoming events */
@@ -41,6 +42,7 @@ struct snd_seq_user_client {
 
 struct snd_seq_kernel_client {
 	/* ... */
+	struct snd_card *card;
 };
 
 
@@ -59,6 +61,7 @@ struct snd_seq_client {
 	struct list_head ports_list_head;
 	rwlock_t ports_lock;
 	struct mutex ports_mutex;
+	struct mutex ioctl_mutex;
 	int convert32;		/* convert 32->64bit */
 
 	/* output pool */
@@ -90,13 +93,13 @@ struct snd_seq_client *snd_seq_client_use_ptr(int clientid);
 /* dispatch event to client(s) */
 int snd_seq_dispatch_event(struct snd_seq_event_cell *cell, int atomic, int hop);
 
-/* exported to other modules */
-int snd_seq_kernel_client_enqueue(int client, struct snd_seq_event *ev, int atomic, int hop);
-int snd_seq_kernel_client_enqueue_blocking(int client, struct snd_seq_event * ev,
-					   struct file *file, int atomic, int hop);
 int snd_seq_kernel_client_write_poll(int clientid, struct file *file, poll_table *wait);
 int snd_seq_client_notify_subscription(int client, int port,
 				       struct snd_seq_port_subscribe *info, int evtype);
+
+/* only for OSS sequencer */
+bool snd_seq_client_ioctl_lock(int clientid);
+void snd_seq_client_ioctl_unlock(int clientid);
 
 extern int seq_client_load[15];
 

@@ -17,7 +17,6 @@
 #include <linux/export.h>
 #include <linux/crash_dump.h>
 #include <linux/delay.h>
-#include <linux/init.h>
 #include <linux/irq.h>
 #include <linux/types.h>
 
@@ -44,9 +43,15 @@
 #define IPI_TIMEOUT		10000
 #define REAL_MODE_TIMEOUT	10000
 
-/* This keeps a track of which one is the crashing cpu. */
-int crashing_cpu = -1;
 static int time_to_dump;
+/*
+ * crash_wake_offline should be set to 1 by platforms that intend to wake
+ * up offline cpus prior to jumping to a kdump kernel. Currently powernv
+ * sets it to 1, since we want to avoid things from happening when an
+ * offline CPU wakes up due to something like an HMI (malfunction error),
+ * which propagates to all threads.
+ */
+int crash_wake_offline;
 
 #define CRASH_HANDLER_MAX 3
 /* NULL terminated list of shutdown handles */
@@ -72,9 +77,6 @@ void crash_ipi_callback(struct pt_regs *regs)
 
 	int cpu = smp_processor_id();
 
-	if (!cpu_online(cpu))
-		return;
-
 	hard_irq_disable();
 	if (!cpumask_test_cpu(cpu, &cpus_state_saved)) {
 		crash_save_cpu(regs, cpu);
@@ -82,7 +84,7 @@ void crash_ipi_callback(struct pt_regs *regs)
 	}
 
 	atomic_inc(&cpus_in_crash);
-	smp_mb__after_atomic_inc();
+	smp_mb__after_atomic();
 
 	/*
 	 * Starting the kdump boot.
@@ -111,6 +113,9 @@ static void crash_kexec_prepare_cpus(int cpu)
 	int (*old_handler)(struct pt_regs *regs);
 
 	printk(KERN_EMERG "Sending IPI to other CPUs\n");
+
+	if (crash_wake_offline)
+		ncpus = num_present_cpus() - 1;
 
 	crash_send_ipi(crash_ipi_callback);
 	smp_wmb();
