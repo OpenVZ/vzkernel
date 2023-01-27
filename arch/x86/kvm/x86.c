@@ -6684,18 +6684,32 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
 		}
 
 		kvm_x86_ops->queue_exception(vcpu);
-	} else if (vcpu->arch.smi_pending && kvm_x86_ops->smi_allowed(vcpu, true)) {
+	} else if (vcpu->arch.smi_pending && kvm_x86_ops->smi_allowed(vcpu)) {
 		vcpu->arch.smi_pending = false;
 		enter_smm(vcpu);
-	} else if (vcpu->arch.nmi_pending &&
-		   kvm_x86_ops->nmi_allowed(vcpu, true)) {
+	} else if (vcpu->arch.nmi_pending && kvm_x86_ops->nmi_allowed(vcpu)) {
 		--vcpu->arch.nmi_pending;
 		vcpu->arch.nmi_injected = true;
 		kvm_x86_ops->set_nmi(vcpu);
-	} else if (kvm_cpu_has_injectable_intr(vcpu) &&
-		   kvm_x86_ops->interrupt_allowed(vcpu, true)) {
-		kvm_queue_interrupt(vcpu, kvm_cpu_get_interrupt(vcpu), false);
-		kvm_x86_ops->set_irq(vcpu);
+	} else if (kvm_cpu_has_injectable_intr(vcpu)) {
+		/*
+		 * TODO/FIXME: We are calling check_nested_events again
+		 * here to avoid a race condition. We should really be
+		 * setting KVM_REQ_EVENT only on certain events
+		 * and not unconditionally.
+		 * See https://lkml.org/lkml/2014/7/2/60 for discussion
+		 * about this proposal and current concerns
+		 */
+		if (is_guest_mode(vcpu) && kvm_x86_ops->check_nested_events) {
+			r = kvm_x86_ops->check_nested_events(vcpu);
+			if (r != 0)
+				return r;
+		}
+		if (kvm_x86_ops->interrupt_allowed(vcpu)) {
+			kvm_queue_interrupt(vcpu, kvm_cpu_get_interrupt(vcpu),
+					    false);
+			kvm_x86_ops->set_irq(vcpu);
+		}
 	}
 
 	return 0;
@@ -8808,11 +8822,11 @@ static inline bool kvm_vcpu_has_events(struct kvm_vcpu *vcpu)
 
 	if (test_bit(KVM_REQ_NMI, &vcpu->requests) ||
 	    (vcpu->arch.nmi_pending &&
-	     kvm_x86_ops->nmi_allowed(vcpu, false)))
+	     kvm_x86_ops->nmi_allowed(vcpu)))
 		return true;
 
 	if (test_bit(KVM_REQ_SMI, &vcpu->requests) ||
-	    (vcpu->arch.smi_pending && kvm_x86_ops->smi_allowed(vcpu, false)))
+	    (vcpu->arch.smi_pending && kvm_x86_ops->smi_allowed(vcpu)))
 		return true;
 
 	if (kvm_arch_interrupt_allowed(vcpu) &&
@@ -8838,7 +8852,7 @@ int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu)
 
 int kvm_arch_interrupt_allowed(struct kvm_vcpu *vcpu)
 {
-	return kvm_x86_ops->interrupt_allowed(vcpu, false);
+	return kvm_x86_ops->interrupt_allowed(vcpu);
 }
 
 unsigned long kvm_get_linear_rip(struct kvm_vcpu *vcpu)
