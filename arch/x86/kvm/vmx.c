@@ -5956,13 +5956,8 @@ static int vmx_nmi_allowed(struct kvm_vcpu *vcpu)
 
 static int vmx_interrupt_allowed(struct kvm_vcpu *vcpu)
 {
-	if (to_vmx(vcpu)->nested.nested_run_pending)
-		return false;
-
-	if (is_guest_mode(vcpu) && nested_exit_on_intr(vcpu))
-		return true;
-
-	return (vmcs_readl(GUEST_RFLAGS) & X86_EFLAGS_IF) &&
+	return (!to_vmx(vcpu)->nested.nested_run_pending &&
+		vmcs_readl(GUEST_RFLAGS) & X86_EFLAGS_IF) &&
 		!(vmcs_read32(GUEST_INTERRUPTIBILITY_INFO) &
 			(GUEST_INTR_STATE_STI | GUEST_INTR_STATE_MOV_SS));
 }
@@ -11344,7 +11339,7 @@ static void vmcs12_save_pending_event(struct kvm_vcpu *vcpu,
 	}
 }
 
-static int vmx_check_nested_events(struct kvm_vcpu *vcpu)
+static int vmx_check_nested_events(struct kvm_vcpu *vcpu, bool external_intr)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	unsigned long exit_qual;
@@ -11382,7 +11377,8 @@ static int vmx_check_nested_events(struct kvm_vcpu *vcpu)
 		return 0;
 	}
 
-	if (kvm_cpu_has_interrupt(vcpu) && nested_exit_on_intr(vcpu)) {
+	if ((kvm_cpu_has_interrupt(vcpu) || external_intr) &&
+	    nested_exit_on_intr(vcpu)) {
 		if (block_nested_events)
 			return -EBUSY;
 		nested_vmx_vmexit(vcpu, EXIT_REASON_EXTERNAL_INTERRUPT, 0, 0);
@@ -11950,8 +11946,17 @@ static void nested_vmx_vmexit(struct kvm_vcpu *vcpu, u32 exit_reason,
 	vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE;
 
 	if (likely(!vmx->fail)) {
-		if (exit_reason == EXIT_REASON_EXTERNAL_INTERRUPT &&
-		    nested_exit_intr_ack_set(vcpu)) {
+		/*
+		 * TODO: SDM says that with acknowledge interrupt on
+		 * exit, bit 31 of the VM-exit interrupt information
+		 * (valid interrupt) is always set to 1 on
+		 * EXIT_REASON_EXTERNAL_INTERRUPT, so we shouldn't
+		 * need kvm_cpu_has_interrupt().  See the commit
+		 * message for details.
+		 */
+		if (nested_exit_intr_ack_set(vcpu) &&
+		    exit_reason == EXIT_REASON_EXTERNAL_INTERRUPT &&
+		    kvm_cpu_has_interrupt(vcpu)) {
 			int irq = kvm_cpu_get_interrupt(vcpu);
 			WARN_ON(irq < 0);
 			vmcs12->vm_exit_intr_info = irq |
