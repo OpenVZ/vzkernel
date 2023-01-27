@@ -822,29 +822,24 @@ ioc_set_failed:
 
 int blk_cbt_ioctl(struct block_device *bdev, unsigned cmd, char __user *arg)
 {
-	struct blk_user_cbt_info __user *ucbt_ioc = (struct blk_user_cbt_info __user *) arg;
+	struct blk_user_cbt_info __user *ucbt_ioc;
+
+	ucbt_ioc = (struct blk_user_cbt_info __user *) arg;
+
+	if (cmd == BLKCBTGET)
+		return cbt_ioc_get(bdev, ucbt_ioc);
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EACCES;
 
 	switch(cmd) {
 	case BLKCBTSTART:
-		if (!capable(CAP_SYS_ADMIN))
-			return -EACCES;
 		return cbt_ioc_init(bdev, ucbt_ioc);
 	case BLKCBTSTOP:
-		if (!capable(CAP_SYS_ADMIN))
-			return -EACCES;
-
 		return cbt_ioc_stop(bdev);
-	case BLKCBTGET:
-		return cbt_ioc_get(bdev, ucbt_ioc);
 	case BLKCBTSET:
-		if (!capable(CAP_SYS_ADMIN))
-			return -EACCES;
-
 		return cbt_ioc_set(bdev, ucbt_ioc, 1);
 	case BLKCBTCLR:
-		if (!capable(CAP_SYS_ADMIN))
-			return -EACCES;
-
 		return cbt_ioc_set(bdev, ucbt_ioc, 0);
 	default:
 		BUG();
