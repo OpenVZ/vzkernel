@@ -22,7 +22,7 @@
 #include <asm/uaccess.h>
 
 #define CBT_MAX_EXTENTS	512
-#define NR_PAGES(bits) (((bits) + PAGE_SIZE*8 - 1) / (PAGE_SIZE*8))
+#define NR_PAGES(bits)		DIV_ROUND_UP((bits), PAGE_SIZE*8)
 #define BITS_PER_PAGE		(1UL << (PAGE_SHIFT + 3))
 
 #define CBT_PAGE_MISSED (struct page *)(0x1)
@@ -226,7 +226,7 @@ static void blk_cbt_add(struct request_queue *q, blkcnt_t start, blkcnt_t len)
 
 	if (unlikely(test_bit(CBT_ERROR, &cbt->flags)))
 		goto out_rcu;
-	end = (start + len + (1 << cbt->block_bits) -1) >> cbt->block_bits;
+	end = DIV_ROUND_UP(start + len, 1 << cbt->block_bits);
 	start >>= cbt->block_bits;
 	len = end - start;
 	if (unlikely(test_bit(CBT_NOCACHE, &cbt->flags))) {
@@ -269,7 +269,7 @@ static struct cbt_info* do_cbt_alloc(struct request_queue *q, __u8 *uuid,
 		return ERR_PTR(-ENOMEM);
 
 	cbt->block_bits = ilog2(blocksize);
-	cbt->block_max  = (size + blocksize - 1) >> cbt->block_bits;
+	cbt->block_max  = DIV_ROUND_UP(size, blocksize);
 	spin_lock_init(&cbt->lock);
 	memcpy(cbt->uuid, uuid, sizeof(cbt->uuid));
 	cbt->cache = alloc_percpu(struct cbt_extent);
@@ -446,7 +446,7 @@ void blk_cbt_update_size(struct block_device *bdev)
 		return;
 	}
 	bsz = 1 << cbt->block_bits;
-	if ((new_sz + bsz - 1) >> cbt->block_bits <= cbt->block_max)
+	if (DIV_ROUND_UP(new_sz, bsz) <= cbt->block_max)
 		goto err_mtx;
 
 	new = do_cbt_alloc(q, cbt->uuid, new_sz, bsz);
@@ -799,7 +799,7 @@ static int cbt_ioc_set(struct block_device *bdev, struct blk_user_cbt_info __use
 		struct cbt_extent ex;
 
 		ex.start  = cur_ex->ce_physical >> cbt->block_bits;
-		ex.len  = (cur_ex->ce_length + (1 << cbt->block_bits) -1) >> cbt->block_bits;
+		ex.len  = DIV_ROUND_UP(cur_ex->ce_length, 1 << cbt->block_bits);
 		if (ex.start > q->cbt->block_max ||
 		    ex.start + ex.len > q->cbt->block_max ||
 		    ex.len == 0) {
