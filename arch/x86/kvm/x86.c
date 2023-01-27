@@ -6625,7 +6625,7 @@ static void update_cr8_intercept(struct kvm_vcpu *vcpu)
 	kvm_x86_ops->update_cr8_intercept(vcpu, tpr, max_irr);
 }
 
-static void inject_pending_event(struct kvm_vcpu *vcpu, bool *req_immediate_exit)
+static int inject_pending_event(struct kvm_vcpu *vcpu)
 {
 	int r;
 	bool can_inject = true;
@@ -6658,8 +6658,8 @@ static void inject_pending_event(struct kvm_vcpu *vcpu, bool *req_immediate_exit
 	 */
 	if (is_guest_mode(vcpu) && kvm_x86_ops->check_nested_events) {
 		r = kvm_x86_ops->check_nested_events(vcpu);
-		if (r < 0)
-			goto busy;
+		if (r != 0)
+			return r;
 	}
 
 	/* try to inject new event if pending */
@@ -6686,71 +6686,25 @@ static void inject_pending_event(struct kvm_vcpu *vcpu, bool *req_immediate_exit
 		can_inject = false;
 	}
 
-	/*
-	 * Finally, inject interrupt events.  If an event cannot be injected
-	 * due to architectural conditions (e.g. IF=0) a window-open exit
-	 * will re-request KVM_REQ_EVENT.  Sometimes however an event is pending
-	 * and can architecturally be injected, but we cannot do it right now:
-	 * an interrupt could have arrived just now and we have to inject it
-	 * as a vmexit, or there could already an event in the queue, which is
-	 * indicated by can_inject.  In that case we request an immediate exit
-	 * in order to make progress and get back here for another iteration.
-	 * The kvm_x86_ops hooks communicate this by returning -EBUSY.
-	 */
-	if (vcpu->arch.smi_pending) {
-		r = can_inject ? kvm_x86_ops->smi_allowed(vcpu, true) : -EBUSY;
-		if (r < 0)
-			goto busy;
-		if (r) {
-			vcpu->arch.smi_pending = false;
-			// ++vcpu->arch.smi_count;
-			enter_smm(vcpu);
-			can_inject = false;
-		} else
-			kvm_x86_ops->enable_smi_window(vcpu);
+	/* Finish re-injection before considering new events */
+	if (!can_inject)
+		return 0;
+
+	if (vcpu->arch.smi_pending && kvm_x86_ops->smi_allowed(vcpu, true)) {
+		vcpu->arch.smi_pending = false;
+		enter_smm(vcpu);
+	} else if (vcpu->arch.nmi_pending &&
+		   kvm_x86_ops->nmi_allowed(vcpu, true)) {
+		--vcpu->arch.nmi_pending;
+		vcpu->arch.nmi_injected = true;
+		kvm_x86_ops->set_nmi(vcpu);
+	} else if (kvm_cpu_has_injectable_intr(vcpu) &&
+		   kvm_x86_ops->interrupt_allowed(vcpu, true)) {
+		kvm_queue_interrupt(vcpu, kvm_cpu_get_interrupt(vcpu), false);
+		kvm_x86_ops->set_irq(vcpu);
 	}
 
-	if (vcpu->arch.nmi_pending) {
-		r = can_inject ? kvm_x86_ops->nmi_allowed(vcpu, true) : -EBUSY;
-		if (r < 0)
-			goto busy;
-		if (r) {
-			--vcpu->arch.nmi_pending;
-			vcpu->arch.nmi_injected = true;
-			kvm_x86_ops->set_nmi(vcpu);
-			can_inject = false;
-			WARN_ON(kvm_x86_ops->nmi_allowed(vcpu, true) < 0);
-		}
-		if (vcpu->arch.nmi_pending)
-			kvm_x86_ops->enable_nmi_window(vcpu);
-	}
-
-	if (kvm_cpu_has_injectable_intr(vcpu)) {
-		r = can_inject ? kvm_x86_ops->interrupt_allowed(vcpu, true) : -EBUSY;
-		if (r < 0)
-			goto busy;
-		if (r) {
-			kvm_queue_interrupt(vcpu, kvm_cpu_get_interrupt(vcpu), false);
-			kvm_x86_ops->set_irq(vcpu);
-			WARN_ON(kvm_x86_ops->interrupt_allowed(vcpu, true) < 0);
-		}
-		if (kvm_cpu_has_injectable_intr(vcpu))
-			kvm_x86_ops->enable_irq_window(vcpu);
-	}
-
-#if 0
-	if (is_guest_mode(vcpu) &&
-	    kvm_x86_ops.nested_ops->hv_timer_pending &&
-	    kvm_x86_ops.nested_ops->hv_timer_pending(vcpu))
-		*req_immediate_exit = true;
-#endif
-
-	WARN_ON(vcpu->arch.exception.pending);
-	return;
-
-busy:
-	*req_immediate_exit = true;
-	return;
+	return 0;
 }
 
 static void process_nmi(struct kvm_vcpu *vcpu)
@@ -7201,9 +7155,32 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 			goto out;
 		}
 
-		inject_pending_event(vcpu, &req_immediate_exit);
-		if (req_int_win)
-			kvm_x86_ops->enable_irq_window(vcpu);
+		if (inject_pending_event(vcpu) != 0)
+			req_immediate_exit = true;
+		else {
+			/* Enable SMI/NMI/IRQ window open exits if needed.
+			 *
+			 * SMIs have three cases:
+			 * 1) They can be nested, and then there is nothing to
+			 *    do here because RSM will cause a vmexit anyway.
+			 * 2) There is an ISA-specific reason why SMI cannot be
+			 *    injected, and the moment when this changes can be
+			 *    intercepted.
+			 * 3) Or the SMI can be pending because
+			 *    inject_pending_event has completed the injection
+			 *    of an IRQ or NMI from the previous vmexit, and
+			 *    then we request an immediate exit to inject the
+			 *    SMI.
+			 */
+			if (vcpu->arch.smi_pending && !is_smm(vcpu))
+				if (!kvm_x86_ops->enable_smi_window(vcpu))
+					req_immediate_exit = true;
+			if (vcpu->arch.nmi_pending)
+				kvm_x86_ops->enable_nmi_window(vcpu);
+			if (kvm_cpu_has_injectable_intr(vcpu) || req_int_win)
+				kvm_x86_ops->enable_irq_window(vcpu);
+			WARN_ON(vcpu->arch.exception.pending);
+		}
 
 		if (kvm_lapic_enabled(vcpu)) {
 			update_cr8_intercept(vcpu);
