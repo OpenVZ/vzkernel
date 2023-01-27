@@ -5941,14 +5941,14 @@ static void vmx_set_nmi_mask(struct kvm_vcpu *vcpu, bool masked)
 	}
 }
 
-static int vmx_nmi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
+static bool vmx_nmi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 {
 	if (to_vmx(vcpu)->nested.nested_run_pending)
-		return -EBUSY;
+		return 0;
 
 	/* An NMI must not be injected into L2 if it's supposed to VM-Exit.  */
 	if (for_injection && is_guest_mode(vcpu) && nested_exit_on_nmi(vcpu))
-		return -EBUSY;
+		return false;
 
 	if (!cpu_has_virtual_nmis() && to_vmx(vcpu)->soft_vnmi_blocked)
 		return 0;
@@ -5958,17 +5958,17 @@ static int vmx_nmi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 		   | GUEST_INTR_STATE_NMI));
 }
 
-static int vmx_interrupt_allowed(struct kvm_vcpu *vcpu, bool for_injection)
+static bool vmx_interrupt_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 {
 	if (to_vmx(vcpu)->nested.nested_run_pending)
-		return -EBUSY;
+		return false;
 
 	/*
 	 * An IRQ must not be injected into L2 if it's supposed to VM-Exit,
 	 * e.g. if the IRQ arrived asynchronously after checking nested events.
 	 */
 	if (for_injection && is_guest_mode(vcpu) && nested_exit_on_intr(vcpu))
-		return -EBUSY;
+		return false;
 
 	/* and yes, this is correct %) */
 	if (is_guest_mode(vcpu) && nested_exit_on_intr(vcpu))
@@ -6827,7 +6827,7 @@ static int handle_invalid_guest_state(struct kvm_vcpu *vcpu)
 	intr_window_requested = cpu_exec_ctrl & CPU_BASED_VIRTUAL_INTR_PENDING;
 
 	while (vmx->emulation_required && count-- != 0) {
-		if (intr_window_requested && (vmx_interrupt_allowed(vcpu, false) > 0))
+		if (intr_window_requested && vmx_interrupt_allowed(vcpu, false))
 			return handle_interrupt_window(&vmx->vcpu);
 
 		if (test_bit(KVM_REQ_EVENT, &vcpu->requests))
@@ -8883,7 +8883,7 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 	if (unlikely(!cpu_has_virtual_nmis() && vmx->soft_vnmi_blocked &&
 	    !(is_guest_mode(vcpu) && nested_cpu_has_virtual_nmis(
 					get_vmcs12(vcpu))))) {
-		if (vmx_interrupt_allowed(vcpu, false) > 0) {
+		if (vmx_interrupt_allowed(vcpu, false)) {
 			vmx->soft_vnmi_blocked = 0;
 		} else if (vmx->vnmi_blocked_time > 1000000000LL &&
 			   vcpu->arch.nmi_pending) {
@@ -9094,7 +9094,7 @@ static void vmx_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
 	 * is run without virtual interrupt delivery.
 	 */
 	if (!kvm_event_needs_reinjection(vcpu) &&
-	    vmx_interrupt_allowed(vcpu, false) > 0) {
+	    vmx_interrupt_allowed(vcpu, false)) {
 		kvm_queue_interrupt(vcpu, max_irr, false);
 		vmx_inject_irq(vcpu);
 	}
@@ -12483,11 +12483,11 @@ static void vmx_setup_mce(struct kvm_vcpu *vcpu)
 			~FEATURE_CONTROL_LMCE;
 }
 
-static int vmx_smi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
+static bool vmx_smi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 {
 	/* we need a nested vmexit to enter SMM, postpone if run is pending */
 	if (to_vmx(vcpu)->nested.nested_run_pending)
-		return -EBUSY;
+		return 0;
 	return !is_smm(vcpu);
 }
 
@@ -12526,9 +12526,9 @@ static int vmx_pre_leave_smm(struct kvm_vcpu *vcpu, u64 smbase)
 	return 0;
 }
 
-static void enable_smi_window(struct kvm_vcpu *vcpu)
+static int enable_smi_window(struct kvm_vcpu *vcpu)
 {
-	/* RSM will cause a vmexit anyway.  */
+	return 0;
 }
 
 static struct kvm_x86_ops vmx_x86_ops = {
