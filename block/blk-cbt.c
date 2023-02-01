@@ -609,7 +609,7 @@ void blk_cbt_update_size(struct block_device *bdev)
 	}
 	rcu_assign_pointer(q->cbt, new);
 	in_use = cbt->count;
-	spin_unlock(&cbt->lock);
+	spin_unlock_irq(&cbt->lock);
 	if (!in_use)
 		call_rcu(&cbt->rcu, &cbt_release_callback);
 err_mtx:
