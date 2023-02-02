@@ -27,6 +27,14 @@ struct user_namespace;
 struct cn_private;
 struct vfsmount;
 
+#define VE_STATE_STARTING	0
+#define VE_STATE_RUNNING	1
+#define VE_STATE_STOPPING	2
+#define VE_STATE_STOPPED	3
+#define VE_STATE_DEAD		4
+
+#define VE_IS_RUNNING(ve) ((ve)->state == VE_STATE_RUNNING)
+
 struct ve_struct {
 	struct cgroup_subsys_state	css;
 
@@ -35,7 +43,7 @@ struct ve_struct {
 	struct list_head	ve_list;
 
 	envid_t			veid;
-	int			is_running;
+	int			state;
 	u8			is_pseudosuper:1;
 
 	struct rw_semaphore	op_sem;
@@ -144,6 +152,23 @@ extern int nr_ve;
 extern unsigned int sysctl_ve_mount_nr;
 
 #ifdef CONFIG_VE
+static inline void ve_set_state(struct ve_struct *ve, int new_state)
+{
+	if (ve->state == VE_STATE_DEAD) {
+		WARN_ONCE(1, "CT: already DEAD\n");
+	} else {
+		WARN_ONCE(new_state == VE_STATE_RUNNING &&
+			  ve->state != VE_STATE_STARTING,
+			  "CT#%s: Invalid transition to running from %d\n",
+			  ve_name(ve), ve->state);
+		WARN_ONCE(new_state == VE_STATE_STOPPING &&
+			  ve->state != VE_STATE_RUNNING,
+			  "CT#%s: Invalid transition to stopping from %d\n",
+			  ve_name(ve), ve->state);
+	}
+	ve->state = new_state;
+}
+
 void ve_add_to_release_list(struct cgroup *cgrp);
 void ve_rm_from_release_list(struct cgroup *cgrp);
 
@@ -227,6 +252,8 @@ extern bool is_ve_init_net(const struct net *net);
 
 static inline void ve_stop_ns(struct pid_namespace *ns) { }
 static inline void ve_exit_ns(struct pid_namespace *ns) { }
+
+static inline void ve_set_state(struct ve_struct *ve, int new_state) {}
 
 #define ve_feature_set(ve, f)		{ true; }
 
