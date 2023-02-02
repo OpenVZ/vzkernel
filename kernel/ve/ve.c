@@ -857,9 +857,11 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
 	ve_list_del(ve);
 	ve_drop_context(ve);
-	printk(KERN_INFO "CT: %s: stopped\n", ve_name(ve));
-	put_ve(ve); /* from ve_start_container() */
 	up_write(&ve->op_sem);
+
+	printk(KERN_INFO "CT: %s: stopped\n", ve_name(ve));
+
+	put_ve(ve); /* from ve_start_container() */
 }
 
 u64 ve_get_monotonic(struct ve_struct *ve)
