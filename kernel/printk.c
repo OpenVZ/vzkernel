@@ -960,11 +960,18 @@ module_param_named(time, printk_time, bool, S_IRUGO | S_IWUSR);
 
 static size_t print_time(u64 ts, char *buf)
 {
+	struct ve_struct *ve;
 	unsigned long rem_nsec;
 
 	if (!printk_time)
 		return 0;
 
+	/* shift the timestamp on the Container uptime value */
+	ve = get_exec_env();
+	if (!ve_is_super(ve)) {
+		ts -= ve->real_start_timespec.tv_sec * NSEC_PER_SEC;
+		ts -= ve->real_start_timespec.tv_nsec;
+	}
 	rem_nsec = do_div(ts, 1000000000);
 
 	if (!buf)
