@@ -69,7 +69,7 @@ struct ve_struct ve0 = {
 
 	RCU_POINTER_INITIALIZER(ve_ns, &init_nsproxy),
 
-	.is_running		= 1,
+	.state			= VE_STATE_RUNNING,
 	.is_pseudosuper		= 1,
 
 	.init_cred		= &init_cred,
@@ -647,7 +647,7 @@ void ve_add_to_release_list(struct cgroup *cgrp)
 	if (!ve)
 		ve = &ve0;
 
-	if (!ve->is_running) {
+	if (!VE_IS_RUNNING(ve)) {
 		rcu_read_unlock();
 		return;
 	}
@@ -703,7 +703,7 @@ static int ve_start_container(struct ve_struct *ve)
 
 	ve_ns = rcu_dereference_protected(ve->ve_ns, lockdep_is_held(&ve->op_sem));
 
-	if (ve->is_running || ve_ns)
+	if (ve->state != VE_STATE_STARTING || ve_ns)
 		return -EBUSY;
 
 	if (tsk->task_ve != ve || !is_child_reaper(task_pid(tsk)))
@@ -751,7 +751,7 @@ static int ve_start_container(struct ve_struct *ve)
 	if (err)
 		goto err_release_agent_setup;
 
-	ve->is_running = 1;
+	ve_set_state(ve, VE_STATE_RUNNING);
 
 	printk(KERN_INFO "CT: %s: started\n", ve_name(ve));
 
@@ -772,6 +772,7 @@ err_umh:
 err_kthreadd:
 	ve_list_del(ve);
 err_list:
+	ve_set_state(ve, VE_STATE_STOPPED);
 	ve_drop_context(ve);
 	return err;
 }
@@ -790,18 +791,28 @@ void ve_stop_ns(struct pid_namespace *pid_ns)
 	if (!ve_ns || ve_ns->pid_ns_for_children != pid_ns)
 		goto unlock;
 	/*
-	 * Here the VE changes its state into "not running".
+	 * Here the VE changes its state into stopping.
 	 * op_sem works as barrier for vzctl ioctls.
 	 * ve_mutex works as barrier for ve_can_attach().
 	 */
-	ve->is_running = 0;
+	ve_set_state(ve, VE_STATE_STOPPING);
 	synchronize_rcu();
+
+	/*
+	 * Drop the lock - all entry points must check state before proceeding.
+	 * The goal is to avoid a deadlock between sysfs access from userspace
+	 * and removing sysfs entries from inside the kernel - i.e. order of
+	 * ve->op_sem and kernfs_rwsem (lockdep checked via kn->active).
+	 */
+	up_write(&ve->op_sem);
 
 	/*
 	 * release_agent works on top of umh_worker, so we must make sure, that
 	 * ve workqueue is stopped first.
 	 */
 	ve_workqueue_stop(ve);
+
+	down_write(&ve->op_sem);
 
 	/*
 	 * Neither it can be in pseudosuper state
@@ -842,6 +853,7 @@ void ve_exit_ns(struct pid_namespace *pid_ns)
 	ve_hook_iterate_fini(VE_SS_CHAIN, ve);
 	ve_list_del(ve);
 	ve_drop_context(ve);
+	ve_set_state(ve, VE_STATE_STOPPED);
 	up_write(&ve->op_sem);
 
 	printk(KERN_INFO "CT: %s: stopped\n", ve_name(ve));
@@ -942,6 +954,7 @@ static struct cgroup_subsys_state *ve_create(struct cgroup_subsys_state *parent_
 	if (!ve->sched_lat_ve.cur)
 		goto err_lat;
 
+	ve->state = VE_STATE_STARTING;
 	ve->features = VE_FEATURES_DEF;
 
 	INIT_WORK(&ve->release_agent_work, cgroup1_release_agent);
@@ -1011,6 +1024,7 @@ err_log:
 err_lat:
 	kmem_cache_free(ve_cachep, ve);
 err_ve:
+	ve_set_state(ve, VE_STATE_STOPPED);
 	return ERR_PTR(err);
 }
 
@@ -1081,6 +1095,7 @@ static void ve_destroy(struct cgroup_subsys_state *css)
 	kfree(ve->binfmt_misc);
 #endif
 	free_percpu(ve->sched_lat_ve.cur);
+	ve_set_state(ve, VE_STATE_DEAD);
 	kmem_cache_free(ve_cachep, ve);
 }
 
@@ -1117,7 +1132,7 @@ static int ve_is_attachable(struct cgroup_taskset *tset)
 	task = cgroup_taskset_first(tset, &css);
 	ve = css_to_ve(css);
 
-	if (ve->is_running)
+	if (VE_IS_RUNNING(ve))
 		return 0;
 
 	if (!ve->veid) {
@@ -1164,7 +1179,7 @@ static void ve_attach(struct cgroup_taskset *tset)
 		struct ve_struct *ve = css_to_ve(css);
 
 		/* this probihibts ptracing of task entered to VE from host system */
-		if (ve->is_running && task->mm)
+		if (VE_IS_RUNNING(ve) && task->mm)
 			task->mm->vps_dumpable = VD_VE_ENTER_TASK;
 
 		/* Drop OOM protection. */
@@ -1189,14 +1204,23 @@ static int ve_state_show(struct seq_file *sf, void *v)
 	struct ve_struct *ve = css_to_ve(css);
 
 	down_read(&ve->op_sem);
-	if (ve->is_running)
-		seq_puts(sf, "RUNNING");
-	else if (!cgroup_is_populated(css->cgroup) && !ve->ve_ns)
-		seq_puts(sf, "STOPPED");
-	else if (ve->ve_ns)
-		seq_puts(sf, "STOPPING");
-	else
-		seq_puts(sf, "STARTING");
+        switch (ve->state) {
+                case VE_STATE_STARTING:
+                        seq_puts(sf, "STARTING");
+                        break;
+                case VE_STATE_RUNNING:
+                        seq_puts(sf, "RUNNING");
+                        break;
+                case VE_STATE_STOPPING:
+                        seq_puts(sf, "STOPPING");
+                        break;
+                case VE_STATE_STOPPED:
+                case VE_STATE_DEAD:
+                        seq_puts(sf, "STOPPED");
+                        break;
+                default:
+                        seq_puts(sf, "UNKNOWN");
+        }
 	seq_putc(sf, '\n');
 	up_read(&ve->op_sem);
 
@@ -1239,7 +1263,7 @@ static int ve_id_write(struct cgroup_subsys_state *css, struct cftype *cft, u64 
 	ve_ns = rcu_dereference_protected(ve->ve_ns, lockdep_is_held(&ve->op_sem));
 
 	/* FIXME: check veid is uniqul */
-	if (ve->is_running || ve_ns) {
+	if (VE_IS_RUNNING(ve) || ve_ns) {
 		if (ve->veid != val)
 			err = -EBUSY;
 	} else
@@ -1274,7 +1298,7 @@ static int ve_pseudosuper_write(struct cgroup_subsys_state *css, struct cftype *
 		return -EPERM;
 
 	down_write(&ve->op_sem);
-	if (val && (ve->is_running || ve->ve_ns)) {
+	if (val && (VE_IS_RUNNING(ve) || ve->ve_ns)) {
 		up_write(&ve->op_sem);
 		return -EBUSY;
 	}
@@ -1310,7 +1334,7 @@ static int ve_features_write(struct cgroup_subsys_state *css, struct cftype *cft
 		return -EPERM;
 
 	down_write(&ve->op_sem);
-	if (ve->is_running || ve->ve_ns) {
+	if (VE_IS_RUNNING(ve) || ve->ve_ns) {
 		up_write(&ve->op_sem);
 		return -EBUSY;
 	}
@@ -1333,7 +1357,7 @@ static int ve_netns_max_nr_write(struct cgroup_subsys_state *css, struct cftype 
 		return -EPERM;
 
 	down_write(&ve->op_sem);
-	if (ve->is_running || ve->ve_ns) {
+	if (VE_IS_RUNNING(ve) || ve->ve_ns) {
 		up_write(&ve->op_sem);
 		return -EBUSY;
 	}
@@ -1684,7 +1708,7 @@ static int ve_aio_max_nr_write(struct cgroup_subsys_state *css,
 		return -EPERM;
 
 	down_write(&ve->op_sem);
-	if (ve->is_running || ve->ve_ns) {
+	if (VE_IS_RUNNING(ve) || ve->ve_ns) {
 		up_write(&ve->op_sem);
 		return -EBUSY;
 	}
