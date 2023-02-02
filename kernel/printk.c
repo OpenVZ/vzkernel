@@ -555,6 +555,7 @@ out:
 static ssize_t devkmsg_read(struct file *file, char __user *buf,
 			    size_t count, loff_t *ppos)
 {
+	struct ve_struct *ve;
 	struct log_state *log = ve_log_state();
 	struct devkmsg_user *user = file->private_data;
 	struct log *msg;
@@ -597,6 +598,13 @@ static ssize_t devkmsg_read(struct file *file, char __user *buf,
 
 	msg = log_from_idx(log, user->idx);
 	ts_usec = msg->ts_nsec;
+
+	/* shift the timestamp on the Container uptime value */
+	ve = get_exec_env();
+	if (!ve_is_super(ve)) {
+		ts_usec -= ve->real_start_timespec.tv_sec * NSEC_PER_SEC;
+		ts_usec -= ve->real_start_timespec.tv_nsec;
+	}
 	do_div(ts_usec, 1000);
 
 	/*
