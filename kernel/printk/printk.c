@@ -733,6 +733,25 @@ static void append_char(char **pp, char *e, char c)
 		*(*pp)++ = c;
 }
 
+static inline u64 ve_timens_add_boottime_ns(u64 nsec)
+{
+	struct time_namespace *ve_time_ns;
+	struct timens_offsets *ns_offsets;
+
+	ve_time_ns = ve_get_time_ns(get_exec_env());
+	if (unlikely(!ve_time_ns)) {
+		/* container not yet started */
+		return nsec;
+	}
+
+	ns_offsets = &ve_time_ns->offsets;
+	nsec += ns_offsets->boottime.tv_sec * NSEC_PER_SEC;
+	nsec += ns_offsets->boottime.tv_nsec;
+	put_time_ns(ve_time_ns);
+
+	return nsec;
+}
+
 static ssize_t info_print_ext_header(char *buf, size_t size,
 				     struct printk_info *info)
 {
@@ -747,6 +766,8 @@ static ssize_t info_print_ext_header(char *buf, size_t size,
 	caller[0] = '\0';
 #endif
 
+	/* shift the timestamp on the Container uptime value */
+	ts_usec = ve_timens_add_boottime_ns(ts_usec);
 	do_div(ts_usec, 1000);
 
 	return scnprintf(buf, size, "%u,%llu,%llu,%c%s;",
