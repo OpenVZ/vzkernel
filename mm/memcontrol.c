@@ -7687,7 +7687,7 @@ void mem_cgroup_migrate(struct folio *old, struct folio *new)
 			page_counter_charge(&memcg->memsw, nr_pages);
 	}
 
-	WARN_ON((!PageAnon(&new->page) && !PageSwapBacked(&new->page)) |
+	WARN_ON((!PageAnon(&new->page) && !PageSwapBacked(&new->page)) !=
 		folio_memcg_cache(new));
 
 	if (folio_memcg_cache(new))
