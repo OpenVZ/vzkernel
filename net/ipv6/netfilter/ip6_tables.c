@@ -1960,6 +1960,7 @@ struct xt_table *ip6t_register_table(struct net *net,
 	struct xt_table_info bootstrap = {0};
 	void *loc_cpu_entry;
 	struct xt_table *new_table;
+	struct ip6t_entry *iter;
 
 	newinfo = xt_alloc_table_info(repl->size);
 	if (!newinfo) {
@@ -1977,10 +1978,13 @@ struct xt_table *ip6t_register_table(struct net *net,
 	new_table = xt_register_table(net, table, &bootstrap, newinfo);
 	if (IS_ERR(new_table)) {
 		ret = PTR_ERR(new_table);
-		goto out_free;
+		goto free_newinfo_untrans;
 	}
 	return new_table;
 
+free_newinfo_untrans:
+	xt_entry_foreach(iter, loc_cpu_entry, newinfo->size)
+		cleanup_entry(iter, net);
 out_free:
 	xt_free_table_info(newinfo);
 out:
