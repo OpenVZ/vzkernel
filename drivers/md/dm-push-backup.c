@@ -574,6 +574,17 @@ static int pb_message(struct dm_target *ti, unsigned int argc, char **argv,
 	if (argc < 1)
 		goto out;
 
+	if (!strcmp(argv[0], "push_backup_stop")) {
+		if (argc != 1)
+			goto out;
+
+		if (!pb->map)
+			return -EBADF;
+
+		pb->alive = false;
+		wake_up_interruptible(&pb->waitq); /* pb->alive = false */
+	}
+
 	write = msg_wants_down_write(argv[0]);
 	if (write)
 		ret = down_write_killable(&pb->ctl_rwsem);
@@ -592,8 +603,6 @@ static int pb_message(struct dm_target *ti, unsigned int argc, char **argv,
 			goto unlock;
 		ret = push_backup_start(pb, val, (void *)val2);
 	} else if (!strcmp(argv[0], "push_backup_stop")) {
-		if (argc != 1)
-			goto unlock;
 		ret = push_backup_stop(pb, result, maxlen);
 	} else if (!strcmp(argv[0], "push_backup_read")) {
 		if (argc != 1)
