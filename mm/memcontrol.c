@@ -7687,8 +7687,25 @@ void mem_cgroup_migrate(struct folio *old, struct folio *new)
 			page_counter_charge(&memcg->memsw, nr_pages);
 	}
 
-	WARN_ON((!PageAnon(&new->page) && !PageSwapBacked(&new->page)) !=
-		folio_memcg_cache(new));
+	/*
+	 * finist explained the idea behind adding a WARN_ON() here:
+	 * - we do not want to check flags correctness on each flag change
+	 *   because of performance
+	 * - we do want to have a warning in case we somehow messed-up and
+	 *   have got a folio with wrong bits set
+	 * - we do not insist to catch every first buggy page with wrong
+	 *   bits
+	 *
+	 * But we still want to get a warning about the problem sooner or
+	 * later if the problem with flags exists.
+	 *
+	 * To achieve this check if a folio that is marked as cache does
+	 * not have any other incompatible flags set.
+	 */
+	WARN_ON(folio_memcg_cache(new) &&
+		(folio_test_slab(new)	      || folio_test_anon(new)	   ||
+		 folio_test_swapbacked(new)   || folio_test_swapcache(new) ||
+		 folio_test_mappedtodisk(new) || folio_test_ksm(new)));
 
 	if (folio_memcg_cache(new))
 		page_counter_charge(&memcg->cache, nr_pages);
