@@ -32,7 +32,6 @@
 #include <linux/ctype.h>
 #include <linux/tty.h>
 #include <linux/device.h>
-#include <net/net_namespace.h>
 
 #include <uapi/linux/vzcalluser.h>
 #include <net/rtnetlink.h>
@@ -282,20 +281,6 @@ int ve_net_hide_sysctl(struct net *net)
 	return net->user_ns != net->owner_ve->init_cred->user_ns;
 }
 EXPORT_SYMBOL(ve_net_hide_sysctl);
-
-struct net *ve_get_net_ns(struct ve_struct* ve)
-{
-	struct nsproxy *ve_ns;
-	struct net *net_ns;
-
-	rcu_read_lock();
-	ve_ns = rcu_dereference(ve->ve_ns);
-	net_ns = ve_ns ? get_net(ve_ns->net_ns) : NULL;
-	rcu_read_unlock();
-
-	return net_ns;
-}
-EXPORT_SYMBOL(ve_get_net_ns);
 
 bool is_ve_init_net(const struct net *net)
 {
