@@ -524,15 +524,16 @@ void blk_cbt_release(struct request_queue *q)
 {
 	struct cbt_info *cbt;
 	int in_use = 0;
+	unsigned long flags;
 
 	cbt = q->cbt;
 	if (!cbt)
 		return;
-	spin_lock(&cbt->lock);
+	spin_lock_irqsave(&cbt->lock, flags);
 	set_bit(CBT_DEAD, &cbt->flags);
 	rcu_assign_pointer(q->cbt, NULL);
 	in_use = cbt->count;
-	spin_unlock(&cbt->lock);
+	spin_unlock_irqrestore(&cbt->lock, flags);
 	if (!in_use)
 		call_rcu(&cbt->rcu, &cbt_release_callback);
 }
