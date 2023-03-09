@@ -495,11 +495,13 @@ int commit_creds(struct cred *new)
 	 * in set_user().
 	 */
 	alter_cred_subscribers(new, 2);
-	if (new->user != old->user || new->user_ns != old->user_ns)
+	if (new->user != old->user || new->user_ns != old->user_ns ||
+	    !uid_eq(new->uid, old->uid))
 		inc_rlimit_ucounts(new->ucounts, UCOUNT_RLIMIT_NPROC, 1);
 	rcu_assign_pointer(task->real_cred, new);
 	rcu_assign_pointer(task->cred, new);
-	if (new->user != old->user || new->user_ns != old->user_ns)
+	if (new->user != old->user || new->user_ns != old->user_ns ||
+	    !uid_eq(new->uid, old->uid))
 		dec_rlimit_ucounts(old->ucounts, UCOUNT_RLIMIT_NPROC, 1);
 	alter_cred_subscribers(old, -2);
 
