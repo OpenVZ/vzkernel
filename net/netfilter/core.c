@@ -91,6 +91,7 @@ static DEFINE_MUTEX(nf_hook_mutex);
  * https://github.com/torvalds/linux/commit/ae6153b50f9bf75a4952050f32fe168f68cdd657
  * ("netfilter: nf_tables: permit second nat hook if colliding hook is going away")
  */
+#if defined(CONFIG_NF_TABLES) || defined(CONFIG_NF_TABLES_MODULE)
 static bool nf_tables_allow_nat_conflict(const struct net *net,
 					 const struct nft_base_chain *basechain)
 {
@@ -126,6 +127,7 @@ static bool nf_tables_allow_nat_conflict(const struct net *net,
 
 	return ret;
 }
+#endif
 
 int nf_register_hook(struct nf_hook_ops *reg)
 {
@@ -135,6 +137,7 @@ int nf_register_hook(struct nf_hook_ops *reg)
 	list_for_each_entry(elem, &nf_hooks[reg->pf][reg->hooknum], list) {
 		if (reg->priority < elem->priority)
 			break;
+#if defined(CONFIG_NF_TABLES) || defined(CONFIG_NF_TABLES_MODULE)
 		else if ((reg->priority == elem->priority) && reg->is_nft_ops) {
 			const struct nft_chain *c;
 			struct nft_base_chain *basechain;
@@ -163,6 +166,7 @@ int nf_register_hook(struct nf_hook_ops *reg)
 				return -EBUSY;
 			}
 		}
+#endif
 	}
 	list_add_rcu(&reg->list, elem->list.prev);
 	mutex_unlock(&nf_hook_mutex);
