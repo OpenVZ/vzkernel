@@ -12,6 +12,10 @@
 #include <linux/bitmap.h>
 #include <linux/bitops.h>
 #include <linux/bug.h>
+#include <linux/kernel.h>
+#include <linux/string.h>
+
+#include <asm/page.h>
 #include <asm/uaccess.h>
 
 /*
@@ -315,30 +319,32 @@ void bitmap_clear(unsigned long *map, int start, int nr)
 }
 EXPORT_SYMBOL(bitmap_clear);
 
-/*
- * bitmap_find_next_zero_area - find a contiguous aligned zero area
+/**
+ * bitmap_find_next_zero_area_off - find a contiguous aligned zero area
  * @map: The address to base the search on
  * @size: The bitmap size in bits
  * @start: The bitnumber to start searching at
  * @nr: The number of zeroed bits we're looking for
  * @align_mask: Alignment mask for zero area
+ * @align_offset: Alignment offset for zero area.
  *
  * The @align_mask should be one less than a power of 2; the effect is that
- * the bit offset of all zero areas this function finds is multiples of that
- * power of 2. A @align_mask of 0 means no alignment is required.
+ * the bit offset of all zero areas this function finds plus @align_offset
+ * is multiple of that power of 2.
  */
-unsigned long bitmap_find_next_zero_area(unsigned long *map,
-					 unsigned long size,
-					 unsigned long start,
-					 unsigned int nr,
-					 unsigned long align_mask)
+unsigned long bitmap_find_next_zero_area_off(unsigned long *map,
+					     unsigned long size,
+					     unsigned long start,
+					     unsigned int nr,
+					     unsigned long align_mask,
+					     unsigned long align_offset)
 {
 	unsigned long index, end, i;
 again:
 	index = find_next_zero_bit(map, size, start);
 
 	/* Align allocation */
-	index = __ALIGN_MASK(index, align_mask);
+	index = __ALIGN_MASK(index + align_offset, align_mask) - align_offset;
 
 	end = index + nr;
 	if (end > size)
@@ -350,7 +356,7 @@ again:
 	}
 	return index;
 }
-EXPORT_SYMBOL(bitmap_find_next_zero_area);
+EXPORT_SYMBOL(bitmap_find_next_zero_area_off);
 
 /*
  * Bitmap printing & parsing functions: first version by Nadia Yvette Chambers,
@@ -380,6 +386,13 @@ int bitmap_scnprintf(char *buf, unsigned int buflen,
 	const char *sep = "";
 	int chunksz;
 	u32 chunkmask;
+
+	if (buflen == 0)
+		return 0;
+	buf[0] = 0;
+
+	if (!maskp)
+		return 1;
 
 	chunksz = nmaskbits & (CHUNKSZ - 1);
 	if (chunksz == 0)
@@ -559,6 +572,9 @@ int bitmap_scnlistprintf(char *buf, unsigned int buflen,
 		return 0;
 	buf[0] = 0;
 
+	if (!maskp)
+		return 1;
+
 	rbot = cur = find_first_bit(maskp, nmaskbits);
 	while (cur < nmaskbits) {
 		rtop = cur;
@@ -571,6 +587,33 @@ int bitmap_scnlistprintf(char *buf, unsigned int buflen,
 	return len;
 }
 EXPORT_SYMBOL(bitmap_scnlistprintf);
+
+/**
+ * bitmap_print_to_pagebuf - convert bitmap to list or hex format ASCII string
+ * @list: indicates whether the bitmap must be list
+ * @buf: page aligned buffer into which string is placed
+ * @maskp: pointer to bitmap to convert
+ * @nmaskbits: size of bitmap, in bits
+ *
+ * Output format is a comma-separated list of decimal numbers and
+ * ranges if list is specified or hex digits grouped into comma-separated
+ * sets of 8 digits/set. Returns the number of characters written to buf.
+ */
+int bitmap_print_to_pagebuf(bool list, char *buf, const unsigned long *maskp,
+			    int nmaskbits)
+{
+	ptrdiff_t len = PTR_ALIGN(buf + PAGE_SIZE - 1, PAGE_SIZE) - buf - 2;
+	int n = 0;
+
+	if (len > 1) {
+		n = list ? bitmap_scnlistprintf(buf, len, maskp, nmaskbits) :
+			   bitmap_scnprintf(buf, len, maskp, nmaskbits);
+		buf[n++] = '\n';
+		buf[n] = '\0';
+	}
+	return n;
+}
+EXPORT_SYMBOL(bitmap_print_to_pagebuf);
 
 /**
  * __bitmap_parselist - convert list format ASCII string to bitmap
@@ -1162,6 +1205,93 @@ int bitmap_allocate_region(unsigned long *bitmap, int pos, int order)
 	return 0;
 }
 EXPORT_SYMBOL(bitmap_allocate_region);
+
+/**
+ * bitmap_from_u32array - copy the contents of a u32 array of bits to bitmap
+ *	@bitmap: array of unsigned longs, the destination bitmap, non NULL
+ *	@nbits: number of bits in @bitmap
+ *	@buf: array of u32 (in host byte order), the source bitmap, non NULL
+ *	@nwords: number of u32 words in @buf
+ *
+ * copy min(nbits, 32*nwords) bits from @buf to @bitmap, remaining
+ * bits between nword and nbits in @bitmap (if any) are cleared. In
+ * last word of @bitmap, the bits beyond nbits (if any) are kept
+ * unchanged.
+ *
+ * Return the number of bits effectively copied.
+ */
+unsigned int
+bitmap_from_u32array(unsigned long *bitmap, unsigned int nbits,
+		     const u32 *buf, unsigned int nwords)
+{
+	unsigned int dst_idx, src_idx;
+
+	for (src_idx = dst_idx = 0; dst_idx < BITS_TO_LONGS(nbits); ++dst_idx) {
+		unsigned long part = 0;
+
+		if (src_idx < nwords)
+			part = buf[src_idx++];
+
+#if BITS_PER_LONG == 64
+		if (src_idx < nwords)
+			part |= ((unsigned long) buf[src_idx++]) << 32;
+#endif
+
+		if (dst_idx < nbits/BITS_PER_LONG)
+			bitmap[dst_idx] = part;
+		else {
+			unsigned long mask = BITMAP_LAST_WORD_MASK(nbits);
+
+			bitmap[dst_idx] = (bitmap[dst_idx] & ~mask)
+				| (part & mask);
+		}
+	}
+
+	return min_t(unsigned int, nbits, 32*nwords);
+}
+EXPORT_SYMBOL(bitmap_from_u32array);
+
+/**
+ * bitmap_to_u32array - copy the contents of bitmap to a u32 array of bits
+ *	@buf: array of u32 (in host byte order), the dest bitmap, non NULL
+ *	@nwords: number of u32 words in @buf
+ *	@bitmap: array of unsigned longs, the source bitmap, non NULL
+ *	@nbits: number of bits in @bitmap
+ *
+ * copy min(nbits, 32*nwords) bits from @bitmap to @buf. Remaining
+ * bits after nbits in @buf (if any) are cleared.
+ *
+ * Return the number of bits effectively copied.
+ */
+unsigned int
+bitmap_to_u32array(u32 *buf, unsigned int nwords,
+		   const unsigned long *bitmap, unsigned int nbits)
+{
+	unsigned int dst_idx = 0, src_idx = 0;
+
+	while (dst_idx < nwords) {
+		unsigned long part = 0;
+
+		if (src_idx < BITS_TO_LONGS(nbits)) {
+			part = bitmap[src_idx];
+			if (src_idx >= nbits/BITS_PER_LONG)
+				part &= BITMAP_LAST_WORD_MASK(nbits);
+			src_idx++;
+		}
+
+		buf[dst_idx++] = part & 0xffffffffUL;
+
+#if BITS_PER_LONG == 64
+		if (dst_idx < nwords) {
+			part >>= 32;
+			buf[dst_idx++] = part & 0xffffffffUL;
+		}
+#endif
+	}
+
+	return min_t(unsigned int, nbits, 32*nwords);
+}
+EXPORT_SYMBOL(bitmap_to_u32array);
 
 /**
  * bitmap_copy_le - copy a bitmap, putting the bits into little-endian order.

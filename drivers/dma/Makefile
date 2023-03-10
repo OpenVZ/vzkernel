@@ -6,7 +6,6 @@ obj-$(CONFIG_DMA_VIRTUAL_CHANNELS) += virt-dma.o
 obj-$(CONFIG_DMA_ACPI) += acpi-dma.o
 obj-$(CONFIG_DMA_OF) += of-dma.o
 
-obj-$(CONFIG_NET_DMA) += iovlock.o
 obj-$(CONFIG_INTEL_MID_DMAC) += intel_mid_dma.o
 obj-$(CONFIG_DMATEST) += dmatest.o
 obj-$(CONFIG_INTEL_IOATDMA) += ioat/
@@ -15,7 +14,8 @@ obj-$(CONFIG_FSL_DMA) += fsldma.o
 obj-$(CONFIG_MPC512X_DMA) += mpc512x_dma.o
 obj-$(CONFIG_PPC_BESTCOMM) += bestcomm/
 obj-$(CONFIG_MV_XOR) += mv_xor.o
-obj-$(CONFIG_DW_DMAC) += dw_dmac.o
+obj-$(CONFIG_IDMA64) += idma64.o
+obj-$(CONFIG_DW_DMAC_CORE) += dw/
 obj-$(CONFIG_AT_HDMAC) += at_hdmac.o
 obj-$(CONFIG_MX3_IPU) += ipu/
 obj-$(CONFIG_TXX9_DMAC) += txx9dmac.o

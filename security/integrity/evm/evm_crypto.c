@@ -137,7 +137,8 @@ static int evm_calc_hmac_or_hash(struct dentry *dentry,
 	int error;
 	int size;
 
-	if (!inode->i_op || !inode->i_op->getxattr)
+	if (!inode->i_op->getxattr ||
+	    inode->i_sb->s_user_ns != &init_user_ns)
 		return -EOPNOTSUPP;
 	desc = init_desc(type);
 	if (IS_ERR(desc))

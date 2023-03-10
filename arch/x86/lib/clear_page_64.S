@@ -11,7 +11,7 @@ ENTRY(clear_page_c)
 	movl $4096/8,%ecx
 	xorl %eax,%eax
 	rep stosq
-	ret
+	RET
 	CFI_ENDPROC
 ENDPROC(clear_page_c)
 
@@ -20,7 +20,7 @@ ENTRY(clear_page_c_e)
 	movl $4096,%ecx
 	xorl %eax,%eax
 	rep stosb
-	ret
+	RET
 	CFI_ENDPROC
 ENDPROC(clear_page_c_e)
 
@@ -43,7 +43,7 @@ ENTRY(clear_page)
 	leaq	64(%rdi),%rdi
 	jnz	.Lloop
 	nop
-	ret
+	RET
 	CFI_ENDPROC
 .Lclear_page_end:
 ENDPROC(clear_page)
@@ -56,7 +56,7 @@ ENDPROC(clear_page)
 	 *
 	 */
 
-#include <asm/cpufeature.h>
+#include <asm/cpufeatures.h>
 
 	.section .altinstr_replacement,"ax"
 1:	.byte 0xeb					/* jmp <disp8> */

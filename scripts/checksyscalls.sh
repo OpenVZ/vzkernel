@@ -194,6 +194,9 @@ cat << EOF
 #define __IGNORE_getpmsg
 #define __IGNORE_putpmsg
 #define __IGNORE_vserver
+
+/* ignore userfaultfd if the syscall is missing in some arch */
+#define __IGNORE_userfaultfd
 EOF
 }
 

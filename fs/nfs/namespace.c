@@ -98,7 +98,7 @@ rename_retry:
 		return end;
 	}
 	namelen = strlen(base);
-	if (flags & NFS_PATH_CANONICAL) {
+	if (*end == '/') {
 		/* Strip off excess slashes in base string */
 		while (namelen > 0 && base[namelen - 1] == '/')
 			namelen--;
@@ -226,7 +226,7 @@ static struct vfsmount *nfs_do_clone_mount(struct nfs_server *server,
 					   const char *devname,
 					   struct nfs_clone_mount *mountdata)
 {
-	return vfs_kern_mount(&nfs_xdev_fs_type, 0, devname, mountdata);
+	return vfs_submount(mountdata->dentry, &nfs_xdev_fs_type, devname, mountdata);
 }
 
 /**
@@ -253,9 +253,8 @@ struct vfsmount *nfs_do_submount(struct dentry *dentry, struct nfs_fh *fh,
 
 	dprintk("--> nfs_do_submount()\n");
 
-	dprintk("%s: submounting on %s/%s\n", __func__,
-			dentry->d_parent->d_name.name,
-			dentry->d_name.name);
+	dprintk("%s: submounting on %pd2\n", __func__,
+			dentry);
 	if (page == NULL)
 		goto out;
 	devname = nfs_devname(dentry, page, PAGE_SIZE);
@@ -280,7 +279,7 @@ struct vfsmount *nfs_submount(struct nfs_server *server, struct dentry *dentry,
 	struct dentry *parent = dget_parent(dentry);
 
 	/* Look it up again to get its attributes */
-	err = server->nfs_client->rpc_ops->lookup(parent->d_inode, &dentry->d_name, fh, fattr);
+	err = server->nfs_client->rpc_ops->lookup(parent->d_inode, &dentry->d_name, fh, fattr, NULL);
 	dput(parent);
 	if (err != 0)
 		return ERR_PTR(err);

@@ -309,19 +309,16 @@ void alarm_init(struct alarm *alarm, enum alarmtimer_type type,
  * @alarm: ptr to alarm to set
  * @start: time to run the alarm
  */
-int alarm_start(struct alarm *alarm, ktime_t start)
+void alarm_start(struct alarm *alarm, ktime_t start)
 {
 	struct alarm_base *base = &alarm_bases[alarm->type];
 	unsigned long flags;
-	int ret;
 
 	spin_lock_irqsave(&base->lock, flags);
 	alarm->node.expires = start;
 	alarmtimer_enqueue(base, alarm);
-	ret = hrtimer_start(&alarm->timer, alarm->node.expires,
-				HRTIMER_MODE_ABS);
+	hrtimer_start(&alarm->timer, alarm->node.expires, HRTIMER_MODE_ABS);
 	spin_unlock_irqrestore(&base->lock, flags);
-	return ret;
 }
 
 /**
@@ -390,7 +387,7 @@ u64 alarm_forward(struct alarm *alarm, ktime_t now, ktime_t interval)
 		overrun++;
 	}
 
-	alarm->node.expires = ktime_add(alarm->node.expires, interval);
+	alarm->node.expires = ktime_add_safe(alarm->node.expires, interval);
 	return overrun;
 }
 
@@ -421,8 +418,10 @@ static enum alarmtimer_restart alarm_handle_timer(struct alarm *alarm,
 {
 	struct k_itimer *ptr = container_of(alarm, struct k_itimer,
 						it.alarm.alarmtimer);
-	if (posix_timer_event(ptr, 0) != 0)
-		ptr->it_overrun++;
+	if ((ptr->it_sigev_notify & ~SIGEV_THREAD_ID) != SIGEV_NONE) {
+		if (posix_timer_event(ptr, 0) != 0)
+			ptr->it_overrun++;
+	}
 
 	/* Re-add periodic timers */
 	if (ptr->it.alarm.interval.tv64) {
@@ -445,7 +444,7 @@ static int alarm_clock_getres(const clockid_t which_clock, struct timespec *tp)
 	clockid_t baseid = alarm_bases[clock2alarm(which_clock)].base_clockid;
 
 	if (!alarmtimer_get_rtcdev())
-		return -ENOTSUPP;
+		return -EINVAL;
 
 	return hrtimer_get_res(baseid, tp);
 }
@@ -462,7 +461,7 @@ static int alarm_clock_get(clockid_t which_clock, struct timespec *tp)
 	struct alarm_base *base = &alarm_bases[clock2alarm(which_clock)];
 
 	if (!alarmtimer_get_rtcdev())
-		return -ENOTSUPP;
+		return -EINVAL;
 
 	*tp = ktime_to_timespec(base->gettime());
 	return 0;
@@ -477,16 +476,14 @@ static int alarm_clock_get(clockid_t which_clock, struct timespec *tp)
 static int alarm_timer_create(struct k_itimer *new_timer)
 {
 	enum  alarmtimer_type type;
-	struct alarm_base *base;
 
 	if (!alarmtimer_get_rtcdev())
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 
 	if (!capable(CAP_WAKE_ALARM))
 		return -EPERM;
 
 	type = clock2alarm(new_timer->it_clock);
-	base = &alarm_bases[type];
 	alarm_init(&new_timer->it.alarm.alarmtimer, type, alarm_handle_timer);
 	return 0;
 }
@@ -540,8 +537,13 @@ static int alarm_timer_set(struct k_itimer *timr, int flags,
 				struct itimerspec *new_setting,
 				struct itimerspec *old_setting)
 {
+	ktime_t exp;
+
 	if (!rtcdev)
 		return -ENOTSUPP;
+
+	if (flags & ~TIMER_ABSTIME)
+		return -EINVAL;
 
 	if (old_setting)
 		alarm_timer_get(timr, old_setting);
@@ -552,8 +554,16 @@ static int alarm_timer_set(struct k_itimer *timr, int flags,
 
 	/* start the timer */
 	timr->it.alarm.interval = timespec_to_ktime(new_setting->it_interval);
-	alarm_start(&timr->it.alarm.alarmtimer,
-			timespec_to_ktime(new_setting->it_value));
+	exp = timespec_to_ktime(new_setting->it_value);
+	/* Convert (if necessary) to absolute time */
+	if (flags != TIMER_ABSTIME) {
+		ktime_t now;
+
+		now = alarm_bases[timr->it.alarm.alarmtimer.type].gettime();
+		exp = ktime_add_safe(now, exp);
+	}
+
+	alarm_start(&timr->it.alarm.alarmtimer, exp);
 	return 0;
 }
 
@@ -683,7 +693,10 @@ static int alarm_timer_nsleep(const clockid_t which_clock, int flags,
 	struct restart_block *restart;
 
 	if (!alarmtimer_get_rtcdev())
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
+
+	if (flags & ~TIMER_ABSTIME)
+		return -EINVAL;
 
 	if (!capable(CAP_WAKE_ALARM))
 		return -EPERM;
@@ -694,7 +707,7 @@ static int alarm_timer_nsleep(const clockid_t which_clock, int flags,
 	/* Convert (if necessary) to absolute time */
 	if (flags != TIMER_ABSTIME) {
 		ktime_t now = alarm_bases[type].gettime();
-		exp = ktime_add(now, exp);
+		exp = ktime_add_safe(now, exp);
 	}
 
 	if (alarmtimer_do_nsleep(&alarm, exp))

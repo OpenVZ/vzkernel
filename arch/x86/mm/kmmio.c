@@ -11,8 +11,7 @@
 #include <linux/rculist.h>
 #include <linux/spinlock.h>
 #include <linux/hash.h>
-#include <linux/init.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/kernel.h>
 #include <linux/uaccess.h>
 #include <linux/ptrace.h>

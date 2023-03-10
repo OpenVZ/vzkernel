@@ -55,7 +55,7 @@ struct cpuidle_state {
 };
 
 /* Idle State Flags */
-#define CPUIDLE_FLAG_TIME_VALID	(0x01) /* is residency time measurable? */
+#define CPUIDLE_FLAG_TIME_INVALID	(0x01) /* is residency time measurable? */
 #define CPUIDLE_FLAG_COUPLED	(0x02) /* state applies to multiple cpus */
 #define CPUIDLE_FLAG_TIMER_STOP (0x04)  /* timer is stopped on this state */
 
@@ -64,9 +64,12 @@ struct cpuidle_state {
 struct cpuidle_device {
 	unsigned int		registered:1;
 	unsigned int		enabled:1;
+	unsigned int		poll_time_limit:1;
 	unsigned int		cpu;
 
+	int			last_state_idx;
 	int			last_residency;
+	u64			poll_limit_ns;
 	int			state_count;
 	struct cpuidle_state_usage	states_usage[CPUIDLE_STATE_MAX];
 	struct cpuidle_state_kobj *kobjs[CPUIDLE_STATE_MAX];
@@ -88,7 +91,7 @@ DECLARE_PER_CPU(struct cpuidle_device *, cpuidle_devices);
  * cpuidle_get_last_residency - retrieves the last state's residency time
  * @dev: the target CPU
  *
- * NOTE: this value is invalid if CPUIDLE_FLAG_TIME_VALID isn't set
+ * NOTE: this value is invalid if CPUIDLE_FLAG_TIME_INVALID is set
  */
 static inline int cpuidle_get_last_residency(struct cpuidle_device *dev)
 {
@@ -111,12 +114,18 @@ struct cpuidle_driver {
 	struct cpuidle_state	states[CPUIDLE_STATE_MAX];
 	int			state_count;
 	int			safe_state_index;
+
+	/* the driver handles the cpus in cpumask */
+	struct cpumask       *cpumask;
 };
 
 #ifdef CONFIG_CPU_IDLE
 extern void disable_cpuidle(void);
 extern int cpuidle_idle_call(void);
 extern int cpuidle_register_driver(struct cpuidle_driver *drv);
+extern u64 cpuidle_poll_time(struct cpuidle_driver *drv,
+                            struct cpuidle_device *dev);
+
 extern struct cpuidle_driver *cpuidle_get_driver(void);
 extern struct cpuidle_driver *cpuidle_driver_ref(void);
 extern void cpuidle_driver_unref(void);
@@ -135,14 +144,14 @@ extern void cpuidle_disable_device(struct cpuidle_device *dev);
 extern int cpuidle_play_dead(void);
 
 extern struct cpuidle_driver *cpuidle_get_cpu_driver(struct cpuidle_device *dev);
-extern int cpuidle_register_cpu_driver(struct cpuidle_driver *drv, int cpu);
-extern void cpuidle_unregister_cpu_driver(struct cpuidle_driver *drv, int cpu);
-
 #else
 static inline void disable_cpuidle(void) { }
 static inline int cpuidle_idle_call(void) { return -ENODEV; }
 static inline int cpuidle_register_driver(struct cpuidle_driver *drv)
 {return -ENODEV; }
+extern u64 cpuidle_poll_time(struct cpuidle_driver *drv,
+                            struct cpuidle_device *dev)
+{return 0; }
 static inline struct cpuidle_driver *cpuidle_get_driver(void) {return NULL; }
 static inline struct cpuidle_driver *cpuidle_driver_ref(void) {return NULL; }
 static inline void cpuidle_driver_unref(void) {}
@@ -170,6 +179,10 @@ void cpuidle_coupled_parallel_barrier(struct cpuidle_device *dev, atomic_t *a);
 static inline void cpuidle_coupled_parallel_barrier(struct cpuidle_device *dev, atomic_t *a)
 {
 }
+#endif
+
+#ifdef CONFIG_ARCH_HAS_CPU_RELAX
+void poll_idle_init(struct cpuidle_driver *drv);
 #endif
 
 /******************************
