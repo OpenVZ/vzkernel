@@ -501,8 +501,6 @@ struct cgroup {
 	/* Used to store internal freezer state */
 	struct cgroup_freezer_state freezer;
 
-	u64 subgroups_limit;
-
 	/* ve_owner, responsible for running release agent. */
 	struct ve_struct __rcu *ve_owner;
 

@@ -2311,18 +2311,6 @@ struct cgroup *cgroup_ve_root1(struct cgroup *cgrp)
 
 	return container_of(css, struct cgroup, self);
 }
-
-static bool subgroup_limit_reached(struct cgroup *cgroup)
-{
-	struct cgroup *ve_root;
-	bool ret = false;
-
-	ve_root = cgroup_ve_root1(cgroup);
-	if (ve_root && ve_root->subgroups_limit > 0 &&
-	    ve_root->nr_descendants >= ve_root->subgroups_limit)
-		ret = true;
-	return ret;
-}
 #endif /* CONFIG_VE */
 
 static void init_cgroup_housekeeping(struct cgroup *cgrp)
@@ -3855,7 +3843,7 @@ static ssize_t cgroup_type_write(struct kernfs_open_file *of, char *buf,
 	return ret ?: nbytes;
 }
 
-static int cgroup_max_descendants_show(struct seq_file *seq, void *v)
+int cgroup_max_descendants_show(struct seq_file *seq, void *v)
 {
 	struct cgroup *cgrp = seq_css(seq)->cgroup;
 	int descendants = READ_ONCE(cgrp->max_descendants);
@@ -3868,8 +3856,8 @@ static int cgroup_max_descendants_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static ssize_t cgroup_max_descendants_write(struct kernfs_open_file *of,
-					   char *buf, size_t nbytes, loff_t off)
+ssize_t cgroup_max_descendants_write(struct kernfs_open_file *of,
+				     char *buf, size_t nbytes, loff_t off)
 {
 	struct cgroup *cgrp;
 	int descendants;
@@ -5909,13 +5897,6 @@ int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name, umode_t mode)
 		ret = PTR_ERR(cgrp);
 		goto out_unlock;
 	}
-
-#ifdef CONFIG_VE
-	if (!cgroup_on_dfl(cgrp) && subgroup_limit_reached(parent)) {
-		ret = -EACCES;
-		goto out_destroy;
-	}
-#endif
 
 	/*
 	 * This extra ref will be put in cgroup_free_fn() and guarantees
