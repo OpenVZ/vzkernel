@@ -1425,80 +1425,6 @@ static const struct file_operations proc_oom_score_adj_operations = {
 	.llseek		= default_llseek,
 };
 
-#define MEMALLOC_FLAGS_MASK (PF_MEMALLOC | PF_MEMALLOC_NOIO)
-
-static ssize_t memalloc_flags_read(struct file *file, char __user *buf,
-					size_t count, loff_t *ppos)
-{
-	struct task_struct *task = get_proc_task(file_inode(file));
-	char buffer[PROC_NUMBUF];
-	unsigned int pflags;
-	size_t len;
-
-	if (!task)
-		return -ESRCH;
-
-	pflags = READ_ONCE(task->flags) & MEMALLOC_FLAGS_MASK;
-	put_task_struct(task);
-	len = snprintf(buffer, sizeof(buffer), "%u\n", pflags);
-	return simple_read_from_buffer(buf, count, ppos, buffer, len);
-}
-
-static ssize_t memalloc_flags_write(struct file *file, const char __user *buf,
-					size_t count, loff_t *ppos)
-{
-	struct task_struct *task = get_proc_task(file_inode(file));
-	char buffer[PROC_NUMBUF] = {0};
-	int memalloc_flags;
-	int err = -ESRCH;
-	unsigned int pflags;
-
-	if (!task)
-		goto out;
-
-	if (!ve_is_super(get_exec_env())) {
-		err = -EPERM;
-		goto out;
-	}
-	/*
-	 * Potential issue here if task != current
-	 * concurrent setting of flags need synchronization
-	 * but currently flags are expected to change only from
-	 * current process so there is none.
-	 */
-	if (task != current) {
-		err = -EINVAL;
-		goto out;
-	}
-
-	count = min(count, sizeof(buffer) -1);
-	if (copy_from_user(buffer, buf, count)) {
-		err = -EFAULT;
-		goto out;
-	}
-
-	err = kstrtoint(strstrip(buffer), 0, &memalloc_flags);
-	if (err)
-		goto out;
-	if (memalloc_flags & ~MEMALLOC_FLAGS_MASK) {
-		err = -EINVAL;
-		goto out;
-	}
-
-	pflags = READ_ONCE(task->flags) & ~MEMALLOC_FLAGS_MASK;
-	WRITE_ONCE(task->flags, pflags | memalloc_flags);
-out:
-	if (task)
-		put_task_struct(task);
-	return err < 0 ? err : count;
-}
-
-static const struct file_operations proc_memalloc_flags_operations = {
-	.read		= memalloc_flags_read,
-	.write		= memalloc_flags_write,
-	.llseek		= default_llseek,
-};
-
 #ifdef CONFIG_AUDITSYSCALL
 #define TMPBUFLEN 21
 static ssize_t proc_loginuid_read(struct file * file, char __user * buf,
@@ -3206,7 +3132,6 @@ static const struct pid_entry tgid_base_stuff[] = {
 	INF("oom_score",  S_IRUGO, proc_oom_score),
 	REG("oom_adj",    S_IRUGO|S_IWUSR, proc_oom_adj_operations),
 	REG("oom_score_adj", S_IRUGO|S_IWUSR, proc_oom_score_adj_operations),
-	REG("memalloc_flags", S_IRUGO|S_IWUSR, proc_memalloc_flags_operations),
 #ifdef CONFIG_AUDITSYSCALL
 	REG("loginuid",   S_IWUSR|S_IRUGO, proc_loginuid_operations),
 	REG("sessionid",  S_IRUGO, proc_sessionid_operations),
@@ -3574,7 +3499,6 @@ static const struct pid_entry tid_base_stuff[] = {
 	INF("oom_score", S_IRUGO, proc_oom_score),
 	REG("oom_adj",   S_IRUGO|S_IWUSR, proc_oom_adj_operations),
 	REG("oom_score_adj", S_IRUGO|S_IWUSR, proc_oom_score_adj_operations),
-	REG("memalloc_flags", S_IRUGO|S_IWUSR, proc_memalloc_flags_operations),
 #ifdef CONFIG_AUDITSYSCALL
 	REG("loginuid",  S_IWUSR|S_IRUGO, proc_loginuid_operations),
 	REG("sessionid",  S_IRUGO, proc_sessionid_operations),
