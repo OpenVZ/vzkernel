@@ -2950,7 +2950,7 @@ out:
 	return ret;
 }
 
-static int do_set_group(struct path *path, const char *sibling_name)
+static int do_set_group_old(struct path *path, const char *sibling_name)
 {
 	struct ve_struct *ve = get_exec_env();
 	struct mount *sibling, *mnt;
@@ -3554,7 +3554,7 @@ int path_mount(const char *dev_name, struct path *path,
 	if (flags & MS_MOVE)
 		return do_move_mount_old(path, dev_name);
 	if (flags & MS_SET_GROUP)
-		return do_set_group(path, dev_name);
+		return do_set_group_old(path, dev_name);
 
 	return do_new_mount(path, type_page, sb_flags, mnt_flags, dev_name,
 			    data_page);
