@@ -550,6 +550,7 @@ static inline const char *ploop_device_name(struct ploop *ploop)
 
 #define PL_FMT(fmt) "ploop: %s: " fmt "\n"
 #define PL_ERR(fmt, ...) pr_err(PL_FMT(fmt), ploop_device_name(ploop), ##__VA_ARGS__)
+#define PL_WARN(fmt, ...) pr_warn(PL_FMT(fmt), ploop_device_name(ploop), ##__VA_ARGS__)
 #define PL_INFO(fmt, ...) pr_info(PL_FMT(fmt), ploop_device_name(ploop), ##__VA_ARGS__)
 
 extern void ploop_md_page_insert(struct ploop *ploop, struct md_page *md);
