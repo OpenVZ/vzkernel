@@ -286,6 +286,12 @@ struct prctl_task_ct_fields {
 	__s64 start_boottime;
 };
 
+/* Set task memalloc flags */
+#define PR_MEMALLOC_FLAGS			1001
+#define PR_MEMALLOC_GET_FLAGS			1
+#define PR_MEMALLOC_SET_FLAGS			2
+#define PR_MEMALLOC_CLEAR_FLAGS			3
+
 #define PR_SET_VMA		0x53564d41
 # define PR_SET_VMA_ANON_NAME		0
 

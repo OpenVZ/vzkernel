@@ -2386,6 +2386,39 @@ static int prctl_set_vma(unsigned long opt, unsigned long start,
 }
 #endif /* CONFIG_ANON_VMA_NAME */
 
+#define MEMALLOC_FLAGS_MASK (PF_MEMALLOC | PF_MEMALLOC_NOFS | \
+                             PF_MEMALLOC_NOIO | PF_MEMALLOC_PIN)
+
+static int prctl_memalloc_flags(int opt, unsigned long flags)
+{
+	unsigned int pflags;
+
+#ifdef CONFIG_VE
+	if (!ve_is_super(get_exec_env()))
+		return -ENOSYS;
+#endif
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	switch(opt) {
+		case PR_MEMALLOC_GET_FLAGS:
+			return current->flags & MEMALLOC_FLAGS_MASK;
+		case PR_MEMALLOC_SET_FLAGS:
+			if (flags & ~MEMALLOC_FLAGS_MASK)
+				return -EINVAL;
+			pflags = current->flags & ~MEMALLOC_FLAGS_MASK;
+			current->flags = pflags | flags;
+			return current->flags;
+		case PR_MEMALLOC_CLEAR_FLAGS:
+			if (flags & ~MEMALLOC_FLAGS_MASK)
+				return -EINVAL;
+			current->flags &= ~flags;
+			return current->flags;
+	}
+
+	return -EINVAL;
+}
+
 SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		unsigned long, arg4, unsigned long, arg5)
 {
@@ -2667,6 +2700,9 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 
 	case PR_SET_TASK_CT_FIELDS:
 		error = prctl_set_task_ct_fields(me, arg2, arg3);
+		break;
+	case PR_MEMALLOC_FLAGS:
+		error = prctl_memalloc_flags(arg2, arg3);
 		break;
 	default:
 		error = -EINVAL;
