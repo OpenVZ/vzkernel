@@ -2939,7 +2939,7 @@ static inline int tree_contains_unbindable(struct mount *mnt)
 	return 0;
 }
 
-static int do_set_group(struct path *path, const char *sibling_name)
+static int do_set_group_old(struct path *path, const char *sibling_name)
 {
 	struct ve_struct *ve = get_exec_env();
 	struct mount *sibling, *mnt;
@@ -3525,7 +3525,7 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 	else if (cmd & MS_MOVE)
 		retval = do_move_mount_old(&path, dev_name);
 	else if (cmd & MS_SET_GROUP)
-		retval = do_set_group(&path, dev_name);
+		retval = do_set_group_old(&path, dev_name);
 	else
 		retval = do_new_mount(&path, type_page, flags, mnt_flags,
 				      dev_name, data_page);
