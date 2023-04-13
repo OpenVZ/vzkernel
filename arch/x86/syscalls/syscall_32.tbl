@@ -373,6 +373,7 @@
 
 428	i386	open_tree		sys_open_tree
 429	i386	move_mount		sys_move_mount
+442	i386	mount_setattr		sys_mount_setattr
 
 510	i386	getluid			sys_getluid
 511	i386	setluid			sys_setluid
