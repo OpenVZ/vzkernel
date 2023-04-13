@@ -395,7 +395,7 @@ retry:
 			case 0:
 				goto out;
 			case -EACCES:
-				flags |= MS_RDONLY;
+				flags |= SB_RDONLY;
 				goto retry;
 			case -EINVAL:
 				continue;
