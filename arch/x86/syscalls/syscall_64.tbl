@@ -338,6 +338,7 @@
 
 428	common	open_tree		sys_open_tree
 429	common	move_mount		sys_move_mount
+442	common	mount_setattr		sys_mount_setattr
 
 500	64	getluid			sys_getluid
 501	64	setluid			sys_setluid
