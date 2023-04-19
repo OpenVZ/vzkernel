@@ -143,16 +143,30 @@ static int do_send_one_seg(struct socket *sock, struct iov_iter *it, size_t left
 	}
 
 	if (iov_iter_is_bvec(it)) {
-		/* Zerocopy */
 		size_t offset;
 		ssize_t len;
 		struct page *page;
 
-		len = iov_iter_get_pages(it, &page, size, 1, &offset);
-		BUG_ON(len <= 0);
+		/* Only support single page bvec here */
+		page = it->bvec->bv_page;
+		offset = it->bvec->bv_offset + it->iov_offset;
+		len = min(size, it->bvec->bv_len - it->iov_offset);
 
-		ret = kernel_sendpage(sock, page, offset, len, flags);
-		put_page(page);
+		if (sendpage_ok(page)) {
+			/* Zero copy */
+			get_page(page);
+			ret = kernel_sendpage(sock, page, offset, len, flags);
+			put_page(page);
+		} else {
+			/* Fall back to copy mode */
+			struct msghdr msg = { .msg_flags = flags };
+			struct kvec kv;
+
+			kv.iov_base = kmap(page) + offset;
+			kv.iov_len = len;
+			ret = kernel_sendmsg(sock, &msg, &kv, 1, size);
+			kunmap(page);
+		}
 	}
 
 out:
