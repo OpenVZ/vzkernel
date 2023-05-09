@@ -644,6 +644,13 @@ struct pattr_sysfs_entry {
 #define _A2(_name) \
 &((struct pattr_sysfs_entry){ .attr = { .name = __stringify(_name), .mode = S_IRUGO|S_IWUSR }, .show = show_##_name, .store = store_##_name, }).attr
 
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+#define _A2_NO_LOCKDEP(_name) \
+&((struct pattr_sysfs_entry){ .attr = { .name = __stringify(_name), .mode = S_IRUGO|S_IWUSR, .ignore_lockdep = true }, .show = show_##_name, .store = store_##_name, }).attr
+#else
+#define _A2_NO_LOCKDEP _A2
+#endif
+
 #define _A3(_name)							\
 &((struct pattr_sysfs_entry){ .attr = { .name = __stringify(_name), .mode = S_IRUGO }, .print = print_##_name, }).attr
 
@@ -696,7 +703,7 @@ static struct attribute *tune_attributes[] = {
 	_A2(congestion_low_watermark),
 	_A2(max_active_requests),
 	_A2(push_backup_timeout),
-	_A2(discard_granularity),
+	_A2_NO_LOCKDEP(discard_granularity),
 	_A(discard_alignment),
 	_A2(discard_zeroes_data),
 	_A2(trusted),
