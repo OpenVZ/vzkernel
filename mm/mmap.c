@@ -1827,15 +1827,17 @@ munmap_back:
 		error = file->f_op->mmap(file, vma);
 		if (error)
 			goto unmap_and_free_vma;
-		if (vm_flags != vma->vm_flags) {
+		if (vm_flags != vma->vm_flags || file != vma->vm_file) {
 		/*
-		 * ->vm_flags has been changed in f_op->mmap method.
+		 * ->vm_flags or file has been changed in f_op->mmap method.
 		 * We have to recharge ub memory.
 		 */
 			ub_memory_uncharge(mm, len, vm_flags, file);
-			if (ub_memory_charge(mm, len, vma->vm_flags, file, UB_HARD)) {
+			if (ub_memory_charge(mm, len, vma->vm_flags,
+					     vma->vm_file, UB_HARD)) {
 				ub_charged = 0;
 				error = -ENOMEM;
+				file = vma->vm_file;
 				goto unmap_and_free_vma;
 			}
 		}
