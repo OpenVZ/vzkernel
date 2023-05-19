@@ -4888,7 +4888,7 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	if (ve_root && ve_root->subgroups_limit > 0 &&
 			subgroups_count(ve_root) >= ve_root->subgroups_limit) {
 		err = -EACCES;
-		goto err_free_name;
+		goto err_free_id;
 	}
 
 	/*
