@@ -8,7 +8,7 @@
 #define _STRING_C
 #include <linux/linkage.h>
 #include <asm/dwarf2.h>
-#include <asm/cpufeature.h>
+#include <asm/cpufeatures.h>
 #include <asm/alternative-asm.h>
 
 #undef memmove
@@ -202,7 +202,7 @@ ENTRY(memmove)
 	movb (%rsi), %r11b
 	movb %r11b, (%rdi)
 13:
-	retq
+	RET
 	CFI_ENDPROC
 
 	.section .altinstr_replacement,"ax"

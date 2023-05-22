@@ -40,7 +40,6 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
-#include <linux/init.h>
 #include <linux/timer.h>
 #include <linux/list.h>
 #include <linux/interrupt.h>
@@ -3340,7 +3339,7 @@ static int udc_remote_wakeup(struct udc *dev)
 }
 
 /* PCI device parameters */
-static DEFINE_PCI_DEVICE_TABLE(pci_id) = {
+static const struct pci_device_id pci_id[] = {
 	{
 		PCI_DEVICE(PCI_VENDOR_ID_AMD, 0x2096),
 		.class =	(PCI_CLASS_SERIAL_USB << 8) | 0xfe,

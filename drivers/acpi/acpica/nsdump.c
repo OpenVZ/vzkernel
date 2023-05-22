@@ -90,7 +90,7 @@ void acpi_ns_print_pathname(u32 num_segments, char *pathname)
 
 	while (num_segments) {
 		for (i = 0; i < 4; i++) {
-			ACPI_IS_PRINT(pathname[i]) ?
+			isprint((int)pathname[i]) ?
 			    acpi_os_printf("%c", pathname[i]) :
 			    acpi_os_printf("?");
 		}
@@ -216,7 +216,7 @@ acpi_ns_dump_one_object(acpi_handle obj_handle,
 
 	/* Now we can print out the pertinent information */
 
-	acpi_os_printf(" %-12s %p %2.2X ",
+	acpi_os_printf(" %-12s %p %3.3X ",
 		       acpi_ut_get_type_name(type), this_node,
 		       this_node->owner_id);
 
@@ -244,10 +244,12 @@ acpi_ns_dump_one_object(acpi_handle obj_handle,
 			case ACPI_TYPE_BUFFER:
 			case ACPI_TYPE_STRING:
 			case ACPI_TYPE_METHOD:
+
 				acpi_os_printf("<No attached object>");
 				break;
 
 			default:
+
 				break;
 			}
 
@@ -433,6 +435,7 @@ acpi_ns_dump_one_object(acpi_handle obj_handle,
 			break;
 
 		default:
+
 			break;
 		}
 		break;
@@ -567,32 +570,39 @@ acpi_ns_dump_one_object(acpi_handle obj_handle,
 			goto cleanup;
 
 		case ACPI_TYPE_BUFFER_FIELD:
+
 			obj_desc =
 			    (union acpi_operand_object *)obj_desc->buffer_field.
 			    buffer_obj;
 			break;
 
 		case ACPI_TYPE_PACKAGE:
+
 			obj_desc = (void *)obj_desc->package.elements;
 			break;
 
 		case ACPI_TYPE_METHOD:
+
 			obj_desc = (void *)obj_desc->method.aml_start;
 			break;
 
 		case ACPI_TYPE_LOCAL_REGION_FIELD:
+
 			obj_desc = (void *)obj_desc->field.region_obj;
 			break;
 
 		case ACPI_TYPE_LOCAL_BANK_FIELD:
+
 			obj_desc = (void *)obj_desc->bank_field.region_obj;
 			break;
 
 		case ACPI_TYPE_LOCAL_INDEX_FIELD:
+
 			obj_desc = (void *)obj_desc->index_field.index_obj;
 			break;
 
 		default:
+
 			goto cleanup;
 		}
 

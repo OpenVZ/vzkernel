@@ -26,6 +26,7 @@ static __inline__ int udplite_getfrag(void *from, char *to, int  offset,
 static inline int udplite_sk_init(struct sock *sk)
 {
 	udp_sk(sk)->pcflag = UDPLITE_BIT;
+	sk->sk_destruct = udp_destruct_sock;
 	return 0;
 }
 
@@ -61,6 +62,7 @@ static inline int udplite_checksum_init(struct sk_buff *skb, struct udphdr *uh)
 		UDP_SKB_CB(skb)->cscov = cscov;
 		if (skb->ip_summed == CHECKSUM_COMPLETE)
 			skb->ip_summed = CHECKSUM_NONE;
+		skb->csum_valid = 0;
         }
 
 	return 0;

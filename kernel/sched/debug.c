@@ -15,10 +15,10 @@
 #include <linux/seq_file.h>
 #include <linux/kallsyms.h>
 #include <linux/utsname.h>
+#include <linux/mempolicy.h>
+#include <linux/nmi.h>
 
 #include "sched.h"
-
-static DEFINE_SPINLOCK(sched_debug_lock);
 
 /*
  * This allows printing both to /proc/sched_debug and
@@ -29,7 +29,7 @@ static DEFINE_SPINLOCK(sched_debug_lock);
 	if (m)					\
 		seq_printf(m, x);		\
 	else					\
-		printk(x);			\
+		pr_cont(x);			\
  } while (0)
 
 /*
@@ -79,16 +79,18 @@ static void print_cfs_group_stats(struct seq_file *m, int cpu, struct task_group
 	PN(se->vruntime);
 	PN(se->sum_exec_runtime);
 #ifdef CONFIG_SCHEDSTATS
-	PN(se->statistics.wait_start);
-	PN(se->statistics.sleep_start);
-	PN(se->statistics.block_start);
-	PN(se->statistics.sleep_max);
-	PN(se->statistics.block_max);
-	PN(se->statistics.exec_max);
-	PN(se->statistics.slice_max);
-	PN(se->statistics.wait_max);
-	PN(se->statistics.wait_sum);
-	P(se->statistics.wait_count);
+	if (schedstat_enabled()) {
+		PN(se->statistics->wait_start);
+		PN(se->statistics->sleep_start);
+		PN(se->statistics->block_start);
+		PN(se->statistics->sleep_max);
+		PN(se->statistics->block_max);
+		PN(se->statistics->exec_max);
+		PN(se->statistics->slice_max);
+		PN(se->statistics->wait_max);
+		PN(se->statistics->wait_sum);
+		P(se->statistics->wait_count);
+	}
 #endif
 	P(se->load.weight);
 #ifdef CONFIG_SMP
@@ -103,15 +105,37 @@ static void print_cfs_group_stats(struct seq_file *m, int cpu, struct task_group
 #endif
 
 #ifdef CONFIG_CGROUP_SCHED
+static DEFINE_SPINLOCK(sched_debug_lock);
 static char group_path[PATH_MAX];
 
-static char *task_group_path(struct task_group *tg)
+static void task_group_path(struct task_group *tg, char *path, int plen)
 {
-	if (autogroup_path(tg, group_path, PATH_MAX))
-		return group_path;
+	if (autogroup_path(tg, path, plen))
+		return;
 
-	cgroup_path(tg->css.cgroup, group_path, PATH_MAX);
-	return group_path;
+	cgroup_path(tg->css.cgroup, path, plen);
+}
+
+/*
+ * Only 1 SEQ_printf_task_group_path() caller can use the full length
+ * group_path[] for cgroup path. Other simultaneous callers will have
+ * to use a shorter stack buffer. A "..." suffix is appended at the end
+ * of the stack buffer so that it will show up in case the output length
+ * matches the given buffer size to indicate possible path name truncation.
+ */
+#define SEQ_printf_task_group_path(m, tg, fmt...)			\
+{									\
+	if (spin_trylock(&sched_debug_lock)) {				\
+		task_group_path(tg, group_path, sizeof(group_path));	\
+		SEQ_printf(m, fmt, group_path);				\
+		spin_unlock(&sched_debug_lock);				\
+	} else {							\
+		char buf[128];						\
+		char *bufend = buf + sizeof(buf) - 3;			\
+		task_group_path(tg, buf, bufend - buf);			\
+		strcpy(bufend - 1, "...");				\
+		SEQ_printf(m, fmt, buf);				\
+	}								\
 }
 #endif
 
@@ -128,17 +152,17 @@ print_task(struct seq_file *m, struct rq *rq, struct task_struct *p)
 		SPLIT_NS(p->se.vruntime),
 		(long long)(p->nvcsw + p->nivcsw),
 		p->prio);
-#ifdef CONFIG_SCHEDSTATS
+
 	SEQ_printf(m, "%9Ld.%06ld %9Ld.%06ld %9Ld.%06ld",
-		SPLIT_NS(p->se.vruntime),
+		SPLIT_NS(schedstat_val(p, se.statistics->wait_sum)),
 		SPLIT_NS(p->se.sum_exec_runtime),
-		SPLIT_NS(p->se.statistics.sum_sleep_runtime));
-#else
-	SEQ_printf(m, "%15Ld %15Ld %15Ld.%06ld %15Ld.%06ld %15Ld.%06ld",
-		0LL, 0LL, 0LL, 0L, 0LL, 0L, 0LL, 0L);
+		SPLIT_NS(schedstat_val(p, se.statistics->sum_sleep_runtime)));
+
+#ifdef CONFIG_NUMA_BALANCING
+	SEQ_printf(m, " %d", cpu_to_node(task_cpu(p)));
 #endif
 #ifdef CONFIG_CGROUP_SCHED
-	SEQ_printf(m, " %s", task_group_path(task_group(p)));
+	SEQ_printf_task_group_path(m, task_group(p), " %s")
 #endif
 
 	SEQ_printf(m, "\n");
@@ -147,25 +171,22 @@ print_task(struct seq_file *m, struct rq *rq, struct task_struct *p)
 static void print_rq(struct seq_file *m, struct rq *rq, int rq_cpu)
 {
 	struct task_struct *g, *p;
-	unsigned long flags;
 
-	SEQ_printf(m,
-	"\nrunnable tasks:\n"
-	"            task   PID         tree-key  switches  prio"
-	"     exec-runtime         sum-exec        sum-sleep\n"
-	"------------------------------------------------------"
-	"----------------------------------------------------\n");
+	SEQ_printf(m, "\n");
+	SEQ_printf(m, "runnable tasks:\n");
+	SEQ_printf(m, "            task   PID         tree-key  switches  prio"
+		   "     wait-time             sum-exec        sum-sleep\n");
+	SEQ_printf(m, "------------------------------------------------------"
+		   "----------------------------------------------------\n");
 
-	read_lock_irqsave(&tasklist_lock, flags);
-
-	do_each_thread(g, p) {
-		if (!p->on_rq || task_cpu(p) != rq_cpu)
+	rcu_read_lock();
+	for_each_process_thread(g, p) {
+		if (task_cpu(p) != rq_cpu)
 			continue;
 
 		print_task(m, rq, p);
-	} while_each_thread(g, p);
-
-	read_unlock_irqrestore(&tasklist_lock, flags);
+	}
+	rcu_read_unlock();
 }
 
 void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
@@ -177,9 +198,11 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 	unsigned long flags;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
-	SEQ_printf(m, "\ncfs_rq[%d]:%s\n", cpu, task_group_path(cfs_rq->tg));
+	SEQ_printf(m, "\n");
+	SEQ_printf_task_group_path(m, cfs_rq->tg, "cfs_rq[%d]:%s\n", cpu);
 #else
-	SEQ_printf(m, "\ncfs_rq[%d]:\n", cpu);
+	SEQ_printf(m, "\n");
+	SEQ_printf(m, "cfs_rq[%d]:\n", cpu);
 #endif
 	SEQ_printf(m, "  .%-30s: %Ld.%06ld\n", "exec_clock",
 			SPLIT_NS(cfs_rq->exec_clock));
@@ -224,6 +247,12 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 	SEQ_printf(m, "  .%-30s: %d\n", "tg->runnable_avg",
 			atomic_read(&cfs_rq->tg->runnable_avg));
 #endif
+#ifdef CONFIG_CFS_BANDWIDTH
+	SEQ_printf(m, "  .%-30s: %d\n", "throttled",
+			cfs_rq->throttled);
+	SEQ_printf(m, "  .%-30s: %d\n", "throttle_count",
+			cfs_rq->throttle_count);
+#endif
 
 	print_cfs_group_stats(m, cpu, cfs_rq->tg);
 #endif
@@ -232,9 +261,11 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 void print_rt_rq(struct seq_file *m, int cpu, struct rt_rq *rt_rq)
 {
 #ifdef CONFIG_RT_GROUP_SCHED
-	SEQ_printf(m, "\nrt_rq[%d]:%s\n", cpu, task_group_path(rt_rq->tg));
+	SEQ_printf(m, "\n");
+	SEQ_printf_task_group_path(m, rt_rq->tg, "rt_rq[%d]:%s\n", cpu);
 #else
-	SEQ_printf(m, "\nrt_rq[%d]:\n", cpu);
+	SEQ_printf(m, "\n");
+	SEQ_printf(m, "rt_rq[%d]:\n", cpu);
 #endif
 
 #define P(x) \
@@ -256,7 +287,6 @@ extern __read_mostly int sched_clock_running;
 static void print_cpu(struct seq_file *m, int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
-	unsigned long flags;
 
 #ifdef CONFIG_X86
 	{
@@ -301,28 +331,26 @@ do {									\
 #define P(n) SEQ_printf(m, "  .%-30s: %d\n", #n, rq->n);
 #define P64(n) SEQ_printf(m, "  .%-30s: %Ld\n", #n, rq->n);
 
-	P(yld_count);
-
-	P(sched_count);
-	P(sched_goidle);
 #ifdef CONFIG_SMP
 	P64(avg_idle);
+	P64(max_idle_balance_cost);
 #endif
 
-	P(ttwu_count);
-	P(ttwu_local);
+	if (schedstat_enabled()) {
+		P(yld_count);
+		P(sched_count);
+		P(sched_goidle);
+		P(ttwu_count);
+		P(ttwu_local);
+	}
 
 #undef P
 #undef P64
 #endif
-	spin_lock_irqsave(&sched_debug_lock, flags);
 	print_cfs_stats(m, cpu);
 	print_rt_stats(m, cpu);
 
-	rcu_read_lock();
 	print_rq(m, rq, cpu);
-	rcu_read_unlock();
-	spin_unlock_irqrestore(&sched_debug_lock, flags);
 	SEQ_printf(m, "\n");
 }
 
@@ -343,7 +371,7 @@ static void sched_debug_header(struct seq_file *m)
 	cpu_clk = local_clock();
 	local_irq_restore(flags);
 
-	SEQ_printf(m, "Sched Debug Version: v0.10, %s %.*s\n",
+	SEQ_printf(m, "Sched Debug Version: v0.11, %s %.*s\n",
 		init_utsname()->release,
 		(int)strcspn(init_utsname()->version, " "),
 		init_utsname()->version);
@@ -357,7 +385,7 @@ static void sched_debug_header(struct seq_file *m)
 	PN(cpu_clk);
 	P(jiffies);
 #ifdef CONFIG_HAVE_UNSTABLE_SCHED_CLOCK
-	P(sched_clock_stable);
+	P(sched_clock_stable());
 #endif
 #undef PN
 #undef P
@@ -401,9 +429,16 @@ void sysrq_sched_debug_show(void)
 	int cpu;
 
 	sched_debug_header(NULL);
-	for_each_online_cpu(cpu)
+	for_each_online_cpu(cpu) {
+		/*
+		 * Need to reset softlockup watchdogs on all CPUs, because
+		 * another CPU might be blocked waiting for us to process
+		 * an IPI or stop_machine.
+		 */
+		touch_nmi_watchdog();
+		touch_all_softlockup_watchdogs();
 		print_cpu(NULL, cpu);
-
+	}
 }
 
 /*
@@ -486,6 +521,56 @@ static int __init init_sched_debug_procfs(void)
 
 __initcall(init_sched_debug_procfs);
 
+#define __P(F) \
+	SEQ_printf(m, "%-45s:%21Ld\n", #F, (long long)F)
+#define P(F) \
+	SEQ_printf(m, "%-45s:%21Ld\n", #F, (long long)p->F)
+#define __PN(F) \
+	SEQ_printf(m, "%-45s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)F))
+#define PN(F) \
+	SEQ_printf(m, "%-45s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)p->F))
+
+
+static void sched_show_numa(struct task_struct *p, struct seq_file *m)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct mempolicy *pol;
+	int node, i;
+
+	if (p->mm)
+		P(mm->numa_scan_seq);
+
+	task_lock(p);
+	pol = p->mempolicy;
+	if (pol && !(pol->flags & MPOL_F_MORON))
+		pol = NULL;
+	mpol_get(pol);
+	task_unlock(p);
+
+	SEQ_printf(m, "numa_migrations, %ld\n", xchg(&p->numa_pages_migrated, 0));
+
+	for_each_online_node(node) {
+		for (i = 0; i < 2; i++) {
+			unsigned long nr_faults = -1;
+			int cpu_current, home_node;
+
+			if (p->numa_faults_memory)
+				nr_faults = p->numa_faults_memory[2*node + i];
+
+			cpu_current = !i ? (task_node(p) == node) :
+				(pol && node_isset(node, pol->v.nodes));
+
+			home_node = (p->numa_preferred_nid == node);
+
+			SEQ_printf(m, "numa_faults_memory, %d, %d, %d, %d, %ld\n",
+				i, node, cpu_current, home_node, nr_faults);
+		}
+	}
+
+	mpol_put(pol);
+#endif
+}
+
 void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 {
 	unsigned long nr_switches;
@@ -493,15 +578,16 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 	SEQ_printf(m, "%s (%d, #threads: %d)\n", p->comm, p->pid,
 						get_nr_threads(p));
 	SEQ_printf(m,
-		"---------------------------------------------------------\n");
+		"---------------------------------------------------------"
+		"----------\n");
 #define __P(F) \
-	SEQ_printf(m, "%-35s:%21Ld\n", #F, (long long)F)
+	SEQ_printf(m, "%-45s:%21Ld\n", #F, (long long)F)
 #define P(F) \
-	SEQ_printf(m, "%-35s:%21Ld\n", #F, (long long)p->F)
+	SEQ_printf(m, "%-45s:%21Ld\n", #F, (long long)p->F)
 #define __PN(F) \
-	SEQ_printf(m, "%-35s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)F))
+	SEQ_printf(m, "%-45s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)F))
 #define PN(F) \
-	SEQ_printf(m, "%-35s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)p->F))
+	SEQ_printf(m, "%-45s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)p->F))
 
 	PN(se.exec_start);
 	PN(se.vruntime);
@@ -510,40 +596,42 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 	nr_switches = p->nvcsw + p->nivcsw;
 
 #ifdef CONFIG_SCHEDSTATS
-	PN(se.statistics.wait_start);
-	PN(se.statistics.sleep_start);
-	PN(se.statistics.block_start);
-	PN(se.statistics.sleep_max);
-	PN(se.statistics.block_max);
-	PN(se.statistics.exec_max);
-	PN(se.statistics.slice_max);
-	PN(se.statistics.wait_max);
-	PN(se.statistics.wait_sum);
-	P(se.statistics.wait_count);
-	PN(se.statistics.iowait_sum);
-	P(se.statistics.iowait_count);
 	P(se.nr_migrations);
-	P(se.statistics.nr_migrations_cold);
-	P(se.statistics.nr_failed_migrations_affine);
-	P(se.statistics.nr_failed_migrations_running);
-	P(se.statistics.nr_failed_migrations_hot);
-	P(se.statistics.nr_forced_migrations);
-	P(se.statistics.nr_wakeups);
-	P(se.statistics.nr_wakeups_sync);
-	P(se.statistics.nr_wakeups_migrate);
-	P(se.statistics.nr_wakeups_local);
-	P(se.statistics.nr_wakeups_remote);
-	P(se.statistics.nr_wakeups_affine);
-	P(se.statistics.nr_wakeups_affine_attempts);
-	P(se.statistics.nr_wakeups_passive);
-	P(se.statistics.nr_wakeups_idle);
 
-	{
+	if (schedstat_enabled()) {
 		u64 avg_atom, avg_per_cpu;
+
+		PN(se.statistics->sum_sleep_runtime);
+		PN(se.statistics->wait_start);
+		PN(se.statistics->sleep_start);
+		PN(se.statistics->block_start);
+		PN(se.statistics->sleep_max);
+		PN(se.statistics->block_max);
+		PN(se.statistics->exec_max);
+		PN(se.statistics->slice_max);
+		PN(se.statistics->wait_max);
+		PN(se.statistics->wait_sum);
+		P(se.statistics->wait_count);
+		PN(se.statistics->iowait_sum);
+		P(se.statistics->iowait_count);
+		P(se.statistics->nr_migrations_cold);
+		P(se.statistics->nr_failed_migrations_affine);
+		P(se.statistics->nr_failed_migrations_running);
+		P(se.statistics->nr_failed_migrations_hot);
+		P(se.statistics->nr_forced_migrations);
+		P(se.statistics->nr_wakeups);
+		P(se.statistics->nr_wakeups_sync);
+		P(se.statistics->nr_wakeups_migrate);
+		P(se.statistics->nr_wakeups_local);
+		P(se.statistics->nr_wakeups_remote);
+		P(se.statistics->nr_wakeups_affine);
+		P(se.statistics->nr_wakeups_affine_attempts);
+		P(se.statistics->nr_wakeups_passive);
+		P(se.statistics->nr_wakeups_idle);
 
 		avg_atom = p->se.sum_exec_runtime;
 		if (nr_switches)
-			do_div(avg_atom, nr_switches);
+			avg_atom = div64_ul(avg_atom, nr_switches);
 		else
 			avg_atom = -1LL;
 
@@ -560,9 +648,9 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 	}
 #endif
 	__P(nr_switches);
-	SEQ_printf(m, "%-35s:%21Ld\n",
+	SEQ_printf(m, "%-45s:%21Ld\n",
 		   "nr_voluntary_switches", (long long)p->nvcsw);
-	SEQ_printf(m, "%-35s:%21Ld\n",
+	SEQ_printf(m, "%-45s:%21Ld\n",
 		   "nr_involuntary_switches", (long long)p->nivcsw);
 
 	P(se.load.weight);
@@ -579,14 +667,16 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 
 		t0 = cpu_clock(this_cpu);
 		t1 = cpu_clock(this_cpu);
-		SEQ_printf(m, "%-35s:%21Ld\n",
+		SEQ_printf(m, "%-45s:%21Ld\n",
 			   "clock-delta", (long long)(t1-t0));
 	}
+
+	sched_show_numa(p, m);
 }
 
 void proc_sched_set_task(struct task_struct *p)
 {
 #ifdef CONFIG_SCHEDSTATS
-	memset(&p->se.statistics, 0, sizeof(p->se.statistics));
+	memset(p->se.statistics, 0, sizeof(*p->se.statistics));
 #endif
 }

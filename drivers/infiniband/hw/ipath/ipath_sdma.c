@@ -247,7 +247,7 @@ static void sdma_abort_task(unsigned long opaque)
 
 	/* ipath_sdma_abort() is done, waiting for interrupt */
 	if (status == IPATH_SDMA_ABORT_DISARMED) {
-		if (jiffies < dd->ipath_sdma_abort_intr_timeout)
+		if (time_before(jiffies, dd->ipath_sdma_abort_intr_timeout))
 			goto resched_noprint;
 		/* give up, intr got lost somewhere */
 		ipath_dbg("give up waiting for SDMADISABLED intr\n");
@@ -341,7 +341,7 @@ resched:
 	 * JAG - this is bad to just have default be a loop without
 	 * state change
 	 */
-	if (jiffies > dd->ipath_sdma_abort_jiffies) {
+	if (time_after(jiffies, dd->ipath_sdma_abort_jiffies)) {
 		ipath_dbg("looping with status 0x%08lx\n",
 			  dd->ipath_sdma_status);
 		dd->ipath_sdma_abort_jiffies = jiffies + 5 * HZ;
@@ -400,9 +400,9 @@ static int alloc_sdma(struct ipath_devdata *dd)
 	}
 	dd->ipath_sdma_head_dma[0] = 0;
 
-	init_timer(&dd->ipath_sdma_vl15_timer);
-	dd->ipath_sdma_vl15_timer.function = vl15_watchdog_timeout;
-	dd->ipath_sdma_vl15_timer.data = (unsigned long)dd;
+	setup_timer(&dd->ipath_sdma_vl15_timer, vl15_watchdog_timeout,
+			(unsigned long)dd);
+
 	atomic_set(&dd->ipath_sdma_vl15_count, 0);
 
 	goto done;

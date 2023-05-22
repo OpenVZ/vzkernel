@@ -31,10 +31,15 @@ struct msi_msg;
 struct pci_dev;
 struct irq_cfg;
 
+enum irq_remap_cap {
+	IRQ_POSTING_CAP = 0,
+};
+
 #ifdef CONFIG_IRQ_REMAP
 
-extern void setup_irq_remapping_ops(void);
-extern int irq_remapping_supported(void);
+extern raw_spinlock_t irq_2_ir_lock;
+
+extern bool irq_remapping_cap(enum irq_remap_cap cap);
 extern void set_irq_remapping_broken(void);
 extern int irq_remapping_prepare(void);
 extern int irq_remapping_enable(void);
@@ -57,11 +62,21 @@ extern bool setup_remapped_irq(int irq,
 			       struct irq_chip *chip);
 
 void irq_remap_modify_chip_defaults(struct irq_chip *chip);
+int irq_set_vcpu_affinity(unsigned int irq, void *vcpu_info);
+
+enum {
+	IRQ_REMAP_XAPIC_MODE,
+	IRQ_REMAP_X2APIC_MODE,
+};
+
+struct vcpu_data {
+	u64 pi_desc_addr;	/* Physical address of PI Descriptor */
+	u32 vector;		/* Guest vector of the interrupt */
+};
 
 #else  /* CONFIG_IRQ_REMAP */
 
-static inline void setup_irq_remapping_ops(void) { }
-static inline int irq_remapping_supported(void) { return 0; }
+static inline bool irq_remapping_cap(enum irq_remap_cap cap) { return 0; }
 static inline void set_irq_remapping_broken(void) { }
 static inline int irq_remapping_prepare(void) { return -ENODEV; }
 static inline int irq_remapping_enable(void) { return -ENODEV; }
@@ -101,6 +116,15 @@ static inline bool setup_remapped_irq(int irq,
 {
 	return false;
 }
+
+int irq_set_vcpu_affinity(unsigned int irq, void *vcpu_info)
+{
+	return -ENOSYS;
+}
+
 #endif /* CONFIG_IRQ_REMAP */
+
+#define dmar_alloc_hwirq()	irq_alloc_hwirq(-1)
+#define dmar_free_hwirq		irq_free_hwirq
 
 #endif /* __X86_IRQ_REMAPPING_H */

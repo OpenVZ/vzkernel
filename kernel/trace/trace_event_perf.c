@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <linux/kprobes.h>
 #include "trace.h"
+#include "trace_probe.h"
 
 static char __percpu *perf_trace_buf[PERF_NR_CONTEXTS];
 
@@ -24,9 +25,22 @@ static int	total_ref_count;
 static int perf_trace_event_perm(struct ftrace_event_call *tp_event,
 				 struct perf_event *p_event)
 {
+
+	/*
+	 * We checked and allowed to create parent,
+	 * allow children without checking.
+	 */
+	if (p_event->parent)
+		return 0;
+
+	/*
+	 * It's ok to check current process (owner) permissions in here,
+	 * because code below is called only via perf_event_open syscall.
+	 */
+
 	/* The ftrace function trace is allowed only for root. */
 	if (ftrace_event_is_function(tp_event) &&
-	    perf_paranoid_kernel() && !capable(CAP_SYS_ADMIN))
+	    perf_paranoid_tracepoint_raw() && !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	/* No tracing, just counting, so no obvious leak */
@@ -200,6 +214,111 @@ void perf_trace_destroy(struct perf_event *p_event)
 	mutex_unlock(&event_mutex);
 }
 
+#ifdef CONFIG_KPROBE_EVENT
+int perf_kprobe_init(struct perf_event *p_event, bool is_retprobe)
+{
+	int ret;
+	char *func = NULL;
+	struct ftrace_event_call *tp_event;
+
+	if (p_event->attr.kprobe_func) {
+		func = kzalloc(KSYM_NAME_LEN, GFP_KERNEL);
+		if (!func)
+			return -ENOMEM;
+		ret = strncpy_from_user(
+			func, u64_to_user_ptr(p_event->attr.kprobe_func),
+			KSYM_NAME_LEN);
+		if (ret == KSYM_NAME_LEN)
+			ret = -E2BIG;
+		if (ret < 0)
+			goto out;
+
+		if (func[0] == '\0') {
+			kfree(func);
+			func = NULL;
+		}
+	}
+
+	tp_event = create_local_trace_kprobe(
+		func, (void *)(unsigned long)(p_event->attr.kprobe_addr),
+		p_event->attr.probe_offset, is_retprobe);
+	if (IS_ERR(tp_event)) {
+		ret = PTR_ERR(tp_event);
+		goto out;
+	}
+
+	ret = perf_trace_event_init(tp_event, p_event);
+	if (ret)
+		destroy_local_trace_kprobe(tp_event);
+out:
+	kfree(func);
+	return ret;
+}
+
+void perf_kprobe_destroy(struct perf_event *p_event)
+{
+	perf_trace_event_close(p_event);
+	perf_trace_event_unreg(p_event);
+
+	destroy_local_trace_kprobe(p_event->tp_event);
+}
+#endif /* CONFIG_KPROBE_EVENT */
+
+#ifdef CONFIG_UPROBE_EVENT
+int perf_uprobe_init(struct perf_event *p_event, bool is_retprobe)
+{
+	int ret;
+	char *path = NULL;
+	struct ftrace_event_call *tp_event;
+
+	if (!p_event->attr.uprobe_path)
+		return -EINVAL;
+	path = kzalloc(PATH_MAX, GFP_KERNEL);
+	if (!path)
+		return -ENOMEM;
+	ret = strncpy_from_user(
+		path, u64_to_user_ptr(p_event->attr.uprobe_path), PATH_MAX);
+	if (ret == PATH_MAX)
+		return -E2BIG;
+	if (ret < 0)
+		goto out;
+	if (path[0] == '\0') {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	tp_event = create_local_trace_uprobe(
+		path, p_event->attr.probe_offset, is_retprobe);
+	if (IS_ERR(tp_event)) {
+		ret = PTR_ERR(tp_event);
+		goto out;
+	}
+
+	/*
+	 * local trace_uprobe need to hold event_mutex to call
+	 * uprobe_buffer_enable() and uprobe_buffer_disable().
+	 * event_mutex is not required for local trace_kprobes.
+	 */
+	mutex_lock(&event_mutex);
+	ret = perf_trace_event_init(tp_event, p_event);
+	if (ret)
+		destroy_local_trace_uprobe(tp_event);
+	mutex_unlock(&event_mutex);
+out:
+	kfree(path);
+	return ret;
+}
+
+void perf_uprobe_destroy(struct perf_event *p_event)
+{
+	mutex_lock(&event_mutex);
+	perf_trace_event_close(p_event);
+	perf_trace_event_unreg(p_event);
+	mutex_unlock(&event_mutex);
+	destroy_local_trace_uprobe(p_event->tp_event);
+}
+#endif /* CONFIG_UPROBE_EVENT */
+
 int perf_trace_add(struct perf_event *p_event, int flags)
 {
 	struct ftrace_event_call *tp_event = p_event->tp_event;
@@ -227,7 +346,7 @@ void perf_trace_del(struct perf_event *p_event, int flags)
 }
 
 __kprobes void *perf_trace_buf_prepare(int size, unsigned short type,
-				       struct pt_regs *regs, int *rctxp)
+				       struct pt_regs **regs, int *rctxp)
 {
 	struct trace_entry *entry;
 	unsigned long flags;
@@ -242,6 +361,8 @@ __kprobes void *perf_trace_buf_prepare(int size, unsigned short type,
 	if (*rctxp < 0)
 		return NULL;
 
+	if (regs)
+		*regs = this_cpu_ptr(&__perf_regs[*rctxp]);
 	raw_data = this_cpu_ptr(perf_trace_buf[*rctxp]);
 
 	/* zero the dead bytes from align to not leak stack to user */
@@ -271,6 +392,7 @@ perf_ftrace_function_call(unsigned long ip, unsigned long parent_ip,
 
 	BUILD_BUG_ON(ENTRY_SIZE > PERF_MAX_TRACE_SIZE);
 
+	memset(&regs, 0, sizeof(regs));
 	perf_fetch_caller_regs(&regs);
 
 	entry = perf_trace_buf_prepare(ENTRY_SIZE, TRACE_FN, NULL, &rctx);

@@ -598,6 +598,7 @@ static void eeepc_rfkill_hotplug(struct eeepc_laptop *eeepc, acpi_handle handle)
 		rfkill_set_sw_state(eeepc->wlan_rfkill, blocked);
 
 	mutex_lock(&eeepc->hotplug_lock);
+	pci_lock_rescan_remove();
 
 	if (eeepc->hotplug_slot) {
 		port = acpi_get_pci_dev(handle);
@@ -640,8 +641,7 @@ static void eeepc_rfkill_hotplug(struct eeepc_laptop *eeepc, acpi_handle handle)
 			dev = pci_scan_single_device(bus, 0);
 			if (dev) {
 				pci_bus_assign_resources(bus);
-				if (pci_bus_add_device(dev))
-					pr_err("Unable to hotplug wifi\n");
+				pci_bus_add_device(dev);
 			}
 		} else {
 			dev = pci_get_slot(bus, 0);
@@ -655,6 +655,7 @@ out_put_dev:
 	}
 
 out_unlock:
+	pci_unlock_rescan_remove();
 	mutex_unlock(&eeepc->hotplug_lock);
 }
 

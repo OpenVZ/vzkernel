@@ -18,6 +18,7 @@
 
 #include <linux/linkage.h>
 #include <asm/inst.h>
+#include <asm/frame.h>
 
 .data
 
@@ -93,11 +94,12 @@ __clmul_gf128mul_ble:
 	psrlq $1, T2
 	pxor T2, T1
 	pxor T1, DATA
-	ret
+	RET
 ENDPROC(__clmul_gf128mul_ble)
 
 /* void clmul_ghash_mul(char *dst, const be128 *shash) */
 ENTRY(clmul_ghash_mul)
+	FRAME_BEGIN
 	movups (%rdi), DATA
 	movups (%rsi), SHASH
 	movaps .Lbswap_mask, BSWAP
@@ -105,7 +107,8 @@ ENTRY(clmul_ghash_mul)
 	call __clmul_gf128mul_ble
 	PSHUFB_XMM BSWAP DATA
 	movups DATA, (%rdi)
-	ret
+	FRAME_END
+	RET
 ENDPROC(clmul_ghash_mul)
 
 /*
@@ -113,6 +116,7 @@ ENDPROC(clmul_ghash_mul)
  *			   const be128 *shash);
  */
 ENTRY(clmul_ghash_update)
+	FRAME_BEGIN
 	cmp $16, %rdx
 	jb .Lupdate_just_ret	# check length
 	movaps .Lbswap_mask, BSWAP
@@ -132,7 +136,8 @@ ENTRY(clmul_ghash_update)
 	PSHUFB_XMM BSWAP DATA
 	movups DATA, (%rdi)
 .Lupdate_just_ret:
-	ret
+	FRAME_END
+	RET
 ENDPROC(clmul_ghash_update)
 
 /*
@@ -157,5 +162,5 @@ ENTRY(clmul_ghash_setkey)
 	pand .Lpoly, %xmm1
 	pxor %xmm1, %xmm0
 	movups %xmm0, (%rdi)
-	ret
+	RET
 ENDPROC(clmul_ghash_setkey)

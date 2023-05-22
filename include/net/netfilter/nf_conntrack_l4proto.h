@@ -23,10 +23,13 @@ struct nf_conntrack_l4proto {
 	/* L4 Protocol number. */
 	u_int8_t l4proto;
 
+	/* Resolve clashes on insertion races. */
+	bool allow_clash;
+
 	/* Try to fill in the third arg: dataoff is offset past network protocol
            hdr.  Return true if possible. */
 	bool (*pkt_to_tuple)(const struct sk_buff *skb, unsigned int dataoff,
-			     struct nf_conntrack_tuple *tuple);
+			     struct net *net, struct nf_conntrack_tuple *tuple);
 
 	/* Invert the per-proto part of the tuple: ie. turn xmit into reply.
 	 * Some packets can't be inverted: return 0 in that case.
@@ -52,7 +55,7 @@ struct nf_conntrack_l4proto {
 	void (*destroy)(struct nf_conn *ct);
 
 	int (*error)(struct net *net, struct nf_conn *tmpl, struct sk_buff *skb,
-		     unsigned int dataoff, enum ip_conntrack_info *ctinfo,
+		     unsigned int dataoff,
 		     u_int8_t pf, unsigned int hooknum);
 
 	/* Print out the per-protocol part of the tuple. Return like seq_* */
@@ -114,22 +117,32 @@ extern struct nf_conntrack_l4proto nf_conntrack_l4proto_generic;
 
 #define MAX_NF_CT_PROTO 256
 
-extern struct nf_conntrack_l4proto *
-__nf_ct_l4proto_find(u_int16_t l3proto, u_int8_t l4proto);
+struct nf_conntrack_l4proto *__nf_ct_l4proto_find(u_int16_t l3proto,
+						  u_int8_t l4proto);
 
-extern struct nf_conntrack_l4proto *
-nf_ct_l4proto_find_get(u_int16_t l3proto, u_int8_t l4proto);
-extern void nf_ct_l4proto_put(struct nf_conntrack_l4proto *p);
+struct nf_conntrack_l4proto *nf_ct_l4proto_find_get(u_int16_t l3proto,
+						    u_int8_t l4proto);
+void nf_ct_l4proto_put(struct nf_conntrack_l4proto *p);
 
 /* Protocol pernet registration. */
-extern int nf_ct_l4proto_pernet_register(struct net *net,
+int nf_ct_l4proto_pernet_register_one(struct net *net,
+				      struct nf_conntrack_l4proto *proto);
+void nf_ct_l4proto_pernet_unregister_one(struct net *net,
 					 struct nf_conntrack_l4proto *proto);
-extern void nf_ct_l4proto_pernet_unregister(struct net *net,
-					    struct nf_conntrack_l4proto *proto);
+int nf_ct_l4proto_pernet_register(struct net *net,
+				  struct nf_conntrack_l4proto *proto[],
+				  unsigned int num_proto);
+void nf_ct_l4proto_pernet_unregister(struct net *net,
+				     struct nf_conntrack_l4proto *proto[],
+				     unsigned int num_proto);
 
 /* Protocol global registration. */
-extern int nf_ct_l4proto_register(struct nf_conntrack_l4proto *proto);
-extern void nf_ct_l4proto_unregister(struct nf_conntrack_l4proto *proto);
+int nf_ct_l4proto_register_one(struct nf_conntrack_l4proto *proto);
+void nf_ct_l4proto_unregister_one(struct nf_conntrack_l4proto *proto);
+int nf_ct_l4proto_register(struct nf_conntrack_l4proto *proto[],
+			   unsigned int num_proto);
+void nf_ct_l4proto_unregister(struct nf_conntrack_l4proto *proto[],
+			      unsigned int num_proto);
 
 static inline void nf_ct_kfree_compat_sysctl_table(struct nf_proto_net *pn)
 {
@@ -140,24 +153,17 @@ static inline void nf_ct_kfree_compat_sysctl_table(struct nf_proto_net *pn)
 }
 
 /* Generic netlink helpers */
-extern int nf_ct_port_tuple_to_nlattr(struct sk_buff *skb,
-				      const struct nf_conntrack_tuple *tuple);
-extern int nf_ct_port_nlattr_to_tuple(struct nlattr *tb[],
-				      struct nf_conntrack_tuple *t);
-extern int nf_ct_port_nlattr_tuple_size(void);
+int nf_ct_port_tuple_to_nlattr(struct sk_buff *skb,
+			       const struct nf_conntrack_tuple *tuple);
+int nf_ct_port_nlattr_to_tuple(struct nlattr *tb[],
+			       struct nf_conntrack_tuple *t);
+int nf_ct_port_nlattr_tuple_size(void);
 extern const struct nla_policy nf_ct_port_nla_policy[];
 
 #ifdef CONFIG_SYSCTL
-#ifdef DEBUG_INVALID_PACKETS
 #define LOG_INVALID(net, proto)				\
 	((net)->ct.sysctl_log_invalid == (proto) ||	\
 	 (net)->ct.sysctl_log_invalid == IPPROTO_RAW)
-#else
-#define LOG_INVALID(net, proto)				\
-	(((net)->ct.sysctl_log_invalid == (proto) ||	\
-	  (net)->ct.sysctl_log_invalid == IPPROTO_RAW)	\
-	 && net_ratelimit())
-#endif
 #else
 static inline int LOG_INVALID(struct net *net, int proto) { return 0; }
 #endif /* CONFIG_SYSCTL */

@@ -885,7 +885,7 @@ isdn_net_log_skb(struct sk_buff *skb, isdn_net_local *lp)
 
 	addinfo[0] = '\0';
 	/* This check stolen from 2.1.72 dev_queue_xmit_nit() */
-	if (p < skb->data || skb->network_header >= skb->tail) {
+	if (p < skb->data || skb_network_header(skb) >= skb_tail_pointer(skb)) {
 		/* fall back to old isdn_net_log_packet method() */
 		char *buf = skb->data;
 
@@ -1153,7 +1153,7 @@ static void isdn_net_tx_timeout(struct net_device *ndev)
 		 * ever called   --KG
 		 */
 	}
-	ndev->trans_start = jiffies;
+	netif_trans_update(ndev);
 	netif_wake_queue(ndev);
 }
 
@@ -1291,7 +1291,7 @@ isdn_net_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 			}
 		} else {
 			/* Device is connected to an ISDN channel */
-			ndev->trans_start = jiffies;
+			netif_trans_update(ndev);
 			if (!lp->dialstate) {
 				/* ISDN connection is established, try sending */
 				int ret;

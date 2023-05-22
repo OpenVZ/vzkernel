@@ -352,9 +352,9 @@ EXPORT_SYMBOL(caif_enroll_dev);
 
 /* notify Caif of device events */
 static int caif_device_notify(struct notifier_block *me, unsigned long what,
-			      void *arg)
+			      void *ptr)
 {
-	struct net_device *dev = arg;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct caif_device_entry *caifd = NULL;
 	struct caif_dev_common *caifdev;
 	struct cfcnfg *cfg;
@@ -556,7 +556,7 @@ static int __init caif_device_init(void)
 	if (result)
 		return result;
 
-	register_netdevice_notifier(&caif_device_notifier);
+	register_netdevice_notifier_rh(&caif_device_notifier);
 	dev_add_pack(&caif_packet_type);
 
 	return result;
@@ -564,7 +564,7 @@ static int __init caif_device_init(void)
 
 static void __exit caif_device_exit(void)
 {
-	unregister_netdevice_notifier(&caif_device_notifier);
+	unregister_netdevice_notifier_rh(&caif_device_notifier);
 	dev_remove_pack(&caif_packet_type);
 	unregister_pernet_subsys(&caif_net_ops);
 }

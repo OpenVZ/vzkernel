@@ -9,6 +9,7 @@
 #include <linux/compiler.h>
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
+#include <linux/nospec.h>
 #include <linux/types.h>
 #include <linux/init.h>
 #include <linux/fs.h>
@@ -26,7 +27,14 @@ struct fdtable {
 	struct file __rcu **fd;      /* current fd array */
 	unsigned long *close_on_exec;
 	unsigned long *open_fds;
+#ifdef __GENKSYMS__
 	struct rcu_head rcu;
+#else
+	union {
+		struct rcu_head rcu;
+		unsigned long *full_fds_bits;
+	};
+#endif
 };
 
 static inline bool close_on_exec(int fd, const struct fdtable *fdt)
@@ -47,6 +55,7 @@ struct files_struct {
    * read mostly part
    */
 	atomic_t count;
+	RH_KABI_FILL_HOLE(bool resize_in_progress)
 	struct fdtable __rcu *fdt;
 	struct fdtable fdtab;
   /*
@@ -57,31 +66,40 @@ struct files_struct {
 	unsigned long close_on_exec_init[1];
 	unsigned long open_fds_init[1];
 	struct file __rcu * fd_array[NR_OPEN_DEFAULT];
+	RH_KABI_EXTEND(unsigned long full_fds_bits_init[1])
+	RH_KABI_EXTEND(wait_queue_head_t resize_wait)
 };
-
-#define rcu_dereference_check_fdtable(files, fdtfd) \
-	(rcu_dereference_check((fdtfd), \
-			       lockdep_is_held(&(files)->file_lock) || \
-			       atomic_read(&(files)->count) == 1 || \
-			       rcu_my_thread_group_empty()))
-
-#define files_fdtable(files) \
-		(rcu_dereference_check_fdtable((files), (files)->fdt))
 
 struct file_operations;
 struct vfsmount;
 struct dentry;
 
-extern void __init files_defer_init(void);
+#define rcu_dereference_check_fdtable(files, fdtfd) \
+	rcu_dereference_check((fdtfd), lockdep_is_held(&(files)->file_lock))
 
-static inline struct file * fcheck_files(struct files_struct *files, unsigned int fd)
+#define files_fdtable(files) \
+	rcu_dereference_check_fdtable((files), (files)->fdt)
+
+/*
+ * The caller must ensure that fd table isn't shared or hold rcu or file lock
+ */
+static inline struct file *__fcheck_files(struct files_struct *files, unsigned int fd)
 {
-	struct file * file = NULL;
-	struct fdtable *fdt = files_fdtable(files);
+	struct fdtable *fdt = rcu_dereference_raw(files->fdt);
 
-	if (fd < fdt->max_fds)
-		file = rcu_dereference_check_fdtable(files, fdt->fd[fd]);
-	return file;
+	if (fd < fdt->max_fds) {
+		fd = array_index_nospec(fd, fdt->max_fds);
+		return rcu_dereference_raw(fdt->fd[fd]);
+	}
+	return NULL;
+}
+
+static inline struct file *fcheck_files(struct files_struct *files, unsigned int fd)
+{
+	rcu_lockdep_assert(rcu_read_lock_held() ||
+			   lockdep_is_held(&files->file_lock),
+			   "suspicious rcu_dereference_check() usage");
+	return __fcheck_files(files, fd);
 }
 
 /*

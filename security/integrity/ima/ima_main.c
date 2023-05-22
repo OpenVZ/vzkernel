@@ -24,6 +24,7 @@
 #include <linux/slab.h>
 #include <linux/xattr.h>
 #include <linux/ima.h>
+#include <crypto/hash_info.h>
 
 #include "ima.h"
 
@@ -35,11 +36,12 @@ int ima_appraise = IMA_APPRAISE_ENFORCE;
 int ima_appraise;
 #endif
 
-char *ima_hash = "sha1";
+int ima_hash_algo = HASH_ALGO_SHA1;
+
 static int __init hash_setup(char *str)
 {
 	if (strncmp(str, "md5", 3) == 0)
-		ima_hash = "md5";
+		ima_hash_algo = HASH_ALGO_MD5;
 	return 1;
 }
 __setup("ima_hash=", hash_setup);
@@ -57,7 +59,7 @@ __setup("ima_hash=", hash_setup);
 static void ima_rdwr_violation_check(struct file *file)
 {
 	struct dentry *dentry = file->f_path.dentry;
-	struct inode *inode = dentry->d_inode;
+	struct inode *inode = file_inode(file);
 	fmode_t mode = file->f_mode;
 	int must_measure;
 	bool send_tomtou = false, send_writers = false;
@@ -279,12 +281,14 @@ EXPORT_SYMBOL_GPL(ima_file_check);
  */
 int ima_module_check(struct file *file)
 {
+	bool sig_enforce = is_module_sig_enforced();
+
 	if (!file) {
-#ifndef CONFIG_MODULE_SIG_FORCE
-		if ((ima_appraise & IMA_APPRAISE_MODULES) &&
-		    (ima_appraise & IMA_APPRAISE_ENFORCE))
+		if (!sig_enforce && (ima_appraise & IMA_APPRAISE_MODULES) &&
+		    (ima_appraise & IMA_APPRAISE_ENFORCE)) {
+			pr_err("impossible to appraise a module without a file descriptor. sig_enforce kernel parameter might help\n");
 			return -EACCES;	/* INTEGRITY_UNKNOWN */
-#endif
+		}
 		return 0;	/* We rely on module signature checking */
 	}
 	return process_measurement(file, NULL, MAY_EXEC, MODULE_CHECK);
@@ -295,8 +299,14 @@ static int __init init_ima(void)
 	int error;
 
 	error = ima_init();
-	if (!error)
-		ima_initialized = 1;
+	if (error)
+		goto out;
+
+	error = ima_init_keyring(INTEGRITY_KEYRING_IMA);
+	if (error)
+		goto out;
+	ima_initialized = 1;
+out:
 	return error;
 }
 

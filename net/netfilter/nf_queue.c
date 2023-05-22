@@ -10,6 +10,7 @@
 #include <linux/proc_fs.h>
 #include <linux/skbuff.h>
 #include <linux/netfilter.h>
+#include <linux/netfilter_bridge.h>
 #include <linux/seq_file.h>
 #include <linux/rcupdate.h>
 #include <net/protocol.h>
@@ -47,48 +48,70 @@ EXPORT_SYMBOL(nf_unregister_queue_handler);
 
 void nf_queue_entry_release_refs(struct nf_queue_entry *entry)
 {
-	/* Release those devices we held, or Alexey will kill me. */
-	if (entry->indev)
-		dev_put(entry->indev);
-	if (entry->outdev)
-		dev_put(entry->outdev);
-#ifdef CONFIG_BRIDGE_NETFILTER
-	if (entry->skb->nf_bridge) {
-		struct nf_bridge_info *nf_bridge = entry->skb->nf_bridge;
+	struct nf_hook_state *state = &entry->state;
 
-		if (nf_bridge->physindev)
-			dev_put(nf_bridge->physindev);
-		if (nf_bridge->physoutdev)
-			dev_put(nf_bridge->physoutdev);
-	}
+	/* Release those devices we held, or Alexey will kill me. */
+	if (state->in)
+		dev_put(state->in);
+	if (state->out)
+		dev_put(state->out);
+	if (state->sk)
+		sock_put(state->sk);
+#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
+	if (entry->physin)
+		dev_put(entry->physin);
+	if (entry->physout)
+		dev_put(entry->physout);
 #endif
 	/* Drop reference to owner of hook which queued us. */
 	module_put(entry->elem->owner);
 }
 EXPORT_SYMBOL_GPL(nf_queue_entry_release_refs);
 
+void nf_queue_entry_free(struct nf_queue_entry *entry)
+{
+	nf_queue_entry_release_refs(entry);
+	kfree(entry);
+}
+EXPORT_SYMBOL_GPL(nf_queue_entry_free);
+
+static void __nf_queue_entry_init_physdevs(struct nf_queue_entry *entry)
+{
+#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
+	const struct sk_buff *skb = entry->skb;
+	struct nf_bridge_info *nf_bridge;
+
+	nf_bridge = skb->nf_bridge;
+	if (nf_bridge) {
+		entry->physin = nf_bridge_get_physindev(skb);
+		entry->physout = nf_bridge_get_physoutdev(skb);
+	} else {
+		entry->physin = NULL;
+		entry->physout = NULL;
+	}
+#endif
+}
+
 /* Bump dev refs so they don't vanish while packet is out */
 bool nf_queue_entry_get_refs(struct nf_queue_entry *entry)
 {
+	struct nf_hook_state *state = &entry->state;
+
 	if (!try_module_get(entry->elem->owner))
 		return false;
 
-	if (entry->indev)
-		dev_hold(entry->indev);
-	if (entry->outdev)
-		dev_hold(entry->outdev);
-#ifdef CONFIG_BRIDGE_NETFILTER
-	if (entry->skb->nf_bridge) {
-		struct nf_bridge_info *nf_bridge = entry->skb->nf_bridge;
-		struct net_device *physdev;
+	if (state->in)
+		dev_hold(state->in);
+	if (state->out)
+		dev_hold(state->out);
+	if (state->sk)
+		sock_hold(state->sk);
 
-		physdev = nf_bridge->physindev;
-		if (physdev)
-			dev_hold(physdev);
-		physdev = nf_bridge->physoutdev;
-		if (physdev)
-			dev_hold(physdev);
-	}
+#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
+	if (entry->physin)
+		dev_hold(entry->physin);
+	if (entry->physout)
+		dev_hold(entry->physout);
 #endif
 
 	return true;
@@ -100,12 +123,9 @@ EXPORT_SYMBOL_GPL(nf_queue_entry_get_refs);
  * through nf_reinject().
  */
 int nf_queue(struct sk_buff *skb,
-		      struct nf_hook_ops *elem,
-		      u_int8_t pf, unsigned int hook,
-		      struct net_device *indev,
-		      struct net_device *outdev,
-		      int (*okfn)(struct sk_buff *),
-		      unsigned int queuenum)
+	     struct nf_hook_ops *elem,
+	     struct nf_hook_state *state,
+	     unsigned int queuenum)
 {
 	int status = -ENOENT;
 	struct nf_queue_entry *entry = NULL;
@@ -121,7 +141,7 @@ int nf_queue(struct sk_buff *skb,
 		goto err_unlock;
 	}
 
-	afinfo = nf_get_afinfo(pf);
+	afinfo = nf_get_afinfo(state->pf);
 	if (!afinfo)
 		goto err_unlock;
 
@@ -134,13 +154,11 @@ int nf_queue(struct sk_buff *skb,
 	*entry = (struct nf_queue_entry) {
 		.skb	= skb,
 		.elem	= elem,
-		.pf	= pf,
-		.hook	= hook,
-		.indev	= indev,
-		.outdev	= outdev,
-		.okfn	= okfn,
+		.state	= *state,
 		.size	= sizeof(*entry) + afinfo->route_key_size,
 	};
+
+	__nf_queue_entry_init_physdevs(entry);
 
 	if (!nf_queue_entry_get_refs(entry)) {
 		status = -ECANCELED;
@@ -175,8 +193,6 @@ void nf_reinject(struct nf_queue_entry *entry, unsigned int verdict)
 
 	rcu_read_lock();
 
-	nf_queue_entry_release_refs(entry);
-
 	/* Continue traversal iff userspace said ok... */
 	if (verdict == NF_REPEAT) {
 		elem = list_entry(elem->list.prev, struct nf_hook_ops, list);
@@ -184,30 +200,29 @@ void nf_reinject(struct nf_queue_entry *entry, unsigned int verdict)
 	}
 
 	if (verdict == NF_ACCEPT) {
-		afinfo = nf_get_afinfo(entry->pf);
+		afinfo = nf_get_afinfo(entry->state.pf);
 		if (!afinfo || afinfo->reroute(skb, entry) < 0)
 			verdict = NF_DROP;
 	}
 
+	entry->state.thresh = INT_MIN;
+
 	if (verdict == NF_ACCEPT) {
 	next_hook:
-		verdict = nf_iterate(&nf_hooks[entry->pf][entry->hook],
-				     skb, entry->hook,
-				     entry->indev, entry->outdev, &elem,
-				     entry->okfn, INT_MIN);
+		verdict = nf_iterate(&nf_hooks[entry->state.pf][entry->state.hook],
+				     skb, &entry->state, &elem);
 	}
 
 	switch (verdict & NF_VERDICT_MASK) {
 	case NF_ACCEPT:
 	case NF_STOP:
 		local_bh_disable();
-		entry->okfn(skb);
+		entry->state.okfn(entry->state.sk, skb);
 		local_bh_enable();
 		break;
 	case NF_QUEUE:
-		err = nf_queue(skb, elem, entry->pf, entry->hook,
-				entry->indev, entry->outdev, entry->okfn,
-				verdict >> NF_VERDICT_QBITS);
+		err = nf_queue(skb, elem, &entry->state,
+			       verdict >> NF_VERDICT_QBITS);
 		if (err < 0) {
 			if (err == -ECANCELED)
 				goto next_hook;
@@ -223,6 +238,6 @@ void nf_reinject(struct nf_queue_entry *entry, unsigned int verdict)
 		kfree_skb(skb);
 	}
 	rcu_read_unlock();
-	kfree(entry);
+	nf_queue_entry_free(entry);
 }
 EXPORT_SYMBOL(nf_reinject);

@@ -36,16 +36,25 @@ KBUILD_DEFCONFIG := ppc64_defconfig
 endif
 
 ifeq ($(CONFIG_PPC64),y)
-OLDARCH	:= ppc64
-
 new_nm := $(shell if $(NM) --help 2>&1 | grep -- '--synthetic' > /dev/null; then echo y; else echo n; fi)
 
 ifeq ($(new_nm),y)
 NM		:= $(NM) --synthetic
 endif
+endif
 
+ifeq ($(CONFIG_PPC64),y)
+ifeq ($(CONFIG_CPU_LITTLE_ENDIAN),y)
+OLDARCH	:= ppc64le
+else
+OLDARCH	:= ppc64
+endif
+else
+ifeq ($(CONFIG_CPU_LITTLE_ENDIAN),y)
+OLDARCH	:= ppcle
 else
 OLDARCH	:= ppc
+endif
 endif
 
 # It seems there are times we use this Makefile without
@@ -56,11 +65,32 @@ endif
 
 UTS_MACHINE := $(OLDARCH)
 
+ifeq ($(CONFIG_CPU_LITTLE_ENDIAN),y)
+override CC	+= -mlittle-endian -mno-strict-align
+override AS	+= -mlittle-endian
+override LD	+= -EL
+override CROSS32CC += -mlittle-endian
+override CROSS32AS += -mlittle-endian
+LDEMULATION	:= lppc
+GNUTARGET	:= powerpcle
+MULTIPLEWORD	:= -mno-multiple
+KBUILD_CFLAGS_MODULE += $(call cc-option,-mno-save-toc-indirect)
+else
+ifeq ($(call cc-option-yn,-mbig-endian),y)
+override CC	+= -mbig-endian
+override AS	+= -mbig-endian
+endif
+override LD	+= -EB
+LDEMULATION	:= ppc
+GNUTARGET	:= powerpc
+MULTIPLEWORD	:= -mmultiple
+endif
+
 ifeq ($(HAS_BIARCH),y)
 override AS	+= -a$(CONFIG_WORD_SIZE)
-override LD	+= -m elf$(CONFIG_WORD_SIZE)ppc
+override LD	+= -m elf$(CONFIG_WORD_SIZE)$(LDEMULATION)
 override CC	+= -m$(CONFIG_WORD_SIZE)
-override AR	:= GNUTARGET=elf$(CONFIG_WORD_SIZE)-powerpc $(AR)
+override AR	:= GNUTARGET=elf$(CONFIG_WORD_SIZE)-$(GNUTARGET) $(AR)
 endif
 
 LDFLAGS_vmlinux-y := -Bstatic
@@ -83,22 +113,55 @@ else
 endif
 endif
 
-CFLAGS-$(CONFIG_PPC64)	:= -mtraceback=no -mcall-aixdesc
+CFLAGS-$(CONFIG_PPC64)	:= -mtraceback=no
+ifeq ($(CONFIG_CPU_LITTLE_ENDIAN),y)
+CFLAGS-$(CONFIG_PPC64)	+= $(call cc-option,-mabi=elfv2,-mcall-aixdesc)
+AFLAGS-$(CONFIG_PPC64)	+= $(call cc-option,-mabi=elfv2)
+else
+CFLAGS-$(CONFIG_PPC64)	+= -mcall-aixdesc
+endif
 CFLAGS-$(CONFIG_PPC64)	+= $(call cc-option,-mcmodel=medium,-mminimal-toc)
 CFLAGS-$(CONFIG_PPC64)	+= $(call cc-option,-mno-pointers-to-nested-functions)
-CFLAGS-$(CONFIG_PPC32)	:= -ffixed-r2 -mmultiple
+CFLAGS-$(CONFIG_PPC32)	:= -ffixed-r2 $(MULTIPLEWORD)
 
+ifeq ($(CONFIG_PPC_BOOK3S_64),y)
 CFLAGS-$(CONFIG_GENERIC_CPU) += $(call cc-option,-mtune=power7,-mtune=power4)
+else
+CFLAGS-$(CONFIG_GENERIC_CPU) += -mcpu=powerpc64
+endif
+
+ifdef CONFIG_MPROFILE_KERNEL
+    ifeq ($(shell $(srctree)/arch/powerpc/scripts/gcc-check-mprofile-kernel.sh $(CC) -I$(srctree)/include -D__KERNEL__),OK)
+        CC_FLAGS_FTRACE := -pg -mprofile-kernel
+        KBUILD_CPPFLAGS += -DCC_USING_MPROFILE_KERNEL
+    else
+        # If the user asked for mprofile-kernel but the toolchain doesn't
+        # support it, emit a warning and deliberately break the build later
+        # with mprofile-kernel-not-supported. We would prefer to make this an
+        # error right here, but then the user would never be able to run
+        # oldconfig to change their configuration.
+        $(warning Compiler does not support mprofile-kernel, set CONFIG_DISABLE_MPROFILE_KERNEL)
+        CC_FLAGS_FTRACE := -mprofile-kernel-not-supported
+    endif
+endif
+
 CFLAGS-$(CONFIG_CELL_CPU) += $(call cc-option,-mcpu=cell)
 CFLAGS-$(CONFIG_POWER4_CPU) += $(call cc-option,-mcpu=power4)
 CFLAGS-$(CONFIG_POWER5_CPU) += $(call cc-option,-mcpu=power5)
 CFLAGS-$(CONFIG_POWER6_CPU) += $(call cc-option,-mcpu=power6)
 CFLAGS-$(CONFIG_POWER7_CPU) += $(call cc-option,-mcpu=power7)
+CFLAGS-$(CONFIG_POWER8_CPU) += $(call cc-option,-mcpu=power8)
+
+E5500_CPU := $(call cc-option,-mcpu=e500mc64,-mcpu=powerpc64)
+CFLAGS-$(CONFIG_E5500_CPU) += $(E5500_CPU)
+CFLAGS-$(CONFIG_E6500_CPU) += $(call cc-option,-mcpu=e6500,$(E5500_CPU))
 
 CFLAGS-$(CONFIG_TUNE_CELL) += $(call cc-option,-mtune=cell)
 
-KBUILD_CPPFLAGS	+= -Iarch/$(ARCH)
-KBUILD_AFLAGS	+= -Iarch/$(ARCH)
+asinstr := $(call as-instr,lis 9$(comma)foo@high,-DHAVE_AS_ATHIGH=1)
+
+KBUILD_CPPFLAGS	+= -Iarch/$(ARCH) $(asinstr)
+KBUILD_AFLAGS	+= -Iarch/$(ARCH) $(AFLAGS-y)
 KBUILD_CFLAGS	+= -msoft-float -pipe -Iarch/$(ARCH) $(CFLAGS-y)
 CPP		= $(CC) -E $(KBUILD_CFLAGS)
 
