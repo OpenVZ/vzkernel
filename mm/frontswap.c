@@ -151,6 +151,7 @@ void frontswap_register_ops(struct frontswap_ops *ops)
 		}
 	}
 }
+EXPORT_SYMBOL(frontswap_register_ops);
 
 /*
  * Called when a swap device is swapon'd.
@@ -188,6 +189,7 @@ bool __frontswap_test(struct swap_info_struct *sis,
 		return test_bit(offset, sis->frontswap_map);
 	return false;
 }
+EXPORT_SYMBOL(__frontswap_test);
 
 static inline void __frontswap_set(struct swap_info_struct *sis,
 				   pgoff_t offset)
@@ -250,6 +252,7 @@ int __frontswap_store(struct page *page)
 
 	return ret;
 }
+EXPORT_SYMBOL(__frontswap_store);
 
 /*
  * "Get" data from frontswap associated with swaptype and offset that were
@@ -282,6 +285,7 @@ int __frontswap_load(struct page *page)
 		inc_frontswap_loads();
 	return ret;
 }
+EXPORT_SYMBOL(__frontswap_load);
 
 /*
  * Invalidate any data from frontswap associated with the specified swaptype
@@ -303,6 +307,7 @@ void __frontswap_invalidate_page(unsigned type, pgoff_t offset)
 	__frontswap_clear(sis, offset);
 	inc_frontswap_invalidates();
 }
+EXPORT_SYMBOL(__frontswap_invalidate_page);
 
 /*
  * Invalidate all data from frontswap associated with all offsets for the
@@ -324,6 +329,7 @@ void __frontswap_invalidate_area(unsigned type)
 	atomic_set(&sis->frontswap_pages, 0);
 	bitmap_zero(sis->frontswap_map, sis->max);
 }
+EXPORT_SYMBOL(__frontswap_invalidate_area);
 
 static int __init init_frontswap(void)
 {
