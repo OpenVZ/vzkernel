@@ -18,6 +18,7 @@
 #include <linux/swap.h>
 #include <linux/prefetch.h>
 #include <linux/uio.h>
+#include <linux/cleancache.h>
 #include <linux/sched/signal.h>
 #include <linux/fiemap.h>
 
@@ -2015,6 +2016,12 @@ got_it:
 		block_nr = map->m_pblk + block_in_file - map->m_lblk;
 		SetPageMappedToDisk(page);
 
+		if (!PageUptodate(page) && (!PageSwapCache(page) &&
+					!cleancache_get_page(page))) {
+			SetPageUptodate(page);
+			goto confused;
+		}
+
 		if (!f2fs_is_valid_blkaddr(F2FS_I_SB(inode), block_nr,
 						DATA_GENERIC_ENHANCE_READ)) {
 			ret = -EFSCORRUPTED;
@@ -2070,6 +2077,12 @@ submit_and_realloc:
 	ClearPageError(page);
 	*last_block_in_bio = block_nr;
 	goto out;
+confused:
+	if (bio) {
+		__submit_bio(F2FS_I_SB(inode), bio, DATA);
+		bio = NULL;
+	}
+	unlock_page(page);
 out:
 	*bio_ret = bio;
 	return ret;
