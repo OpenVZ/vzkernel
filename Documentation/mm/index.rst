@@ -42,6 +42,7 @@ above structured documentation, or deleted if it has served its purpose.
    active_mm
    arch_pgtable_helpers
    balance
+   cleancache
    damon/index
    free_page_reporting
    frontswap
