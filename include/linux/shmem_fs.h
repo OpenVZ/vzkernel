@@ -84,7 +84,8 @@ extern void shmem_unlock_mapping(struct address_space *mapping);
 extern struct page *shmem_read_mapping_page_gfp(struct address_space *mapping,
 					pgoff_t index, gfp_t gfp_mask);
 extern void shmem_truncate_range(struct inode *inode, loff_t start, loff_t end);
-int shmem_unuse(unsigned int type);
+extern int shmem_unuse(unsigned int type, bool frontswap,
+		       unsigned long *fs_pages_to_unuse);
 
 extern bool shmem_is_huge(struct vm_area_struct *vma,
 			  struct inode *inode, pgoff_t index);
