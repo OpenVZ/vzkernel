@@ -18,6 +18,7 @@ struct frontswap_ops {
 
 extern void frontswap_register_ops(struct frontswap_ops *ops);
 
+extern bool __frontswap_test(struct swap_info_struct *, pgoff_t);
 extern void frontswap_init(unsigned type, unsigned long *map);
 extern int __frontswap_store(struct page *page);
 extern int __frontswap_load(struct page *page);
@@ -30,6 +31,11 @@ extern struct static_key_false frontswap_enabled_key;
 static inline bool frontswap_enabled(void)
 {
 	return static_branch_unlikely(&frontswap_enabled_key);
+}
+
+static inline bool frontswap_test(struct swap_info_struct *sis, pgoff_t offset)
+{
+	return __frontswap_test(sis, offset);
 }
 
 static inline void frontswap_map_set(struct swap_info_struct *p,
@@ -46,6 +52,11 @@ static inline unsigned long *frontswap_map_get(struct swap_info_struct *p)
 /* all inline routines become no-ops and all externs are ignored */
 
 static inline bool frontswap_enabled(void)
+{
+	return false;
+}
+
+static inline bool frontswap_test(struct swap_info_struct *sis, pgoff_t offset)
 {
 	return false;
 }
