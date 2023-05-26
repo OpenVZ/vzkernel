@@ -1050,17 +1050,19 @@ static int ploop_allocate_cluster(struct ploop *ploop, u32 *dst_clu)
 	if (pos < top->file_preallocated_area_start) {
 		/* Clu at @pos may contain dirty data */
 		off = min_t(loff_t, old_size, end);
-		if (!ploop->falloc_new_clu) {
+		if (!ploop->falloc_new_clu)
 			ret = ploop_punch_hole(file, pos, off - pos);
-			if (unlikely(ret == -EOPNOTSUPP)) {
+		else
+			ret = ploop_zero_range(file, pos, off - pos);
+		if (ret) {
+			if (ret != -EOPNOTSUPP)
+				PL_ERR("punch/zero area: %d", ret);
+			else if (ploop->falloc_new_clu)
+				PL_ERR_ONCE("zero range unsupported");
+			else if (!ploop->falloc_new_clu) {
 				ploop->falloc_new_clu = 1;
 				PL_WARN("punch hole unsupported - disabling");
 			}
-		} else
-			ret = ploop_zero_range(file, pos, off - pos);
-		if (ret) {
-			if (printk_ratelimit())
-				PL_ERR("punch/zero area: %d", ret);
 			return ret;
 		}
 	}
