@@ -197,6 +197,7 @@ int vz_security_family_check(struct net *net, int family, int type)
 	case PF_INET6:
 	case PF_PPPOX:
 	case PF_KEY:
+	case PF_ALG:
 		return 0;
 	case PF_BRIDGE:
 		switch (type) {
