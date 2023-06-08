@@ -966,17 +966,23 @@ static int kaio_open(struct ploop_io * io)
 	io->files.bdev = io->files.inode->i_sb->s_bdev;
 
 	err = io->ops->sync(io);
-	if (err)
+	if (err) {
+		PL_WARN(delta->plo, "open failed to sync err=%d\n", err);
 		return err;
+	}
 
 	mutex_lock(&io->files.inode->i_mutex);
 	err = kaio_invalidate_cache(io);
-	if (!err)
+	if (err)
+		PL_WARN(delta->plo, "invaldiate_cache failed err=%d\n", err);
+	else
 		err = ploop_kaio_open(file, delta->flags & PLOOP_FMT_RDONLY);
 	mutex_unlock(&io->files.inode->i_mutex);
 
-	if (err)
+	if (err) {
+		PL_WARN(delta->plo, "open failed err=%d\n", err);
 		return err;
+	}
 
 	io->files.em_tree = &dummy_em_tree;
 
@@ -988,6 +994,7 @@ static int kaio_open(struct ploop_io * io)
 			err = PTR_ERR(io->fsync_thread);
 			io->fsync_thread = NULL;
 			ploop_kaio_close(io->files.mapping, 0);
+			PL_WARN(delta->plo, "fsync thread start failed=%d\n", err);
 			return err;
 		}
 
