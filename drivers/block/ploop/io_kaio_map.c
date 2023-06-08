@@ -35,10 +35,13 @@ int ploop_kaio_open(struct file * file, int rdonly)
 				else
 					m->readers++;
 			} else {
-				if (m->readers)
+				if (m->readers) {
+					pr_warn("File is already active:%d\n",
+						m->readers);
 					err = -EBUSY;
-				else
+				} else {
 					m->readers = -1;
+				}
 			}
 			goto kaio_open_done;
 		}

@@ -3572,8 +3572,11 @@ static int ploop_replace_delta(struct ploop_device * plo, unsigned long arg)
 			   sizeof(struct ploop_ctl_chunk)))
 		return -EFAULT;
 
-	if (plo->maintenance_type != PLOOP_MNTN_OFF)
+	if (plo->maintenance_type != PLOOP_MNTN_OFF) {
+		if (printk_ratelimit())
+			PL_WARN(plo, "Attempt to replace while in maintenance mode\n");
 		return -EBUSY;
+	}
 
 	old_delta = find_delta(plo, ctl.pctl_level);
 	if (old_delta == NULL)
@@ -3585,6 +3588,10 @@ static int ploop_replace_delta(struct ploop_device * plo, unsigned long arg)
 	delta = init_delta(plo, &ctl, ctl.pctl_level);
 	if (IS_ERR(delta))
 		return PTR_ERR(delta);
+
+	WARN_ONCE(delta->ops != old_delta->ops,
+		  "New delta uses different io %p vs %p\n",
+		  delta->ops, old_delta->ops);
 
 	err = delta->ops->compose(delta, 1, &chunk);
 	if (err)
