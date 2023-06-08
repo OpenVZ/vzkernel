@@ -314,8 +314,10 @@ ploop1_open(struct ploop_delta * delta)
 	if (!(delta->flags & PLOOP_FMT_RDONLY)) {
 		pvd_header_set_disk_in_use(vh);
 		err = delta->io.ops->sync_write(&delta->io, ph->dyn_page, 4096, 0, 0);
-		if (err)
+		if (err) {
+			PL_ERR(delta->plo, "failed to update in use err=%d\n", err);
 			goto out_err;
+		}
 	}
 
 	delta->io.alloc_head = ph->alloc_head;
