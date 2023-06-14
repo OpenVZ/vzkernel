@@ -3601,27 +3601,24 @@ static int ploop_replace_delta(struct ploop_device * plo, unsigned long arg)
 	if (err)
 		goto out_destroy;
 
-	kobject_del(&old_delta->kobj);
-
-	err = KOBJECT_ADD(&delta->kobj, kobject_get(&plo->kobj),
-			  "%d", delta->level);
-	/* _put below is a pair for _get for OLD delta */
-	kobject_put(&plo->kobj);
-
-	if (err < 0) {
-		kobject_put(&plo->kobj);
-		goto out_close;
-	}
-
 	ploop_quiesce(plo);
 	if (delta->ops->replace_delta) {
 		err = delta->ops->replace_delta(delta);
 		if (err) {
 			ploop_relax(plo);
-			goto out_kobj_del;
+			goto out_close;
 		}
 	}
 
+	/* Remove old delta kobj to avoid name collision with the new one */
+	kobject_del(&old_delta->kobj);
+	err = KOBJECT_ADD(&delta->kobj, kobject_get(&plo->kobj),
+			  "%d", delta->level);
+	if (err < 0) {
+		/* _put for failed _ADD */
+		kobject_put(&plo->kobj);
+		goto out_kobj_restore;
+	}
 	ploop_map_destroy(&plo->map);
 	list_replace_init(&old_delta->list, &delta->list);
 	ploop_delta_list_changed(plo);
@@ -3639,11 +3636,14 @@ static int ploop_replace_delta(struct ploop_device * plo, unsigned long arg)
 	old_delta->ops->stop(old_delta);
 	old_delta->ops->destroy(old_delta);
 	kobject_put(&old_delta->kobj);
-	return 0;
-
-out_kobj_del:
-	kobject_del(&delta->kobj);
 	kobject_put(&plo->kobj);
+	return 0;
+out_kobj_restore:
+	/* we haven't dropped our plo->kobj ref just add back */
+	err = KOBJECT_ADD(&old_delta->kobj, &plo->kobj, "%d", old_delta->level);
+	if (err < 0)
+		/* Nothing we can do unfortunately */
+		PL_ERR(plo, "Failed to restore old delta kobject\n");
 out_close:
 	delta->ops->stop(delta);
 out_destroy:
@@ -3972,6 +3972,16 @@ static void renumber_deltas(struct ploop_device * plo)
 	}
 }
 
+/*
+ * Have to implement own version of kobject_rename since it is GPL only symbol
+ */
+static int ploop_rename_delta(struct ploop_delta *delta, int level, char *pref)
+{
+	kobject_del(&delta->kobj);
+	return KOBJECT_ADD(&delta->kobj, &delta->plo->kobj,
+			  "%s%d", pref ? : "", level);
+}
+
 static void rename_deltas(struct ploop_device * plo, int level)
 {
 	struct ploop_delta * delta;
@@ -3981,15 +3991,7 @@ static void rename_deltas(struct ploop_device * plo, int level)
 
 		if (delta->level < level)
 			continue;
-#if 0
-		/* Oops, kobject_rename() is not exported! */
-		sprintf(nname, "%d", delta->level);
-		err = kobject_rename(&delta->kobj, nname);
-#else
-		kobject_del(&delta->kobj);
-		err = KOBJECT_ADD(&delta->kobj, &plo->kobj,
-				  "%d", delta->level);
-#endif
+		err = ploop_rename_delta(delta, delta->level, NULL);
 		if (err)
 			PL_WARN(plo, "rename_deltas: %d %d %d\n", err, level, delta->level);
 	}
