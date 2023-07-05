@@ -176,6 +176,11 @@ enum mem_cgroup_events_target {
 #define SOFTLIMIT_EVENTS_TARGET 1024
 #define NUMAINFO_EVENTS_TARGET	1024
 
+struct mem_cgroup_id {
+	int id;
+	atomic_t ref;
+};
+
 static void mem_cgroup_id_put(struct mem_cgroup *memcg);
 
 struct mem_cgroup_stat_cpu {
@@ -302,7 +307,7 @@ struct mem_cgroup {
 	struct cgroup_subsys_state css;
 
 	/* Private memcg ID. Used to ID objects that outlive the cgroup */
-	unsigned short id;
+	struct mem_cgroup_id id;
 
 	/*
 	 * the counter to account for memory usage
@@ -6662,14 +6667,24 @@ unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
 {
 	if (mem_cgroup_disabled())
 		return 0;
-	return memcg->id;
+
+	return memcg->id.id;
+}
+
+static void mem_cgroup_id_get(struct mem_cgroup *memcg)
+{
+	atomic_inc(&memcg->id.ref);
 }
 
 static void mem_cgroup_id_put(struct mem_cgroup *memcg)
 {
-	idr_remove(&mem_cgroup_idr, memcg->id);
-	memcg->id = 0;
-	synchronize_rcu();
+	if (atomic_dec_and_test(&memcg->id.ref)) {
+		idr_remove(&mem_cgroup_idr, memcg->id.id);
+		memcg->id.id = 0;
+
+		/* Memcg ID pins CSS */
+		css_put(&memcg->css);
+	}
 }
 
 /**
@@ -6723,7 +6738,6 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 {
 	struct mem_cgroup *memcg;
 	size_t size;
-	int id;
 	int i, ret;
 	int node;
 
@@ -6734,13 +6748,11 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	if (!memcg)
 		return NULL;
 
-	id = idr_alloc(&mem_cgroup_idr, NULL,
+	memcg->id.id = idr_alloc(&mem_cgroup_idr, NULL,
 		       1, MEM_CGROUP_ID_MAX,
 		       GFP_KERNEL);
-	if (id < 0)
+	if (memcg->id.id < 0)
 		goto fail;
-
-	memcg->id = id;
 
 	memcg->stat = alloc_percpu(struct mem_cgroup_stat_cpu);
 	if (!memcg->stat)
@@ -6756,8 +6768,7 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 			goto out_pcpu_free;
 	}
 	spin_lock_init(&memcg->pcp_counter_lock);
-	idr_replace(&mem_cgroup_idr, memcg, memcg->id);
-	synchronize_rcu();
+	idr_replace(&mem_cgroup_idr, memcg, memcg->id.id);
 	return memcg;
 
 out_pcpu_free:
@@ -6769,10 +6780,8 @@ out_free:
 	for_each_node(node)
 		free_mem_cgroup_per_zone_info(memcg, node);
 
-	if (memcg->id > 0) {
-		idr_remove(&mem_cgroup_idr, memcg->id);
-		synchronize_rcu();
-	}
+	if (memcg->id.id > 0)
+		idr_remove(&mem_cgroup_idr, memcg->id.id);
 fail:
 	kfree(memcg);
 	return NULL;
@@ -6915,11 +6924,18 @@ mem_cgroup_css_online(struct cgroup *cont)
 {
 	struct mem_cgroup *memcg, *parent;
 
-	if (!cont->parent)
-		return 0;
-
 	mutex_lock(&memcg_create_mutex);
 	memcg = mem_cgroup_from_cont(cont);
+
+	/* Online state pins memcg ID, memcg ID pins CSS */
+	mem_cgroup_id_get(memcg);
+	css_get(&memcg->css);
+
+	if (!cont->parent) {
+		mutex_unlock(&memcg_create_mutex);
+		return 0;
+	}
+
 	parent = mem_cgroup_from_cont(cont->parent);
 
 	memcg->use_hierarchy = parent->use_hierarchy;
@@ -7035,6 +7051,8 @@ static void mem_cgroup_css_offline(struct cgroup *cont)
 	 * no longer iterate over it.
 	 */
 	release_oom_context(&memcg->oom_ctx);
+
+	mem_cgroup_id_put(memcg);
 }
 
 static void mem_cgroup_css_free(struct cgroup *cont)
@@ -7757,6 +7775,7 @@ void mem_cgroup_swapout(struct page *page, swp_entry_t entry)
 	VM_BUG_ON_PAGE(!(pc->flags & PCG_MEMSW), page);
 	memcg = pc->mem_cgroup;
 
+	mem_cgroup_id_get(memcg);
 	oldid = swap_cgroup_record(entry, mem_cgroup_id(memcg));
 	VM_BUG_ON_PAGE(oldid, page);
 	mem_cgroup_swap_statistics(memcg, true);
@@ -7772,6 +7791,9 @@ void mem_cgroup_swapout(struct page *page, swp_entry_t entry)
 
 	mem_cgroup_charge_statistics(memcg, page, -1);
 	memcg_check_events(memcg, page);
+
+	if (!mem_cgroup_is_root(memcg))
+		css_put(&memcg->css);
 }
 
 /**
@@ -7796,7 +7818,7 @@ void mem_cgroup_uncharge_swap(swp_entry_t entry)
 			page_counter_uncharge(&memcg->memsw, 1);
 		mem_cgroup_swap_statistics(memcg, false);
 		this_cpu_inc(memcg->stat->events[MEM_CGROUP_EVENTS_PSWPIN]);
-		css_put(&memcg->css);
+		mem_cgroup_id_put(memcg);
 	}
 	rcu_read_unlock();
 }
