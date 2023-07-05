@@ -6681,6 +6681,7 @@ static void mem_cgroup_id_remove(struct mem_cgroup *memcg)
 
 static void mem_cgroup_id_get_many(struct mem_cgroup *memcg, unsigned int n)
 {
+	VM_BUG_ON(atomic_read(&memcg->id.ref) <= 0);
 	atomic_add(n, &memcg->id.ref);
 }
 
@@ -6704,6 +6705,7 @@ static struct mem_cgroup *mem_cgroup_id_get_online(struct mem_cgroup *memcg)
 
 static void mem_cgroup_id_put_many(struct mem_cgroup *memcg, unsigned int n)
 {
+	VM_BUG_ON(atomic_read(&memcg->id.ref) < n);
 	if (atomic_sub_and_test(n, &memcg->id.ref)) {
 		mem_cgroup_id_remove(memcg);
 
@@ -6962,7 +6964,7 @@ mem_cgroup_css_online(struct cgroup *cont)
 	memcg = mem_cgroup_from_cont(cont);
 
 	/* Online state pins memcg ID, memcg ID pins CSS */
-	mem_cgroup_id_get(memcg);
+	atomic_set(&memcg->id.ref, 1);
 	css_get(&memcg->css);
 
 	if (!cont->parent) {
