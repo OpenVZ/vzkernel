@@ -155,13 +155,12 @@ void *kernfs_perms_start(struct seq_file *m, loff_t *ppos,
 			 struct kernfs_node *root, struct kmapset_key *key)
 {
 	struct ve_struct *ve = css_to_ve(seq_css(m));
-	struct kernfs_node *kn;
-	// struct kernfs_root *root_for_sem;
+	struct kernfs_open_file *of = m->private;
+	struct kernfs_node *kn = of->kn;
+	struct kernfs_root *root_for_sem = kernfs_root(kn);
 	loff_t pos = *ppos;
 
-	// FIXME: need to uncomment this one and in kernfs_perms_stop()
-	// root_for_sem = kernfs_root(root);
-	// down_read(&root_for_sem->kernfs_rwsem);
+	down_read(&root_for_sem->kernfs_rwsem);
 	for (kn = root; kn; kn = kernfs_next_recursive(kn)) {
 		if (kernfs_perms_shown(ve, kn, key) && !pos--)
 			break;
@@ -185,9 +184,11 @@ void *kernfs_perms_next(struct seq_file *m, void *v, loff_t *ppos,
 
 void kernfs_perms_stop(struct seq_file *m, void *v)
 {
-	/* FIXME: where to get kernfs_kn here???
+	struct kernfs_open_file *of = m->private;
+	struct kernfs_node *kn = of->kn;
+	struct kernfs_root *root = kernfs_root(kn);
+
 	up_read(&root->kernfs_rwsem);
-	*/
 }
 
 int kernfs_perms_show(struct seq_file *m, void *v, struct kmapset_key *key)
