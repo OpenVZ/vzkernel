@@ -7413,7 +7413,6 @@ static void __mem_cgroup_clear_mc(void)
 {
 	struct mem_cgroup *from = mc.from;
 	struct mem_cgroup *to = mc.to;
-	int i;
 
 	/* we must uncharge all the leftover precharges from mc.to */
 	if (mc.precharge) {
@@ -7435,9 +7434,6 @@ static void __mem_cgroup_clear_mc(void)
 			page_counter_uncharge(&mc.from->memsw, mc.moved_swap);
 
 		mem_cgroup_id_put_many(mc.from, mc.moved_swap);
-
-		for (i = 0; i < mc.moved_swap; i++)
-			css_put(&mc.from->css);
 
 		if (!mem_cgroup_is_root(mc.to)) {
 			/*
@@ -7837,9 +7833,6 @@ void mem_cgroup_swapout(struct page *page, swp_entry_t entry)
 
 	mem_cgroup_charge_statistics(memcg, page, -1);
 	memcg_check_events(memcg, page);
-
-	if (!mem_cgroup_is_root(memcg))
-		css_put(&memcg->css);
 }
 
 /**
