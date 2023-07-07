@@ -366,6 +366,7 @@ int swap_readpage(struct page *page, bool synchronous)
 		get_task_struct(current);
 		bio->bi_private = current;
 	}
+	count_memcg_page_event(page, PSWPIN);
 	count_vm_event(PSWPIN);
 	bio_get(bio);
 	submit_bio(bio);
