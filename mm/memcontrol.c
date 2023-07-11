@@ -6818,8 +6818,6 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 
 	mem_cgroup_remove_from_trees(memcg);
 
-	mem_cgroup_id_put(memcg);
-
 	for_each_node(node)
 		free_mem_cgroup_per_zone_info(memcg, node);
 
