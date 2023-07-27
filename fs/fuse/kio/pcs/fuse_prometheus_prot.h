@@ -39,6 +39,22 @@ struct kfuse_counter {
 	u64 val_total;
 };
 
+#define PCS_RPC_ERR_CONNECT_TOUT		0
+#define PCS_RPC_ERR_CONNECT_ERROR		1
+#define PCS_RPC_ERR_AUTH_TOUT			2
+#define PCS_RPC_ERR_AUTH_ERR			3
+#define PCS_RPC_ERR_RESPONSE_TOUT		4
+#define PCS_RPC_ERR_ABORTED				5
+#define PCS_RPC_ERR_MAX					6
+
+#define MAX_RPC_ADDR_LEN 46
+
+struct kfuse_rpc_error {
+	char address[MAX_RPC_ADDR_LEN];
+	u64 error[PCS_RPC_ERR_MAX];
+	int has_next;
+};
+
 struct kfuse_metrics {
 	/* Histograms are compatible with old version of proto
 	 * between userspace and kio where the counters were skipped.
@@ -51,6 +67,9 @@ struct kfuse_metrics {
 	u64 stucked_reqs_cnt_8s;
 	u64 stucked_reqs_cnt_30s;
 	u64 stucked_reqs_cnt_120s;
+
+	/* Each read triggers replacement of this field with the next one from a list */
+	struct kfuse_rpc_error rpc_error;
 };
 
 #endif /* __FUSE_PROMETHEUS_PROT__ */

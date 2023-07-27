@@ -29,6 +29,7 @@ struct fuse_ktrace
 	struct dentry				*prometheus_dentry;
 	struct kfuse_metrics __percpu	*prometheus_metrics;
 	u8 * __percpu				buf;
+	struct fuse_error_metrics	error_metrics;
 };
 
 static inline void * fuse_trace_prepare(struct fuse_ktrace * tr, int type, int len)
