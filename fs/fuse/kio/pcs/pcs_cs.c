@@ -24,6 +24,7 @@
 #include "pcs_ioctl.h"
 #include "log.h"
 #include "fuse_ktrace.h"
+#include "pcs_net_addr.h"
 
 /* Lock order: cs->lock -> css->lock (lru, hash, bl_list) */
 
@@ -208,38 +209,6 @@ static void add_cs(struct pcs_cs_set *csset, struct pcs_cs *cs)
 	list_add_tail(&cs->lru_link, &csset->lru);
 	csset->ncs++;
 	hlist_add_head_rcu(&cs->hlist, &csset->ht[hash]);
-}
-
-static inline int netaddr_cmp(PCS_NET_ADDR_T const *addr1, PCS_NET_ADDR_T const *addr2, int ignore_port)
-{
-	unsigned int d;
-	size_t sz = 0;
-
-	d = addr1->type - addr2->type;
-	if (d)
-		return d;
-	d = addr1->port - addr2->port;
-	if (!ignore_port && d)
-		return d;
-
-	switch (addr1->type) {
-	case PCS_ADDRTYPE_IP:
-	case PCS_ADDRTYPE_RDMA:
-		sz = sizeof(struct in_addr);
-		break;
-	case PCS_ADDRTYPE_IP6:
-		sz = sizeof(struct in6_addr);
-		break;
-	default:
-		BUG();
-	}
-
-	return memcmp(addr1->address, addr2->address, sz);
-}
-
-static int pcs_netaddr_cmp(PCS_NET_ADDR_T const *addr1, PCS_NET_ADDR_T const *addr2)
-{
-	return netaddr_cmp(addr1, addr2, 0);
 }
 
 /* Return locked cs */
@@ -502,6 +471,7 @@ static void cs_connect(struct pcs_rpc *ep)
 	connect_start(ep); /* TODO: rewrite to use pcs_netconnect callback */
 	return;
 fail:
+	pcs_rpc_report_error(ep, PCS_RPC_ERR_CONNECT_ERROR);
 	pcs_rpc_reset(ep);
 	return;
 }

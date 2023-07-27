@@ -130,18 +130,21 @@ void pcs_rdmaconnect_start(struct pcs_rpc *ep)
 				 RDMA_PS_TCP, IB_QPT_RC);
 	if (IS_ERR(rc.cmid)) {
 		TRACE("rdma_create_id failed: %ld\n", PTR_ERR(rc.cmid));
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_CONNECT_ERROR);
 		goto fail;
 	}
 
 	ret = rdma_resolve_addr(rc.cmid, NULL, sa, RESOLVE_TIMEOUT_MS);
 	if (ret) {
 		TRACE("rdma_resolve_addr failed: %d\n", ret);
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_CONNECT_ERROR);
 		goto fail_cm;
 	}
 
 	wait_for_completion(&rc.cm_done);
 	if (rc.cm_event != RDMA_CM_EVENT_ESTABLISHED) {
 		TRACE("rdma connection failed: %d\n", rc.cm_event);
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_CONNECT_ERROR);
 		goto fail_cm;
 	}
 
@@ -168,6 +171,7 @@ void pcs_rdmaconnect_start(struct pcs_rpc *ep)
 	if (ret < 0) {
 		TRACE("rdma authorization failed: %d, rio: 0x%p",
 		      ret, rc.rio);
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_AUTH_ERR);
 		goto fail; /* since ep->conn is initialized,
 			    * rio will be freed in pcs_rpc_reset()
 			    */

@@ -12,6 +12,7 @@
 #include "pcs_rpc_prot.h"
 #include "pcs_net.h"
 #include "pcs_sock_io.h"
+#include "fuse_prometheus.h"
 
 struct pcs_msg;
 
@@ -315,5 +316,7 @@ static inline struct pcs_rpc *pcs_rpc_from_work(struct work_struct *wr)
 }
 
 const char* pcs_rpc_state_name(unsigned state);
+
+void pcs_rpc_report_error(struct pcs_rpc *ep, unsigned int err);
 
 #endif /* _PCS_RPC_H_ */
