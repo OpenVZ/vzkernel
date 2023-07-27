@@ -31,6 +31,7 @@ fuse_kio_pcs-objs := kio/pcs/pcs_fuse_kdirect.o \
 	kio/pcs/pcs_auth.o \
 	kio/pcs/pcs_rdma_io.o \
 	kio/pcs/pcs_rdma_rw.o \
-	kio/pcs/pcs_rdma_conn.o
+	kio/pcs/pcs_rdma_conn.o \
+	kio/pcs/pcs_net_addr.o
 
 virtiofs-y := virtio_fs.o

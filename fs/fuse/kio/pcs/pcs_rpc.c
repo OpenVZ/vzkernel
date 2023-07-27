@@ -102,6 +102,17 @@ static void rpc_del_hash(struct pcs_rpc * ep)
 	}
 }
 
+void pcs_rpc_report_error(struct pcs_rpc *ep, unsigned int err)
+{
+	if (!ep->eng || !cc_from_rpc(ep->eng)->fc->ktrace) {
+		WARN_ON_ONCE(1);
+		return;
+	}
+
+	fuse_rpc_error_account(&cc_from_rpc(ep->eng)->fc->ktrace->error_metrics,
+		&ep->addr, err, 1);
+}
+
 
 struct pcs_msg * pcs_rpc_lookup_xid(struct pcs_rpc * ep, PCS_XID_T * xid)
 {
@@ -230,12 +241,15 @@ void rpc_abort(struct pcs_rpc * ep, int fatal, int error)
 		queue_delayed_work(cc->wq, &ep->timer_work, ep->params.holddown_timeout);
 	}
 
-	while (!list_empty(&failed_list)) {
-		struct pcs_msg * msg = list_first_entry(&failed_list, struct pcs_msg, list);
-		list_del_init(&msg->list);
-		pcs_set_rpc_error(&msg->error, error, ep);
-		BUG_ON(!hlist_unhashed(&msg->kill_link));
-		msg->done(msg);
+	if (!list_empty(&failed_list)) {
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_ABORTED);
+		while (!list_empty(&failed_list)) {
+			struct pcs_msg * msg = list_first_entry(&failed_list, struct pcs_msg, list);
+			list_del_init(&msg->list);
+			pcs_set_rpc_error(&msg->error, error, ep);
+			BUG_ON(!hlist_unhashed(&msg->kill_link));
+			msg->done(msg);
+		}
 	}
 
 	if (ep->state != PCS_RPC_ABORT)
@@ -1279,6 +1293,7 @@ static void timer_work(struct work_struct *w)
 	case PCS_RPC_WORK: {
 		int err = list_empty(&ep->pending_queue) ? PCS_ERR_RESPONSE_TIMEOUT : PCS_ERR_WRITE_TIMEOUT;
 
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_RESPONSE_TOUT);
 		FUSE_KTRACE(cc_from_rpc(ep->eng)->fc, "rpc timer expired, killing connection to " PEER_FMT ", %d",
 		      PEER_ARGS(ep), err);
 		rpc_abort(ep, 0, err);
