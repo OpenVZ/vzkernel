@@ -34,6 +34,7 @@
 #include "pcs_rpc.h"
 #include "fuse_ktrace.h"
 #include "fuse_prometheus.h"
+#include "pcs_net_addr.h"
 
 unsigned int pcs_loglevel = LOG_TRACE;
 module_param(pcs_loglevel, uint, 0644);
@@ -1243,6 +1244,8 @@ static void kpcs_req_send(struct fuse_req *req, bool bg)
 	return;
 }
 
+static void fuse_rpc_error_metrics_clean(struct fuse_error_metrics *metrics);
+
 static void fuse_trace_free(struct fuse_ktrace *tr)
 {
 	relay_close(tr->rchan);
@@ -1254,6 +1257,7 @@ static void fuse_trace_free(struct fuse_ktrace *tr)
 		free_percpu(tr->prometheus_metrics);
 	free_percpu(tr->buf);
 	debugfs_remove(tr->dir);
+	fuse_rpc_error_metrics_clean(&tr->error_metrics);
 	if (tr->fc)
 		fuse_conn_put(tr->fc);
 	kfree(tr);
@@ -1359,6 +1363,73 @@ void fuse_stat_account(struct fuse_conn *fc, int op, u64 val)
 	}
 }
 
+static void fuse_rpc_error_metrics_clean(struct fuse_error_metrics *metrics)
+{
+	struct fuse_rpc_error_metric *entry, *next;
+
+	mutex_lock(&metrics->mutex);
+	list_for_each_entry_safe(entry, next,
+			&metrics->fuse_rpc_error_metric_list, list) {
+		list_del(&entry->list);
+		kfree(entry);
+	}
+	mutex_unlock(&metrics->mutex);
+}
+
+void fuse_rpc_error_account(struct fuse_error_metrics *metrics,
+		PCS_NET_ADDR_T const *addr, unsigned int err, u64 val)
+{
+	struct fuse_rpc_error_metric *metric, *entry;
+
+	if (!metrics || err >= PCS_RPC_ERR_MAX) {
+		WARN_ON_ONCE(1);
+		return;
+	}
+
+	metric = NULL;
+	mutex_lock(&metrics->mutex);
+	list_for_each_entry(entry, &metrics->fuse_rpc_error_metric_list, list) {
+		if (pcs_netaddr_cmp_ignore_port(&entry->m.addr, addr) == 0) {
+			metric = entry;
+			break;
+		}
+	}
+
+	if (!metric) {
+		metric = kzalloc(sizeof(*metric), GFP_KERNEL);
+		if (!metric)
+			goto out;
+		metric->m.addr = *addr;
+		list_add_tail(&metric->list, &metrics->fuse_rpc_error_metric_list);
+	}
+
+	metric->m.err[err] += val;
+
+out:
+	mutex_unlock(&metrics->mutex);
+}
+
+static void fuse_rpc_error_remove_first_and_copy_to_stat(struct fuse_error_metrics *metrics,
+				struct kfuse_metrics *stats)
+{
+	struct fuse_rpc_error_metric *entry;
+
+	mutex_lock(&metrics->mutex);
+	entry = list_first_entry_or_null(&metrics->fuse_rpc_error_metric_list,
+			struct fuse_rpc_error_metric, list);
+	if (!entry) {
+		mutex_unlock(&metrics->mutex);
+		return;
+	}
+	list_del(&entry->list);
+	mutex_unlock(&metrics->mutex);
+
+	pcs_format_netaddr_ignore_port(stats->rpc_error.address, MAX_RPC_ADDR_LEN, &entry->m.addr);
+	memcpy(stats->rpc_error.error, entry->m.err, sizeof(stats->rpc_error.error));
+	stats->rpc_error.has_next = entry->list.next != NULL;
+	kfree(entry);
+}
+
 static int prometheus_file_open(struct inode *inode, struct file *filp)
 {
 	struct fuse_ktrace * tr = inode->i_private;
@@ -1407,18 +1478,17 @@ static ssize_t prometheus_file_read(struct file *filp,
 	struct kfuse_metrics *stats;
 	int cpu;
 
+	if (!tr->prometheus_metrics)
+		return -EINVAL;
+
 	if (*ppos >= sizeof(struct kfuse_metrics))
 		return 0;
 	if (*ppos + count > sizeof(struct kfuse_metrics))
 		count = sizeof(struct kfuse_metrics) - *ppos;
 
-	stats = (void *)get_zeroed_page(GFP_KERNEL);
-	BUILD_BUG_ON(sizeof(*stats) > PAGE_SIZE);
+	stats = kzalloc(sizeof(struct kfuse_metrics), GFP_KERNEL);
 	if (!stats)
 		return -ENOMEM;
-
-	if (!tr->prometheus_metrics)
-		return -EINVAL;
 
 	for_each_possible_cpu(cpu) {
 		struct kfuse_metrics *m;
@@ -1446,12 +1516,14 @@ static ssize_t prometheus_file_read(struct file *filp,
 	pcs_kio_req_list(tr->fc, prometheus_req_iter, stats);
 	spin_unlock(&tr->fc->lock);
 
+	fuse_rpc_error_remove_first_and_copy_to_stat(&tr->error_metrics, stats);
+
 	if (copy_to_user(buffer, (char *)stats + *ppos, count))
 		count = -EFAULT;
 	else
 		*ppos += count;
 
-	free_page((unsigned long)stats);
+	kfree(stats);
 	return count;
 }
 
@@ -1516,6 +1588,9 @@ static int fuse_ktrace_setup(struct fuse_conn * fc)
 	tr->prometheus_metrics = metrics;
 
 	tr->buf = __alloc_percpu(KTRACE_LOG_BUF_SIZE, 16);
+
+	INIT_LIST_HEAD(&tr->error_metrics.fuse_rpc_error_metric_list);
+	mutex_init(&tr->error_metrics.mutex);
 
 	atomic_set(&tr->refcnt, 1);
 

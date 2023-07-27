@@ -33,31 +33,6 @@ static inline void pcs_sock_cork(struct socket *sock)
 	tcp_sock_set_cork(sock->sk, true);
 }
 
-int pcs_netaddr2sockaddr(PCS_NET_ADDR_T const* addr, struct sockaddr *sa, int *salen)
-{
-	BUG_ON(!sa);
-	if (addr->type == PCS_ADDRTYPE_IP || addr->type == PCS_ADDRTYPE_RDMA) {
-		struct sockaddr_in *saddr4 = (struct sockaddr_in *)sa;
-		*saddr4 = (struct sockaddr_in) {
-			.sin_family = AF_INET,
-			.sin_port = (u16)addr->port,
-		};
-		memcpy(&saddr4->sin_addr, addr->address, sizeof(saddr4->sin_addr));
-		*salen = sizeof(*saddr4);
-	} else if (addr->type == PCS_ADDRTYPE_IP6) {
-		struct sockaddr_in6 *saddr6 = (struct sockaddr_in6 *)sa;
-		*saddr6 = (struct sockaddr_in6) {
-			.sin6_family = AF_INET6,
-			.sin6_port = (u16)addr->port,
-		};
-		memcpy(&saddr6->sin6_addr, addr->address, sizeof(saddr6->sin6_addr));
-		*salen = sizeof(*saddr6);
-	} else
-		return -EINVAL;
-
-	return 0;
-}
-
 void pcs_sockconnect_start(struct pcs_rpc *ep)
 {
 	struct pcs_sockio *sio;
@@ -70,6 +45,7 @@ void pcs_sockconnect_start(struct pcs_rpc *ep)
 	sio = kzalloc(sizeof(struct pcs_sockio) + alloc_max, GFP_NOIO);
 	if (!sio) {
 		TRACE("Can't allocate sio\n");
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_CONNECT_ERROR);
 		goto fail;
 	}
 
@@ -82,6 +58,7 @@ void pcs_sockconnect_start(struct pcs_rpc *ep)
 	err = sock_create(sa->sa_family, SOCK_STREAM, 0, &sock);
 	if (err < 0) {
 		TRACE("Can't create socket: %d\n", err);
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_CONNECT_ERROR);
 		goto fail2;
 	}
 	pcs_clear_error(&sio->error);
@@ -90,6 +67,7 @@ void pcs_sockconnect_start(struct pcs_rpc *ep)
 	if (err != 0 && err != -EINPROGRESS) {
 		TRACE("Failed connection: %d\n", err);
 		sock_release(sock);
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_CONNECT_ERROR);
 		goto fail2;
 	}
 	pcs_sock_keepalive(sock);
@@ -122,6 +100,7 @@ void pcs_sockconnect_start(struct pcs_rpc *ep)
 	if (err < 0) {
 		FUSE_KLOG(cc_from_rpc(ep->eng)->fc, LOG_ERR,
 			  "Authorization failed: %d", err);
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_AUTH_ERR);
 		goto fail; /* since ep->conn is initialized,
 			    * sio will be freed in pcs_rpc_reset()
 			    */
