@@ -11,6 +11,7 @@
 #define _PSERIES_PSERIES_H
 
 #include <linux/interrupt.h>
+#include <asm/rtas.h>
 
 struct device_node;
 
@@ -56,15 +57,44 @@ extern void hvc_vio_init_early(void);
 /* Dynamic logical Partitioning/Mobility */
 extern void dlpar_free_cc_nodes(struct device_node *);
 extern void dlpar_free_cc_property(struct property *);
-extern struct device_node *dlpar_configure_connector(u32);
-extern int dlpar_attach_node(struct device_node *);
+extern struct device_node *dlpar_configure_connector(__be32,
+						struct device_node *);
+extern int dlpar_attach_node(struct device_node *, struct device_node *);
 extern int dlpar_detach_node(struct device_node *);
+extern int dlpar_acquire_drc(u32 drc_index);
+extern int dlpar_release_drc(u32 drc_index);
 
-/* Snooze Delay, pseries_idle */
-DECLARE_PER_CPU(long, smt_snooze_delay);
+void queue_hotplug_event(struct pseries_hp_errorlog *hp_errlog,
+			 struct completion *hotplug_done, int *rc);
+#ifdef CONFIG_MEMORY_HOTPLUG
+int dlpar_memory(struct pseries_hp_errorlog *hp_elog);
+#else
+static inline int dlpar_memory(struct pseries_hp_errorlog *hp_elog)
+{
+	return -EOPNOTSUPP;
+}
+#endif
+
+#ifdef CONFIG_HOTPLUG_CPU
+int dlpar_cpu(struct pseries_hp_errorlog *hp_elog);
+#else
+static inline int dlpar_cpu(struct pseries_hp_errorlog *hp_elog)
+{
+	return -EOPNOTSUPP;
+}
+#endif
 
 /* PCI root bridge prepare function override for pseries */
 struct pci_host_bridge;
 int pseries_root_bridge_prepare(struct pci_host_bridge *bridge);
+
+extern struct pci_controller_ops pseries_pci_controller_ops;
+
+unsigned long pseries_memory_block_size(void);
+
+int dlpar_workqueue_init(void);
+
+void pseries_setup_rfi_flush(void);
+void pseries_lpar_read_hblkrm_characteristics(void);
 
 #endif /* _PSERIES_PSERIES_H */

@@ -12,7 +12,9 @@
 #include <linux/types.h>
 
 /* maximum packet length for USB devices */
-#define WACOM_PKGLEN_MAX	64
+#define WACOM_PKGLEN_MAX	192
+
+#define WACOM_NAME_MAX		64
 
 /* packet length for individual models */
 #define WACOM_PKGLEN_PENPRTN	 7
@@ -27,10 +29,13 @@
 #define WACOM_PKGLEN_WIRELESS	32
 #define WACOM_PKGLEN_MTOUCH	62
 #define WACOM_PKGLEN_MTTPC	40
+#define WACOM_REPORT_CINTIQ	16
+#define WACOM_REPORT_CINTIQPAD	17
 
 /* wacom data size per MT contact */
 #define WACOM_BYTES_PER_MT_PACKET	11
 #define WACOM_BYTES_PER_24HDT_PACKET	14
+#define WACOM_BYTES_PER_QHDTHID_PACKET	 6
 
 /* device IDs */
 #define STYLUS_DEVICE_ID	0x02
@@ -76,10 +81,14 @@ enum {
 	INTUOS5S,
 	INTUOS5,
 	INTUOS5L,
+	INTUOSPS,
+	INTUOSPM,
+	INTUOSPL,
 	WACOM_21UX2,
 	WACOM_22HD,
 	DTK,
 	WACOM_24HD,
+	WACOM_27QHD,
 	CINTIQ,
 	WACOM_BEE,
 	WACOM_13HD,
@@ -87,6 +96,7 @@ enum {
 	WIRELESS,
 	BAMBOO_PT,
 	WACOM_24HDT,
+	WACOM_27QHDT,
 	TABLETPC,   /* add new TPC below */
 	TABLETPCE,
 	TABLETPC2FG,
@@ -105,6 +115,8 @@ struct wacom_features {
 	int type;
 	int x_resolution;
 	int y_resolution;
+	int x_min;
+	int y_min;
 	int device_type;
 	int x_phy;
 	int y_phy;
@@ -126,7 +138,7 @@ struct wacom_shared {
 };
 
 struct wacom_wac {
-	char name[64];
+	char name[WACOM_NAME_MAX];
 	unsigned char *data;
 	int tool[2];
 	int id[2];

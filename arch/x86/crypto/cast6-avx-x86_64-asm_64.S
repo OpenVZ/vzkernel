@@ -24,6 +24,7 @@
  */
 
 #include <linux/linkage.h>
+#include <asm/frame.h>
 #include "glue_helper-asm-avx.S"
 
 .file "cast6-avx-x86_64-asm_64.S"
@@ -295,7 +296,7 @@ __cast6_enc_blk8:
 	outunpack_blocks(RA1, RB1, RC1, RD1, RTMP, RX, RKRF, RKM);
 	outunpack_blocks(RA2, RB2, RC2, RD2, RTMP, RX, RKRF, RKM);
 
-	ret;
+	RET;
 ENDPROC(__cast6_enc_blk8)
 
 .align 8
@@ -340,7 +341,7 @@ __cast6_dec_blk8:
 	outunpack_blocks(RA1, RB1, RC1, RD1, RTMP, RX, RKRF, RKM);
 	outunpack_blocks(RA2, RB2, RC2, RD2, RTMP, RX, RKRF, RKM);
 
-	ret;
+	RET;
 ENDPROC(__cast6_dec_blk8)
 
 ENTRY(cast6_ecb_enc_8way)
@@ -349,6 +350,7 @@ ENTRY(cast6_ecb_enc_8way)
 	 *	%rsi: dst
 	 *	%rdx: src
 	 */
+	FRAME_BEGIN
 
 	movq %rsi, %r11;
 
@@ -358,7 +360,8 @@ ENTRY(cast6_ecb_enc_8way)
 
 	store_8way(%r11, RA1, RB1, RC1, RD1, RA2, RB2, RC2, RD2);
 
-	ret;
+	FRAME_END
+	RET;
 ENDPROC(cast6_ecb_enc_8way)
 
 ENTRY(cast6_ecb_dec_8way)
@@ -367,6 +370,7 @@ ENTRY(cast6_ecb_dec_8way)
 	 *	%rsi: dst
 	 *	%rdx: src
 	 */
+	FRAME_BEGIN
 
 	movq %rsi, %r11;
 
@@ -376,7 +380,8 @@ ENTRY(cast6_ecb_dec_8way)
 
 	store_8way(%r11, RA1, RB1, RC1, RD1, RA2, RB2, RC2, RD2);
 
-	ret;
+	FRAME_END
+	RET;
 ENDPROC(cast6_ecb_dec_8way)
 
 ENTRY(cast6_cbc_dec_8way)
@@ -385,6 +390,7 @@ ENTRY(cast6_cbc_dec_8way)
 	 *	%rsi: dst
 	 *	%rdx: src
 	 */
+	FRAME_BEGIN
 
 	pushq %r12;
 
@@ -399,7 +405,8 @@ ENTRY(cast6_cbc_dec_8way)
 
 	popq %r12;
 
-	ret;
+	FRAME_END
+	RET;
 ENDPROC(cast6_cbc_dec_8way)
 
 ENTRY(cast6_ctr_8way)
@@ -409,6 +416,7 @@ ENTRY(cast6_ctr_8way)
 	 *	%rdx: src
 	 *	%rcx: iv (little endian, 128bit)
 	 */
+	FRAME_BEGIN
 
 	pushq %r12;
 
@@ -424,7 +432,8 @@ ENTRY(cast6_ctr_8way)
 
 	popq %r12;
 
-	ret;
+	FRAME_END
+	RET;
 ENDPROC(cast6_ctr_8way)
 
 ENTRY(cast6_xts_enc_8way)
@@ -434,6 +443,7 @@ ENTRY(cast6_xts_enc_8way)
 	 *	%rdx: src
 	 *	%rcx: iv (t ⊕ αⁿ ∈ GF(2¹²⁸))
 	 */
+	FRAME_BEGIN
 
 	movq %rsi, %r11;
 
@@ -446,7 +456,8 @@ ENTRY(cast6_xts_enc_8way)
 	/* dst <= regs xor IVs(in dst) */
 	store_xts_8way(%r11, RA1, RB1, RC1, RD1, RA2, RB2, RC2, RD2);
 
-	ret;
+	FRAME_END
+	RET;
 ENDPROC(cast6_xts_enc_8way)
 
 ENTRY(cast6_xts_dec_8way)
@@ -456,6 +467,7 @@ ENTRY(cast6_xts_dec_8way)
 	 *	%rdx: src
 	 *	%rcx: iv (t ⊕ αⁿ ∈ GF(2¹²⁸))
 	 */
+	FRAME_BEGIN
 
 	movq %rsi, %r11;
 
@@ -468,5 +480,6 @@ ENTRY(cast6_xts_dec_8way)
 	/* dst <= regs xor IVs(in dst) */
 	store_xts_8way(%r11, RA1, RB1, RC1, RD1, RA2, RB2, RC2, RD2);
 
-	ret;
+	FRAME_END
+	RET;
 ENDPROC(cast6_xts_dec_8way)

@@ -24,10 +24,16 @@ struct mempolicy;
  * tree) of these proc_dir_entries, so that we can dynamically
  * add new files to /proc.
  *
- * The "next" pointer creates a linked list of one /proc directory,
- * while parent/subdir create the directory structure (every
- * /proc file has a parent, but "subdir" is NULL for all
- * non-directory entries).
+ * parent/subdir are used for the directory structure (every /proc file has a
+ * parent, but "subdir" is empty for all non-directory entries).
+ * subdir_node is used to build the rb tree "subdir" of the parent.
+ *
+ * Because proc_dir_entry structure pointers are passed as arguments for some
+ * whitelisted functions, changes in this structure break kernel's ABI.
+ * But, proc_dir_entry is an internal structure for procfs, it is not defined
+ * anywhere else other than here, and should be handled internally in procfs
+ * only, so, changes in this structure should be bypassed by kABI checker, and
+ * such changes should not impact of procfs users.
  */
 struct proc_dir_entry {
 	unsigned int low_ino;
@@ -38,7 +44,13 @@ struct proc_dir_entry {
 	loff_t size;
 	const struct inode_operations *proc_iops;
 	const struct file_operations *proc_fops;
+#ifdef __GENKSYMS__
 	struct proc_dir_entry *next, *parent, *subdir;
+#else
+	struct proc_dir_entry *parent;
+	struct rb_root subdir;
+	struct rb_node subdir_node;
+#endif
 	void *data;
 	atomic_t count;		/* use count */
 	atomic_t in_use;	/* number of callers into module in progress; */
@@ -65,6 +77,7 @@ struct proc_inode {
 	struct proc_dir_entry *pde;
 	struct ctl_table_header *sysctl;
 	struct ctl_table *sysctl_entry;
+	struct hlist_node sysctl_inodes;
 	struct proc_ns ns;
 	struct inode vfs_inode;
 };
@@ -162,7 +175,7 @@ extern int proc_pid_statm(struct seq_file *, struct pid_namespace *,
 extern const struct dentry_operations pid_dentry_operations;
 extern int pid_getattr(struct vfsmount *, struct dentry *, struct kstat *);
 extern int proc_setattr(struct dentry *, struct iattr *);
-extern struct inode *proc_pid_make_inode(struct super_block *, struct task_struct *);
+extern struct inode *proc_pid_make_inode(struct super_block *, struct task_struct *, umode_t);
 extern int pid_revalidate(struct dentry *, unsigned int);
 extern int pid_delete_dentry(const struct dentry *);
 extern int proc_pid_readdir(struct file *, void *, filldir_t);
@@ -193,6 +206,19 @@ static inline struct proc_dir_entry *pde_get(struct proc_dir_entry *pde)
 }
 extern void pde_put(struct proc_dir_entry *);
 
+static inline bool is_empty_pde(const struct proc_dir_entry *pde)
+{
+	return S_ISDIR(pde->mode) && !pde->proc_iops;
+}
+struct proc_dir_entry *proc_create_mount_point(const char *name);
+
+extern struct proc_dir_entry *pde_subdir_first(struct proc_dir_entry *dir);
+extern struct proc_dir_entry *pde_subdir_next(struct proc_dir_entry *dir);
+extern struct proc_dir_entry *pde_subdir_find(struct proc_dir_entry *dir,
+					      const char *name, unsigned int len);
+extern bool pde_subdir_insert (struct proc_dir_entry *dir,
+			       struct proc_dir_entry *de);
+
 /*
  * inode.c
  */
@@ -207,7 +233,7 @@ extern const struct inode_operations proc_pid_link_inode_operations;
 
 extern void proc_init_inodecache(void);
 extern struct inode *proc_get_inode(struct super_block *, struct proc_dir_entry *);
-extern int proc_fill_super(struct super_block *);
+extern int proc_fill_super(struct super_block *, void *data, int flags);
 extern void proc_entry_rundown(struct proc_dir_entry *);
 
 /*
@@ -245,10 +271,12 @@ extern int proc_setup_self(struct super_block *);
  */
 #ifdef CONFIG_PROC_SYSCTL
 extern int proc_sys_init(void);
-extern void sysctl_head_put(struct ctl_table_header *);
+extern void proc_sys_evict_inode(struct inode *inode,
+				 struct ctl_table_header *head);
 #else
 static inline void proc_sys_init(void) { }
-static inline void sysctl_head_put(struct ctl_table_header *head) { }
+static inline void proc_sys_evict_inode(struct  inode *inode,
+					struct ctl_table_header *head) { }
 #endif
 
 /*
@@ -264,6 +292,7 @@ static inline void proc_tty_init(void) {}
  * root.c
  */
 extern struct proc_dir_entry proc_root;
+extern int proc_parse_options(char *options, struct pid_namespace *pid);
 
 extern void proc_self_init(void);
 extern int proc_remount(struct super_block *, int *, char *);
@@ -272,8 +301,9 @@ extern int proc_remount(struct super_block *, int *, char *);
  * task_[no]mmu.c
  */
 struct proc_maps_private {
-	struct pid *pid;
+	struct inode *inode;
 	struct task_struct *task;
+	struct mm_struct *mm;
 #ifdef CONFIG_MMU
 	struct vm_area_struct *tail_vma;
 #endif
@@ -281,6 +311,8 @@ struct proc_maps_private {
 	struct mempolicy *task_mempolicy;
 #endif
 };
+
+struct mm_struct *proc_mem_open(struct inode *inode, unsigned int mode);
 
 extern const struct file_operations proc_pid_maps_operations;
 extern const struct file_operations proc_tid_maps_operations;

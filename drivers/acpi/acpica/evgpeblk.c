@@ -365,8 +365,8 @@ acpi_ev_create_gpe_block(struct acpi_namespace_node *gpe_device,
 	gpe_block->register_count = register_count;
 	gpe_block->block_base_number = gpe_block_base_number;
 
-	ACPI_MEMCPY(&gpe_block->block_address, gpe_block_address,
-		    sizeof(struct acpi_generic_address));
+	memcpy(&gpe_block->block_address, gpe_block_address,
+	       sizeof(struct acpi_generic_address));
 
 	/*
 	 * Create the register_info and event_info sub-structures
@@ -382,6 +382,8 @@ acpi_ev_create_gpe_block(struct acpi_namespace_node *gpe_device,
 
 	status = acpi_ev_install_gpe_block(gpe_block, interrupt_number);
 	if (ACPI_FAILURE(status)) {
+		ACPI_FREE(gpe_block->register_info);
+		ACPI_FREE(gpe_block->event_info);
 		ACPI_FREE(gpe_block);
 		return_ACPI_STATUS(status);
 	}
@@ -439,9 +441,11 @@ acpi_ev_initialize_gpe_block(struct acpi_gpe_xrupt_info *gpe_xrupt_info,
 			     void *ignored)
 {
 	acpi_status status;
+	acpi_event_status event_status;
 	struct acpi_gpe_event_info *gpe_event_info;
 	u32 gpe_enabled_count;
 	u32 gpe_index;
+	u32 gpe_number;
 	u32 i;
 	u32 j;
 
@@ -469,26 +473,38 @@ acpi_ev_initialize_gpe_block(struct acpi_gpe_xrupt_info *gpe_xrupt_info,
 
 			gpe_index = (i * ACPI_GPE_REGISTER_WIDTH) + j;
 			gpe_event_info = &gpe_block->event_info[gpe_index];
+			gpe_number = gpe_block->block_base_number + gpe_index;
 
 			/*
 			 * Ignore GPEs that have no corresponding _Lxx/_Exx method
-			 * and GPEs that are used to wake the system
+			 * and GPEs that are used for wakeup
 			 */
-			if (((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) ==
-			     ACPI_GPE_DISPATCH_NONE)
-			    || ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK)
-				== ACPI_GPE_DISPATCH_HANDLER)
+			if ((ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags) !=
+			     ACPI_GPE_DISPATCH_METHOD)
 			    || (gpe_event_info->flags & ACPI_GPE_CAN_WAKE)) {
 				continue;
 			}
+
+			event_status = 0;
+			(void)acpi_hw_get_gpe_status(gpe_event_info,
+						     &event_status);
 
 			status = acpi_ev_add_gpe_reference(gpe_event_info);
 			if (ACPI_FAILURE(status)) {
 				ACPI_EXCEPTION((AE_INFO, status,
 					"Could not enable GPE 0x%02X",
-					gpe_index +
-					gpe_block->block_base_number));
+					gpe_number));
 				continue;
+			}
+
+			gpe_event_info->flags |= ACPI_GPE_AUTO_ENABLED;
+
+			if (event_status & ACPI_EVENT_FLAG_STATUS_SET) {
+				ACPI_INFO((AE_INFO, "GPE 0x%02X active on init",
+					   gpe_number));
+				(void)acpi_ev_gpe_dispatch(gpe_block->node,
+							   gpe_event_info,
+							   gpe_number);
 			}
 
 			gpe_enabled_count++;

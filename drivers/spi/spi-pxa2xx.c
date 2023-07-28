@@ -64,15 +64,51 @@ MODULE_ALIAS("platform:pxa2xx-spi");
 				| SSCR1_RFT | SSCR1_TFT | SSCR1_MWDS \
 				| SSCR1_SPH | SSCR1_SPO | SSCR1_LBM)
 
-#define LPSS_RX_THRESH_DFLT	64
-#define LPSS_TX_LOTHRESH_DFLT	160
-#define LPSS_TX_HITHRESH_DFLT	224
-
 /* Offset from drv_data->lpss_base */
-#define SSP_REG			0x0c
-#define SPI_CS_CONTROL		0x18
 #define SPI_CS_CONTROL_SW_MODE	BIT(0)
 #define SPI_CS_CONTROL_CS_HIGH	BIT(1)
+
+struct lpss_config {
+	/* LPSS offset from drv_data->ioaddr */
+	unsigned offset;
+	/* Register offsets from drv_data->lpss_base or -1 */
+	int reg_general;
+	int reg_ssp;
+	int reg_cs_ctrl;
+	/* FIFO thresholds */
+	u32 rx_threshold;
+	u32 tx_threshold_lo;
+	u32 tx_threshold_hi;
+};
+
+/* Keep these sorted with enum pxa_ssp_type */
+static const struct lpss_config lpss_platforms[] = {
+	{	/* LPSS_LPT_SSP */
+		.offset = 0x800,
+		.reg_general = 0x08,
+		.reg_ssp = 0x0c,
+		.reg_cs_ctrl = 0x18,
+		.rx_threshold = 64,
+		.tx_threshold_lo = 160,
+		.tx_threshold_hi = 224,
+	},
+	{	/* LPSS_BYT_SSP */
+		.offset = 0x400,
+		.reg_general = 0x08,
+		.reg_ssp = 0x0c,
+		.reg_cs_ctrl = 0x18,
+		.rx_threshold = 64,
+		.tx_threshold_lo = 160,
+		.tx_threshold_hi = 224,
+	},
+};
+
+static inline const struct lpss_config
+*lpss_get_config(const struct driver_data *drv_data)
+{
+	return &lpss_platforms[drv_data->ssp_type - LPSS_LPT_SSP];
+}
+
 
 static bool is_lpss_ssp(const struct driver_data *drv_data)
 {
@@ -105,60 +141,37 @@ static void __lpss_ssp_write_priv(struct driver_data *drv_data,
  */
 static void lpss_ssp_setup(struct driver_data *drv_data)
 {
-	unsigned offset = 0x400;
-	u32 value, orig;
+	const struct lpss_config *config;
+	u32 value;
 
-	if (!is_lpss_ssp(drv_data))
-		return;
-
-	/*
-	 * Perform auto-detection of the LPSS SSP private registers. They
-	 * can be either at 1k or 2k offset from the base address.
-	 */
-	orig = readl(drv_data->ioaddr + offset + SPI_CS_CONTROL);
-
-	value = orig | SPI_CS_CONTROL_SW_MODE;
-	writel(value, drv_data->ioaddr + offset + SPI_CS_CONTROL);
-	value = readl(drv_data->ioaddr + offset + SPI_CS_CONTROL);
-	if (value != (orig | SPI_CS_CONTROL_SW_MODE)) {
-		offset = 0x800;
-		goto detection_done;
-	}
-
-	value &= ~SPI_CS_CONTROL_SW_MODE;
-	writel(value, drv_data->ioaddr + offset + SPI_CS_CONTROL);
-	value = readl(drv_data->ioaddr + offset + SPI_CS_CONTROL);
-	if (value != orig) {
-		offset = 0x800;
-		goto detection_done;
-	}
-
-detection_done:
-	/* Now set the LPSS base */
-	drv_data->lpss_base = drv_data->ioaddr + offset;
+	config = lpss_get_config(drv_data);
+	drv_data->lpss_base = drv_data->ioaddr + config->offset;
 
 	/* Enable software chip select control */
 	value = SPI_CS_CONTROL_SW_MODE | SPI_CS_CONTROL_CS_HIGH;
-	__lpss_ssp_write_priv(drv_data, SPI_CS_CONTROL, value);
+	__lpss_ssp_write_priv(drv_data, config->reg_cs_ctrl, value);
 
 	/* Enable multiblock DMA transfers */
 	if (drv_data->master_info->enable_dma)
-		__lpss_ssp_write_priv(drv_data, SSP_REG, 1);
+		__lpss_ssp_write_priv(drv_data, config->reg_ssp, 1);
 }
 
 static void lpss_ssp_cs_control(struct driver_data *drv_data, bool enable)
 {
+	const struct lpss_config *config;
 	u32 value;
 
 	if (!is_lpss_ssp(drv_data))
 		return;
 
-	value = __lpss_ssp_read_priv(drv_data, SPI_CS_CONTROL);
+	config = lpss_get_config(drv_data);
+
+	value = __lpss_ssp_read_priv(drv_data, config->reg_cs_ctrl);
 	if (enable)
 		value &= ~SPI_CS_CONTROL_CS_HIGH;
 	else
 		value |= SPI_CS_CONTROL_CS_HIGH;
-	__lpss_ssp_write_priv(drv_data, SPI_CS_CONTROL, value);
+	__lpss_ssp_write_priv(drv_data, config->reg_cs_ctrl, value);
 }
 
 static void cs_assert(struct driver_data *drv_data)
@@ -546,6 +559,10 @@ static irqreturn_t ssp_int(int irq, void *dev_id)
 	if (!(sccr1_reg & SSCR1_TIE))
 		mask &= ~SSSR_TFS;
 
+	/* Ignore RX timeout interrupt if it is disabled */
+	if (!(sccr1_reg & SSCR1_TINTE))
+		mask &= ~SSSR_TINT;
+
 	if (!(status & mask))
 		return IRQ_NONE;
 
@@ -867,14 +884,16 @@ static int setup(struct spi_device *spi)
 {
 	struct pxa2xx_spi_chip *chip_info = NULL;
 	struct chip_data *chip;
+	const struct lpss_config *config;
 	struct driver_data *drv_data = spi_master_get_devdata(spi->master);
 	unsigned int clk_div;
 	uint tx_thres, tx_hi_thres, rx_thres;
 
 	if (is_lpss_ssp(drv_data)) {
-		tx_thres = LPSS_TX_LOTHRESH_DFLT;
-		tx_hi_thres = LPSS_TX_HITHRESH_DFLT;
-		rx_thres = LPSS_RX_THRESH_DFLT;
+		config = lpss_get_config(drv_data);
+		tx_thres = config->tx_threshold_lo;
+		tx_hi_thres = config->tx_threshold_hi;
+		rx_thres = config->rx_threshold;
 	} else {
 		tx_thres = TX_THRESH_DFLT;
 		tx_hi_thres = 0;
@@ -1119,6 +1138,7 @@ pxa2xx_spi_acpi_get_pdata(struct platform_device *pdev)
 static struct acpi_device_id pxa2xx_spi_acpi_match[] = {
 	{ "INT33C0", 0 },
 	{ "INT33C1", 0 },
+	{ "80860F0E", 0 },
 	{ },
 };
 MODULE_DEVICE_TABLE(acpi, pxa2xx_spi_acpi_match);

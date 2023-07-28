@@ -1,14 +1,10 @@
-/* -*- c -*- --------------------------------------------------------------- *
- *
- * linux/fs/autofs/init.c
- *
- *  Copyright 1997-1998 Transmeta Corporation -- All Rights Reserved
+/*
+ * Copyright 1997-1998 Transmeta Corporation -- All Rights Reserved
  *
  * This file is part of the Linux kernel and is made available under
  * the terms of the GNU General Public License, version 2, or at your
  * option, any later version, incorporated herein by reference.
- *
- * ------------------------------------------------------------------------- */
+ */
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -20,7 +16,7 @@ static struct dentry *autofs_mount(struct file_system_type *fs_type,
 	return mount_nodev(fs_type, flags, data, autofs4_fill_super);
 }
 
-static struct file_system_type autofs_fs_type = {
+struct file_system_type autofs_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "autofs",
 	.mount		= autofs_mount,

@@ -2,7 +2,7 @@
 
 #include <linux/linkage.h>
 #include <asm/dwarf2.h>
-#include <asm/cpufeature.h>
+#include <asm/cpufeatures.h>
 #include <asm/alternative-asm.h>
 
 /*
@@ -118,7 +118,7 @@ ENTRY(__memset)
 
 .Lende:
 	movq	%r10,%rax
-	ret
+	RET
 
 	CFI_RESTORE_STATE
 .Lbad_alignment:

@@ -28,8 +28,7 @@ DEFINE_MUTEX(slab_mutex);
 struct kmem_cache *kmem_cache;
 
 #ifdef CONFIG_DEBUG_VM
-static int kmem_cache_sanity_check(struct mem_cgroup *memcg, const char *name,
-				   size_t size)
+static int kmem_cache_sanity_check(const char *name, size_t size)
 {
 	struct kmem_cache *s = NULL;
 
@@ -55,31 +54,49 @@ static int kmem_cache_sanity_check(struct mem_cgroup *memcg, const char *name,
 			continue;
 		}
 
-		/*
-		 * For simplicity, we won't check this in the list of memcg
-		 * caches. We have control over memcg naming, and if there
-		 * aren't duplicates in the global list, there won't be any
-		 * duplicates in the memcg lists as well.
-		 */
-		if (!memcg && !strcmp(s->name, name)) {
+#if !defined(CONFIG_SLUB)
+		if (!strcmp(s->name, name)) {
 			pr_err("%s (%s): Cache name already exists.\n",
 			       __func__, name);
 			dump_stack();
 			s = NULL;
 			return -EINVAL;
 		}
+#endif
 	}
 
 	WARN_ON(strchr(name, ' '));	/* It confuses parsers */
 	return 0;
 }
 #else
-static inline int kmem_cache_sanity_check(struct mem_cgroup *memcg,
-					  const char *name, size_t size)
+static inline int kmem_cache_sanity_check(const char *name, size_t size)
 {
 	return 0;
 }
 #endif
+
+void __kmem_cache_free_bulk(struct kmem_cache *s, size_t nr, void **p)
+{
+	size_t i;
+
+	for (i = 0; i < nr; i++)
+		kmem_cache_free(s, p[i]);
+}
+
+int __kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t nr,
+								void **p)
+{
+	size_t i;
+
+	for (i = 0; i < nr; i++) {
+		void *x = p[i] = kmem_cache_alloc(s, flags);
+		if (!x) {
+			__kmem_cache_free_bulk(s, i, p);
+			return 0;
+		}
+	}
+	return i;
+}
 
 #ifdef CONFIG_MEMCG_KMEM
 int memcg_update_all_caches(int num_memcgs)
@@ -106,6 +123,25 @@ int memcg_update_all_caches(int num_memcgs)
 out:
 	mutex_unlock(&slab_mutex);
 	return ret;
+}
+static int kmem_cache_destroy_memcg_children(struct kmem_cache *s)
+{
+	int rc;
+
+	if (!s->memcg_params ||
+	    !s->memcg_params->is_root_cache)
+		return 0;
+
+	mutex_unlock(&slab_mutex);
+	rc = __kmem_cache_destroy_memcg_children(s);
+	mutex_lock(&slab_mutex);
+
+	return rc;
+}
+#else
+static int kmem_cache_destroy_memcg_children(struct kmem_cache *s)
+{
+	return 0;
 }
 #endif
 
@@ -136,6 +172,45 @@ unsigned long calculate_alignment(unsigned long flags,
 	return ALIGN(align, sizeof(void *));
 }
 
+static struct kmem_cache *
+do_kmem_cache_create(char *name, size_t object_size, size_t size, size_t align,
+		     unsigned long flags, void (*ctor)(void *),
+		     struct mem_cgroup *memcg, struct kmem_cache *root_cache)
+{
+	struct kmem_cache *s;
+	int err;
+
+	err = -ENOMEM;
+	s = kmem_cache_zalloc(kmem_cache, GFP_KERNEL);
+	if (!s)
+		goto out;
+
+	s->name = name;
+	s->object_size = object_size;
+	s->size = size;
+	s->align = align;
+	s->ctor = ctor;
+
+	err = memcg_alloc_cache_params(memcg, s, root_cache);
+	if (err)
+		goto out_free_cache;
+
+	err = __kmem_cache_create(s, flags);
+	if (err)
+		goto out_free_cache;
+
+	s->refcount = 1;
+	list_add(&s->list, &slab_caches);
+out:
+	if (err)
+		return ERR_PTR(err);
+	return s;
+
+out_free_cache:
+	memcg_free_cache_params(s);
+	kfree(s);
+	goto out;
+}
 
 /*
  * kmem_cache_create - Create a cache.
@@ -161,20 +236,20 @@ unsigned long calculate_alignment(unsigned long flags,
  * cacheline.  This can be beneficial if you're counting cycles as closely
  * as davem.
  */
-
 struct kmem_cache *
-kmem_cache_create_memcg(struct mem_cgroup *memcg, const char *name, size_t size,
-			size_t align, unsigned long flags, void (*ctor)(void *),
-			struct kmem_cache *parent_cache)
+kmem_cache_create(const char *name, size_t size, size_t align,
+		  unsigned long flags, void (*ctor)(void *))
 {
-	struct kmem_cache *s = NULL;
-	int err = 0;
+	struct kmem_cache *s;
+	char *cache_name;
+	int err;
 
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
 
-	if (!kmem_cache_sanity_check(memcg, name, size) == 0)
-		goto out_locked;
+	err = kmem_cache_sanity_check(name, size);
+	if (err)
+		goto out_unlock;
 
 	/*
 	 * Some allocators will constraint the set of valid flags to a subset
@@ -184,47 +259,29 @@ kmem_cache_create_memcg(struct mem_cgroup *memcg, const char *name, size_t size,
 	 */
 	flags &= CACHE_CREATE_MASK;
 
-	s = __kmem_cache_alias(memcg, name, size, align, flags, ctor);
+	s = __kmem_cache_alias(name, size, align, flags, ctor);
 	if (s)
-		goto out_locked;
+		goto out_unlock;
 
-	s = kmem_cache_zalloc(kmem_cache, GFP_KERNEL);
-	if (s) {
-		s->object_size = s->size = size;
-		s->align = calculate_alignment(flags, align, size);
-		s->ctor = ctor;
-
-		if (memcg_register_cache(memcg, s, parent_cache)) {
-			kmem_cache_free(kmem_cache, s);
-			err = -ENOMEM;
-			goto out_locked;
-		}
-
-		s->name = kstrdup(name, GFP_KERNEL);
-		if (!s->name) {
-			kmem_cache_free(kmem_cache, s);
-			err = -ENOMEM;
-			goto out_locked;
-		}
-
-		err = __kmem_cache_create(s, flags);
-		if (!err) {
-			s->refcount = 1;
-			list_add(&s->list, &slab_caches);
-			memcg_cache_list_add(memcg, s);
-		} else {
-			kfree(s->name);
-			kmem_cache_free(kmem_cache, s);
-		}
-	} else
+	cache_name = kstrdup(name, GFP_KERNEL);
+	if (!cache_name) {
 		err = -ENOMEM;
+		goto out_unlock;
+	}
 
-out_locked:
+	s = do_kmem_cache_create(cache_name, size, size,
+				 calculate_alignment(flags, align, size),
+				 flags, ctor, NULL, NULL);
+	if (IS_ERR(s)) {
+		err = PTR_ERR(s);
+		kfree(cache_name);
+	}
+
+out_unlock:
 	mutex_unlock(&slab_mutex);
 	put_online_cpus();
 
 	if (err) {
-
 		if (flags & SLAB_PANIC)
 			panic("kmem_cache_create: Failed to create slab '%s'. Error %d\n",
 				name, err);
@@ -233,50 +290,87 @@ out_locked:
 				name, err);
 			dump_stack();
 		}
-
 		return NULL;
 	}
-
 	return s;
-}
-
-struct kmem_cache *
-kmem_cache_create(const char *name, size_t size, size_t align,
-		  unsigned long flags, void (*ctor)(void *))
-{
-	return kmem_cache_create_memcg(NULL, name, size, align, flags, ctor, NULL);
 }
 EXPORT_SYMBOL(kmem_cache_create);
 
-void kmem_cache_destroy(struct kmem_cache *s)
+#ifdef CONFIG_MEMCG_KMEM
+/*
+ * kmem_cache_create_memcg - Create a cache for a memory cgroup.
+ * @memcg: The memory cgroup the new cache is for.
+ * @root_cache: The parent of the new cache.
+ *
+ * This function attempts to create a kmem cache that will serve allocation
+ * requests going from @memcg to @root_cache. The new cache inherits properties
+ * from its parent.
+ */
+struct kmem_cache *kmem_cache_create_memcg(struct mem_cgroup *memcg,
+					   struct kmem_cache *root_cache)
 {
-	/* Destroy all the children caches if we aren't a memcg cache */
-	kmem_cache_destroy_memcg_children(s);
+	struct kmem_cache *s = NULL;
+	char *cache_name;
 
 	get_online_cpus();
 	mutex_lock(&slab_mutex);
-	s->refcount--;
-	if (!s->refcount) {
-		list_del(&s->list);
 
-		if (!__kmem_cache_shutdown(s)) {
-			mutex_unlock(&slab_mutex);
-			if (s->flags & SLAB_DESTROY_BY_RCU)
-				rcu_barrier();
+	cache_name = memcg_create_cache_name(memcg, root_cache);
+	if (!cache_name)
+		goto out_unlock;
 
-			memcg_release_cache(s);
-			kfree(s->name);
-			kmem_cache_free(kmem_cache, s);
-		} else {
-			list_add(&s->list, &slab_caches);
-			mutex_unlock(&slab_mutex);
-			printk(KERN_ERR "kmem_cache_destroy %s: Slab cache still has objects\n",
-				s->name);
-			dump_stack();
-		}
-	} else {
-		mutex_unlock(&slab_mutex);
+	s = do_kmem_cache_create(cache_name, root_cache->object_size,
+				 root_cache->size, root_cache->align,
+				 root_cache->flags, root_cache->ctor,
+				 memcg, root_cache);
+	if (IS_ERR(s)) {
+		kfree(cache_name);
+		s = NULL;
 	}
+
+out_unlock:
+	mutex_unlock(&slab_mutex);
+	put_online_cpus();
+
+	return s;
+}
+#endif /* CONFIG_MEMCG_KMEM */
+
+void kmem_cache_destroy(struct kmem_cache *s)
+{
+	if (unlikely(!s))
+		return;
+
+	get_online_cpus();
+	mutex_lock(&slab_mutex);
+
+	s->refcount--;
+	if (s->refcount)
+		goto out_unlock;
+
+	if (kmem_cache_destroy_memcg_children(s) != 0)
+		goto out_unlock;
+
+	list_del(&s->list);
+	if (__kmem_cache_shutdown(s) != 0) {
+		list_add(&s->list, &slab_caches);
+		printk(KERN_ERR "kmem_cache_destroy %s: "
+		       "Slab cache still has objects\n", s->name);
+		dump_stack();
+		goto out_unlock;
+	}
+	mutex_unlock(&slab_mutex);
+	if (s->flags & SLAB_DESTROY_BY_RCU)
+		rcu_barrier();
+
+	memcg_free_cache_params(s);
+	kfree(s->name);
+	kmem_cache_free(kmem_cache, s);
+	goto out_put_cpus;
+
+out_unlock:
+	mutex_unlock(&slab_mutex);
+out_put_cpus:
 	put_online_cpus();
 }
 EXPORT_SYMBOL(kmem_cache_destroy);
@@ -395,6 +489,37 @@ struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags)
 }
 
 /*
+ * kmalloc_info[] is to make slub_debug=,kmalloc-xx option work at boot time.
+ * kmalloc_index() supports up to 2^26=64MB, so the final entry of the table is
+ * kmalloc-67108864.
+ */
+static struct {
+	const char *name;
+	unsigned long size;
+} const kmalloc_info[] __initconst = {
+	{NULL,                      0},		{"kmalloc-96",             96},
+	{"kmalloc-192",           192},		{"kmalloc-8",               8},
+	{"kmalloc-16",             16},		{"kmalloc-32",             32},
+	{"kmalloc-64",             64},		{"kmalloc-128",           128},
+	{"kmalloc-256",           256},		{"kmalloc-512",           512},
+	{"kmalloc-1024",         1024},		{"kmalloc-2048",         2048},
+	{"kmalloc-4096",         4096},		{"kmalloc-8192",         8192},
+	{"kmalloc-16384",       16384},		{"kmalloc-32768",       32768},
+	{"kmalloc-65536",       65536},		{"kmalloc-131072",     131072},
+	{"kmalloc-262144",     262144},		{"kmalloc-524288",     524288},
+	{"kmalloc-1048576",   1048576},		{"kmalloc-2097152",   2097152},
+	{"kmalloc-4194304",   4194304},		{"kmalloc-8388608",   8388608},
+	{"kmalloc-16777216", 16777216},		{"kmalloc-33554432", 33554432},
+	{"kmalloc-67108864", 67108864}
+};
+
+static void new_kmalloc_cache(int idx, unsigned long flags)
+{
+	kmalloc_caches[idx] = create_kmalloc_cache(kmalloc_info[idx].name,
+					kmalloc_info[idx].size, flags);
+}
+
+/*
  * Create the kmalloc array. Some of the regular kmalloc arrays
  * may already have been created because they were needed to
  * enable allocations for slab creation.
@@ -445,10 +570,8 @@ void __init create_kmalloc_caches(unsigned long flags)
 			size_index[size_index_elem(i)] = 8;
 	}
 	for (i = KMALLOC_SHIFT_LOW; i <= KMALLOC_SHIFT_HIGH; i++) {
-		if (!kmalloc_caches[i]) {
-			kmalloc_caches[i] = create_kmalloc_cache(NULL,
-							1 << i, flags);
-		}
+		if (!kmalloc_caches[i])
+			new_kmalloc_cache(i, flags);
 
 		/*
 		 * Caches that are not of the two-to-the-power-of size.
@@ -456,26 +579,13 @@ void __init create_kmalloc_caches(unsigned long flags)
 		 * earlier power of two caches
 		 */
 		if (KMALLOC_MIN_SIZE <= 32 && !kmalloc_caches[1] && i == 6)
-			kmalloc_caches[1] = create_kmalloc_cache(NULL, 96, flags);
-
+			new_kmalloc_cache(1, flags);
 		if (KMALLOC_MIN_SIZE <= 64 && !kmalloc_caches[2] && i == 7)
-			kmalloc_caches[2] = create_kmalloc_cache(NULL, 192, flags);
+			new_kmalloc_cache(2, flags);
 	}
 
 	/* Kmalloc array is now usable */
 	slab_state = UP;
-
-	for (i = 0; i <= KMALLOC_SHIFT_HIGH; i++) {
-		struct kmem_cache *s = kmalloc_caches[i];
-		char *n;
-
-		if (s) {
-			n = kasprintf(GFP_NOWAIT, "kmalloc-%d", kmalloc_size(i));
-
-			BUG_ON(!n);
-			s->name = n;
-		}
-	}
 
 #ifdef CONFIG_ZONE_DMA
 	for (i = 0; i <= KMALLOC_SHIFT_HIGH; i++) {
@@ -495,6 +605,18 @@ void __init create_kmalloc_caches(unsigned long flags)
 }
 #endif /* !CONFIG_SLOB */
 
+void *kmalloc_order(size_t size, gfp_t flags, unsigned int order)
+{
+	void *ret;
+	struct page *page;
+
+	flags |= __GFP_COMP;
+	page = alloc_pages(flags, order);
+	ret = page ? page_address(page) : NULL;
+	kmemleak_alloc(ret, size, 1, flags);
+	return ret;
+}
+EXPORT_SYMBOL(kmalloc_order);
 
 #ifdef CONFIG_SLABINFO
 void print_slabinfo_header(struct seq_file *m)
@@ -552,7 +674,7 @@ memcg_accumulate_slabinfo(struct kmem_cache *s, struct slabinfo *info)
 		return;
 
 	for_each_memcg_cache_index(i) {
-		c = cache_from_memcg(s, i);
+		c = cache_from_memcg_idx(s, i);
 		if (!c)
 			continue;
 
