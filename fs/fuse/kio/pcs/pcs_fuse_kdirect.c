@@ -1386,6 +1386,9 @@ void fuse_rpc_error_account(struct fuse_error_metrics *metrics,
 		return;
 	}
 
+	if (addr->type == PCS_ADDRTYPE_NONE)
+		return;
+
 	metric = NULL;
 	mutex_lock(&metrics->mutex);
 	list_for_each_entry(entry, &metrics->fuse_rpc_error_metric_list, list) {
