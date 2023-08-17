@@ -44,8 +44,8 @@ conn_param_init(struct rdma_conn_param *cp, struct pcs_rdmaio_conn_req *cr,
 	cp->initiator_depth     = min_t(int, U8_MAX, cmid->device->attrs.max_qp_init_rd_atom);
 
 	cp->flow_control        = 1; /* does not matter */
-	cp->retry_count         = 0; /* # retransmissions when no ACK received */
-	cp->rnr_retry_count     = 0; /* # RNR retransmissions */
+	cp->retry_count         = 7; /* # retransmissions when no ACK received */
+	cp->rnr_retry_count     = 7; /* # RNR retransmissions */
 }
 
 static int pcs_rdma_cm_event_handler(struct rdma_cm_id *cmid,
