@@ -80,8 +80,8 @@ static int pcs_rdma_cm_event_handler(struct rdma_cm_id *cmid,
 			rc->cmid = NULL;
 
 			conn_param_init(&conn_param, &rc->rio->conn_req, cmid);
-			if (rdma_connect(cmid, &conn_param)) {
-				TRACE("rdma_connect failed: rio: 0x%p\n", rc->rio);
+			if (rdma_connect_locked(cmid, &conn_param)) {
+				TRACE("rdma_connect_locked failed: rio: 0x%p\n", rc->rio);
 				complete(&rc->cm_done);
 			}
 			break;
