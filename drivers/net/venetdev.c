@@ -568,25 +568,21 @@ dropped:
 	return 0;
 }
 
-static struct net_device_stats *get_stats(struct net_device *dev)
+static void venet_get_stats64(struct net_device *dev,
+			      struct rtnl_link_stats64 *total)
 {
 	int i;
-	struct venet_stats *stats;
 
-	stats = (struct venet_stats *)dev->ml_priv;
-	memset(&stats->stats, 0, sizeof(struct net_device_stats));
 	for_each_possible_cpu(i) {
 		struct net_device_stats *dev_stats;
 
 		dev_stats = venet_stats(dev, i);
-		stats->stats.rx_bytes   += dev_stats->rx_bytes;
-		stats->stats.tx_bytes   += dev_stats->tx_bytes;
-		stats->stats.rx_packets += dev_stats->rx_packets;
-		stats->stats.tx_packets += dev_stats->tx_packets;
-		stats->stats.tx_dropped += dev_stats->tx_dropped;
+		total->rx_bytes += dev_stats->rx_bytes;
+		total->tx_bytes += dev_stats->tx_bytes;
+		total->rx_packets += dev_stats->rx_packets;
+		total->tx_packets += dev_stats->tx_packets;
+		total->tx_dropped += dev_stats->tx_dropped;
 	}
-
-	return &stats->stats;
 }
 
 /* Initialize the rest of the LOOPBACK device. */
@@ -712,7 +708,7 @@ static const struct ethtool_ops venet_ethtool_ops = {
 
 static const struct net_device_ops venet_netdev_ops = {
 	.ndo_start_xmit = venet_xmit,
-	.ndo_get_stats = get_stats,
+	.ndo_get_stats64 = venet_get_stats64,
 	.ndo_open = venet_open,
 	.ndo_stop = venet_close,
 	.ndo_init = venet_init_dev,
