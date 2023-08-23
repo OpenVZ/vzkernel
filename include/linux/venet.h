@@ -21,7 +21,6 @@
 struct ve_struct;
 struct venet_stat;
 struct venet_stats {
-	struct net_device_stats	stats;
 	struct net_device_stats	*real_stats;
 };
 
