@@ -8,6 +8,7 @@
  */
 
 #include <linux/of.h>
+#include <linux/device.h>
 #include <linux/platform_device.h>
 
 static int uhci_platform_init(struct usb_hcd *hcd)
@@ -86,36 +87,24 @@ static int uhci_hcd_platform_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	hcd->regs = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(hcd->regs)) {
+		ret = PTR_ERR(hcd->regs);
+		goto err_rmr;
+	}
 	hcd->rsrc_start = res->start;
 	hcd->rsrc_len = resource_size(res);
 
-	if (!request_mem_region(hcd->rsrc_start, hcd->rsrc_len, hcd_name)) {
-		pr_err("%s: request_mem_region failed\n", __func__);
-		ret = -EBUSY;
-		goto err_rmr;
-	}
-
-	hcd->regs = ioremap(hcd->rsrc_start, hcd->rsrc_len);
-	if (!hcd->regs) {
-		pr_err("%s: ioremap failed\n", __func__);
-		ret = -ENOMEM;
-		goto err_irq;
-	}
 	uhci = hcd_to_uhci(hcd);
 
 	uhci->regs = hcd->regs;
 
-	ret = usb_add_hcd(hcd, pdev->resource[1].start, IRQF_DISABLED |
-								IRQF_SHARED);
+	ret = usb_add_hcd(hcd, pdev->resource[1].start, IRQF_SHARED);
 	if (ret)
-		goto err_uhci;
+		goto err_rmr;
 
 	return 0;
 
-err_uhci:
-	iounmap(hcd->regs);
-err_irq:
-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
 err_rmr:
 	usb_put_hcd(hcd);
 
@@ -127,8 +116,6 @@ static int uhci_hcd_platform_remove(struct platform_device *pdev)
 	struct usb_hcd *hcd = platform_get_drvdata(pdev);
 
 	usb_remove_hcd(hcd);
-	iounmap(hcd->regs);
-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
 	usb_put_hcd(hcd);
 	platform_set_drvdata(pdev, NULL);
 
@@ -150,6 +137,7 @@ static void uhci_hcd_platform_shutdown(struct platform_device *op)
 }
 
 static const struct of_device_id platform_uhci_ids[] = {
+	{ .compatible = "generic-uhci", },
 	{ .compatible = "platform-uhci", },
 	{}
 };

@@ -339,6 +339,7 @@ void mthca_cq_resize_copy_cqes(struct mthca_cq *cq)
 	 */
 	if (!mthca_is_memfree(to_mdev(cq->ibcq.device)) &&
 	    cq->ibcq.cqe < cq->resize_buf->cqe) {
+		gmb();
 		cq->cons_index &= cq->ibcq.cqe;
 		if (cqe_sw(get_cqe(cq, cq->ibcq.cqe)))
 			cq->cons_index -= cq->ibcq.cqe + 1;
@@ -607,9 +608,6 @@ static inline int mthca_poll_one(struct mthca_dev *dev,
 		case MTHCA_OPCODE_ATOMIC_FA:
 			entry->opcode    = IB_WC_FETCH_ADD;
 			entry->byte_len  = MTHCA_ATOMIC_BYTE_LEN;
-			break;
-		case MTHCA_OPCODE_BIND_MW:
-			entry->opcode    = IB_WC_BIND_MW;
 			break;
 		default:
 			entry->opcode    = MTHCA_OPCODE_INVALID;

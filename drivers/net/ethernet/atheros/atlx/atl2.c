@@ -64,7 +64,7 @@ MODULE_VERSION(ATL2_DRV_VERSION);
 /*
  * atl2_pci_tbl - PCI Device ID Table
  */
-static DEFINE_PCI_DEVICE_TABLE(atl2_pci_tbl) = {
+static const struct pci_device_id atl2_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_ATTANSIC, PCI_DEVICE_ID_ATTANSIC_L2)},
 	/* required last entry */
 	{0,}
@@ -888,8 +888,8 @@ static netdev_tx_t atl2_xmit_frame(struct sk_buff *skb,
 		offset = ((u32)(skb->len-copy_len + 3) & ~3);
 	}
 #ifdef NETIF_F_HW_VLAN_CTAG_TX
-	if (vlan_tx_tag_present(skb)) {
-		u16 vlan_tag = vlan_tx_tag_get(skb);
+	if (skb_vlan_tag_present(skb)) {
+		u16 vlan_tag = skb_vlan_tag_get(skb);
 		vlan_tag = (vlan_tag << 4) |
 			(vlan_tag >> 13) |
 			((vlan_tag >> 9) & 0x8);
@@ -1314,7 +1314,7 @@ static const struct net_device_ops atl2_netdev_ops = {
 	.ndo_set_rx_mode	= atl2_set_multi,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_set_mac_address	= atl2_set_mac,
-	.ndo_change_mtu		= atl2_change_mtu,
+	.ndo_change_mtu_rh74	= atl2_change_mtu,
 	.ndo_fix_features	= atl2_fix_features,
 	.ndo_set_features	= atl2_set_features,
 	.ndo_do_ioctl		= atl2_ioctl,
@@ -1413,7 +1413,7 @@ static int atl2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	err = -EIO;
 
-	netdev->hw_features = NETIF_F_SG | NETIF_F_HW_VLAN_CTAG_RX;
+	netdev->hw_features = NETIF_F_HW_VLAN_CTAG_RX;
 	netdev->features |= (NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX);
 
 	/* Init PHY as early as possible due to power saving issue  */
@@ -2033,10 +2033,6 @@ static void atl2_get_drvinfo(struct net_device *netdev,
 	strlcpy(drvinfo->fw_version, "L2", sizeof(drvinfo->fw_version));
 	strlcpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
-	drvinfo->n_stats = 0;
-	drvinfo->testinfo_len = 0;
-	drvinfo->regdump_len = atl2_get_regs_len(netdev);
-	drvinfo->eedump_len = atl2_get_eeprom_len(netdev);
 }
 
 static void atl2_get_wol(struct net_device *netdev,

@@ -42,7 +42,8 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-#include <linux/export.h>
+#define EXPORT_ACPI_INTERFACES
+
 #include <acpi/acpi.h>
 #include "accommon.h"
 #include "acnamesp.h"
@@ -113,7 +114,7 @@ acpi_get_handle(acpi_handle parent,
 
 		/* Special case for root-only, since we can't search for it */
 
-		if (!ACPI_STRCMP(pathname, ACPI_NS_ROOT_PATH)) {
+		if (!strcmp(pathname, ACPI_NS_ROOT_PATH)) {
 			*ret_handle =
 			    ACPI_CAST_PTR(acpi_handle, acpi_gbl_root_node);
 			return (AE_OK);
@@ -239,7 +240,7 @@ static char *acpi_ns_copy_device_id(struct acpi_pnp_device_id *dest,
 
 	/* Copy actual string and return a pointer to the next string area */
 
-	ACPI_MEMCPY(string_area, source->string, source->length);
+	memcpy(string_area, source->string, source->length);
 	return (string_area + source->length);
 }
 
@@ -612,7 +613,7 @@ acpi_status acpi_install_method(u8 *buffer)
 
 	/* Copy the method AML to the local buffer */
 
-	ACPI_MEMCPY(aml_buffer, aml_start, aml_length);
+	memcpy(aml_buffer, aml_start, aml_length);
 
 	/* Initialize the method object with the new method's information */
 

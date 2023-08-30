@@ -51,8 +51,8 @@ struct pcpu_dstats {
 	struct u64_stats_sync	syncp;
 };
 
-static struct rtnl_link_stats64 *dummy_get_stats64(struct net_device *dev,
-						   struct rtnl_link_stats64 *stats)
+static void dummy_get_stats64(struct net_device *dev,
+			      struct rtnl_link_stats64 *stats)
 {
 	int i;
 
@@ -63,14 +63,13 @@ static struct rtnl_link_stats64 *dummy_get_stats64(struct net_device *dev,
 
 		dstats = per_cpu_ptr(dev->dstats, i);
 		do {
-			start = u64_stats_fetch_begin_bh(&dstats->syncp);
+			start = u64_stats_fetch_begin_irq(&dstats->syncp);
 			tbytes = dstats->tx_bytes;
 			tpackets = dstats->tx_packets;
-		} while (u64_stats_fetch_retry_bh(&dstats->syncp, start));
+		} while (u64_stats_fetch_retry_irq(&dstats->syncp, start));
 		stats->tx_bytes += tbytes;
 		stats->tx_packets += tpackets;
 	}
-	return stats;
 }
 
 static netdev_tx_t dummy_xmit(struct sk_buff *skb, struct net_device *dev)
@@ -126,16 +125,18 @@ static void dummy_setup(struct net_device *dev)
 
 	/* Initialize the device structure. */
 	dev->netdev_ops = &dummy_netdev_ops;
-	dev->destructor = free_netdev;
+	dev->extended->needs_free_netdev = true;
 
 	/* Fill in device structure with ethernet-generic values. */
-	dev->tx_queue_len = 0;
 	dev->flags |= IFF_NOARP;
 	dev->flags &= ~IFF_MULTICAST;
-	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
+	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE | IFF_NO_QUEUE;
 	dev->features	|= NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_TSO;
 	dev->features	|= NETIF_F_HW_CSUM | NETIF_F_HIGHDMA | NETIF_F_LLTX;
 	eth_hw_addr_random(dev);
+
+	dev->extended->min_mtu = 0;
+	dev->extended->max_mtu = 0;
 }
 
 static int dummy_validate(struct nlattr *tb[], struct nlattr *data[])
@@ -185,6 +186,8 @@ static int __init dummy_init_module(void)
 
 	rtnl_lock();
 	err = __rtnl_link_register(&dummy_link_ops);
+	if (err < 0)
+		goto out;
 
 	for (i = 0; i < numdummies && !err; i++) {
 		err = dummy_init_one();
@@ -192,6 +195,8 @@ static int __init dummy_init_module(void)
 	}
 	if (err < 0)
 		__rtnl_link_unregister(&dummy_link_ops);
+
+out:
 	rtnl_unlock();
 
 	return err;

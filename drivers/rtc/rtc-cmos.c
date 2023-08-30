@@ -697,6 +697,8 @@ cmos_do_probe(struct device *dev, struct resource *ports, int rtc_irq)
 		goto cleanup1;
 	}
 
+	hpet_rtc_timer_init();
+
 	if (is_valid_irq(rtc_irq)) {
 		irq_handler_t rtc_cmos_int_handler;
 
@@ -706,6 +708,7 @@ cmos_do_probe(struct device *dev, struct resource *ports, int rtc_irq)
 			rtc_cmos_int_handler = hpet_rtc_interrupt;
 			err = hpet_register_irq_handler(cmos_interrupt);
 			if (err != 0) {
+				hpet_mask_rtc_irq_bit(RTC_IRQMASK);
 				dev_warn(dev, "hpet_register_irq_handler "
 						" failed in rtc_init().");
 				goto cleanup1;
@@ -721,7 +724,6 @@ cmos_do_probe(struct device *dev, struct resource *ports, int rtc_irq)
 			goto cleanup1;
 		}
 	}
-	hpet_rtc_timer_init();
 
 	/* export at least the first block of NVRAM */
 	nvram.size = address_space - NVRAM_OFFSET;
@@ -1009,23 +1011,6 @@ static void __exit cmos_pnp_remove(struct pnp_dev *pnp)
 	cmos_do_remove(&pnp->dev);
 }
 
-#ifdef	CONFIG_PM
-
-static int cmos_pnp_suspend(struct pnp_dev *pnp, pm_message_t mesg)
-{
-	return cmos_suspend(&pnp->dev);
-}
-
-static int cmos_pnp_resume(struct pnp_dev *pnp)
-{
-	return cmos_resume(&pnp->dev);
-}
-
-#else
-#define	cmos_pnp_suspend	NULL
-#define	cmos_pnp_resume		NULL
-#endif
-
 static void cmos_pnp_shutdown(struct pnp_dev *pnp)
 {
 	if (system_state == SYSTEM_POWER_OFF && !cmos_poweroff(&pnp->dev))
@@ -1051,8 +1036,11 @@ static struct pnp_driver cmos_pnp_driver = {
 
 	/* flag ensures resume() gets called, and stops syslog spam */
 	.flags		= PNP_DRIVER_RES_DO_NOT_CHANGE,
-	.suspend	= cmos_pnp_suspend,
-	.resume		= cmos_pnp_resume,
+#ifdef CONFIG_PM_SLEEP
+	.driver		= {
+			.pm = &cmos_pm_ops,
+	},
+#endif
 };
 
 #endif	/* CONFIG_PNP */

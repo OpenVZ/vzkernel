@@ -3,14 +3,13 @@
 
 #include <uapi/linux/kexec.h>
 
-#ifdef CONFIG_KEXEC
+#ifdef CONFIG_KEXEC_CORE
 #include <linux/list.h>
-#include <linux/linkage.h>
 #include <linux/compat.h>
 #include <linux/ioport.h>
-#include <linux/elfcore.h>
-#include <linux/elf.h>
+#include <linux/module.h>
 #include <asm/kexec.h>
+#include <linux/crash_core.h>
 
 /* Verify architecture specific macros are defined */
 
@@ -24,6 +23,10 @@
 
 #ifndef KEXEC_CONTROL_MEMORY_LIMIT
 #error KEXEC_CONTROL_MEMORY_LIMIT not defined
+#endif
+
+#ifndef KEXEC_CONTROL_MEMORY_GFP
+#define KEXEC_CONTROL_MEMORY_GFP GFP_KERNEL
 #endif
 
 #ifndef KEXEC_CONTROL_PAGE_SIZE
@@ -42,20 +45,7 @@
 #define KEXEC_CRASH_MEM_ALIGN PAGE_SIZE
 #endif
 
-#define KEXEC_NOTE_HEAD_BYTES ALIGN(sizeof(struct elf_note), 4)
-#define KEXEC_CORE_NOTE_NAME "CORE"
-#define KEXEC_CORE_NOTE_NAME_BYTES ALIGN(sizeof(KEXEC_CORE_NOTE_NAME), 4)
-#define KEXEC_CORE_NOTE_DESC_BYTES ALIGN(sizeof(struct elf_prstatus), 4)
-/*
- * The per-cpu notes area is a list of notes terminated by a "NULL"
- * note header.  For kdump, the code in vmcore.c runs in the context
- * of the second kernel to combine them into one note.
- */
-#ifndef KEXEC_NOTE_BYTES
-#define KEXEC_NOTE_BYTES ( (KEXEC_NOTE_HEAD_BYTES * 2) +		\
-			    KEXEC_CORE_NOTE_NAME_BYTES +		\
-			    KEXEC_CORE_NOTE_DESC_BYTES )
-#endif
+#define KEXEC_CORE_NOTE_NAME	CRASH_CORE_NOTE_NAME
 
 /*
  * This structure is used to hold the arguments that are used when loading
@@ -69,7 +59,18 @@ typedef unsigned long kimage_entry_t;
 #define IND_SOURCE       0x8
 
 struct kexec_segment {
-	void __user *buf;
+	/*
+	 * This pointer can point to user memory if kexec_load() system
+	 * call is used or will point to kernel memory if
+	 * kexec_file_load() system call is used.
+	 *
+	 * Use ->buf when expecting to deal with user memory and use ->kbuf
+	 * when expecting to deal with kernel memory.
+	 */
+	union {
+		void __user *buf;
+		void *kbuf;
+	};
 	size_t bufsz;
 	unsigned long mem;
 	size_t memsz;
@@ -84,12 +85,49 @@ struct compat_kexec_segment {
 };
 #endif
 
+#ifdef CONFIG_KEXEC_FILE
+struct purgatory_info {
+	/* Pointer to elf header of read only purgatory */
+	Elf_Ehdr *ehdr;
+
+	/* Pointer to purgatory sechdrs which are modifiable */
+	Elf_Shdr *sechdrs;
+	/*
+	 * Temporary buffer location where purgatory is loaded and relocated
+	 * This memory can be freed post image load
+	 */
+	void *purgatory_buf;
+
+	/* Address where purgatory is finally loaded and is executed from */
+	unsigned long purgatory_load_addr;
+};
+
+typedef int (kexec_probe_t)(const char *kernel_buf, unsigned long kernel_size);
+typedef void *(kexec_load_t)(struct kimage *image, char *kernel_buf,
+			     unsigned long kernel_len, char *initrd,
+			     unsigned long initrd_len, char *cmdline,
+			     unsigned long cmdline_len);
+typedef int (kexec_cleanup_t)(void *loader_data);
+
+#ifdef CONFIG_KEXEC_VERIFY_SIG
+typedef int (kexec_verify_sig_t)(const char *kernel_buf,
+				 unsigned long kernel_len);
+#endif
+
+struct kexec_file_ops {
+	kexec_probe_t *probe;
+	kexec_load_t *load;
+	kexec_cleanup_t *cleanup;
+#ifdef CONFIG_KEXEC_VERIFY_SIG
+	kexec_verify_sig_t *verify_sig;
+#endif
+};
+#endif
+
 struct kimage {
 	kimage_entry_t head;
 	kimage_entry_t *entry;
 	kimage_entry_t *last_entry;
-
-	unsigned long destination;
 
 	unsigned long start;
 	struct page *control_code_page;
@@ -100,7 +138,7 @@ struct kimage {
 
 	struct list_head control_pages;
 	struct list_head dest_pages;
-	struct list_head unuseable_pages;
+	struct list_head unusable_pages;
 
 	/* Address of next control page to allocate for crash kernels. */
 	unsigned long control_page;
@@ -110,13 +148,34 @@ struct kimage {
 #define KEXEC_TYPE_DEFAULT 0
 #define KEXEC_TYPE_CRASH   1
 	unsigned int preserve_context : 1;
+	/* If set, we are using file mode kexec syscall */
+	unsigned int file_mode:1;
 
 #ifdef ARCH_HAS_KIMAGE_ARCH
 	struct kimage_arch arch;
 #endif
+
+#ifdef CONFIG_KEXEC_FILE
+	/* Additional fields for file based kexec syscall */
+	void *kernel_buf;
+	unsigned long kernel_buf_len;
+
+	void *initrd_buf;
+	unsigned long initrd_buf_len;
+
+	char *cmdline_buf;
+	unsigned long cmdline_buf_len;
+
+	/* File operations provided by image loader */
+	struct kexec_file_ops *fops;
+
+	/* Image loader handling the kernel can store a pointer here */
+	void *image_loader_data;
+
+	/* Information for loading purgatory */
+	struct purgatory_info purgatory_info;
+#endif
 };
-
-
 
 /* kexec interface functions */
 extern void machine_kexec(struct kimage *image);
@@ -127,49 +186,30 @@ extern asmlinkage long sys_kexec_load(unsigned long entry,
 					struct kexec_segment __user *segments,
 					unsigned long flags);
 extern int kernel_kexec(void);
-#ifdef CONFIG_COMPAT
-extern asmlinkage long compat_sys_kexec_load(unsigned long entry,
-				unsigned long nr_segments,
-				struct compat_kexec_segment __user *segments,
-				unsigned long flags);
-#endif
+extern int kexec_add_buffer(struct kimage *image, char *buffer,
+			    unsigned long bufsz, unsigned long memsz,
+			    unsigned long buf_align, unsigned long buf_min,
+			    unsigned long buf_max, bool top_down,
+			    unsigned long *load_addr);
 extern struct page *kimage_alloc_control_pages(struct kimage *image,
 						unsigned int order);
+extern int kexec_load_purgatory(struct kimage *image, unsigned long min,
+				unsigned long max, int top_down,
+				unsigned long *load_addr);
+extern int kexec_purgatory_get_set_symbol(struct kimage *image,
+					  const char *name, void *buf,
+					  unsigned int size, bool get_value);
+extern void *kexec_purgatory_get_symbol_addr(struct kimage *image,
+					     const char *name);
+extern void __crash_kexec(struct pt_regs *);
 extern void crash_kexec(struct pt_regs *);
 int kexec_should_crash(struct task_struct *);
+int kexec_crash_loaded(void);
 void crash_save_cpu(struct pt_regs *regs, int cpu);
-void crash_save_vmcoreinfo(void);
-void crash_map_reserved_pages(void);
-void crash_unmap_reserved_pages(void);
-void arch_crash_save_vmcoreinfo(void);
-__printf(1, 2)
-void vmcoreinfo_append_str(const char *fmt, ...);
-unsigned long paddr_vmcoreinfo_note(void);
-
-#define VMCOREINFO_OSRELEASE(value) \
-	vmcoreinfo_append_str("OSRELEASE=%s\n", value)
-#define VMCOREINFO_PAGESIZE(value) \
-	vmcoreinfo_append_str("PAGESIZE=%ld\n", value)
-#define VMCOREINFO_SYMBOL(name) \
-	vmcoreinfo_append_str("SYMBOL(%s)=%lx\n", #name, (unsigned long)&name)
-#define VMCOREINFO_SIZE(name) \
-	vmcoreinfo_append_str("SIZE(%s)=%lu\n", #name, \
-			      (unsigned long)sizeof(name))
-#define VMCOREINFO_STRUCT_SIZE(name) \
-	vmcoreinfo_append_str("SIZE(%s)=%lu\n", #name, \
-			      (unsigned long)sizeof(struct name))
-#define VMCOREINFO_OFFSET(name, field) \
-	vmcoreinfo_append_str("OFFSET(%s.%s)=%lu\n", #name, #field, \
-			      (unsigned long)offsetof(struct name, field))
-#define VMCOREINFO_LENGTH(name, value) \
-	vmcoreinfo_append_str("LENGTH(%s)=%lu\n", #name, (unsigned long)value)
-#define VMCOREINFO_NUMBER(name) \
-	vmcoreinfo_append_str("NUMBER(%s)=%ld\n", #name, (long)name)
-#define VMCOREINFO_CONFIG(name) \
-	vmcoreinfo_append_str("CONFIG_%s=y\n", #name)
 
 extern struct kimage *kexec_image;
 extern struct kimage *kexec_crash_image;
+extern int kexec_load_disabled;
 
 #ifndef kexec_flush_icache_page
 #define kexec_flush_icache_page(page)
@@ -182,36 +222,50 @@ extern struct kimage *kexec_crash_image;
 #define KEXEC_FLAGS    (KEXEC_ON_CRASH | KEXEC_PRESERVE_CONTEXT)
 #endif
 
-#define VMCOREINFO_BYTES           (4096)
-#define VMCOREINFO_NOTE_NAME       "VMCOREINFO"
-#define VMCOREINFO_NOTE_NAME_BYTES ALIGN(sizeof(VMCOREINFO_NOTE_NAME), 4)
-#define VMCOREINFO_NOTE_SIZE       (KEXEC_NOTE_HEAD_BYTES*2 + VMCOREINFO_BYTES \
-				    + VMCOREINFO_NOTE_NAME_BYTES)
+/* List of defined/legal kexec file flags */
+#define KEXEC_FILE_FLAGS	(KEXEC_FILE_UNLOAD | KEXEC_FILE_ON_CRASH | \
+				 KEXEC_FILE_NO_INITRAMFS)
 
 /* Location of a reserved region to hold the crash kernel.
  */
 extern struct resource crashk_res;
 extern struct resource crashk_low_res;
-typedef u32 note_buf_t[KEXEC_NOTE_BYTES/4];
 extern note_buf_t __percpu *crash_notes;
-extern u32 vmcoreinfo_note[VMCOREINFO_NOTE_SIZE/4];
-extern size_t vmcoreinfo_size;
-extern size_t vmcoreinfo_max_size;
 
-int __init parse_crashkernel(char *cmdline, unsigned long long system_ram,
-		unsigned long long *crash_size, unsigned long long *crash_base);
-int parse_crashkernel_high(char *cmdline, unsigned long long system_ram,
-		unsigned long long *crash_size, unsigned long long *crash_base);
-int parse_crashkernel_low(char *cmdline, unsigned long long system_ram,
-		unsigned long long *crash_size, unsigned long long *crash_base);
+/* flag to track if kexec reboot is in progress */
+extern bool kexec_in_progress;
+
 int crash_shrink_memory(unsigned long new_size);
 size_t crash_get_memory_size(void);
 void crash_free_reserved_phys_range(unsigned long begin, unsigned long end);
 
-#else /* !CONFIG_KEXEC */
+int __weak arch_kexec_kernel_image_probe(struct kimage *image, void *buf,
+					 unsigned long buf_len);
+void * __weak arch_kexec_kernel_image_load(struct kimage *image);
+int __weak arch_kimage_file_post_load_cleanup(struct kimage *image);
+int __weak arch_kexec_kernel_verify_sig(struct kimage *image, void *buf,
+					unsigned long buf_len);
+int __weak arch_kexec_apply_relocations_add(const Elf_Ehdr *ehdr,
+					Elf_Shdr *sechdrs, unsigned int relsec);
+int __weak arch_kexec_apply_relocations(const Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
+					unsigned int relsec);
+void arch_kexec_protect_crashkres(void);
+void arch_kexec_unprotect_crashkres(void);
+
+#ifndef arch_kexec_post_alloc_pages
+static inline int arch_kexec_post_alloc_pages(void *vaddr, unsigned int pages, gfp_t gfp) { return 0; }
+#endif
+
+#ifndef arch_kexec_pre_free_pages
+static inline void arch_kexec_pre_free_pages(void *vaddr, unsigned int pages) { }
+#endif
+
+#else /* !CONFIG_KEXEC_CORE */
 struct pt_regs;
 struct task_struct;
+static inline void __crash_kexec(struct pt_regs *regs) { }
 static inline void crash_kexec(struct pt_regs *regs) { }
 static inline int kexec_should_crash(struct task_struct *p) { return 0; }
-#endif /* CONFIG_KEXEC */
+static inline int kexec_crash_loaded(void) { return 0; }
+#endif /* CONFIG_KEXEC_CORE */
 #endif /* LINUX_KEXEC_H */

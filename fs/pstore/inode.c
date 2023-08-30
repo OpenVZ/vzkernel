@@ -178,6 +178,8 @@ static int pstore_unlink(struct inode *dir, struct dentry *dentry)
 	if (p->psi->erase)
 		p->psi->erase(p->type, p->id, p->count,
 			      dentry->d_inode->i_ctime, p->psi);
+	else
+		return -EPERM;
 
 	return simple_unlink(dir, dentry);
 }
@@ -324,6 +326,18 @@ int pstore_mkfile(enum pstore_type_id type, char *psname, u64 id, int count,
 	case PSTORE_TYPE_MCE:
 		sprintf(name, "mce-%s-%lld", psname, id);
 		break;
+	case PSTORE_TYPE_PPC_RTAS:
+		sprintf(name, "rtas-%s-%lld", psname, id);
+		break;
+	case PSTORE_TYPE_PPC_OF:
+		sprintf(name, "powerpc-ofw-%s-%lld", psname, id);
+		break;
+	case PSTORE_TYPE_PPC_COMMON:
+		sprintf(name, "powerpc-common-%s-%lld", psname, id);
+		break;
+	case PSTORE_TYPE_PPC_OPAL:
+		sprintf(name, "powerpc-opal-%s-%lld", psname, id);
+		break;
 	case PSTORE_TYPE_UNKNOWN:
 		sprintf(name, "unknown-%s-%lld", psname, id);
 		break;
@@ -418,22 +432,18 @@ static struct file_system_type pstore_fs_type = {
 	.kill_sb	= pstore_kill_sb,
 };
 
-static struct kobject *pstore_kobj;
-
 static int __init init_pstore_fs(void)
 {
-	int err = 0;
+	int err;
 
 	/* Create a convenient mount point for people to access pstore */
-	pstore_kobj = kobject_create_and_add("pstore", fs_kobj);
-	if (!pstore_kobj) {
-		err = -ENOMEM;
+	err = sysfs_create_mount_point(fs_kobj, "pstore");
+	if (err)
 		goto out;
-	}
 
 	err = register_filesystem(&pstore_fs_type);
 	if (err < 0)
-		kobject_put(pstore_kobj);
+		sysfs_remove_mount_point(fs_kobj, "pstore");
 
 out:
 	return err;

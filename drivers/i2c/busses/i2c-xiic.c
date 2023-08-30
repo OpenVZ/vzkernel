@@ -12,10 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- *
  *
  * This code was implemented by Mocean Laboratories AB when porting linux
  * to the automotive development board Russellville. The copyright holder
@@ -40,7 +36,6 @@
 #include <linux/i2c-xiic.h>
 #include <linux/io.h>
 #include <linux/slab.h>
-#include <linux/of_i2c.h>
 
 #define DRIVER_NAME "xiic-i2c"
 
@@ -751,8 +746,6 @@ static int xiic_i2c_probe(struct platform_device *pdev)
 		for (i = 0; i < pdata->num_devices; i++)
 			i2c_new_device(&i2c->adap, pdata->devices + i);
 	}
-
-	of_i2c_register_devices(&i2c->adap);
 
 	return 0;
 

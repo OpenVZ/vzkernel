@@ -24,6 +24,7 @@ struct uts_namespace {
 	struct new_utsname name;
 	struct user_namespace *user_ns;
 	unsigned int proc_inum;
+	RH_KABI_EXTEND(struct ucounts *ucounts)
 };
 extern struct uts_namespace init_uts_ns;
 

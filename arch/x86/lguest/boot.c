@@ -882,9 +882,9 @@ int lguest_setup_irq(unsigned int irq)
  * It would be far better for everyone if the Guest had its own clock, but
  * until then the Host gives us the time on every interrupt.
  */
-static unsigned long lguest_get_wallclock(void)
+static void lguest_get_wallclock(struct timespec *now)
 {
-	return lguest_data.time.tv_sec;
+	*now = lguest_data.time;
 }
 
 /*
@@ -902,7 +902,7 @@ static unsigned long lguest_tsc_khz(void)
  * If we can't use the TSC, the kernel falls back to our lower-priority
  * "lguest_clock", where we read the time value given to us by the Host.
  */
-static cycle_t lguest_clock_read(struct clocksource *cs)
+static u64 lguest_clock_read(struct clocksource *cs)
 {
 	unsigned long sec, nsec;
 
@@ -1336,7 +1336,6 @@ __init void lguest_init(void)
 	pv_mmu_ops.lazy_mode.leave = lguest_leave_lazy_mmu_mode;
 	pv_mmu_ops.lazy_mode.flush = paravirt_flush_lazy_mmu;
 	pv_mmu_ops.pte_update = lguest_pte_update;
-	pv_mmu_ops.pte_update_defer = lguest_pte_update;
 
 #ifdef CONFIG_X86_LOCAL_APIC
 	/* APIC read/write intercepts */

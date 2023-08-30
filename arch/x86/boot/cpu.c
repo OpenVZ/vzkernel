@@ -79,6 +79,8 @@ int validate_cpu(void)
 		}
 		putchar('\n');
 		return -1;
+	} else if (check_knl_erratum()) {
+		return -1;
 	} else {
 		return 0;
 	}

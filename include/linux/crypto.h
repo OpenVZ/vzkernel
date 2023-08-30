@@ -26,6 +26,19 @@
 #include <linux/uaccess.h>
 
 /*
+ * Autoloaded crypto modules should only use a prefixed name to avoid allowing
+ * arbitrary modules to be loaded. Loading from userspace may still need the
+ * unprefixed names, so retains those aliases as well.
+ * This uses __MODULE_INFO directly instead of MODULE_ALIAS because pre-4.3
+ * gcc (e.g. avr32 toolchain) uses __LINE__ for uniqueness, and this macro
+ * expands twice on the same line. Instead, use a separate base name for the
+ * alias.
+ */
+#define MODULE_ALIAS_CRYPTO(name)	\
+		__MODULE_INFO(alias, alias_userspace, name);	\
+		__MODULE_INFO(alias, alias_crypto, "crypto-" name)
+
+/*
  * Algorithm masks and types.
  */
 #define CRYPTO_ALG_TYPE_MASK		0x0000000f
@@ -39,12 +52,17 @@
 #define CRYPTO_ALG_TYPE_HASH		0x00000008
 #define CRYPTO_ALG_TYPE_SHASH		0x00000009
 #define CRYPTO_ALG_TYPE_AHASH		0x0000000a
+#define CRYPTO_ALG_TYPE_KPP		0x0000000e
+#define CRYPTO_ALG_TYPE_ACOMPRESS	0x0000000a
+#define CRYPTO_ALG_TYPE_SCOMPRESS	0x0000000b
 #define CRYPTO_ALG_TYPE_RNG		0x0000000c
+#define CRYPTO_ALG_TYPE_AKCIPHER	0x0000000d
 #define CRYPTO_ALG_TYPE_PCOMPRESS	0x0000000f
 
 #define CRYPTO_ALG_TYPE_HASH_MASK	0x0000000e
 #define CRYPTO_ALG_TYPE_AHASH_MASK	0x0000000c
 #define CRYPTO_ALG_TYPE_BLKCIPHER_MASK	0x0000000c
+#define CRYPTO_ALG_TYPE_ACOMPRESS_MASK	0x0000000e
 
 #define CRYPTO_ALG_LARVAL		0x00000010
 #define CRYPTO_ALG_DEAD			0x00000020
@@ -80,6 +98,12 @@
  * not available to userspace via instruction set or so.
  */
 #define CRYPTO_ALG_KERN_DRIVER_ONLY	0x00001000
+
+/*
+ * Mark a cipher as a service implementation only usable by another
+ * cipher and never by a normal user of the kernel crypto API
+ */
+#define CRYPTO_ALG_INTERNAL		0x00002000
 
 /*
  * Transform masks and values (for crt_flags).
@@ -710,9 +734,9 @@ static inline void ablkcipher_request_free(struct ablkcipher_request *req)
 
 static inline void ablkcipher_request_set_callback(
 	struct ablkcipher_request *req,
-	u32 flags, crypto_completion_t complete, void *data)
+	u32 flags, crypto_completion_t compl, void *data)
 {
-	req->base.complete = complete;
+	req->base.complete = compl;
 	req->base.data = data;
 	req->base.flags = flags;
 }
@@ -826,7 +850,7 @@ static inline struct aead_request *aead_request_alloc(struct crypto_aead *tfm,
 {
 	struct aead_request *req;
 
-	req = kmalloc(sizeof(*req) + crypto_aead_reqsize(tfm), gfp);
+	req = kzalloc(sizeof(*req) + crypto_aead_reqsize(tfm), gfp);
 
 	if (likely(req))
 		aead_request_set_tfm(req, tfm);
@@ -841,10 +865,10 @@ static inline void aead_request_free(struct aead_request *req)
 
 static inline void aead_request_set_callback(struct aead_request *req,
 					     u32 flags,
-					     crypto_completion_t complete,
+					     crypto_completion_t compl,
 					     void *data)
 {
-	req->base.complete = complete;
+	req->base.complete = compl;
 	req->base.data = data;
 	req->base.flags = flags;
 }

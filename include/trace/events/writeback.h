@@ -4,6 +4,7 @@
 #if !defined(_TRACE_WRITEBACK_H) || defined(TRACE_HEADER_MULTI_READ)
 #define _TRACE_WRITEBACK_H
 
+#include <linux/tracepoint.h>
 #include <linux/backing-dev.h>
 #include <linux/writeback.h>
 
@@ -46,7 +47,8 @@ TRACE_EVENT(writeback_dirty_page,
 
 	TP_fast_assign(
 		strncpy(__entry->name,
-			mapping ? dev_name(mapping->backing_dev_info->dev) : "(unknown)", 32);
+			mapping && mapping->backing_dev_info->dev
+			? dev_name(mapping->backing_dev_info->dev) : "(unknown)", 32);
 		__entry->ino = mapping ? mapping->host->i_ino : 0;
 		__entry->index = page->index;
 	),

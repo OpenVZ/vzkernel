@@ -79,6 +79,7 @@ void __init page_cgroup_init_flatmem(void)
 	printk(KERN_INFO "allocated %ld bytes of page_cgroup\n", total_usage);
 	printk(KERN_INFO "please try 'cgroup_disable=memory' option if you"
 	" don't want memory cgroups\n");
+	invoke_page_ext_init_callbacks();
 	return;
 fail:
 	printk(KERN_CRIT "allocation of page_cgroup failed.\n");
@@ -150,6 +151,19 @@ static int __meminit init_section_page_cgroup(unsigned long pfn, int nid)
 		return -ENOMEM;
 	}
 
+#ifdef CONFIG_PAGE_OWNER
+	if (!page_owner_disabled) {
+		gfp_t flags = GFP_KERNEL | __GFP_ZERO | __GFP_NOWARN;
+		size_t size = sizeof(struct page_owner);
+		int i;
+
+		for (i = 0; i < PAGES_PER_SECTION; i++) {
+			struct page_ext *p = &(base + i)->ext;
+			p->owner = kmalloc_node(size, flags, nid);
+		}
+	}
+#endif
+
 	/*
 	 * The passed "pfn" may not be aligned to SECTION.  For the calculation
 	 * we need to apply a mask.
@@ -162,6 +176,17 @@ static int __meminit init_section_page_cgroup(unsigned long pfn, int nid)
 #ifdef CONFIG_MEMORY_HOTPLUG
 static void free_page_cgroup(void *addr)
 {
+#ifdef CONFIG_PAGE_OWNER
+	if (!page_owner_disabled) {
+		struct page_cgroup *base = addr;
+		int i;
+
+		for (i = 0; i < PAGES_PER_SECTION; i++) {
+			struct page_ext *p = &(base + i)->ext;
+			kfree(p->owner);
+		}
+	}
+#endif
 	if (is_vmalloc_addr(addr)) {
 		vfree(addr);
 	} else {
@@ -170,6 +195,7 @@ static void free_page_cgroup(void *addr)
 			sizeof(struct page_cgroup) * PAGES_PER_SECTION;
 
 		BUG_ON(PageReserved(page));
+		kmemleak_free(addr);
 		free_pages_exact(addr, table_size);
 	}
 }
@@ -295,8 +321,9 @@ void __init page_cgroup_init(void)
 			 * We know some arch can have a nodes layout such as
 			 * -------------pfn-------------->
 			 * N0 | N1 | N2 | N0 | N1 | N2|....
+			 * skip if this section starts in a higher node
 			 */
-			if (pfn_to_nid(pfn) != nid)
+			if (early_pfn_to_nid(pfn) > nid)
 				continue;
 			if (init_section_page_cgroup(pfn, nid))
 				goto oom;
@@ -306,6 +333,7 @@ void __init page_cgroup_init(void)
 	printk(KERN_INFO "allocated %ld bytes of page_cgroup\n", total_usage);
 	printk(KERN_INFO "please try 'cgroup_disable=memory' option if you "
 			 "don't want memory cgroups\n");
+	invoke_page_ext_init_callbacks();
 	return;
 oom:
 	printk(KERN_CRIT "try 'cgroup_disable=memory' boot option\n");

@@ -10,6 +10,7 @@
  */
 
 #include <linux/oprofile.h>
+#include <linux/perf_event.h>
 #include <linux/init.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
@@ -67,6 +68,21 @@ module_param_call(cpu_type, set_cpu_type, NULL, NULL, 0);
 MODULE_PARM_DESC(cpu_type, "Force legacy basic mode sampling"
 		           "(report cpu_type \"timer\"");
 
+static int __oprofile_hwsampler_start(void)
+{
+	int retval;
+
+	retval = hwsampler_allocate(oprofile_sdbt_blocks, oprofile_sdb_blocks);
+	if (retval)
+		return retval;
+
+	retval = hwsampler_start_all(oprofile_hw_interval);
+	if (retval)
+		hwsampler_deallocate();
+
+	return retval;
+}
+
 static int oprofile_hwsampler_start(void)
 {
 	int retval;
@@ -76,13 +92,13 @@ static int oprofile_hwsampler_start(void)
 	if (!hwsampler_running)
 		return timer_ops.start();
 
-	retval = hwsampler_allocate(oprofile_sdbt_blocks, oprofile_sdb_blocks);
+	retval = perf_reserve_sampling();
 	if (retval)
 		return retval;
 
-	retval = hwsampler_start_all(oprofile_hw_interval);
+	retval = __oprofile_hwsampler_start();
 	if (retval)
-		hwsampler_deallocate();
+		perf_release_sampling();
 
 	return retval;
 }
@@ -96,6 +112,7 @@ static void oprofile_hwsampler_stop(void)
 
 	hwsampler_stop_all();
 	hwsampler_deallocate();
+	perf_release_sampling();
 	return;
 }
 
@@ -440,7 +457,7 @@ static int oprofile_hwsampler_init(struct oprofile_operations *ops)
 		switch (id.machine) {
 		case 0x2097: case 0x2098: ops->cpu_type = "s390/z10"; break;
 		case 0x2817: case 0x2818: ops->cpu_type = "s390/z196"; break;
-		case 0x2827:              ops->cpu_type = "s390/zEC12"; break;
+		case 0x2827: case 0x2828: ops->cpu_type = "s390/zEC12"; break;
 		default: return -ENODEV;
 		}
 	}

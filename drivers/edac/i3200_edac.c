@@ -403,7 +403,7 @@ static int i3200_probe1(struct pci_dev *pdev, int dev_idx)
 			if (nr_pages == 0)
 				continue;
 
-			edac_dbg(0, "csrow %d, channel %d%s, size = %ld Mb\n", i, j,
+			edac_dbg(0, "csrow %d, channel %d%s, size = %ld MiB\n", i, j,
 				 stacked ? " (stacked)" : "", PAGES_TO_MiB(nr_pages));
 
 			dimm->nr_pages = nr_pages;
@@ -467,7 +467,7 @@ static void i3200_remove_one(struct pci_dev *pdev)
 	edac_mc_free(mci);
 }
 
-static DEFINE_PCI_DEVICE_TABLE(i3200_pci_tbl) = {
+static const struct pci_device_id i3200_pci_tbl[] = {
 	{
 		PCI_VEND_DEV(INTEL, 3200_HB), PCI_ANY_ID, PCI_ANY_ID, 0, 0,
 		I3200},

@@ -23,20 +23,32 @@
 
 size_t perf_top__header_snprintf(struct perf_top *top, char *bf, size_t size)
 {
-	float samples_per_sec = top->samples / top->delay_secs;
-	float ksamples_per_sec = top->kernel_samples / top->delay_secs;
-	float esamples_percent = (100.0 * top->exact_samples) / top->samples;
-	struct perf_record_opts *opts = &top->record_opts;
-	struct perf_target *target = &opts->target;
+	float samples_per_sec;
+	float ksamples_per_sec;
+	float esamples_percent;
+	struct record_opts *opts = &top->record_opts;
+	struct target *target = &opts->target;
 	size_t ret = 0;
 
+	if (top->samples) {
+		samples_per_sec = top->samples / top->delay_secs;
+		ksamples_per_sec = top->kernel_samples / top->delay_secs;
+		esamples_percent = (100.0 * top->exact_samples) / top->samples;
+	} else {
+		samples_per_sec = ksamples_per_sec = esamples_percent = 0.0;
+	}
+
 	if (!perf_guest) {
+		float ksamples_percent = 0.0;
+
+		if (samples_per_sec)
+			ksamples_percent = (100.0 * ksamples_per_sec) /
+							samples_per_sec;
 		ret = SNPRINTF(bf, size,
 			       "   PerfTop:%8.0f irqs/sec  kernel:%4.1f%%"
-			       "  exact: %4.1f%% [", samples_per_sec,
-			       100.0 - (100.0 * ((samples_per_sec - ksamples_per_sec) /
-					samples_per_sec)),
-				esamples_percent);
+			       "  exact: %4.1f%% lost: %" PRIu64 "/%" PRIu64 " drop: %" PRIu64 "/%" PRIu64 " [",
+			       samples_per_sec, ksamples_percent, esamples_percent,
+			       top->lost, top->lost_total, top->drop, top->drop_total);
 	} else {
 		float us_samples_per_sec = top->us_samples / top->delay_secs;
 		float guest_kernel_samples_per_sec = top->guest_kernel_samples / top->delay_secs;
@@ -95,6 +107,7 @@ size_t perf_top__header_snprintf(struct perf_top *top, char *bf, size_t size)
 					top->evlist->cpus->nr > 1 ? "s" : "");
 	}
 
+	perf_top__reset_sample_counters(top);
 	return ret;
 }
 
@@ -102,5 +115,5 @@ void perf_top__reset_sample_counters(struct perf_top *top)
 {
 	top->samples = top->us_samples = top->kernel_samples =
 	top->exact_samples = top->guest_kernel_samples =
-	top->guest_us_samples = 0;
+	top->guest_us_samples = top->lost = top->drop = 0;
 }

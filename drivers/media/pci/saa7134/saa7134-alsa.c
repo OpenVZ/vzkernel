@@ -172,7 +172,9 @@ static void saa7134_irq_alsa_done(struct saa7134_dev *dev,
 		dprintk("irq: overrun [full=%d/%d] - Blocks in %d\n",dev->dmasound.read_count,
 			dev->dmasound.bufsize, dev->dmasound.blocks);
 		spin_unlock(&dev->slock);
+		snd_pcm_stream_lock(dev->dmasound.substream);
 		snd_pcm_stop(dev->dmasound.substream,SNDRV_PCM_STATE_XRUN);
+		snd_pcm_stream_unlock(dev->dmasound.substream);
 		return;
 	}
 
@@ -1070,8 +1072,8 @@ static int alsa_card_saa7134_create(struct saa7134_dev *dev, int devnum)
 	if (!enable[devnum])
 		return -ENODEV;
 
-	err = snd_card_create(index[devnum], id[devnum], THIS_MODULE,
-			      sizeof(snd_card_saa7134_t), &card);
+	err = snd_card_new(&dev->pci->dev, index[devnum], id[devnum],
+			   THIS_MODULE, sizeof(snd_card_saa7134_t), &card);
 	if (err < 0)
 		return err;
 
@@ -1113,8 +1115,6 @@ static int alsa_card_saa7134_create(struct saa7134_dev *dev, int devnum)
 	if ((err = snd_card_saa7134_pcm(chip, 0)) < 0)
 		goto __nodev;
 
-	snd_card_set_dev(card, &chip->pci->dev);
-
 	/* End of "creation" */
 
 	strcpy(card->shortname, "SAA7134");
@@ -1143,6 +1143,8 @@ static int alsa_device_init(struct saa7134_dev *dev)
 
 static int alsa_device_exit(struct saa7134_dev *dev)
 {
+	if (!snd_saa7134_cards[dev->nr])
+		return 1;
 
 	snd_card_free(snd_saa7134_cards[dev->nr]);
 	snd_saa7134_cards[dev->nr] = NULL;
@@ -1192,7 +1194,8 @@ static void saa7134_alsa_exit(void)
 	int idx;
 
 	for (idx = 0; idx < SNDRV_CARDS; idx++) {
-		snd_card_free(snd_saa7134_cards[idx]);
+		if (snd_saa7134_cards[idx])
+			snd_card_free(snd_saa7134_cards[idx]);
 	}
 
 	saa7134_dmasound_init = NULL;

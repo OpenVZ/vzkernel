@@ -28,7 +28,7 @@
 #include <asm/chpid.h>
 #include <asm/airq.h>
 #include <asm/isc.h>
-#include <asm/cputime.h>
+#include <linux/cputime.h>
 #include <asm/fcx.h>
 #include <asm/nmi.h>
 #include <asm/crw.h>
@@ -342,8 +342,9 @@ static int cio_check_config(struct subchannel *sch, struct schib *schib)
  */
 int cio_commit_config(struct subchannel *sch)
 {
-	struct schib schib;
 	int ccode, retry, ret = 0;
+	struct schib schib;
+	struct irb irb;
 
 	if (stsch_err(sch->schid, &schib) || !css_sch_is_valid(&schib))
 		return -ENODEV;
@@ -367,7 +368,10 @@ int cio_commit_config(struct subchannel *sch)
 			ret = -EAGAIN;
 			break;
 		case 1: /* status pending */
-			return -EBUSY;
+			ret = -EBUSY;
+			if (tsch(sch->schid, &irb))
+				return ret;
+			break;
 		case 2: /* busy */
 			udelay(100); /* allow for recovery */
 			ret = -EBUSY;
@@ -403,7 +407,6 @@ EXPORT_SYMBOL_GPL(cio_update_schib);
  */
 int cio_enable_subchannel(struct subchannel *sch, u32 intparm)
 {
-	int retry;
 	int ret;
 
 	CIO_TRACE_EVENT(2, "ensch");
@@ -418,20 +421,14 @@ int cio_enable_subchannel(struct subchannel *sch, u32 intparm)
 	sch->config.isc = sch->isc;
 	sch->config.intparm = intparm;
 
-	for (retry = 0; retry < 3; retry++) {
+	ret = cio_commit_config(sch);
+	if (ret == -EIO) {
+		/*
+		 * Got a program check in msch. Try without
+		 * the concurrent sense bit the next time.
+		 */
+		sch->config.csense = 0;
 		ret = cio_commit_config(sch);
-		if (ret == -EIO) {
-			/*
-			 * Got a program check in msch. Try without
-			 * the concurrent sense bit the next time.
-			 */
-			sch->config.csense = 0;
-		} else if (ret == -EBUSY) {
-			struct irb irb;
-			if (tsch(sch->schid, &irb) != 0)
-				break;
-		} else
-			break;
 	}
 	CIO_HEX_EVENT(2, &ret, sizeof(ret));
 	return ret;
@@ -444,7 +441,6 @@ EXPORT_SYMBOL_GPL(cio_enable_subchannel);
  */
 int cio_disable_subchannel(struct subchannel *sch)
 {
-	int retry;
 	int ret;
 
 	CIO_TRACE_EVENT(2, "dissch");
@@ -456,16 +452,8 @@ int cio_disable_subchannel(struct subchannel *sch)
 		return -ENODEV;
 
 	sch->config.ena = 0;
+	ret = cio_commit_config(sch);
 
-	for (retry = 0; retry < 3; retry++) {
-		ret = cio_commit_config(sch);
-		if (ret == -EBUSY) {
-			struct irb irb;
-			if (tsch(sch->schid, &irb) != 0)
-				break;
-		} else
-			break;
-	}
 	CIO_HEX_EVENT(2, &ret, sizeof(ret));
 	return ret;
 }
@@ -890,9 +878,9 @@ static void css_reset(void)
 			atomic_inc(&chpid_reset_count);
 	}
 	/* Wait for machine check for all channel paths. */
-	timeout = get_tod_clock() + (RCHP_TIMEOUT << 12);
+	timeout = get_tod_clock_fast() + (RCHP_TIMEOUT << 12);
 	while (atomic_read(&chpid_reset_count) != 0) {
-		if (get_tod_clock() > timeout)
+		if (get_tod_clock_fast() > timeout)
 			break;
 		cpu_relax();
 	}
@@ -959,7 +947,7 @@ void reipl_ccw_dev(struct ccw_dev_id *devid)
 {
 	struct subchannel_id uninitialized_var(schid);
 
-	s390_reset_system(NULL, NULL);
+	s390_reset_system(NULL, NULL, NULL);
 	if (reipl_find_schid(devid, &schid) != 0)
 		panic("IPL Device not found\n");
 	do_reipl_asm(*((__u32*)&schid));
@@ -967,18 +955,32 @@ void reipl_ccw_dev(struct ccw_dev_id *devid)
 
 int __init cio_get_iplinfo(struct cio_iplinfo *iplinfo)
 {
+	static struct chsc_sda_area sda_area __initdata;
 	struct subchannel_id schid;
 	struct schib schib;
 
 	schid = *(struct subchannel_id *)&S390_lowcore.subchannel_id;
 	if (!schid.one)
 		return -ENODEV;
+
+	if (schid.ssid) {
+		/*
+		 * Firmware should have already enabled MSS but whoever started
+		 * the kernel might have initiated a channel subsystem reset.
+		 * Ensure that MSS is enabled.
+		 */
+		memset(&sda_area, 0, sizeof(sda_area));
+		if (__chsc_enable_facility(&sda_area, CHSC_SDA_OC_MSS))
+			return -ENODEV;
+	}
 	if (stsch_err(schid, &schib))
 		return -ENODEV;
 	if (schib.pmcw.st != SUBCHANNEL_TYPE_IO)
 		return -ENODEV;
 	if (!schib.pmcw.dnv)
 		return -ENODEV;
+
+	iplinfo->ssid = schid.ssid;
 	iplinfo->devno = schib.pmcw.dev;
 	iplinfo->is_qdio = schib.pmcw.qf;
 	return 0;

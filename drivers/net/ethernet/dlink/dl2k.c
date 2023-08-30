@@ -539,7 +539,7 @@ rio_tx_timeout (struct net_device *dev)
 		dev->name, dr32(TxStatus));
 	rio_free_tx(dev, 0);
 	dev->if_port = 0;
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 }
 
  /* allocate and initialize Tx and Rx descriptors */

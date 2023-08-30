@@ -97,6 +97,7 @@ bool kthread_should_park(void)
 {
 	return test_bit(KTHREAD_SHOULD_PARK, &to_kthread(current)->flags);
 }
+EXPORT_SYMBOL_GPL(kthread_should_park);
 
 /**
  * kthread_freezable_should_stop - should this freezable kthread return now?
@@ -171,6 +172,7 @@ void kthread_parkme(void)
 {
 	__kthread_parkme(to_kthread(current));
 }
+EXPORT_SYMBOL_GPL(kthread_parkme);
 
 static int kthread(void *_create)
 {
@@ -210,7 +212,7 @@ int tsk_fork_get_node(struct task_struct *tsk)
 	if (tsk == kthreadd_task)
 		return tsk->pref_node_fork;
 #endif
-	return numa_node_id();
+	return NUMA_NO_NODE;
 }
 
 static void create_kthread(struct kthread_create_info *create)
@@ -374,6 +376,7 @@ void kthread_unpark(struct task_struct *k)
 	if (kthread)
 		__kthread_unpark(k, kthread);
 }
+EXPORT_SYMBOL_GPL(kthread_unpark);
 
 /**
  * kthread_park - park a thread created by kthread_create().
@@ -404,6 +407,7 @@ int kthread_park(struct task_struct *k)
 	}
 	return ret;
 }
+EXPORT_SYMBOL_GPL(kthread_park);
 
 /**
  * kthread_stop - stop a thread created by kthread_create().

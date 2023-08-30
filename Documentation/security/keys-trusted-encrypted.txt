@@ -27,17 +27,26 @@ Usage:
     keyctl print keyid
 
     options:
-       keyhandle= ascii hex value of sealing key default 0x40000000 (SRK)
-       keyauth=	  ascii hex auth for sealing key default 0x00...i
-		  (40 ascii zeros)
-       blobauth=  ascii hex auth for sealed data default 0x00...
-		  (40 ascii zeros)
-       blobauth=  ascii hex auth for sealed data default 0x00...
-		  (40 ascii zeros)
-       pcrinfo=	  ascii hex of PCR_INFO or PCR_INFO_LONG (no default)
-       pcrlock=	  pcr number to be extended to "lock" blob
-       migratable= 0|1 indicating permission to reseal to new PCR values,
-                   default 1 (resealing allowed)
+       keyhandle=    ascii hex value of sealing key default 0x40000000 (SRK)
+       keyauth=	     ascii hex auth for sealing key default 0x00...i
+                     (40 ascii zeros)
+       blobauth=     ascii hex auth for sealed data default 0x00...
+                     (40 ascii zeros)
+       blobauth=     ascii hex auth for sealed data default 0x00...
+                     (40 ascii zeros)
+       pcrinfo=	     ascii hex of PCR_INFO or PCR_INFO_LONG (no default)
+       pcrlock=	     pcr number to be extended to "lock" blob
+       migratable=   0|1 indicating permission to reseal to new PCR values,
+                     default 1 (resealing allowed)
+       hash=         hash algorithm name as a string. For TPM 1.x the only
+                     allowed value is sha1. For TPM 2.x the allowed values
+                     are sha1, sha256, sha384, sha512 and sm3-256.
+       policydigest= digest for the authorization policy. must be calculated
+                     with the same hash algorithm as specified by the 'hash='
+                     option.
+       policyhandle= handle to an authorization policy session that defines the
+                     same policy and with the same hash algorithm as was used to
+                     seal the key.
 
 "keyctl print" returns an ascii hex copy of the sealed key, which is in standard
 TPM_STORED_DATA format.  The key length for new keys are always in bytes.
@@ -63,7 +72,7 @@ Usage:
     keyctl add encrypted name "load hex_blob" ring
     keyctl update keyid "update key-type:master-key-name"
 
-format:= 'default | ecryptfs'
+format:= 'default | ecryptfs | enc32'
 key-type:= 'trusted' | 'user'
 
 
@@ -158,3 +167,7 @@ are anticipated.  In particular the new format 'ecryptfs' has been defined in
 in order to use encrypted keys to mount an eCryptfs filesystem.  More details
 about the usage can be found in the file
 'Documentation/security/keys-ecryptfs.txt'.
+
+Another new format 'enc32' has been defined in order to support encrypted keys
+with payload size of 32 bytes. This will initially be used for nvdimm security
+but may expand to other usages that require 32 bytes payload.

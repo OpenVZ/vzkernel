@@ -554,8 +554,10 @@ void *kmem_cache_alloc_node(struct kmem_cache *c, gfp_t flags, int node)
 					    flags, node);
 	}
 
-	if (c->ctor)
+	if (c->ctor) {
+		WARN_ON_ONCE(flags & __GFP_ZERO);
 		c->ctor(b);
+	}
 
 	kmemleak_alloc_recursive(b, c->size, 1, c->flags, flags);
 	return b;
@@ -593,6 +595,19 @@ void kmem_cache_free(struct kmem_cache *c, void *b)
 	trace_kmem_cache_free(_RET_IP_, b);
 }
 EXPORT_SYMBOL(kmem_cache_free);
+
+void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
+{
+	__kmem_cache_free_bulk(s, size, p);
+}
+EXPORT_SYMBOL(kmem_cache_free_bulk);
+
+int kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t size,
+								void **p)
+{
+	return __kmem_cache_alloc_bulk(s, flags, size, p);
+}
+EXPORT_SYMBOL(kmem_cache_alloc_bulk);
 
 int __kmem_cache_shutdown(struct kmem_cache *c)
 {

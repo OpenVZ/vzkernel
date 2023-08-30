@@ -3830,7 +3830,6 @@ rs_close(struct tty_struct *tty, struct file * filp)
 		wake_up_interruptible(&info->port.open_wait);
 	}
 	info->port.flags &= ~(ASYNC_NORMAL_ACTIVE|ASYNC_CLOSING);
-	wake_up_interruptible(&info->port.close_wait);
 	local_irq_restore(flags);
 
 	/* port closed */
@@ -3941,25 +3940,7 @@ block_til_ready(struct tty_struct *tty, struct file * filp,
 	DECLARE_WAITQUEUE(wait, current);
 	unsigned long	flags;
 	int		retval;
-	int		do_clocal = 0, extra_count = 0;
-
-	/*
-	 * If the device is in the middle of being closed, then block
-	 * until it's done, and then try again.
-	 */
-	if (tty_hung_up_p(filp) ||
-	    (info->port.flags & ASYNC_CLOSING)) {
-		wait_event_interruptible_tty(tty, info->port.close_wait,
-			!(info->port.flags & ASYNC_CLOSING));
-#ifdef SERIAL_DO_RESTART
-		if (info->port.flags & ASYNC_HUP_NOTIFY)
-			return -EAGAIN;
-		else
-			return -ERESTARTSYS;
-#else
-		return -EAGAIN;
-#endif
-	}
+	int		do_clocal = 0;
 
 	/*
 	 * If non-blocking mode is set, or the port is not enabled,
@@ -3989,10 +3970,7 @@ block_til_ready(struct tty_struct *tty, struct file * filp,
 	       info->line, info->port.count);
 #endif
 	local_irq_save(flags);
-	if (!tty_hung_up_p(filp)) {
-		extra_count++;
-		info->port.count--;
-	}
+	info->port.count--;
 	local_irq_restore(flags);
 	info->port.blocked_open++;
 	while (1) {
@@ -4014,7 +3992,7 @@ block_til_ready(struct tty_struct *tty, struct file * filp,
 #endif
 			break;
 		}
-		if (!(info->port.flags & ASYNC_CLOSING) && do_clocal)
+		if (do_clocal)
 			/* && (do_clocal || DCD_IS_ASSERTED) */
 			break;
 		if (signal_pending(current)) {
@@ -4031,7 +4009,7 @@ block_til_ready(struct tty_struct *tty, struct file * filp,
 	}
 	set_current_state(TASK_RUNNING);
 	remove_wait_queue(&info->port.open_wait, &wait);
-	if (extra_count)
+	if (!tty_hung_up_p(filp))
 		info->port.count++;
 	info->port.blocked_open--;
 #ifdef SERIAL_DEBUG_OPEN
@@ -4082,21 +4060,6 @@ rs_open(struct tty_struct *tty, struct file * filp)
 	info->port.tty = tty;
 
 	info->port.low_latency = !!(info->port.flags & ASYNC_LOW_LATENCY);
-
-	/*
-	 * If the port is in the middle of closing, bail out now
-	 */
-	if (tty_hung_up_p(filp) ||
-	    (info->port.flags & ASYNC_CLOSING)) {
-		wait_event_interruptible_tty(tty, info->port.close_wait,
-			!(info->port.flags & ASYNC_CLOSING));
-#ifdef SERIAL_DO_RESTART
-		return ((info->port.flags & ASYNC_HUP_NOTIFY) ?
-			-EAGAIN : -ERESTARTSYS);
-#else
-		return -EAGAIN;
-#endif
-	}
 
 	/*
 	 * If DMA is enabled try to allocate the irq's.

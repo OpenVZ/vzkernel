@@ -34,7 +34,7 @@ static struct gic_pending_regs pending_regs[NR_CPUS];
 static struct gic_intrmask_regs intrmask_regs[NR_CPUS];
 
 #if defined(CONFIG_CSRC_GIC) || defined(CONFIG_CEVT_GIC)
-cycle_t gic_read_count(void)
+u64 gic_read_count(void)
 {
 	unsigned int hi, hi2, lo;
 
@@ -44,10 +44,10 @@ cycle_t gic_read_count(void)
 		GICREAD(GIC_REG(SHARED, GIC_SH_COUNTER_63_32), hi2);
 	} while (hi2 != hi);
 
-	return (((cycle_t) hi) << 32) + lo;
+	return (((u64) hi) << 32) + lo;
 }
 
-void gic_write_compare(cycle_t cnt)
+void gic_write_compare(u64 cnt)
 {
 	GICWRITE(GIC_REG(VPE_LOCAL, GIC_VPE_COMPARE_HI),
 				(int)(cnt >> 32));
@@ -55,14 +55,14 @@ void gic_write_compare(cycle_t cnt)
 				(int)(cnt & 0xffffffff));
 }
 
-cycle_t gic_read_compare(void)
+u64 gic_read_compare(void)
 {
 	unsigned int hi, lo;
 
 	GICREAD(GIC_REG(VPE_LOCAL, GIC_VPE_COMPARE_HI), hi);
 	GICREAD(GIC_REG(VPE_LOCAL, GIC_VPE_COMPARE_LO), lo);
 
-	return (((cycle_t) hi) << 32) + lo;
+	return (((u64) hi) << 32) + lo;
 }
 #endif
 

@@ -42,7 +42,8 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-#include <linux/export.h>
+#define EXPORT_ACPI_INTERFACES
+
 #include <acpi/acpi.h>
 #include "accommon.h"
 #include "acnamesp.h"
@@ -139,6 +140,7 @@ acpi_install_address_space_handler(acpi_handle device,
 		break;
 
 	default:
+
 		break;
 	}
 

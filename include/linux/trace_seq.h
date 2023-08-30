@@ -25,6 +25,33 @@ trace_seq_init(struct trace_seq *s)
 	s->full = 0;
 }
 
+/**
+ * trace_seq_buffer_ptr - return pointer to next location in buffer
+ * @s: trace sequence descriptor
+ *
+ * Returns the pointer to the buffer where the next write to
+ * the buffer will happen. This is useful to save the location
+ * that is about to be written to and then return the result
+ * of that write.
+ */
+static inline unsigned char *
+trace_seq_buffer_ptr(struct trace_seq *s)
+{
+	return s->buffer + s->len;
+}
+
+/**
+ * trace_seq_has_overflowed - return true if the trace_seq took too much
+ * @s: trace sequence descriptor
+ *
+ * Returns true if too much data was added to the trace_seq and it is
+ * now full and will not take anymore.
+ */
+static inline bool trace_seq_has_overflowed(struct trace_seq *s)
+{
+	return s->full || s->len > PAGE_SIZE - 1;
+}
+
 /*
  * Currently only defined when tracing is enabled.
  */

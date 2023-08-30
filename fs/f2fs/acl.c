@@ -380,7 +380,7 @@ static int f2fs_xattr_set_acl(struct dentry *dentry, const char *name,
 		if (IS_ERR(acl))
 			return PTR_ERR(acl);
 		if (acl) {
-			error = posix_acl_valid(acl);
+			error = posix_acl_valid(inode->i_sb->s_user_ns, acl);
 			if (error)
 				goto release_and_out;
 		}
