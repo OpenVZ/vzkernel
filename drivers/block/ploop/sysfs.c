@@ -380,6 +380,7 @@ static int store_discard_granularity(struct ploop_device *plo, u32 val)
 	struct inode *inode;
 	int ret = 0;
 
+	lockdep_off();
 	mutex_lock(&plo->ctl_mutex);
 	if (test_bit(PLOOP_S_RUNNING, &plo->state)) {
 		ret = -EBUSY;
@@ -454,6 +455,7 @@ static int store_discard_granularity(struct ploop_device *plo, u32 val)
 
 unlock:
 	mutex_unlock(&plo->ctl_mutex);
+	lockdep_on();
 	return ret;
 }
 
