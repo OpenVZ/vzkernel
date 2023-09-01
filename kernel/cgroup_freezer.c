@@ -269,7 +269,7 @@ static void check_freezer_timeout(struct cgroup *cgroup,
 	if (!__ratelimit(&freeze_timeout_rs))
 		return;
 
-	freezer_cg_name = kmalloc(PATH_MAX, GFP_KERNEL);
+	freezer_cg_name = kmalloc(PATH_MAX, GFP_ATOMIC);
 	if (!freezer_cg_name)
 		return;
 
@@ -283,7 +283,7 @@ static void check_freezer_timeout(struct cgroup *cgroup,
 	       freezer_cg_name, __freeze_timeout/HZ, tgid, task->comm);
 
 	entries = kmalloc(MAX_STACK_TRACE_DEPTH * sizeof(*entries),
-			  GFP_KERNEL);
+			  GFP_ATOMIC);
 	if (!entries)
 		goto free_cg_name;
 
