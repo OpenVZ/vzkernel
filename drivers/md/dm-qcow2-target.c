@@ -1020,6 +1020,7 @@ static struct target_type qcow2_target = {
 	.resume = qcow2_resume,
 	.clone_and_map_rq = qcow2_clone_and_map,
 	.message = qcow2_message,
+	.llseek_hole = qcow2_llseek_hole,
 };
 
 static int __init dm_qcow2_init(void)
