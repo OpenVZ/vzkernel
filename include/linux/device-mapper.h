@@ -152,6 +152,9 @@ typedef size_t (*dm_dax_copy_iter_fn)(struct dm_target *ti, pgoff_t pgoff,
 typedef int (*dm_dax_zero_page_range_fn)(struct dm_target *ti, pgoff_t pgoff,
 		size_t nr_pages);
 
+typedef loff_t (*dm_llseek_hole_fn)(struct dm_target *ti, loff_t offset,
+		int whence);
+
 void dm_error(const char *message);
 
 struct dm_dev {
@@ -203,6 +206,7 @@ struct target_type {
 	dm_dax_copy_iter_fn dax_copy_from_iter;
 	dm_dax_copy_iter_fn dax_copy_to_iter;
 	dm_dax_zero_page_range_fn dax_zero_page_range;
+	dm_llseek_hole_fn llseek_hole;
 
 	/* For internal device-mapper use. */
 	struct list_head list;
