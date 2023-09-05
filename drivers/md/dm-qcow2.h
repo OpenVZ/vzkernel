@@ -151,6 +151,7 @@ enum {
 	QLIST_COW_DATA,
 	QLIST_COW_INDEXES,
 	QLIST_COW_END,
+	QLIST_SEEK,
 
 	QLIST_COUNT,
 	QLIST_INVALID = QLIST_COUNT,
@@ -299,6 +300,7 @@ int qcow2_message(struct dm_target *ti, unsigned int argc, char **argv,
 		  char *result, unsigned int maxlen);
 int qcow2_clone_and_map(struct dm_target *ti, struct request *rq,
 		   union map_info *info, struct request **clone);
+loff_t qcow2_llseek_hole(struct dm_target *ti, loff_t offset, int whence);
 
 void do_qcow2_work(struct work_struct *ws);
 void do_qcow2_fsync_work(struct work_struct *ws);
