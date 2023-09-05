@@ -1991,3 +1991,45 @@ out_error:
 	return err;
 }
 ALLOW_ERROR_INJECTION(ploop_prepare_reloc_index_wb, ERRNO);
+
+loff_t ploop_llseek_hole(struct dm_target *ti, loff_t offset, int whence)
+{
+	struct ploop *ploop = ti->private;
+	u32 clu, dst_clu;
+	loff_t result;
+
+	clu = SEC_TO_CLU(ploop, to_sector(offset) + ploop->skip_off);
+
+	while (clu < ploop->nr_bat_entries) {
+
+		/*
+		 * Assume a locked cluster to have a data.
+		 * In worst case someone will read zeroes
+		 */
+		if (ploop_postpone_if_cluster_locked(ploop, NULL, clu)) {
+			if (whence & SEEK_DATA)
+				break;
+			if (whence & SEEK_HOLE) {
+				clu++;
+				continue;
+			}
+		}
+
+		/*
+		 * It *may* be possible to speed this up by iterating over clusters
+		 * in mapped metadata page, but this is a bit problematic
+		 * since we want to check if cluster is locked
+		 */
+		dst_clu = ploop_bat_entries(ploop, clu, NULL, NULL);
+
+		if (whence & SEEK_DATA && dst_clu != BAT_ENTRY_NONE)
+			break;
+		if (whence & SEEK_HOLE && dst_clu == BAT_ENTRY_NONE)
+			break;
+
+		clu++;
+	}
+
+	result = to_bytes(CLU_TO_SEC(ploop, clu) - ploop->skip_off);
+	return result;
+}
