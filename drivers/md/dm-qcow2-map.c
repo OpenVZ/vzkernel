@@ -4004,6 +4004,14 @@ static void process_resubmit_qios(struct qcow2 *qcow2, struct list_head *qios)
 	}
 }
 
+static void process_seek_qios(struct qcow2 *qcow, struct list_head *qios)
+{
+	struct qio *qio;
+
+	while ((qio = qio_list_pop(qios)) != NULL)
+		complete(qio->data);
+}
+
 void do_qcow2_work(struct work_struct *ws)
 {
 	struct qcow2 *qcow2 = container_of(ws, struct qcow2, worker);
@@ -4015,6 +4023,7 @@ void do_qcow2_work(struct work_struct *ws)
 	LIST_HEAD(cow_indexes_qios);
 	LIST_HEAD(cow_end_qios);
 	LIST_HEAD(resubmit_qios);
+	LIST_HEAD(seek_qios);
 	unsigned int pflags = current->flags;
 
 	current->flags |= PF_LOCAL_THROTTLE|PF_MEMALLOC_NOIO;
@@ -4027,6 +4036,7 @@ void do_qcow2_work(struct work_struct *ws)
 	list_splice_init(&qcow2->qios[QLIST_COW_INDEXES], &cow_indexes_qios);
 	list_splice_init(&qcow2->qios[QLIST_COW_END], &cow_end_qios);
 	list_splice_init(&qcow2->resubmit_qios, &resubmit_qios);
+	list_splice_init(&qcow2->qios[QLIST_SEEK], &seek_qios);
 	spin_unlock_irq(&qcow2->deferred_lock);
 
 	process_embedded_qios(qcow2, &embedded_qios, &deferred_qios);
@@ -4037,6 +4047,7 @@ void do_qcow2_work(struct work_struct *ws)
 	process_cow_indexes_write(qcow2, &cow_indexes_qios);
 	process_cow_end(qcow2, &cow_end_qios);
 	process_resubmit_qios(qcow2, &resubmit_qios);
+	process_seek_qios(qcow2, &seek_qios);
 
 	/* This actually submits batch of md writeback, initiated above */
 	submit_metadata_writeback(qcow2);
@@ -4258,4 +4269,240 @@ static void handle_cleanup_mask(struct qio *qio)
 		mark_cluster_unused(qcow2, md, index_in_page, pos);
 		ext->cleanup_mask &= ~FREE_ALLOCATED_CLU;
 	}
+}
+
+struct qio_data_llseek_hole {
+	struct completion compl;
+	struct qio *higher;
+	loff_t lim;
+};
+
+#define SEEK_QIO_DATA(qio) ((struct qio_data_llseek_hole *)qio->data)
+
+struct qio *alloc_seek_qio(struct qcow2 *qcow2, struct qio *parent, loff_t new_lim)
+{
+	struct qio_data_llseek_hole *data;
+	struct qio *qio;
+
+	qio = qcow2_alloc_qio(qcow2->tgt->qio_pool, true);
+	if (!qio)
+		return NULL;
+
+	qcow2_init_qio(qio, REQ_OP_READ, qcow2);
+	qio->queue_list_id = QLIST_SEEK;
+
+	data = kzalloc(sizeof(struct qio_data_llseek_hole), GFP_KERNEL);
+	if (!data) {
+		qcow2_free_qio(qio, qcow2->tgt->qio_pool);
+		return NULL;
+	}
+
+	qio->data = data;
+	init_completion(&data->compl);
+	data->lim = new_lim;
+
+	if (parent) {
+		data->higher = parent;
+		qio->bi_iter.bi_sector = parent->bi_iter.bi_sector;
+
+		if (to_bytes(qio->bi_iter.bi_sector) + parent->bi_iter.bi_size > new_lim)
+			qio->bi_iter.bi_size = new_lim - to_bytes(qio->bi_iter.bi_sector);
+		else
+			qio->bi_iter.bi_size = parent->bi_iter.bi_size;
+	}
+
+	return qio;
+}
+
+struct qio *free_seek_qio_ret_higher(struct qio *qio)
+{
+	struct qio *ret = SEEK_QIO_DATA(qio)->higher;
+
+	kfree(qio->data);
+	qcow2_free_qio(qio, qio->qcow2->tgt->qio_pool);
+
+	return ret;
+}
+
+static inline sector_t get_next_l2(struct qio *qio)
+{
+	struct qcow2 *qcow2 = qio->qcow2;
+	loff_t start, add;
+
+	start = to_bytes(qio->bi_iter.bi_sector);
+	add = qcow2->l2_entries - (start / qcow2->clu_size) % qcow2->l2_entries;
+
+	return qio->bi_iter.bi_sector + (qcow2->clu_size / to_bytes(1)) * add;
+}
+
+static inline sector_t get_next_clu(struct qio *qio)
+{
+	struct qcow2 *qcow2 = qio->qcow2;
+	loff_t offset;
+
+	offset = to_bytes(qio->bi_iter.bi_sector);
+	offset = (offset + qcow2->clu_size) / qcow2->clu_size;
+	offset *= qcow2->clu_size;
+
+	return to_sector(offset);
+}
+
+static inline void seek_qio_next_clu(struct qio *qio, struct qcow2_map *map)
+{
+	/*
+	 * Whole L2 table is unmapped - skip to next l2 table,
+	 * but only if there is no backing image
+	 */
+	if (map && !(map->level & L2_LEVEL) && !qio->qcow2->lower)
+		qio->bi_iter.bi_sector = get_next_l2(qio);
+	else
+		qio->bi_iter.bi_sector = get_next_clu(qio);
+
+	qio->bi_iter.bi_size = qio->qcow2->clu_size;
+}
+
+static struct qio *advance_and_spawn_lower_seek_qio(struct qio *old_qio, u32 size)
+{
+	struct qio *new_qio;
+	loff_t start, old_end;
+
+	start = to_bytes(old_qio->bi_iter.bi_sector);
+	old_end = start + old_qio->bi_iter.bi_size;
+
+	if (old_end > old_qio->qcow2->lower->hdr.size)
+		size = old_qio->qcow2->lower->hdr.size - start;
+
+	new_qio = alloc_seek_qio(old_qio->qcow2->lower, old_qio, start + size);
+	if (!new_qio)
+		return NULL;
+
+	if (old_qio->bi_iter.bi_size == size) {
+		seek_qio_next_clu(old_qio, NULL);
+	} else {
+		old_qio->bi_iter.bi_sector += to_sector(size);
+		old_qio->bi_iter.bi_size -= size;
+	}
+
+	return new_qio;
+}
+
+int qcow2_llseek_hole_qio(struct qio *qio, int whence, loff_t *result)
+{
+	struct calc_front_bytes_ret arg;
+	struct qcow2_map map;
+	struct qio *qptr;
+	int ret;
+	u32 size;
+
+	while (1) {
+		if (to_bytes(qio->bi_iter.bi_sector) >= SEEK_QIO_DATA(qio)->lim) {
+			if (SEEK_QIO_DATA(qio)->higher) {
+				qio = free_seek_qio_ret_higher(qio);
+				continue;
+			}
+			ret = 0;
+			*result = to_bytes(qio->bi_iter.bi_sector);
+			break;
+		}
+
+		memset(&map, 0, sizeof(map));
+		map.qcow2 = qio->qcow2;
+		qptr = qio;
+
+		ret = parse_metadata(qio->qcow2, &qptr, &map);
+		if (ret < 0)
+			break;
+		if (qptr == NULL) {
+			/* one of metadata pages is not loaded and qio is postponed*/
+			wait_for_completion(&SEEK_QIO_DATA(qio)->compl);
+			reinit_completion(&SEEK_QIO_DATA(qio)->compl);
+			continue;
+		}
+
+calc_subclu:
+		size = calc_front_qio_bytes(qio->qcow2, qio, &map, &arg);
+
+		if (arg.unmapped && arg.try_lower) {
+			/*
+			 * Check if the backing image is big enough, then advance current qio
+			 * and spawn a new one for lower image
+			 */
+			if (to_bytes(qio->bi_iter.bi_sector) < qio->qcow2->lower->hdr.size) {
+				struct qio *new_qio;
+
+				new_qio = advance_and_spawn_lower_seek_qio(qio, size);
+				if (!new_qio) {
+					ret = -ENOMEM;
+					break;
+				}
+
+				qio = new_qio;
+				continue;
+			}
+		}
+
+		if (whence & SEEK_HOLE) {
+			if (arg.zeroes || arg.unmapped) {
+				*result = to_bytes(qio->bi_iter.bi_sector);
+				ret = 0;
+				break;
+			} else if (size != qio->bi_iter.bi_size) {
+				/*
+				 * range starts with data subclusters and after that
+				 * some subclusters are zero or unmapped
+				 */
+				*result = to_bytes(qio->bi_iter.bi_sector) + size;
+				ret = 0;
+				break;
+			}
+		}
+
+		if (whence & SEEK_DATA) {
+			if (!arg.zeroes && !arg.unmapped) {
+				*result = to_bytes(qio->bi_iter.bi_sector);
+				ret = 0;
+				break;
+			} else if (size != qio->bi_iter.bi_size) {
+				/*
+				 * range starts with zero or unmapped subclusters
+				 * but after that it still can be unmapped or zero
+				 * We do not need to parse metadata again but we should
+				 * skip this sublusters and look onto next ones
+				 */
+				qio->bi_iter.bi_sector += to_sector(size);
+				qio->bi_iter.bi_size -= size;
+				goto calc_subclu;
+			}
+		}
+
+		seek_qio_next_clu(qio, &map);
+	}
+
+	while (qio)
+		qio = free_seek_qio_ret_higher(qio);
+
+	return ret;
+}
+
+loff_t qcow2_llseek_hole(struct dm_target *ti, loff_t offset, int whence)
+{
+	struct qcow2 *qcow2 = to_qcow2_target(ti)->top;
+	loff_t result = -EINVAL;
+	struct qio *qio;
+	int ret;
+
+	qio = alloc_seek_qio(qcow2, NULL, qcow2->hdr.size);
+	if (!qio)
+		return -ENOMEM;
+
+	qio->bi_iter.bi_sector = to_sector(offset);
+	qio->bi_iter.bi_size = qcow2->clu_size -
+			       to_bytes(qio->bi_iter.bi_sector) % qcow2->clu_size;
+
+	ret = qcow2_llseek_hole_qio(qio, whence, &result);
+	/* In case of error remap ENXIO as it have special meaning for llseek */
+	if (ret < 0)
+		return (ret == -ENXIO) ? -EINVAL : ret;
+
+	return result;
 }
