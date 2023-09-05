@@ -433,6 +433,31 @@ const struct address_space_operations def_blk_aops = {
 	.is_dirty_writeback = buffer_check_dirty_writeback,
 };
 
+static loff_t blkdev_llseek_wrapper(struct block_device *bdev, loff_t offset, int whence)
+{
+	loff_t retval, bd_size;
+
+	bd_size = i_size_read(bdev->bd_inode);
+	if (offset >= bd_size)
+		return -ENXIO;
+
+	retval = bdev->bd_disk->fops->llseek_hole(bdev, offset, whence);
+	if (retval < 0)
+		return retval;
+
+	if (retval < offset)
+		retval = offset;
+
+	if (retval >= bd_size) {
+		if (whence & SEEK_DATA)
+			retval = -ENXIO;
+		if (whence & SEEK_HOLE)
+			retval = bd_size;
+	}
+
+	return retval;
+}
+
 /*
  * for a block special file file_inode(file)->i_size is zero
  * so we compute the size by hand (just as in block_read/write above)
@@ -440,11 +465,24 @@ const struct address_space_operations def_blk_aops = {
 static loff_t blkdev_llseek(struct file *file, loff_t offset, int whence)
 {
 	struct inode *bd_inode = bdev_file_inode(file);
+	struct block_device *bdev = I_BDEV(bd_inode);
+	bool is_llseek_hole;
 	loff_t retval;
+
+	is_llseek_hole = (whence == SEEK_HOLE || whence == SEEK_DATA);
+	if (is_llseek_hole && bdev->bd_disk->fops->llseek_hole) {
+		retval = blkdev_llseek_wrapper(bdev, offset, whence);
+		if (retval < 0)
+			return retval;
+
+		offset = retval;
+		whence = SEEK_SET;
+	}
 
 	inode_lock(bd_inode);
 	retval = fixed_size_llseek(file, offset, whence, i_size_read(bd_inode));
 	inode_unlock(bd_inode);
+
 	return retval;
 }
 
