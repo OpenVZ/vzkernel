@@ -619,6 +619,7 @@ static struct target_type ploop_target = {
 	.preresume = ploop_preresume,
 	.clone_and_map_rq = ploop_clone_and_map,
 	.status = ploop_status,
+	.llseek_hole = ploop_llseek_hole,
 };
 
 static int __init dm_ploop_init(void)

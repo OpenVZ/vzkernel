@@ -600,4 +600,5 @@ extern void ploop_index_wb_init(struct ploop_index_wb *piwb,
 extern void ploop_call_rw_iter(struct file *file, loff_t pos, unsigned rw,
 			       struct iov_iter *iter, struct pio *pio);
 extern void ploop_enospc_timer(struct timer_list *timer);
+extern loff_t ploop_llseek_hole(struct dm_target *ti, loff_t offset, int whence);
 #endif /* __DM_PLOOP_H */
