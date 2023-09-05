@@ -3341,27 +3341,51 @@ check_err:
 	return ret;
 }
 
+struct calc_front_bytes_ret {
+	bool unmapped;
+	bool zeroes;
+	bool try_lower;
+};
+
+static inline u32 calc_front_qio_bytes(struct qcow2 *qcow2, struct qio *qio,
+				       struct qcow2_map *map,
+				       struct calc_front_bytes_ret *arg)
+{
+	u32 size;
+
+	arg->unmapped = false;
+	arg->zeroes = false;
+	arg->try_lower = false;
+
+	size = qio_all_zeroes_size(qcow2, qio, map);
+	if (size) {
+		arg->zeroes = true;
+		return size;
+	}
+
+	size = qio_unmapped_size(qcow2, qio, map);
+	if (size) {
+		arg->unmapped = true;
+		arg->try_lower = maybe_mapped_in_lower_delta(qcow2, qio);
+		return size;
+	}
+
+	size = qio_mapped_not_zeroes_size(qcow2, qio, map);
+	return size;
+}
+
 static void process_read_qio(struct qcow2 *qcow2, struct qio *qio,
 			     struct qcow2_map *map)
 {
-	bool unmapped, zeroes, try_lower;
+	struct calc_front_bytes_ret arg;
 	struct qio *split;
 	u32 size;
 
 	do {
-		unmapped = try_lower = false;
 		split = NULL;
+		size = calc_front_qio_bytes(qcow2, qio, map, &arg);
 
-		zeroes = (size = qio_all_zeroes_size(qcow2, qio, map));
-		if (!size)
-			unmapped = (size = qio_unmapped_size(qcow2, qio, map));
-		if (!size)
-			size = qio_mapped_not_zeroes_size(qcow2, qio, map);
-
-		if (unmapped)
-			try_lower = maybe_mapped_in_lower_delta(qcow2, qio);
-
-		if (zeroes || (unmapped && !try_lower)) {
+		if (arg.zeroes || (arg.unmapped && !arg.try_lower)) {
 			/* All zeroes or clu is not allocated */
 			perform_zero_read(qio, size);
 			if (size == qio->bi_iter.bi_size) {
@@ -3379,7 +3403,7 @@ static void process_read_qio(struct qcow2 *qcow2, struct qio *qio,
 			swap(qio, split);
 		}
 
-		if (unmapped && try_lower) {
+		if (arg.unmapped && arg.try_lower) {
 			/* Try to read from lower delta */
 			shorten_and_zero_qio_tail(qcow2->lower, qio);
 			qio->qcow2 = qcow2->lower;
