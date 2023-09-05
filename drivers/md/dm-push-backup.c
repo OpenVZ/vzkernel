@@ -754,6 +754,17 @@ static void pb_status(struct dm_target *ti, status_type_t type,
 	spin_unlock_irq(&pb->lock);
 }
 
+static loff_t pb_llseek_hole(struct dm_target *ti, loff_t offset,
+			      int whence)
+{
+	struct push_backup *pb = ti->private;
+	struct block_device *bdev = pb->origin_dev->bdev;
+
+	if (!bdev->bd_disk->fops->llseek_hole)
+		return -EINVAL;
+	return bdev->bd_disk->fops->llseek_hole(bdev, offset, whence);
+}
+
 static struct target_type pb_target = {
 	.name = "push_backup",
 	.version = {1, 0, 0},
@@ -766,6 +777,7 @@ static struct target_type pb_target = {
 	.message = pb_message,
 	.iterate_devices = pb_iterate_devices,
 	.status = pb_status,
+	.llseek_hole = pb_llseek_hole,
 };
 
 static int __init dm_pb_init(void)
