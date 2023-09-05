@@ -481,6 +481,45 @@ out:
 	return r;
 }
 
+static loff_t dm_llseek_hole(struct block_device *bdev, loff_t offset, int whence)
+{
+	struct mapped_device *md = bdev->bd_disk->private_data;
+	struct dm_table *table;
+	struct dm_target *ti;
+	int srcu_idx;
+	loff_t ret;
+
+	table = dm_get_live_table(md, &srcu_idx);
+	if (!table || !dm_table_get_size(table))
+		return -ENOTTY;
+
+	/*
+	 * For now we only support devices that have a single target.
+	 * But probably it is not hard to break it to a few requests to a different
+	 * targets
+	 */
+	if (table->num_targets != 1)
+		return -EOPNOTSUPP;
+
+	ti = dm_table_get_target(table, 0);
+
+	if (dm_suspended_md(md)) {
+		ret = -EAGAIN;
+		goto out;
+	}
+
+	if (!ti->type->llseek_hole) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = ti->type->llseek_hole(ti, offset, whence);
+
+out:
+	dm_put_live_table(md, srcu_idx);
+	return ret;
+}
+
 u64 dm_start_time_ns_from_clone(struct bio *bio)
 {
 	return jiffies_to_nsecs(clone_to_tio(bio)->io->start_time);
@@ -3368,6 +3407,7 @@ static const struct block_device_operations dm_blk_dops = {
 	.getgeo = dm_blk_getgeo,
 	.report_zones = dm_blk_report_zones,
 	.pr_ops = &dm_pr_ops,
+	.llseek_hole = dm_llseek_hole,
 	.owner = THIS_MODULE
 };
 
@@ -3377,6 +3417,7 @@ static const struct block_device_operations dm_rq_blk_dops = {
 	.ioctl = dm_blk_ioctl,
 	.getgeo = dm_blk_getgeo,
 	.pr_ops = &dm_pr_ops,
+	.llseek_hole = dm_llseek_hole,
 	.owner = THIS_MODULE
 };
 
