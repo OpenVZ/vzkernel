@@ -1296,7 +1296,7 @@ static bool ploop_postpone_if_cluster_locked(struct ploop *ploop,
 
 	spin_lock_irq(&ploop->deferred_lock);
 	e_h = ploop_find_lk_of_cluster(ploop, clu);
-	if (e_h)
+	if (e_h && pio)
 		ploop_add_endio_pio(e_h, pio);
 	spin_unlock_irq(&ploop->deferred_lock);
 
