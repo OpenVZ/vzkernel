@@ -79,11 +79,11 @@ struct ploop_cmd {
 
 #define PLOOP_BIOS_HTABLE_BITS	8
 #define PLOOP_BIOS_HTABLE_SIZE	(1 << PLOOP_BIOS_HTABLE_BITS)
-#define CLU_OFF(ploop, pos) (pos & (to_bytes(1 << ploop->cluster_log) - 1))
-#define CLU_TO_POS(ploop, clu) to_bytes((loff_t)clu << ploop->cluster_log)
+#define CLU_OFF(ploop, pos) ((pos) & (to_bytes(1 << ploop->cluster_log) - 1))
+#define CLU_TO_POS(ploop, clu) to_bytes((loff_t)(clu) << ploop->cluster_log)
 #define POS_TO_CLU(ploop, pos) (to_sector(pos) >> ploop->cluster_log)
-#define SEC_TO_CLU(ploop, sec) (sec >> ploop->cluster_log)
-#define CLU_TO_SEC(ploop, clu) ((sector_t)clu << ploop->cluster_log)
+#define SEC_TO_CLU(ploop, sec) ((sec) >> ploop->cluster_log)
+#define CLU_TO_SEC(ploop, clu) ((sector_t)(clu) << ploop->cluster_log)
 #define CLU_SIZE(ploop) to_bytes((u32)1 << ploop->cluster_log)
 
 enum piwb_type {
