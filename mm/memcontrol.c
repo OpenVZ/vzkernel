@@ -4353,7 +4353,12 @@ static int mem_cgroup_enough_memory(struct mem_cgroup *memcg, long pages)
 	long free;
 
 	/* unused memory */
-	free = memcg->memsw.max - page_counter_read(&memcg->memsw);
+	if (memcg->css.cgroup->root == &cgrp_dfl_root) {
+		free = memcg->memory.max - page_counter_read(&memcg->memory);
+		free += memcg->swap.max - page_counter_read(&memcg->swap);
+	} else {
+		free = memcg->memsw.max - page_counter_read(&memcg->memsw);
+	}
 
 	/* reclaimable slabs */
 	free += memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B) >> PAGE_SHIFT;
