@@ -2080,18 +2080,16 @@ struct ve_struct *get_curr_ve(void)
  */
 static inline bool is_virtualized_cgroot(struct cgroup_root *cgroot)
 {
-	/* Cgroup v2 */
-	if (cgroot == &cgrp_dfl_root)
-		return false;
-
+	if (cgroot != &cgrp_dfl_root) {
 #if IS_ENABLED(CONFIG_CGROUP_DEBUG)
-	if (cgroot->subsys_mask & (1 << debug_cgrp_id))
-		return false;
+		if (cgroot->subsys_mask & (1 << debug_cgrp_id))
+			return false;
 #endif
 #if IS_ENABLED(CONFIG_CGROUP_MISC)
-	if (cgroot->subsys_mask & (1 << misc_cgrp_id))
-		return false;
+		if (cgroot->subsys_mask & (1 << misc_cgrp_id))
+			return false;
 #endif
+	}
 
 	if (cgroot->subsys_mask)
 		return true;
@@ -2648,7 +2646,7 @@ static struct file_system_type cgroup2_fs_type = {
 	.init_fs_context	= cgroup_init_fs_context,
 	.parameters		= cgroup2_fs_parameters,
 	.kill_sb		= cgroup_kill_sb,
-	.fs_flags		= FS_USERNS_MOUNT,
+	.fs_flags		= FS_USERNS_MOUNT | FS_VIRTUALIZED,
 };
 
 #ifdef CONFIG_CPUSETS
