@@ -2598,7 +2598,7 @@ static int cgroup_get_tree(struct fs_context *fc)
 	struct cgroup_fs_context *ctx = cgroup_fc2context(fc);
 	int ret;
 
-	if (ve_hide_cgroups(ctx->root))
+	if (ve_hide_cgroups(&cgrp_dfl_root))
 		return -EPERM;
 
 	WRITE_ONCE(cgrp_dfl_visible, true);
