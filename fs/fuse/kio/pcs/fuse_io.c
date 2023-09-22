@@ -26,6 +26,29 @@
 
 #include "../../fuse_i.h"
 
+void pcs_zero_fill_read_resp(struct fuse_req * req, unsigned int start, unsigned int end)
+{
+	struct fuse_io_args *ia = container_of(req->args, typeof(*ia), ap.args);
+	int i;
+	unsigned int off = 0;
+
+	for (i = 0; i < ia->ap.num_pages; i++) {
+		unsigned where = 0;
+		unsigned copy = ia->ap.descs[i].length;
+		unsigned next_off = off + copy;
+		if (start < next_off && end > off) {
+			if (start > off) {
+				where += start - off;
+				copy -= start - off;
+			}
+			if (end < next_off)
+				copy -= (next_off - end);
+			zero_user(ia->ap.pages[i], ia->ap.descs[i].offset + where, copy);
+		}
+		off = next_off;
+	}
+}
+
 static void intreq_complete(struct pcs_int_request *ireq)
 {
 	pcs_api_iorequest_t *req = ireq->apireq.req;
@@ -45,16 +68,16 @@ static void on_read_done(struct pcs_fuse_req *r, size_t size)
 {
 	struct pcs_fuse_cluster *pfc = cl_from_req(r);
 	struct fuse_inode *fi = get_fuse_inode(r->req.args->io_inode);
+	struct fuse_io_args *ia = container_of(r->req.args, typeof(*ia), ap.args);
+	struct fuse_read_in * in = &ia->read.in;
 
 	DTRACE("do fuse_request_end req:%p op:%d err:%d\n", &r->req, r->req.in.h.opcode, r->req.out.h.error);
 
 	if (r->req.out.h.error && r->req.args->page_zeroing) {
-		int i;
-		for (i = 0; i < r->exec.io.num_bvecs; i++) {
-			BUG_ON(!r->exec.io.bvec[i].bv_page);
-			clear_highpage(r->exec.io.bvec[i].bv_page);
-		}
-	}
+		pcs_zero_fill_read_resp(&r->req, 0, in->size);
+	} else if (size < in->size && r->req.args->page_zeroing)
+		pcs_zero_fill_read_resp(&r->req, size, in->size);
+
 	fuse_stat_observe(pfc->fc, KFUSE_OP_READ, ktime_sub(ktime_get(), r->exec.ireq.ts));
 	fuse_stat_account(pfc->fc, KFUSE_OP_READ, size);
 	r->req.args->out_args[0].size = size;
@@ -139,8 +162,7 @@ static void req_fiemap_get_iter(void *data, unsigned int offset, struct iov_iter
 	iov_iter_advance(it, offset);
 }
 
-static inline void set_io_buff(struct pcs_fuse_req *r, off_t offset, size_t size,
-			       int zeroing)
+static inline void set_io_buff(struct pcs_fuse_req *r, off_t offset, size_t size)
 {
 	struct fuse_args *args = r->req.args;
 	struct fuse_io_args *ia = container_of(args, typeof(*ia), ap.args);
@@ -156,12 +178,6 @@ static inline void set_io_buff(struct pcs_fuse_req *r, off_t offset, size_t size
 		bvec->bv_len = ia->ap.descs[i].length;
 		if (bvec->bv_len > count)
 			bvec->bv_len = count;
-		if (zeroing && bvec->bv_page &&
-				bvec->bv_len != PAGE_SIZE)
-			zero_user_segments(bvec->bv_page,
-					0, bvec->bv_offset,
-					bvec->bv_offset + bvec->bv_len,
-					PAGE_SIZE);
 		count -= bvec->bv_len;
 		bvec++;
 	}
@@ -182,10 +198,10 @@ static void prepare_io_(struct pcs_fuse_req *r, unsigned short type, off_t offse
 	switch (type)
 	{
 	case PCS_REQ_T_READ:
-		set_io_buff(r, offset, size, r->req.args->page_zeroing);
+		set_io_buff(r, offset, size);
 		break;
 	case PCS_REQ_T_WRITE:
-		set_io_buff(r, offset, size, 0);
+		set_io_buff(r, offset, size);
 		break;
 	case PCS_REQ_T_WRITE_ZERO:
 	case PCS_REQ_T_WRITE_HOLE:
@@ -193,7 +209,7 @@ static void prepare_io_(struct pcs_fuse_req *r, unsigned short type, off_t offse
 		r->exec.io.req.size = size;
 		break;
 	case PCS_REQ_T_FIEMAP:
-		set_io_buff(r, offset, size, 0);
+		set_io_buff(r, offset, size);
 		break;
 	}
 
