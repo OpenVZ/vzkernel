@@ -828,6 +828,8 @@ static int pcs_fuse_prep_rw(struct pcs_fuse_req *r)
 		if (in->offset + in->size > di->fileinfo.attr.size) {
 			if (in->offset >= di->fileinfo.attr.size) {
 				args->out_args[0].size = 0;
+				if (req->args->page_zeroing)
+					pcs_zero_fill_read_resp(req, 0, in->size);
 				ret = -EPERM;
 				goto out;
 			}
