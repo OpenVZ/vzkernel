@@ -130,6 +130,8 @@ void pcs_cc_fini(struct pcs_cluster_core *cc);
 void pcs_fuse_prep_io(struct pcs_fuse_req *r, unsigned short type, off_t offset, size_t size, u64 aux);
 void pcs_fuse_prep_fallocate(struct pcs_fuse_req *r);
 
+void pcs_zero_fill_read_resp(struct fuse_req * req, unsigned int start, unsigned int end);
+
 
 static inline void pcs_cc_set_abort_timeout(struct pcs_cluster_core *cc, int timeout)
 {
