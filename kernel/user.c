@@ -59,6 +59,10 @@ struct user_namespace init_user_ns = {
 	.persistent_keyring_register_sem =
 	__RWSEM_INITIALIZER(init_user_ns.persistent_keyring_register_sem),
 #endif
+        /* To make user namespaces something to opt in to for existing
+         * RHEL users default ucount_max to 0.
+         */
+	.ucount_max[UCOUNT_USER_NAMESPACES] = 0,
 };
 EXPORT_SYMBOL_GPL(init_user_ns);
 
