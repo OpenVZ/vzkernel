@@ -205,6 +205,7 @@ static void free_user_ns(struct work_struct *work)
 {
 	struct user_namespace *parent, *ns =
 		container_of(work, struct user_namespace, work);
+	int i;
 
 	do {
 		struct ucounts *ucounts = ns->ucounts;
@@ -224,6 +225,8 @@ static void free_user_ns(struct work_struct *work)
 		retire_userns_sysctls(ns);
 		key_free_user_ns(ns);
 		ns_free_inum(&ns->ns);
+		for (i = 0; i < UIDHASH_SZ; ++i)
+			uid_hash_remove_all(ns->uidhash_table + i);
 		kmem_cache_free(user_ns_cachep, ns);
 		dec_user_namespaces(ucounts);
 		ns = parent;
