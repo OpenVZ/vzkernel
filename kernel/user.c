@@ -113,6 +113,19 @@ static void uid_hash_remove(struct user_struct *up)
 	hlist_del_init(&up->uidhash_node);
 }
 
+void uid_hash_remove_all(struct hlist_head *hlist)
+{
+	struct user_struct *up;
+	const struct hlist_node *tmp;
+	unsigned long flags;
+
+	spin_lock_irqsave(&uidhash_lock, flags);
+	if (!hlist_empty(hlist))
+		hlist_for_each_entry_safe(up, tmp, hlist, uidhash_node)
+			hlist_del_init(&up->uidhash_node);
+	spin_unlock_irqrestore(&uidhash_lock, flags);
+}
+
 static struct user_struct *uid_hash_find(kuid_t uid, struct hlist_head *hashent)
 {
 	struct user_struct *user;
