@@ -44,6 +44,7 @@ struct user_struct {
 extern int uids_sysfs_init(void);
 
 extern struct user_struct *find_user(kuid_t);
+extern void uid_hash_remove_all(struct hlist_head *hlist);
 
 extern struct user_struct root_user;
 #define INIT_USER (&root_user)
