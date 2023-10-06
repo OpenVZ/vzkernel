@@ -110,6 +110,7 @@ struct pcs_rpc
 	char			peer_build_version[MAX_BUILD_VERSION_LENGTH+1];
 	struct work_struct	work;
 	struct delayed_work	timer_work;
+	unsigned long		kill_deadline;
 	PCS_NET_ADDR_T		addr;
 /* TODO Reanable local sockets */
 #if 0
