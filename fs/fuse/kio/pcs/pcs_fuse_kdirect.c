@@ -71,6 +71,9 @@ unsigned int rdmaio_queue_depth = 8;
 module_param(rdmaio_queue_depth, uint, 0644);
 MODULE_PARM_DESC(rdmaio_queue_depth, "RDMA queue depth");
 
+void (*fuse_printk_plugin)(unsigned long, const char *, ...);
+EXPORT_SYMBOL(fuse_printk_plugin);
+
 static LIST_HEAD(pcs_client_list);
 spinlock_t pcs_clients_lock;
 
