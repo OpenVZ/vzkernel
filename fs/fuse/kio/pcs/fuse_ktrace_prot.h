@@ -36,7 +36,7 @@ struct fuse_tr_iotimes_hdr
 	__u16	type;
 	__u8	cses;
 	__u8	__pad;
-	__u32	__pad1;
+	__u32	chid;
 };
 
 struct fuse_tr_iotimes_cs
