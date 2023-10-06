@@ -99,6 +99,12 @@ struct fuse_pcs_ioc_register
 	u64			key_data;
 };
 
+#define PCS_CSA_EMASK_KEYLEN	0xFFFF
+#define PCS_CSA_EMASK_KEYTYPE	0xF0000
+
+#define PCS_CSA_EMASK_XTS	(1<<16)
+#define PCS_CSA_EMASK_CTR	(2<<16)
+
 struct pcs_csa_setmap
 {
 	PCS_CHUNK_UID_T		chunk_id;
