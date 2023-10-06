@@ -824,7 +824,7 @@ static void calendar_work(struct work_struct *w)
 		count++;
 	}
 	if (count)
-		trace_printk("%s %d messages to "PEER_FMT" destroyed\n", __FUNCTION__,
+		FUSE_KTRACE(cc->fc, "%s %d messages to "PEER_FMT" destroyed\n", __FUNCTION__,
 			     count, PEER_ARGS(ep));
 
 	for (i=0; i < RPC_MAX_CALENDAR-1; i++) {
