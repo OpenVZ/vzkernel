@@ -959,7 +959,7 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 	atomic_set(&cs_list->refcnt, 1);
 	atomic_set(&cs_list->seq_read_in_flight, 0);
 	cs_list->read_index = -1;
-	cs_list->flags = 0;
+	cs_list->state_flags = 0;
 	cs_list->serno = atomic64_inc_return(&css->csl_serno_gen);
 	cs_list->blacklist = 0;
 	cs_list->read_timeout = (read_tout * HZ) / 1000;
@@ -980,7 +980,7 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 
 		if (cs_list->cs[i].info.flags & CS_FL_REPLICATING) {
 			__set_bit(i, &cs_list->blacklist);
-			cs_list->flags |= CS_FL_REPLICATING;
+			set_bit(CSL_SF_HAS_REPLICATING, &cs_list->state_flags);
 			cs_list->blacklist_expires = jiffies + PCS_REPLICATION_BLACKLIST_TIMEOUT;
 		}
 
@@ -1005,7 +1005,7 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 		cs->mds_flags = cs_list->cs[i].info.flags;
 		if (cs->mds_flags & CS_FL_LOCAL) {
 			set_bit(CS_SF_LOCAL, &cs->state);
-			cs_list->flags |= CSL_FL_HAS_LOCAL;
+			set_bit(CSL_SF_HAS_LOCAL, &cs_list->state_flags);
 		} else if (test_bit(CS_SF_LOCAL, &cs->state))
 			clear_bit(CS_SF_LOCAL, &cs->state);
 
@@ -1961,7 +1961,7 @@ static int pcs_cslist_submit_read(struct pcs_int_request *ireq, struct pcs_cs_li
 		    (now > selected + PCS_MAP_MIN_REBALANCE_TIMEOUT &&
 		     (!is_seq || get_io_locality(cc) < 0 ||
 		      (!csl_seq &&
-		       !(test_bit(CS_SF_LOCAL, &cs->state)) && (csl->flags & CSL_FL_HAS_LOCAL))))) {
+		       !(test_bit(CS_SF_LOCAL, &cs->state)) && test_bit(CSL_SF_HAS_LOCAL, &csl->state_flags))))) {
 			i = -1;
 			WRITE_ONCE(csl->read_index, -1);
 		}
@@ -2831,6 +2831,24 @@ static int commit_sync_info(struct pcs_int_request *req,
 			lat  = srec->sync.ts_net;
 			if (max_iolat < srec->sync.ts_io)
 				max_iolat = srec->sync.ts_io;
+		}
+
+		/* If we got CLEAR response to a write to csl replication has already stopped */
+		if (test_bit(CSL_SF_HAS_REPLICATING, &csl->state_flags) && (h->sync.misc & PCS_CS_IO_CLEAR) &&
+		    (h->hdr.type == PCS_CS_WRITE_RESP || h->hdr.type == PCS_CS_WRITE_AL_RESP))
+			clear_bit(CSL_SF_HAS_REPLICATING, &csl->state_flags);
+	} else {
+		/* In case we did successful read on would-be replicating CS resync the state */
+		if (test_bit(CSL_SF_HAS_REPLICATING, &csl->state_flags) &&
+		    test_bit(CS_SF_REPLICATING, &csl->cs[req->iochunk.cs_index].cslink.cs->state)) {
+			int idx;
+			clear_bit(CS_SF_REPLICATING, &csl->cs[req->iochunk.cs_index].cslink.cs->state);
+			for (idx = csl->nsrv - 1; idx >= 0; idx++) {
+				if (test_bit(CS_SF_REPLICATING, &csl->cs[idx].cslink.cs->state))
+					break;
+			}
+			if (idx < 0)
+				clear_bit(CSL_SF_HAS_REPLICATING, &csl->state_flags);
 		}
 	}
 	pcs_fuse_stat_io_count(req, resp, max_iolat, net_lat);

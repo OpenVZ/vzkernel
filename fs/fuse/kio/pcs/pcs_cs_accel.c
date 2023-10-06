@@ -413,6 +413,8 @@ static void __pcs_csa_final_completion(struct pcs_aio_req *areq)
 				th->ino = ireq->dentry->fileinfo.attr.id;
 				th->type = PCS_CS_READ_RESP;
 				th->cses = 1;
+				th->__pad = 0;
+				th->chid = (unsigned int)ireq->iochunk.map->id;
 
 				ch->csid = ireq->iochunk.csl->cs[ireq->iochunk.cs_index].info.id.val | PCS_NODE_ALT_MASK;
 				ch->misc = ktime_to_us(ireq->ts_sent);
@@ -754,7 +756,6 @@ static void __complete_acr_work(struct work_struct * w)
 
 		WARN_ON(!(ireq->flags & IREQ_F_FANOUT));
 		parent->iochunk.fo.io_times[idx] = ireq->iochunk.acr.io_times[idx];
-		parent->iochunk.fo.io_times[idx].misc |= PCS_CS_IO_SEQ;
 	} else {
 		struct fuse_conn * fc = container_of(ireq->cc, struct pcs_fuse_cluster, cc)->fc;
 
@@ -780,6 +781,8 @@ static void __complete_acr_work(struct work_struct * w)
 				th->ino = ireq->dentry->fileinfo.attr.id;
 				th->type = PCS_CS_WRITE_AL_RESP;
 				th->cses = n;
+				th->__pad = 0;
+				th->chid = (unsigned int)ireq->iochunk.map->id;
 
 				for (i = 0; i < n; i++, ch++)
 					*ch = ireq->iochunk.acr.io_times[i];
@@ -816,6 +819,7 @@ static void __pcs_csa_write_final_completion(struct pcs_accel_write_req *areq)
 		th->ts_net = 0;
 		th->ts_io = ktime_to_us(ktime_get()) - th->misc;
 		th->misc &= PCS_CS_TS_MASK;
+		th->misc |= PCS_CS_IO_CLEAR | PCS_CS_IO_FANOUT;
 	}
 
 	csa_complete_acr(ireq);
