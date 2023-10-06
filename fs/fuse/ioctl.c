@@ -343,6 +343,19 @@ long fuse_ioctl_common(struct file *file, unsigned int cmd,
 	if (fuse_is_bad(inode))
 		return -EIO;
 
+	if (cmd == FUSE_IOC_KIO_CALL) {
+		struct fuse_conn *fc = get_fuse_conn(inode);
+		struct fuse_kio_call req;
+
+		if (copy_from_user(&req, (void __user *)arg, sizeof(req)))
+			return -EFAULT;
+		if (!fc->kio.op || !fc->kio.op->ioctl)
+			return -EINVAL;
+		if (strncmp(req.name, fc->kio.op->name, sizeof(req.name)))
+			return -EINVAL;
+		return fc->kio.op->ioctl(file, inode, req.cmd, req.data, req.len);
+	}
+
 	return fuse_do_ioctl(file, cmd, arg, flags);
 }
 

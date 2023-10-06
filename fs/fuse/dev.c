@@ -2430,6 +2430,20 @@ static long fuse_dev_ioctl(struct file *file, unsigned int cmd,
 			res = 0;
 		}
 		break;
+	case FUSE_IOC_KIO_CALL:
+	{
+		struct fuse_kio_call req;
+		struct fuse_kio_ops *op;
+
+		if (copy_from_user(&req, (void __user *)arg, sizeof(req)))
+			return -EFAULT;
+		op = fuse_kio_get(NULL, req.name);
+		if (op == NULL)
+			return -EINVAL;
+		res = op->ioctl(NULL, NULL, req.cmd, req.data, req.len);
+		fuse_kio_put(op);
+		break;
+	}
 	default:
 		res = -ENOTTY;
 		break;

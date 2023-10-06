@@ -87,4 +87,31 @@ struct pcs_ioc_getmap
 #define PCS_IOC_KDIRECT_RELEASE _IO('V',36)
 #define PCS_IOC_GETMAP		_IOWR('V',37, struct pcs_ioc_getmap)
 
+
+#define PCS_KIO_CALL_REG	1
+
+struct fuse_pcs_ioc_register
+{
+	PCS_NODE_ID_T 		cs_id;
+	PCS_NODE_ID_T 		client_id;
+	PCS_CLUSTER_ID_T	cluster_id;
+	PCS_INTEGRITY_SEQ_T	integrity_seq;
+	u32			reserved;
+};
+
+struct pcs_csa_setmap
+{
+	PCS_CHUNK_UID_T		chunk_id;
+	PCS_MAP_VERSION_T	version;
+	int			fd;
+	u32			flags;
+#define PCS_CSA_FL_READ		1
+#define PCS_CSA_FL_WRITE	2
+	PCS_SYNC_SEQ_T		sync_epoch;
+	PCS_SYNC_SEQ_T		sync_seq;
+	u64			reserved;
+};
+
+#define PCS_CSA_IOC_SETMAP	_IOR('V',38, struct pcs_csa_setmap)
+
 #endif /* _PCS_IOCTL_H_ */

@@ -609,6 +609,11 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	int storage_version = atomic_read(&ireq->cc->storage_version);
 	int aligned_msg;
 
+	if (ireq->iochunk.cmd == PCS_REQ_T_READ && !((ireq->iochunk.size|ireq->iochunk.offset) & 511)) {
+		if (pcs_csa_cs_submit(cs, ireq))
+			return;
+	}
+
 	msg->private = cs;
 
 	BUG_ON(msg->rpc);
@@ -885,6 +890,7 @@ static void pcs_cs_isolate(struct pcs_cs *cs, struct list_head *dispose)
 	spin_unlock(&cs->css->lock);
 
 	pcs_cs_truncate_maps(cs);
+	pcs_csa_cs_detach(cs);
 
 	BUG_ON(cs->nmaps);
 
@@ -905,6 +911,7 @@ static void pcs_cs_destroy(struct pcs_cs *cs)
 	BUG_ON(!list_empty(&cs->active_list));
 	BUG_ON(!list_empty(&cs->cong_queue));
 	BUG_ON(!cs->is_dead);
+	BUG_ON(cs->csa_ctx);
 
 	if (cs->rpc) {
 		pcs_rpc_close(cs->rpc);

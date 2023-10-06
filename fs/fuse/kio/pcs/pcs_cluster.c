@@ -604,6 +604,7 @@ int pcs_cluster_init(struct pcs_fuse_cluster *pfc, struct workqueue_struct *wq,
 	attr.node = info->node_id;
 	attr.abort_timeout_ms = 0;
 
+	INIT_LIST_HEAD(&pfc->list);
 	pfc->fc = fc;
 
 	/* core init */

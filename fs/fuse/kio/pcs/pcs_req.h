@@ -46,6 +46,14 @@ enum
  * Messages can be of various "type".
  */
 
+struct pcs_aio_req
+{
+	struct kiocb		iocb;
+	atomic_t		iocount;
+	struct iov_iter 	iter;
+	struct work_struct	work;
+};
+
 struct pcs_int_request
 {
 	struct pcs_cluster_core* cc;
@@ -118,11 +126,16 @@ struct pcs_int_request
 			u64			offset;
 			struct pcs_cs_list	*csl;
 			PCS_NODE_ID_T		banned_cs;
-			struct pcs_msg		msg;
-			struct pcs_cs_iohdr	hbuf;		/* Buffer for header.
-								 * A little ugly
-								 */
-			struct kvec		hbuf_kv;
+			union {
+				struct {
+					struct pcs_msg		msg;
+					struct pcs_cs_iohdr	hbuf;		/* Buffer for header.
+										 * A little ugly
+										 */
+					struct kvec		hbuf_kv;
+				};
+				struct pcs_aio_req		ar;
+			};
 		} iochunk;
 
 		struct {

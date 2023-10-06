@@ -641,6 +641,7 @@ struct fuse_kio_ops {
 	void (*file_close)(struct file *file, struct inode *inode);
 	void (*inode_release)(struct fuse_inode *fi);
 	void (*kill_requests)(struct fuse_conn *fc, struct inode *inode);
+	int  (*ioctl)(struct file *file, struct inode *inode, unsigned int cmd, unsigned long arg, int len);
 
 };
 int fuse_register_kio(struct fuse_kio_ops *ops);
@@ -1552,5 +1553,8 @@ struct fuse_file *fuse_file_open(struct fuse_mount *fm, u64 nodeid,
 				 unsigned int open_flags, bool isdir);
 void fuse_file_release(struct inode *inode, struct fuse_file *ff,
 		       unsigned int open_flags, fl_owner_t id, bool isdir);
+
+struct fuse_kio_ops *fuse_kio_get(struct fuse_conn *fc, char *name);
+void fuse_kio_put(struct fuse_kio_ops *ops);
 
 #endif /* _FS_FUSE_I_H */
