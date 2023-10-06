@@ -112,9 +112,11 @@ struct pcs_cs_list
 	unsigned long		blacklist;		/* Atomic bit field */
 	abs_time_t		blacklist_expires;	/* volatile blacklist stamp */
 	abs_time_t		select_stamp;		/* volatile read hint stamp */
+	/* Semi-immutable. No locking, but can be modified unlocked */
+	unsigned long		state_flags;
+#define CSL_SF_HAS_LOCAL	0
+#define CSL_SF_HAS_REPLICATING	1
 	/* members below are immutable accross cslist life time */
-#define CSL_FL_HAS_LOCAL	1
-	unsigned int		flags;
 	u64                     serno;
 	int			read_timeout;
 	int			write_timeout;
