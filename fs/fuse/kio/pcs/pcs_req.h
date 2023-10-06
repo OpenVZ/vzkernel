@@ -80,6 +80,7 @@ struct pcs_accel_req
 	atomic_t			iocount;
 	int				num_awr;
 	struct pcs_accel_write_req	awr[PCS_MAX_ACCEL_CS];
+	pcs_error_t			net_error;
 	int				num_iotimes;
 	struct fuse_tr_iotimes_cs	io_times[PCS_MAX_ACCEL_CS];
 	struct work_struct		work;

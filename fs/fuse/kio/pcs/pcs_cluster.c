@@ -61,7 +61,7 @@ void pcs_sreq_complete(struct pcs_int_request *sreq)
 				ireq_delay(sreq);
 				return;
 			}
-			pcs_copy_error(&ireq->error, &sreq->error);
+			pcs_copy_error_cond_atomic(&ireq->error, &sreq->error);
 		}
 
 		if (sreq->type != PCS_IREQ_CUSTOM)
