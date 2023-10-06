@@ -70,7 +70,7 @@ static inline unsigned int pcs_sync_timeout(struct pcs_cluster_core *cc)
 	return PCS_SYNC_TIMEOUT;
 }
 
-static void cslist_destroy(struct pcs_cs_list * csl)
+void cslist_destroy(struct pcs_cs_list * csl)
 {
 	int i;
 
@@ -95,19 +95,6 @@ static void cslist_destroy(struct pcs_cs_list * csl)
 	}
 	rcu_read_unlock();
 	kfree(csl);
-}
-
-static inline void cslist_get(struct pcs_cs_list * csl)
-{
-	TRACE("csl:%p csl->map:%p refcnt:%d\n", csl, csl->map, atomic_read(&csl->refcnt));
-
-	atomic_inc(&csl->refcnt);
-}
-static inline void cslist_put(struct pcs_cs_list * csl)
-{
-	TRACE("csl:%p csl->map:%p refcnt:%d\n", csl, csl->map, atomic_read(&csl->refcnt));
-	if (atomic_dec_and_test(&csl->refcnt))
-		cslist_destroy(csl);
 }
 
 static void map_drop_cslist(struct pcs_map_entry * m)
@@ -1578,6 +1565,9 @@ void pcs_deaccount_ireq(struct pcs_int_request *ireq, pcs_error_t * err)
 	int error = 0;
 	unsigned long long match_id = 0;
 	struct pcs_cs_list * csl, ** csl_p = 0;
+
+	if (ireq->flags & IREQ_F_NOACCT)
+		return;
 
 	switch (ireq->type) {
 	case PCS_IREQ_IOCHUNK:

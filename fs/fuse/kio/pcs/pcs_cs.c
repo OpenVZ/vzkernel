@@ -291,6 +291,11 @@ void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsig
 	struct pcs_cs_iohdr * h = (struct pcs_cs_iohdr *)msg_inline_head(resp);
 	int reqt = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.cmd : PCS_REQ_T_SYNC;
 
+	if (ireq->iochunk.parent_N && h->hdr.type != PCS_CS_READ_RESP && h->hdr.type != PCS_CS_FIEMAP_RESP) {
+		pcs_csa_relay_iotimes(ireq->iochunk.parent_N, h, resp->rpc->peer_id);
+		return;
+	}
+
 	fuse_stat_observe(fc, reqt, ktime_sub(ktime_get(), ireq->ts_sent));
 	if (fc->ktrace && fc->ktrace_level >= LOG_TRACE) {
 		int n = 1;
@@ -611,10 +616,28 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 
 	BUG_ON(msg->rpc);
 
-	if (ireq->iochunk.cmd == PCS_REQ_T_READ && !((ireq->iochunk.size|ireq->iochunk.offset) & 511) &&
-	    !(ireq->flags & IREQ_F_NO_ACCEL)) {
-		if (pcs_csa_cs_submit(cs, ireq))
-			return;
+	ireq->ts_sent = ktime_get();
+
+	if (!((ireq->iochunk.size|ireq->iochunk.offset) & 511) && !(ireq->flags & IREQ_F_NO_ACCEL)) {
+		if (ireq->iochunk.cmd == PCS_REQ_T_READ) {
+			if (pcs_csa_cs_submit(cs, ireq))
+				return;
+		} else if (ireq->iochunk.cmd == PCS_REQ_T_WRITE) {
+			/* Synchronous writes in accel mode are still not supported */
+			if (!(ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) &&
+			    !ireq->dentry->no_write_delay) {
+				struct pcs_int_request * sreq;
+
+				sreq = pcs_csa_csl_write_submit(ireq);
+				if (!sreq)
+					return;
+				if (sreq != ireq) {
+					ireq = sreq;
+					cs = ireq->iochunk.csl->cs[ireq->iochunk.cs_index].cslink.cs;
+					msg = &ireq->iochunk.msg;
+				}
+			}
+		}
 	}
 
 	msg->private = cs;
@@ -686,7 +709,6 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 		msg->timeout = csl->write_timeout;
 	else
 		msg->timeout = csl->read_timeout;
-	ireq->ts_sent = ktime_get();
 	ireq->wait_origin.val = 0;
 
 
