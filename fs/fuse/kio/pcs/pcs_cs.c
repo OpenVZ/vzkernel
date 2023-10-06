@@ -299,11 +299,7 @@ void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsig
 			struct pcs_int_request * parent = ireq->iochunk.parent_N;
 
 			parent->iochunk.fo.io_times[idx].csid = resp->rpc->peer_id.val;
-			/* XXX kio does not implement flow detection (for now) and does
-			 * not use flag PCS_CS_IO_SEQ. So, use it here to indicate
-			 * performed fanout.
-			 */
-			parent->iochunk.fo.io_times[idx].misc = h->sync.misc | PCS_CS_IO_SEQ;
+			parent->iochunk.fo.io_times[idx].misc = h->sync.misc;
 			parent->iochunk.fo.io_times[idx].ts_net = h->sync.ts_net;
 			parent->iochunk.fo.io_times[idx].ts_io = h->sync.ts_io;
 
@@ -340,6 +336,8 @@ void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsig
 			th->ino = ireq->dentry->fileinfo.attr.id;
 			th->type = h->hdr.type;
 			th->cses = 1;
+			th->__pad = 0;
+			th->chid = (unsigned int)h->uid;
 
 			ch->csid = resp->rpc->peer_id.val;
 			ch->misc = h->sync.misc;
@@ -765,7 +763,9 @@ static void do_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	if ((ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) || ireq->dentry->no_write_delay)
 		ioh->sync.misc |= PCS_CS_IO_SYNC;
 	if (ireq->flags & IREQ_F_FANOUT)
-		ioh->sync.misc = PCS_CS_IO_FANOUT;
+		ioh->sync.misc |= PCS_CS_IO_FANOUT;
+	if (pcs_cs_fanout(storage_version))
+		ioh->sync.misc |= PCS_CS_IO_CLEAR;
 
 	msg->size = ioh->hdr.len;
 	msg->rpc = NULL;
@@ -817,7 +817,7 @@ static inline int eligible_for_fanout(struct pcs_int_request * ireq)
 	return (cs_enable_fanout && pcs_cs_fanout(atomic_read(&ireq->cc->storage_version)) &&
 		ireq->iochunk.csl->nsrv <= PCS_MAP_MAX_FO_CS &&
 		ireq->iochunk.cs_index + 1 < ireq->iochunk.csl->nsrv &&
-		!(ireq->iochunk.csl->flags & CS_FL_REPLICATING));
+		!test_bit(CSL_SF_HAS_REPLICATING, &ireq->iochunk.csl->state_flags));
 }
 
 void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
