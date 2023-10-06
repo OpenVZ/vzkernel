@@ -16,7 +16,9 @@
 #include "pcs_types.h"
 #include "pcs_sock_io.h"
 #include "pcs_rpc.h"
+#include "pcs_cluster.h"
 #include "log.h"
+#include "fuse_ktrace.h"
 
 
 void pcs_msg_sent(struct pcs_msg * msg)
@@ -748,7 +750,7 @@ static void pcs_sock_throttle(struct pcs_netio *netio)
 	    test_bit(PCS_IOCONN_BF_DEAD, &sio->io_flags))
 		return;
 
-	DTRACE("Throttle on socket %p rpc=%p", sio, sio->netio.parent);
+	FUSE_KDTRACE(cc_from_rpc(sio->netio.parent->eng)->fc, "Throttle on socket %p rpc=%p", sio, sio->netio.parent);
 	sio->flags |= PCS_SOCK_F_THROTTLE;
 }
 
@@ -760,7 +762,7 @@ static void pcs_sock_unthrottle(struct pcs_netio *netio)
 	    test_bit(PCS_IOCONN_BF_DEAD, &sio->io_flags))
 		return;
 
-	DTRACE("Unthrottle on socket %p rpc=%p", sio, sio->netio.parent);
+	FUSE_KDTRACE(cc_from_rpc(sio->netio.parent->eng)->fc, "Unthrottle on socket %p rpc=%p", sio, sio->netio.parent);
 	sio->flags &= ~PCS_SOCK_F_THROTTLE;
 	if ((sio->flags & PCS_SOCK_F_EOF))
 		return;

@@ -31,6 +31,28 @@
 extern unsigned int pcs_loglevel;
 extern unsigned int debugfs_tracing;
 
-#define TRACE(fmt, args...)	if (unlikely(debugfs_tracing && pcs_loglevel >= LOG_TRACE)) trace_printk("%d: " fmt "\n", __LINE__, ## args)
-#define DTRACE(fmt, args...)	if (unlikely(debugfs_tracing && pcs_loglevel >= LOG_DTRACE)) trace_printk("%d: " fmt "\n", __LINE__, ## args)
+extern void (*fuse_printk_plugin)(unsigned long, const char *fmt, ...);
+
+#define fuse_kio_trace_printk(fmt, ...)				\
+do {								\
+	char _______STR[] = __stringify((__VA_ARGS__));		\
+	if (sizeof(_______STR) > 3)				\
+		__fuse_kio_do_trace_printk(fmt, ##__VA_ARGS__);	\
+	else							\
+		__trace_puts(_THIS_IP_, fmt, strlen(fmt));	\
+} while (0)
+
+#define __fuse_kio_do_trace_printk(fmt, ...)				\
+do {									\
+	void (*__plugin)(unsigned long, const char *, ...); 		\
+	__trace_printk_check_format(fmt, ##__VA_ARGS__);		\
+        rcu_read_lock(); 						\
+        __plugin = rcu_dereference(fuse_printk_plugin); 		\
+        if (__plugin) (*__plugin)(_THIS_IP_, fmt, ##__VA_ARGS__);       \
+	rcu_read_unlock(); 						\
+} while (0)
+
+
+#define TRACE(fmt, ...)	if (unlikely(debugfs_tracing && pcs_loglevel >= LOG_TRACE)) fuse_kio_trace_printk(__stringify(__LINE__) ": " fmt, ##__VA_ARGS__)
+#define DTRACE(fmt, ...)	if (unlikely(debugfs_tracing && pcs_loglevel >= LOG_DTRACE)) fuse_kio_trace_printk(__stringify(__LINE__) ": " fmt, ##__VA_ARGS__)
 #endif /* __PCSLOG_H__ */

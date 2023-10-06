@@ -430,7 +430,7 @@ static void cs_get_read_response_iter(struct pcs_msg *msg, int offset, struct io
 		msg->_inline_kv.iov_len = sizeof(struct pcs_cs_iohdr);
 		iov_iter_kvec(it, direction, &msg->_inline_kv, 1, sizeof(struct pcs_cs_iohdr));
 		iov_iter_advance(it, offset);
-		TRACE("return msg:%p->size:%d off:%d it_len:%ld\n\n", msg, msg->size, offset, iov_iter_count(it));
+		TRACE("return msg:%p->size:%d off:%d it_len:%ld\n", msg, msg->size, offset, iov_iter_count(it));
 		return;
 	} else {
 		struct pcs_msg *req = msg->private;
@@ -448,7 +448,7 @@ static void cs_get_read_response_iter(struct pcs_msg *msg, int offset, struct io
 			iov_iter_truncate(it, msg->size - sizeof(struct pcs_cs_iohdr));
 			iov_iter_advance(it, offset);
 
-			TRACE("return msg:%p->size:%d off:%d it_len:%ld\n\n", msg, msg->size, offset, iov_iter_count(it));
+			TRACE("return msg:%p->size:%d off:%d it_len:%ld\n", msg, msg->size, offset, iov_iter_count(it));
 			return;
 		} else
 			BUG();
@@ -551,7 +551,7 @@ static void cs_get_data(struct pcs_msg *msg, int offset, struct iov_iter *it, un
 		ireq->iochunk.hbuf_kv.iov_len = sizeof(struct pcs_cs_iohdr);
 		iov_iter_kvec(it, direction, &ireq->iochunk.hbuf_kv, 1, sizeof(struct pcs_cs_iohdr));
 		iov_iter_advance(it, offset);
-		TRACE("return msg:%p->size:%d off:%d it_len:%ld\n\n", msg, msg->size, offset, iov_iter_count(it));
+		TRACE("return msg:%p->size:%d off:%d it_len:%ld\n", msg, msg->size, offset, iov_iter_count(it));
 
 		return;
 	} else {
@@ -566,7 +566,7 @@ static void cs_get_data(struct pcs_msg *msg, int offset, struct iov_iter *it, un
 			iov_iter_truncate(it, ireq->iochunk.size);
 			iov_iter_advance(it, offset);
 
-			TRACE("return msg:%p->size:%d off:%d it_len:%ld\n\n", msg, msg->size, offset, iov_iter_count(it));
+			TRACE("return msg:%p->size:%d off:%d it_len:%ld\n", msg, msg->size, offset, iov_iter_count(it));
 			return;
 		} else
 			BUG();
@@ -1218,7 +1218,7 @@ unsigned int cs_get_avg_in_flight(struct pcs_cs *cs)
 			}
 			if (cs->cwnd > PCS_CS_INIT_CWND) {
 				unsigned int cwnd = PCS_CS_INIT_CWND;
-				TRACE("Congestion window on CS#" NODE_FMT " was not used, shrink %u -> %u", NODE_ARGS(cs->id),
+				FUSE_KTRACE(cc_from_csset(cs->css)->fc, "Congestion window on CS#" NODE_FMT " was not used, shrink %u -> %u", NODE_ARGS(cs->id),
 					cs->cwnd, cwnd);
 				if (cs->cwnd > cs->ssthresh)
 					cs->ssthresh = cs->cwnd;

@@ -16,7 +16,7 @@ fuse_kio_noop-objs := kio/kio_noop.o
 obj-$(CONFIG_FUSE_KIO_NULLIO)	+= fuse_kio_nullio.o
 fuse_kio_nullio-objs := kio/kio_nullio.o
 
-obj-$(CONFIG_FUSE_KIO_PCS)	+= fuse_kio_pcs.o
+obj-$(CONFIG_FUSE_KIO_PCS)	+= fuse_kio_pcs.o fuse_kio_pcs_trace.o
 fuse_kio_pcs-objs := kio/pcs/pcs_fuse_kdirect.o \
 	kio/pcs/pcs_sock_io.o \
 	kio/pcs/pcs_rpc.o \
@@ -34,5 +34,6 @@ fuse_kio_pcs-objs := kio/pcs/pcs_fuse_kdirect.o \
 	kio/pcs/pcs_rdma_conn.o \
 	kio/pcs/pcs_net_addr.o \
 	kio/pcs/pcs_cs_accel.o
+fuse_kio_pcs_trace-objs := kio/pcs/fuse_kio_pcs_trace.o
 
 virtiofs-y := virtio_fs.o

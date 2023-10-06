@@ -655,7 +655,7 @@ static int all_blacklisted(struct pcs_cs_list * csl)
 		if (test_bit(i, &csl->blacklist)) {
 			if (jiffies < READ_ONCE(csl->blacklist_expires))
 				continue;
-			TRACE("expire replication blacklist");
+			FUSE_KTRACE(cc_from_csset(csl->cs[i].cslink.cs->css)->fc, "expire replication blacklist");
 			clear_bit(i, &csl->blacklist);
 		}
 		if (!test_bit(CS_SF_BLACKLISTED, &csl->cs[i].cslink.cs->state))
