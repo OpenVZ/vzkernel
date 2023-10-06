@@ -458,6 +458,7 @@ void pcs_rpc_enable(struct pcs_rpc * ep, int error)
 	TRACE("ep(%p)->state: WORK\n", ep);
 	ep->state = PCS_RPC_WORK;
 	ep->retries = 0;
+	ep->kill_deadline = 0;
 	queue_work(cc->wq, &ep->work);
 }
 
@@ -472,12 +473,16 @@ static void handle_response(struct pcs_rpc * ep, struct pcs_msg * msg)
 	 * for itself.
 	 */
 	pcs_msg_io_start(msg, pcs_free_msg);
+
+	ep->kill_deadline = 0;
+
 	req = pcs_rpc_lookup_xid(ep, &h->xid);
 	if (req == NULL)
 		goto drop;
 
 	pcs_msg_del_calendar(req);
 	list_del(&req->list);
+
 	if (h->type == PCS_RPC_ERROR_RESP) {
 		struct pcs_rpc_error_resp * eh = (struct pcs_rpc_error_resp *)msg->_inline_buffer;
 
@@ -535,6 +540,7 @@ static void handle_keep_waiting(struct pcs_rpc * ep, struct pcs_msg * msg)
 	if (req->stage == PCS_MSG_STAGE_WAIT) {
 		req->start_time = jiffies;
 		list_move_tail(&req->list, &ep->pending_queue);
+		ep->kill_deadline = 0;
 	}
 }
 
@@ -808,6 +814,11 @@ static void calendar_work(struct work_struct *w)
 			msg->stage = PCS_MSG_STAGE_SENT;
 			pcs_set_rpc_error(&msg->error, PCS_ERR_WRITE_TIMEOUT, msg->rpc);
 		}
+		if (timer_pending(&ep->timer_work.timer)) {
+			unsigned long tmo = ep->timer_work.timer.expires;
+			if (!ep->kill_deadline || time_before(tmo, ep->kill_deadline))
+				ep->kill_deadline = tmo;
+		}
 		BUG_ON(!hlist_unhashed(&msg->kill_link));
 		msg->done(msg);
 		count++;
@@ -834,26 +845,32 @@ static void update_xmit_timeout(struct pcs_rpc *ep)
 	struct pcs_netio *netio = (struct pcs_netio *)ep->conn;
 	struct pcs_cluster_core *cc = cc_from_rpc(ep->eng);
 	struct pcs_msg * msg;
-	unsigned long timeout = 0;
+	unsigned long timeout = ep->kill_deadline;
 	unsigned long tx;
 
 	BUG_ON(ep->state != PCS_RPC_WORK);
 
-	if (list_empty(&ep->pending_queue) && !netio->tops->next_timeout(netio)) {
+	tx = netio->tops->next_timeout(netio);
+
+	if (list_empty(&ep->pending_queue) && !tx && !timeout) {
 		if (timer_pending(&ep->timer_work.timer))
 			cancel_delayed_work(&ep->timer_work);
 		return;
 	}
+
+	if (tx) {
+		if (!timeout || time_before(tx, timeout))
+			timeout = tx;
+	}
+
 	if (!list_empty(&ep->pending_queue)) {
 		msg = list_first_entry(&ep->pending_queue, struct pcs_msg, list);
 
-		timeout = msg->start_time + ep->params.response_timeout;
-	}
-	if (netio->tops->next_timeout(netio)) {
-		tx = netio->tops->next_timeout(netio);
-		if (time_after(tx, timeout))
+		tx = msg->start_time + ep->params.response_timeout;
+		if (!timeout || time_before(tx, timeout))
 			timeout = tx;
 	}
+
 	if (time_is_before_jiffies(timeout))
 		timeout = 0;
 	else
@@ -1291,11 +1308,22 @@ static void timer_work(struct work_struct *w)
 		break;
 
 	case PCS_RPC_WORK: {
-		int err = list_empty(&ep->pending_queue) ? PCS_ERR_RESPONSE_TIMEOUT : PCS_ERR_WRITE_TIMEOUT;
+		int err = PCS_ERR_RESPONSE_TIMEOUT                        ;
+
+		/* We do not really know what timeout expired and this is not very essential,
+		 * just make a guess.
+		 */
+		if (list_empty(&ep->pending_queue)) {
+			struct pcs_netio *netio = (struct pcs_netio *)ep->conn;
+			unsigned long tx = netio->tops->next_timeout(netio);
+
+			if (tx && !time_is_after_jiffies(tx))
+				err = PCS_ERR_WRITE_TIMEOUT;
+		}
 
 		pcs_rpc_report_error(ep, PCS_RPC_ERR_RESPONSE_TOUT);
 		FUSE_KTRACE(cc_from_rpc(ep->eng)->fc, "rpc timer expired, killing connection to " PEER_FMT ", %d",
-		      PEER_ARGS(ep), err);
+			    PEER_ARGS(ep), err);
 		rpc_abort(ep, 0, err);
 		break;
 	}
