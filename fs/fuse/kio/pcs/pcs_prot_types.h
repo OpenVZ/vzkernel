@@ -23,6 +23,7 @@
 
 #define PCS_VZ7_VERSION 100
 #define PCS_CS_MSG_ALIGNED_VERSION 134
+#define PCS_CS_FANOUT 177
 
 /* milliseconds since Jan 1970 */
 typedef u64 PCS_FILETIME_T;

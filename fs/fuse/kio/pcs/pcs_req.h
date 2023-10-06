@@ -15,6 +15,7 @@
 #include "pcs_cs_prot.h"
 #include "pcs_rpc.h"
 #include "pcs_cs.h"
+#include "fuse_ktrace_prot.h"
 #include "fuse_stat.h"
 #include "../../fuse_i.h"
 
@@ -60,6 +61,7 @@ struct pcs_aio_req
 };
 
 #define PCS_MAX_ACCEL_CS	3
+#define PCS_MAP_MAX_FO_CS	8
 
 struct pcs_accel_write_req
 {
@@ -75,12 +77,11 @@ struct pcs_accel_write_req
 
 struct pcs_accel_req
 {
-	struct pcs_int_request		*parent;
 	atomic_t			iocount;
 	int				num_awr;
 	struct pcs_accel_write_req	awr[PCS_MAX_ACCEL_CS];
 	int				num_iotimes;
-	struct pcs_cs_sync_resp		io_times[PCS_MAX_ACCEL_CS];
+	struct fuse_tr_iotimes_cs	io_times[PCS_MAX_ACCEL_CS];
 	struct work_struct		work;
 };
 
@@ -91,6 +92,13 @@ struct pcs_iochunk_req {
 						 */
 	struct kvec		hbuf_kv;
 	struct pcs_int_request	*parent_N;
+};
+
+struct pcs_fo_req
+{
+	atomic_t			iocount;
+	int				num_iotimes;
+	struct fuse_tr_iotimes_cs	io_times[PCS_MAP_MAX_FO_CS];
 };
 
 struct pcs_int_request
@@ -119,6 +127,7 @@ struct pcs_int_request
 #define IREQ_F_CRYPT		0x2000
 #define IREQ_F_ACCELERROR	0x4000
 #define IREQ_F_NOACCT		0x8000
+#define IREQ_F_FANOUT	       0x10000
 
 	atomic_t		iocount;
 
@@ -179,6 +188,7 @@ struct pcs_int_request
 					struct pcs_int_request	*parent_N;
 				};
 				struct pcs_iochunk_req		ir;
+				struct pcs_fo_req		fo;
 				struct pcs_aio_req		ar;
 				struct pcs_accel_req		acr;
 			};
