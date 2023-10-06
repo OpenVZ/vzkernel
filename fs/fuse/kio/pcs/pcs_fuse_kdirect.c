@@ -69,6 +69,39 @@ unsigned int rdmaio_queue_depth = 8;
 module_param(rdmaio_queue_depth, uint, 0644);
 MODULE_PARM_DESC(rdmaio_queue_depth, "RDMA queue depth");
 
+static LIST_HEAD(pcs_client_list);
+spinlock_t pcs_clients_lock;
+
+static void register_client(struct pcs_fuse_cluster * pfc)
+{
+	spin_lock(&pcs_clients_lock);
+	list_add(&pfc->list, &pcs_client_list);
+	spin_unlock(&pcs_clients_lock);
+}
+
+static void unregister_client(struct pcs_fuse_cluster * pfc)
+{
+	spin_lock(&pcs_clients_lock);
+	list_del_init(&pfc->list);
+	spin_unlock(&pcs_clients_lock);
+}
+
+static struct pcs_fuse_cluster * lookup_client(PCS_NODE_ID_T client_id, PCS_CLUSTER_ID_T * cluster_id)
+{
+	struct pcs_fuse_cluster * pfc;
+
+	spin_lock(&pcs_clients_lock);
+	list_for_each_entry(pfc, &pcs_client_list, list) {
+		if (!((pfc->cc.eng.local_id.val ^ client_id.val) & ~PCS_NODE_ALT_MASK) &&
+		    memcmp(cluster_id, &pfc->cc.eng.cluster_id, sizeof(PCS_CLUSTER_ID_T)) == 0) {
+			spin_unlock(&pcs_clients_lock);
+			return pfc;
+		}
+	}
+	spin_unlock(&pcs_clients_lock);
+	return NULL;
+}
+
 #ifdef CONFIG_DEBUG_KERNEL
 
 static int set_io_fail_percent(const char *val, const struct kernel_param *kp)
@@ -163,6 +196,7 @@ static void process_pcs_init_reply(struct fuse_mount *fm, struct fuse_args *args
 		 */
 		fc->kio.op = fc->kio.cached_op;
 		fc->kio.ctx = pfc;
+		register_client(pfc);
 		pfc = NULL;
 	}
 	spin_unlock(&fc->lock);
@@ -245,6 +279,7 @@ void kpcs_conn_fini(struct fuse_mount *fm)
 		return;
 
 	TRACE("%s fc:%p\n", __FUNCTION__, fc);
+	unregister_client(fc->kio.ctx);
 	flush_workqueue(pcs_wq);
 	pcs_cluster_fini((struct pcs_fuse_cluster *) fc->kio.ctx);
 }
@@ -1708,6 +1743,43 @@ static void kpcs_kill_requests(struct fuse_conn *fc, struct inode *inode)
 	pcs_kio_file_list(fc, kpcs_kill_lreq_itr, inode);
 }
 
+static int kpcs_ioctl(struct file *file, struct inode *inode, unsigned int cmd, unsigned long arg, int len)
+{
+	struct fuse_conn *fc = inode ? get_fuse_conn(inode) : NULL;
+	struct pcs_fuse_cluster *pfc;
+	struct fuse_pcs_ioc_register req;
+	int res;
+
+	if (cmd != PCS_KIO_CALL_REG)
+		return -EINVAL;
+
+	if (len != sizeof(req))
+		return -EINVAL;
+
+	if (copy_from_user(&req, (void __user *)arg, sizeof(req)))
+		return -EFAULT;
+
+	if (fc) {
+		pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
+		if (memcmp(&req.cluster_id, &pfc->cc.eng.cluster_id, sizeof(PCS_CLUSTER_ID_T)))
+			return -ENXIO;
+	} else {
+		mutex_lock(&fuse_mutex);
+		pfc = lookup_client(req.client_id, &req.cluster_id);
+		if (pfc && pfc->fc)
+			fc = fuse_conn_get(pfc->fc);
+		mutex_unlock(&fuse_mutex);
+		if (!pfc)
+			return -ENXIO;
+	}
+
+	res = pcs_csa_register(&pfc->cc, req.cs_id);
+
+	if (!inode)
+		fuse_conn_put(fc);
+	return res;
+}
+
 static struct fuse_kio_ops kio_pcs_ops = {
 	.name		= "pcs",
 	.owner		= THIS_MODULE,
@@ -1723,12 +1795,17 @@ static struct fuse_kio_ops kio_pcs_ops = {
 	.file_close	= kpcs_file_close,
 	.inode_release	= kpcs_inode_release,
 	.kill_requests	= kpcs_kill_requests,
+	.ioctl		= kpcs_ioctl,
 };
 
 
 static int __init kpcs_mod_init(void)
 {
 	int err = -ENOMEM;
+
+	spin_lock_init(&pcs_clients_lock);
+	INIT_LIST_HEAD(&pcs_client_list);
+
 	pcs_fuse_req_cachep = kmem_cache_create("pcs_fuse_request",
 						sizeof(struct pcs_fuse_req),
 						0, 0, NULL);
@@ -1756,10 +1833,13 @@ static int __init kpcs_mod_init(void)
 	if (!pcs_cleanup_wq)
 		goto free_wq;
 
+	if (pcs_csa_init())
+		goto free_cleanup_wq;
+
 	fast_path_version = PCS_FAST_PATH_VERSION.full;
 
 	if (fuse_register_kio(&kio_pcs_ops))
-		goto free_cleanup_wq;
+		goto free_csa;
 
 	fuse_trace_root = debugfs_create_dir("fuse", NULL);
 
@@ -1767,6 +1847,8 @@ static int __init kpcs_mod_init(void)
 	       pcs_fuse_req_cachep, pcs_ireq_cachep, pcs_wq);
 
 	return 0;
+free_csa:
+	pcs_csa_fini();
 free_cleanup_wq:
 	destroy_workqueue(pcs_cleanup_wq);
 free_wq:
@@ -1791,6 +1873,7 @@ static void __exit kpcs_mod_exit(void)
 	kmem_cache_destroy(pcs_map_cachep);
 	kmem_cache_destroy(pcs_ireq_cachep);
 	kmem_cache_destroy(pcs_fuse_req_cachep);
+	pcs_csa_fini();
 }
 
 module_init(kpcs_mod_init);
