@@ -825,6 +825,25 @@ static void __pcs_csa_write_final_completion(struct pcs_accel_write_req *areq)
 	csa_complete_acr(ireq);
 }
 
+static void csa_sync_work(struct work_struct *w)
+{
+	struct pcs_accel_write_req * areq = container_of(w, struct pcs_accel_write_req, work);
+	struct pcs_int_request * ireq = container_of(areq-areq->index, struct pcs_int_request, iochunk.acr.awr[0]);
+	int res;
+
+	res = vfs_fsync(areq->iocb.ki_filp, 1);
+
+	if (res) {
+		ireq->error.remote = 1;
+		ireq->error.offender = ireq->iochunk.csl->cs[ireq->iochunk.cs_index].info.id;
+		ireq->error.value = PCS_ERR_IO;
+		ireq->flags |= IREQ_F_ACCELERROR;
+	}
+
+	if (atomic_dec_and_test(&areq->iocount))
+		__pcs_csa_write_final_completion(areq);
+}
+
 static void csa_write_complete_work(struct work_struct *w)
 {
 	struct pcs_accel_write_req * areq = container_of(w, struct pcs_accel_write_req, work);
@@ -846,6 +865,15 @@ static void csa_write_complete(struct kiocb *iocb, long ret)
 			ireq->error.offender = ireq->iochunk.csl->cs[ireq->iochunk.cs_index].info.id;
 			ireq->error.value = PCS_ERR_IO;
 			ireq->flags |= IREQ_F_ACCELERROR;
+		}
+	}
+
+	if (!ireq->error.value) {
+		if ((ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) ||
+		    ireq->dentry->no_write_delay) {
+			INIT_WORK(&areq->work, csa_sync_work);
+			queue_work(ireq->cc->wq, &areq->work);
+			return;
 		}
 	}
 
@@ -1025,7 +1053,7 @@ static inline int csa_submit_write(struct file * file, struct pcs_int_request * 
 			return ret >= 0 ? -EIO : ret;
 		}
 
-		/* IO already finished. Drop AIO refcnt and proceed to crc */
+		/* IO already finished. Drop AIO refcnt yet. */
 		FUSE_KTRACE(ireq->cc->fc, "No good, AIO executed synchronously, ireq:%p : %llu:%u+%u",
 			    ireq, (unsigned long long)ireq->iochunk.chunk,
 			    (unsigned)ireq->iochunk.offset,
