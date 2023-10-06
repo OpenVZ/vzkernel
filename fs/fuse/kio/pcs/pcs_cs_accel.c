@@ -1123,6 +1123,9 @@ struct pcs_int_request * pcs_csa_csl_write_submit(struct pcs_int_request * ireq)
 	ireq_init_acr(ireq);
 
 	for (idx = 0; idx < csl->nsrv; idx++) {
+		/* If dirty status is unknown go to slow path to get a seed */
+		if (csl->cs[idx].sync.dirty_seq == 0)
+			break;
 		if (!csa_cs_submit_write(ireq, idx))
 			break;
 	}
@@ -1170,6 +1173,8 @@ struct pcs_int_request * pcs_csa_csl_write_submit(struct pcs_int_request * ireq)
 int pcs_csa_csl_write_submit_single(struct pcs_int_request * ireq, int idx)
 {
 	if (idx >= PCS_MAX_ACCEL_CS)
+		return 0;
+	if (ireq->iochunk.csl->cs[idx].sync.dirty_seq == 0)
 		return 0;
 
 	ireq_init_acr(ireq);
