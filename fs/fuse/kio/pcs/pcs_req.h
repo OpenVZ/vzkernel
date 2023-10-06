@@ -59,6 +59,40 @@ struct pcs_aio_req
 	u32    			crcb[PCS_MAX_INLINE_CRC];
 };
 
+#define PCS_MAX_ACCEL_CS	3
+
+struct pcs_accel_write_req
+{
+	int			index;
+	struct kiocb		iocb;
+	atomic_t		iocount;
+	struct work_struct	work;
+
+	/* Crypto bits. This holds an encrypted copy of original data for use by aio writes */
+	struct bio_vec		*bvec_copy;
+	unsigned		num_copy_bvecs;
+};
+
+struct pcs_accel_req
+{
+	struct pcs_int_request		*parent;
+	atomic_t			iocount;
+	int				num_awr;
+	struct pcs_accel_write_req	awr[PCS_MAX_ACCEL_CS];
+	int				num_iotimes;
+	struct pcs_cs_sync_resp		io_times[PCS_MAX_ACCEL_CS];
+	struct work_struct		work;
+};
+
+struct pcs_iochunk_req {
+	struct pcs_msg		msg;
+	struct pcs_cs_iohdr	hbuf;		/* Buffer for header.
+						 * A little ugly
+						 */
+	struct kvec		hbuf_kv;
+	struct pcs_int_request	*parent_N;
+};
+
 struct pcs_int_request
 {
 	struct pcs_cluster_core* cc;
@@ -84,6 +118,7 @@ struct pcs_int_request
 #define IREQ_F_NO_ACCEL		0x1000
 #define IREQ_F_CRYPT		0x2000
 #define IREQ_F_ACCELERROR	0x4000
+#define IREQ_F_NOACCT		0x8000
 
 	atomic_t		iocount;
 
@@ -141,8 +176,11 @@ struct pcs_int_request
 										 * A little ugly
 										 */
 					struct kvec		hbuf_kv;
+					struct pcs_int_request	*parent_N;
 				};
+				struct pcs_iochunk_req		ir;
 				struct pcs_aio_req		ar;
+				struct pcs_accel_req		acr;
 			};
 		} iochunk;
 

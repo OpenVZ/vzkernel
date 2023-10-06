@@ -221,6 +221,22 @@ void ireq_drop_tokens(struct pcs_int_request * ireq);
 
 extern unsigned int cs_io_locality;
 
+void cslist_destroy(struct pcs_cs_list * csl);
+
+static inline void cslist_get(struct pcs_cs_list * csl)
+{
+	TRACE("csl:%p csl->map:%p refcnt:%d\n", csl, csl->map, atomic_read(&csl->refcnt));
+
+	atomic_inc(&csl->refcnt);
+}
+
+static inline void cslist_put(struct pcs_cs_list * csl)
+{
+	TRACE("csl:%p csl->map:%p refcnt:%d\n", csl, csl->map, atomic_read(&csl->refcnt));
+	if (atomic_dec_and_test(&csl->refcnt))
+		cslist_destroy(csl);
+}
+
 #define MAP_FMT	"(%p) 0x%lld s:%x" DENTRY_FMT
 #define MAP_ARGS(m) (m), (long long)(m)->index,	 (m)->state, DENTRY_ARGS(pcs_dentry_from_map((m)))
 
