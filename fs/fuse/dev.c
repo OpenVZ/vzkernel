@@ -362,8 +362,16 @@ void __fuse_request_end( struct fuse_req *req, bool flush_bg)
 			flush_bg_queue_and_unlock(fc);
 		else
 			spin_unlock(&fc->bg_lock);
-	} else if (test_bit(FR_NO_ACCT, &req->flags))
+	} else if (test_bit(FR_NO_ACCT, &req->flags)) {
+		unsigned int bkt = req->qhash;
+
 		bg = true;
+
+		if (atomic_dec_return(&fc->qhash[bkt].num_reqs) < ((2*fc->max_background) / FUSE_QHASH_SIZE)) {
+			if (waitqueue_active(&fc->qhash[bkt].waitq))
+				wake_up(&fc->qhash[bkt].waitq);
+		}
+	}
 
 	if (test_bit(FR_ASYNC, &req->flags)) {
 		req->args->end(fm, req->args, req->out.h.error);
@@ -615,12 +623,25 @@ static int fuse_request_queue_background(struct fuse_req *req)
 	}
 	__set_bit(FR_ISREPLY, &req->flags);
 
-	if (fc->kio.op && req->args->async && !nonblocking &&
+	if (fc->kio.op && req->args->async && !nonblocking && READ_ONCE(fc->connected) &&
 	    (!ff || !test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state))) {
 		int ret = fc->kio.op->req_classify(req, false, false);
 		if (likely(!ret)) {
+			unsigned int bkt = fuse_qhash_bucket();
 			__clear_bit(FR_BACKGROUND, &req->flags);
 			__set_bit(FR_NO_ACCT, &req->flags);
+			if (wait_event_killable_exclusive(fc->qhash[bkt].waitq,
+							  (atomic_read(&fc->qhash[bkt].num_reqs) <
+							   ((2 * fc->max_background) / FUSE_QHASH_SIZE) ||
+							   !READ_ONCE(fc->connected) ||
+							   (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)))))
+				return -EIO;
+			if (!READ_ONCE(fc->connected))
+				return -ENOTCONN;
+			if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state))
+				return -EIO;
+			req->qhash = bkt;
+			atomic_inc(&fc->qhash[bkt].num_reqs);
 			fc->kio.op->req_send(req, true);
 			return 0;
 		} else if (ret < 0)
@@ -2326,6 +2347,8 @@ void fuse_abort_conn(struct fuse_conn *fc)
 
 		end_polls(fc);
 		wake_up_all(&fc->blocked_waitq);
+		for (cpu = 0; cpu < FUSE_QHASH_SIZE; cpu++)
+			wake_up_all(&fc->qhash[cpu].waitq);
 		spin_unlock(&fc->lock);
 
 		end_requests(&to_end);
