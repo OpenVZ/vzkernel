@@ -53,11 +53,10 @@ struct pcs_aio_req
 	struct iov_iter 	iter;
 	struct work_struct	work;
 
-#define PCS_MAX_INLINE_CRC	2
-	u32    			crcb[PCS_MAX_INLINE_CRC];
 	u32    			*crc;
 	struct file		*cfile;
-	struct work_struct	cwork;
+#define PCS_MAX_INLINE_CRC	32
+	u32    			crcb[PCS_MAX_INLINE_CRC];
 };
 
 struct pcs_int_request
@@ -83,6 +82,8 @@ struct pcs_int_request
 #define IREQ_F_WB_SUSP		0x400
 #define IREQ_F_RECV_SPLICE	0x800
 #define IREQ_F_NO_ACCEL		0x1000
+#define IREQ_F_CRYPT		0x2000
+#define IREQ_F_ACCELERROR	0x4000
 
 	atomic_t		iocount;
 

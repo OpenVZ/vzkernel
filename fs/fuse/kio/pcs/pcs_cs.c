@@ -609,6 +609,8 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	int storage_version = atomic_read(&ireq->cc->storage_version);
 	int aligned_msg;
 
+	BUG_ON(msg->rpc);
+
 	if (ireq->iochunk.cmd == PCS_REQ_T_READ && !((ireq->iochunk.size|ireq->iochunk.offset) & 511) &&
 	    !(ireq->flags & IREQ_F_NO_ACCEL)) {
 		if (pcs_csa_cs_submit(cs, ireq))
@@ -616,8 +618,6 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	}
 
 	msg->private = cs;
-
-	BUG_ON(msg->rpc);
 	msg->private2 = ireq;
 
 	ioh = &ireq->iochunk.hbuf;

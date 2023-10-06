@@ -1363,6 +1363,13 @@ static void map_read_error(struct pcs_int_request *ireq)
 	if (csl == NULL || csl->map == NULL || (csl->map->state & PCS_MAP_ERROR))
 		return;
 
+	if (ireq->flags & IREQ_F_ACCELERROR) {
+		pcs_clear_error(&ireq->error);
+		ireq->flags &= ~IREQ_F_ACCELERROR;
+		ireq->flags |= IREQ_F_NO_ACCEL;
+		return;
+	}
+
 	cs = rcu_dereference_protected(csl->cs[ireq->iochunk.cs_index].cslink.cs,
 				       atomic_read(&csl->refcnt) > 0);
 
