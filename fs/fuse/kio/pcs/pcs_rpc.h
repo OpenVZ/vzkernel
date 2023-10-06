@@ -39,7 +39,10 @@ enum {
 	RPC_AFFINITY_NONE   = 0,
 	RPC_AFFINITY_RETENT = 1,
 	RPC_AFFINITY_SPREAD = 2,
+	RPC_AFFINITY_RSS    = 3,
 };
+
+extern unsigned int rpc_affinity_mode;
 
 struct pcs_rpc_params
 {
