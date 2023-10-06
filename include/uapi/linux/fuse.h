@@ -1082,4 +1082,14 @@ struct fuse_supp_groups {
 	uint32_t	groups[];
 };
 
+struct fuse_kio_call
+{
+	uint32_t	cmd;
+	uint32_t	len;
+	uint64_t	data;
+	uint8_t		name[32];
+};
+
+#define FUSE_IOC_KIO_CALL	_IOW('V',39,struct fuse_kio_call)
+
 #endif /* _LINUX_FUSE_H */

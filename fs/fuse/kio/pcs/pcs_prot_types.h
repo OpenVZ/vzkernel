@@ -33,6 +33,7 @@ typedef u64 PCS_FILE_ID_T;
 #define PCS_NODE_TYPE_SHIFT	10
 #define PCS_NODE_TYPE_MASK	(((1ULL << PCS_NODE_TYPE_BITS) - 1) << PCS_NODE_TYPE_SHIFT)
 #define PCS_NODE_ID_MASK	(~PCS_NODE_TYPE_MASK)
+#define PCS_NODE_ALT_MASK	(1ULL << 63)
 
 typedef struct __pre_aligned(8) _PCS_CHUNK_ID_T {
 	PCS_FILE_ID_T	fileid;
