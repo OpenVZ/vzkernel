@@ -208,9 +208,15 @@ int pcs_sys_strerror_r(int err, char *buf, int buflen);
 
 struct _pcs_error_t
 {
-	unsigned int	value : 31, remote: 1;
+	union {
+		struct {
+			u32     value : 31, remote: 1;
+			u32     pad;
+		};
+		atomic64_t atomic;
+	};
 
-	PCS_NODE_ID_T		offender;
+        PCS_NODE_ID_T           offender;
 };
 typedef struct _pcs_error_t pcs_error_t;
 
@@ -242,6 +248,38 @@ static __inline void pcs_set_local_error(pcs_error_t * status, int err)
 {
 	status->value = err;
 	status->remote = 0;
+}
+
+/* Atomicity is special here, intended only to set an error status from multiple contexts.
+ * Actual access to content is made only from serialized context and does not need atomicity.
+ * It is important that an error set once cannot be cleared or changed or even read until
+ * all the context which could modify error are finished.
+ */
+static __inline void pcs_set_error_cond_atomic(pcs_error_t * status, int err, int remote, PCS_NODE_ID_T id)
+{
+	if (!status->value) {
+		for (;;) {
+			s64 val = err | (remote ? 1ULL << 31 : 0);
+			s64 old_val = atomic64_read(&status->atomic);
+			if (old_val & 0x7FFFFFFFUL)
+				break;
+			if (old_val == atomic64_cmpxchg(&status->atomic, old_val, val)) {
+				if (remote)
+					status->offender = id;
+				break;
+			}
+		}
+	}
+}
+
+static __inline void pcs_set_local_error_cond_atomic(pcs_error_t * status, int err)
+{
+	pcs_set_error_cond_atomic(status, err, 0, (PCS_NODE_ID_T) { .val = 0 });
+}
+
+static __inline void pcs_copy_error_cond_atomic(pcs_error_t * dst, pcs_error_t * src)
+{
+	pcs_set_error_cond_atomic(dst, src->value, src->remote, src->offender);
 }
 
 int pcs_error_to_errno(pcs_error_t *);
