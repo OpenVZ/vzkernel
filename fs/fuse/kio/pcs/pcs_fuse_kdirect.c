@@ -29,6 +29,7 @@
 #include <linux/debugfs.h>
 #include <linux/fiemap.h>
 #include <crypto/hash.h>
+#include <crypto/skcipher.h>
 
 #include "pcs_ioctl.h"
 #include "pcs_cluster.h"
@@ -283,7 +284,9 @@ static void kpcs_conn_fini(struct fuse_mount *fm)
 
 	TRACE("%s fc:%p\n", __FUNCTION__, fc);
 	unregister_client(fc->kio.ctx);
+	synchronize_rcu();
 	flush_workqueue(pcs_wq);
+	flush_workqueue(pcs_cleanup_wq);
 	pcs_cluster_fini((struct pcs_fuse_cluster *) fc->kio.ctx);
 }
 
@@ -1284,6 +1287,8 @@ static void kpcs_req_send(struct fuse_req *req, bool bg)
 	return;
 }
 
+static struct file_operations ktrace_file_operations;
+
 static void fuse_rpc_error_metrics_clean(struct fuse_error_metrics *metrics);
 
 static void fuse_trace_free(struct fuse_ktrace *tr)
@@ -1329,7 +1334,7 @@ static struct dentry * create_buf_file_callback(const char *filename,
 						int *is_global)
 {
 	return debugfs_create_file(filename, mode, parent, buf,
-				   &relay_file_operations);
+				   &ktrace_file_operations);
 }
 
 static int remove_buf_file_callback(struct dentry *dentry)
@@ -1571,6 +1576,7 @@ static ssize_t prometheus_file_read(struct file *filp,
 }
 
 static const struct file_operations prometheus_file_operations = {
+	.owner		= THIS_MODULE,
 	.open		= prometheus_file_open,
 	.read		= prometheus_file_read,
 	.release	= prometheus_file_release,
@@ -1752,6 +1758,7 @@ static int kpcs_ioctl(struct file *file, struct inode *inode, unsigned int cmd, 
 	struct fuse_inode *fi = NULL;
 	struct pcs_dentry_info *di = NULL;
 	struct pcs_fuse_cluster *pfc;
+	struct crypto_sync_skcipher * tfm = NULL;
 	struct fuse_pcs_ioc_register req;
 	int res;
 
@@ -1788,9 +1795,6 @@ static int kpcs_ioctl(struct file *file, struct inode *inode, unsigned int cmd, 
 	if (copy_from_user(&req, (void __user *)arg, sizeof(req)))
 		return -EFAULT;
 
-	if (req.crypto_algo)
-		return -EOPNOTSUPP;
-
 	if (fc) {
 		pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
 		if (memcmp(&req.cluster_id, &pfc->cc.eng.cluster_id, sizeof(PCS_CLUSTER_ID_T)))
@@ -1805,10 +1809,55 @@ static int kpcs_ioctl(struct file *file, struct inode *inode, unsigned int cmd, 
 			return -ENXIO;
 	}
 
-	res = pcs_csa_register(&pfc->cc, req.cs_id);
+	if (req.crypto_algo) {
+		u64 key_data[8];
+		int klen = req.crypto_algo & PCS_CSA_EMASK_KEYLEN;
 
+		res = -EINVAL;
+		if (klen > 64)
+			goto out;
+		res = -EFAULT;
+		if (copy_from_user(&key_data, (void __user *)req.key_data, klen))
+			goto out;
+		switch (req.crypto_algo & PCS_CSA_EMASK_KEYTYPE) {
+		case PCS_CSA_EMASK_XTS:
+			tfm = crypto_alloc_sync_skcipher("__xts(aes)", CRYPTO_ALG_INTERNAL, 0);
+			break;
+		case PCS_CSA_EMASK_CTR:
+			tfm = crypto_alloc_sync_skcipher("__ctr(aes)", CRYPTO_ALG_INTERNAL, 0);
+			break;
+		}
+		res = -EINVAL;
+		if (!tfm)
+			goto out;
+		if (IS_ERR(tfm)) {
+			printk("crypto_alloc_sync_skcipher: %ld\n", PTR_ERR(tfm));
+			res = PTR_ERR(tfm);
+			goto out;
+		}
+		if (tfm->base.base.__crt_alg->cra_priority != 400 &&
+		    tfm->base.base.__crt_alg->cra_priority != 401) {
+			printk("crypto drv=%s name=%s prio=%d\n", tfm->base.base.__crt_alg->cra_driver_name,
+			       tfm->base.base.__crt_alg->cra_name, tfm->base.base.__crt_alg->cra_priority);
+			res = -EINVAL;
+			goto out;
+		}
+		res = crypto_sync_skcipher_setkey(tfm, (u8*)&key_data, klen);
+		if (res < 0) {
+			printk("crypto_sync_skcipher_setkey: %d\n", res);
+			goto out;
+		}
+	}
+
+	res = pcs_csa_register(&pfc->cc, req.cs_id, tfm);
+
+out:
 	if (!inode)
 		fuse_conn_put(fc);
+
+	if (res < 0 && tfm)
+		crypto_free_sync_skcipher(tfm);
+
 	return res;
 }
 
@@ -1872,6 +1921,10 @@ static int __init kpcs_mod_init(void)
 
 	if (fuse_register_kio(&kio_pcs_ops))
 		goto free_csa;
+
+	/* Clone relay_file_operations to set ownership */
+	ktrace_file_operations = relay_file_operations;
+	ktrace_file_operations.owner = THIS_MODULE;
 
 	fuse_trace_root = debugfs_create_dir("fuse", NULL);
 
