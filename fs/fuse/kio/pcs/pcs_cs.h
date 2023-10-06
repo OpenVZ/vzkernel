@@ -214,6 +214,8 @@ u32 pcs_cs_msg_size(u32 size, u32 storage_version);
 struct pcs_msg* pcs_alloc_cs_msg(u32 type, u32 size, u32 storage_version);
 
 int pcs_csa_cs_submit(struct pcs_cs * cs, struct pcs_int_request * ireq);
+struct pcs_int_request * pcs_csa_csl_write_submit(struct pcs_int_request * ireq);
+void pcs_csa_relay_iotimes(struct pcs_int_request * ireq,  struct pcs_cs_iohdr * h, PCS_NODE_ID_T cs_id);
 void pcs_csa_cs_detach(struct pcs_cs * cs);
 
 #endif /* _PCS_CS_H_ */
