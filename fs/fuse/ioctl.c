@@ -374,6 +374,13 @@ long fuse_ioctl_common(struct file *file, unsigned int cmd,
 		return fc->kio.op->ioctl(file, inode, req.cmd, req.data, req.len);
 	}
 
+	if (fc->kio.op && fc->kio.op->ioctl) {
+		int err;
+		err = fc->kio.op->ioctl(file, inode, cmd, arg, -1);
+		if (err != -ENOIOCTLCMD)
+			return err;
+	}
+
 	return fuse_do_ioctl(file, cmd, arg, flags);
 }
 
