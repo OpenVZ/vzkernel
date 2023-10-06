@@ -83,6 +83,8 @@ enum
 	PCS_MAP_CLIENT_SIZE	= 8,	/* chunk size is controlled by client */
 	PCS_MAP_CLIENT_ALLOC	= 0x10,	/* chunk allocation is controlled by client */
 	PCS_MAP_CLIENT_PSIZE	= 0x20, /* physical size of chunk on CS must be transmitted to MDS */
+	PCS_MAP_KDIRECT		= 0x40, /* map is claimed by kernel side */
+	PCS_MAP_KDIRTY		= 0x80, /* map is dirtied by kernel side */
 };
 
 struct cs_sync_state
@@ -99,8 +101,11 @@ struct pcs_cs_record
 	struct pcs_cs_info	info;
 	struct cs_sync_state	sync;
 	abs_time_t		dirty_ts;
+	unsigned long		flags;
 	struct pcs_cs_link	cslink;
 };
+
+#define CSL_SF_DIRTY		0
 
 struct pcs_cs_list
 {
@@ -220,6 +225,7 @@ void map_truncate_tail(struct pcs_mapping *mapping, u64 offset);
 void pcs_cs_truncate_maps(struct pcs_cs *cs);
 unsigned long pcs_map_shrink_scan(struct shrinker *,  struct shrink_control *sc);
 void ireq_drop_tokens(struct pcs_int_request * ireq);
+void pcs_map_reevaluate_dirty_status(struct pcs_map_entry * m);
 
 extern unsigned int cs_io_locality;
 extern unsigned int cs_enable_fanout;
