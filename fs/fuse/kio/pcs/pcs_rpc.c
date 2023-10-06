@@ -36,7 +36,7 @@
 #include "fuse_ktrace.h"
 
 
-static unsigned int rpc_affinity_mode = RPC_AFFINITY_RETENT;
+unsigned int rpc_affinity_mode = RPC_AFFINITY_RETENT;
 module_param(rpc_affinity_mode, uint, 0644);
 MODULE_PARM_DESC(rpc_affinity_mode, "RPC affinity mode");
 
@@ -731,6 +731,10 @@ static void pcs_rpc_affinity(struct pcs_rpc *ep, bool was_idle)
 				ep->cpu = WORK_CPU_UNBOUND;
 			}
 			break;
+		case RPC_AFFINITY_RSS:
+			if (!(ep->flags & PCS_RPC_F_LOCAL) && ep->addr.type != PCS_ADDRTYPE_RDMA)
+				break;
+			fallthrough;
 		case RPC_AFFINITY_RETENT:
 			/* Naive socket-to-cpu binding approach */
 			if (time_is_before_jiffies(ep->cpu_stamp) && was_idle) {
@@ -745,7 +749,7 @@ static void pcs_rpc_affinity(struct pcs_rpc *ep, bool was_idle)
 			}
 			break;
 		default:
-			pr_err("Unknown affninity mode: %u\n", rpc_affinity_mode);
+			pr_err("Unknown affinity mode: %u\n", rpc_affinity_mode);
 	}
 }
 

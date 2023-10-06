@@ -548,7 +548,9 @@ static void pcs_sk_kick_queue(struct sock *sk)
 	sio = rcu_dereference_sk_user_data(sk);
 	if (sio) {
 		struct pcs_rpc *ep = sio->netio.parent;
-		TRACE(PEER_FMT" queue\n", PEER_ARGS(ep));
+		TRACE(PEER_FMT" queue cpu=%d\n", PEER_ARGS(ep), smp_processor_id());
+		if (rpc_affinity_mode == RPC_AFFINITY_RSS && !(ep->flags & PCS_RPC_F_LOCAL))
+			ep->cpu = smp_processor_id();
 		pcs_rpc_kick_queue(ep);
 	}
 	rcu_read_unlock();
