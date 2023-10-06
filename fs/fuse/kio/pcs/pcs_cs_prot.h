@@ -40,10 +40,13 @@ struct pcs_cs_sync_data
 #define PCS_CS_IO_NOCSUM	(1ULL<<61)	/* Req: skip crc verification */
 #define PCS_CS_IO_SYNC		(1ULL<<60)	/* Req: DSYNC request */
 #define PCS_CS_IO_BACKGROUND	(1ULL<<59)	/* Req: low priority request */
+#define PCS_CS_IO_FANOUT	(1ULL<<58)	/* Req: request must not be forwarded */
+#define PCS_CS_IO_CLEAR		(1ULL<<57)	/* Req/resp: indicator that write is done to stable chain */
 
-#define PCS_CS_RESET_TS_RECV(sdata, ts)	do { (sdata)->misc = ((u64)ts & 0xFFFFFFFFFFFFFULL); } while (0)
-#define PCS_CS_SET_TS_RECV(sdata, ts)	do { (sdata)->misc = ((sdata)->misc & ~0xFFFFFFFFFFFFFULL) | ((u64)ts & 0xFFFFFFFFFFFFFULL); } while (0)
-#define PCS_CS_ADD_TS_RECV(sdata, ts)	do { (sdata)->misc |= ((u64)ts & 0xFFFFFFFFFFFFFULL); } while (0)
+#define PCS_CS_TS_MASK		0xFFFFFFFFFFFFFULL
+#define PCS_CS_RESET_TS_RECV(sdata, ts)	do { (sdata)->misc = ((u64)ts & PCS_CS_TS_MASK); } while (0)
+#define PCS_CS_SET_TS_RECV(sdata, ts)	do { (sdata)->misc = ((sdata)->misc & ~PCS_CS_TS_MASK) | ((u64)ts & PCS_CS_TS_MASK); } while (0)
+#define PCS_CS_ADD_TS_RECV(sdata, ts)	do { (sdata)->misc |= ((u64)ts & PCS_CS_TS_MASK); } while (0)
 #define PCS_CS_GET_TS_RECV(sdata)	((sdata)->misc & 0xFFFFFFFFFFFFFULL)
 
 struct pcs_cs_sync_resp {
@@ -82,6 +85,11 @@ struct pcs_cs_iohdr {
 static inline int pcs_cs_use_aligned_io(u32 storage_version)
 {
 	return (storage_version >= PCS_CS_MSG_ALIGNED_VERSION);
+}
+
+static inline int pcs_cs_fanout(u32 storage_version)
+{
+	return (storage_version >= PCS_CS_FANOUT);
 }
 
 /* Maximal message size. Actually, random */
