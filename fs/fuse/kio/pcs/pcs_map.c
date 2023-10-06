@@ -2838,11 +2838,14 @@ static int commit_sync_info(struct pcs_int_request *req,
 		    (h->hdr.type == PCS_CS_WRITE_RESP || h->hdr.type == PCS_CS_WRITE_AL_RESP))
 			clear_bit(CSL_SF_HAS_REPLICATING, &csl->state_flags);
 	} else {
+		int read_idx = req->iochunk.cs_index;
+
 		/* In case we did successful read on would-be replicating CS resync the state */
 		if (test_bit(CSL_SF_HAS_REPLICATING, &csl->state_flags) &&
-		    test_bit(CS_SF_REPLICATING, &csl->cs[req->iochunk.cs_index].cslink.cs->state)) {
+		    test_bit(CS_SF_REPLICATING, &csl->cs[read_idx].cslink.cs->state)) {
 			int idx;
-			clear_bit(CS_SF_REPLICATING, &csl->cs[req->iochunk.cs_index].cslink.cs->state);
+			clear_bit(CS_SF_REPLICATING, &csl->cs[read_idx].cslink.cs->state);
+			clear_bit(read_idx, &csl->blacklist);
 			for (idx = csl->nsrv - 1; idx >= 0; idx++) {
 				if (test_bit(CS_SF_REPLICATING, &csl->cs[idx].cslink.cs->state))
 					break;
