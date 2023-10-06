@@ -278,13 +278,10 @@ static int verify_crc(struct pcs_int_request * ireq, u32 * crc)
 static int check_zero(struct page * page, unsigned int offset)
 {
 	u64 * addr = kmap(page) + offset;
-	int i;
 
-	for (i = 0; i < 512/8; i++) {
-		if (likely(addr[i] != 0)) {
-			kunmap(page);
-			return 0;
-		}
+        if (likely(addr[0] || memcmp(addr, addr + 1, 512 - 8))) {
+		kunmap(page);
+                return 0;
 	}
 	kunmap(page);
 	return 1;
