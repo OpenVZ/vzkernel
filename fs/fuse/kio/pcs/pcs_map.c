@@ -3068,7 +3068,7 @@ static void pcs_flushreq_complete(struct pcs_int_request * sreq)
 			return;
 		}
 		FUSE_KTRACE(sreq->cc->fc, "flush error %d", sreq->error.value);
-		pcs_copy_error(&ireq->error, &sreq->error);
+		pcs_copy_error_cond_atomic(&ireq->error, &sreq->error);
 		notify_error = 1;
 	}
 
