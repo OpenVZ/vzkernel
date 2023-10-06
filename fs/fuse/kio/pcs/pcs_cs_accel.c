@@ -690,7 +690,6 @@ int pcs_csa_cs_submit(struct pcs_cs * cs, struct pcs_int_request * ireq)
 
 static void ireq_init_acr(struct pcs_int_request * ireq)
 {
-	ireq->iochunk.parent_N = NULL;
 	atomic_set(&ireq->iochunk.acr.iocount, 1);
 	ireq->iochunk.acr.num_awr = 0;
 	ireq->iochunk.acr.num_iotimes = 0;
@@ -713,7 +712,6 @@ static void ireq_clear_acr(struct pcs_int_request * ireq)
 	}
 	ireq->iochunk.msg.destructor = NULL;
 	ireq->iochunk.msg.rpc = NULL;
-	ireq->iochunk.parent_N = NULL;
 	ireq->flags |= IREQ_F_NO_ACCEL;
 }
 
@@ -722,13 +720,19 @@ void pcs_csa_relay_iotimes(struct pcs_int_request * ireq,  struct pcs_cs_iohdr *
 	int idx = ireq->iochunk.acr.num_awr;
 	struct pcs_cs_sync_resp * srec;
 
-	ireq->iochunk.acr.io_times[idx].cs_id = cs_id;
-	ireq->iochunk.acr.io_times[idx].sync = h->sync;
+	ireq->iochunk.acr.io_times[idx].csid = cs_id.val;
+	ireq->iochunk.acr.io_times[idx].misc = h->sync.misc;
+	ireq->iochunk.acr.io_times[idx].ts_net = h->sync.ts_net;
+	ireq->iochunk.acr.io_times[idx].ts_io = h->sync.ts_io;
 
 	for (srec = (struct pcs_cs_sync_resp*)(h + 1), idx++;
 	     (void*)(srec + 1) <= (void*)h + h->hdr.len && idx < PCS_MAX_ACCEL_CS;
-	     srec++, idx++)
-		ireq->iochunk.acr.io_times[idx] = *srec;
+	     srec++, idx++) {
+		ireq->iochunk.acr.io_times[idx].csid = srec->cs_id.val;
+		ireq->iochunk.acr.io_times[idx].misc = srec->sync.misc;
+		ireq->iochunk.acr.io_times[idx].ts_net = srec->sync.ts_net;
+		ireq->iochunk.acr.io_times[idx].ts_io = srec->sync.ts_io;
+	}
 
 	ireq->iochunk.acr.num_iotimes = idx;
 }
@@ -744,6 +748,13 @@ static void __complete_acr_work(struct work_struct * w)
 		      ireq, (unsigned long long)ireq->iochunk.chunk,
 		      (unsigned)ireq->iochunk.offset,
 		      (unsigned)ireq->iochunk.size);
+	} else if (ireq->iochunk.parent_N) {
+		struct pcs_int_request * parent = ireq->iochunk.parent_N;
+		int idx = ireq->iochunk.cs_index;
+
+		WARN_ON(!(ireq->flags & IREQ_F_FANOUT));
+		parent->iochunk.fo.io_times[idx] = ireq->iochunk.acr.io_times[idx];
+		parent->iochunk.fo.io_times[idx].misc |= PCS_CS_IO_SEQ;
 	} else {
 		struct fuse_conn * fc = container_of(ireq->cc, struct pcs_fuse_cluster, cc)->fc;
 
@@ -770,13 +781,8 @@ static void __complete_acr_work(struct work_struct * w)
 				th->type = PCS_CS_WRITE_AL_RESP;
 				th->cses = n;
 
-				for (i = 0; i < n; i++) {
-					ch->csid = ireq->iochunk.acr.io_times[i].cs_id.val;
-					ch->misc = ireq->iochunk.acr.io_times[i].sync.misc;
-					ch->ts_net = ireq->iochunk.acr.io_times[i].sync.ts_net;
-					ch->ts_io = ireq->iochunk.acr.io_times[i].sync.ts_io;
-					ch++;
-				}
+				for (i = 0; i < n; i++, ch++)
+					*ch = ireq->iochunk.acr.io_times[i];
 			}
 		}
 		FUSE_TRACE_COMMIT(fc->ktrace);
@@ -805,10 +811,11 @@ static void __pcs_csa_write_final_completion(struct pcs_accel_write_req *areq)
 	ireq = container_of(areq - areq->index, struct pcs_int_request, iochunk.acr.awr[0]);
 
 	if (!pcs_if_error(&ireq->error)) {
-		struct pcs_cs_sync_resp * sresp = &ireq->iochunk.acr.io_times[areq->index];
-		sresp->cs_id.val = ireq->iochunk.csl->cs[areq->index].info.id.val | PCS_NODE_ALT_MASK;
-		sresp->sync.ts_net = 0;
-		sresp->sync.ts_io = ktime_to_us(ktime_get()) - sresp->sync.misc;
+		struct fuse_tr_iotimes_cs * th = &ireq->iochunk.acr.io_times[areq->index];
+		th->csid = ireq->iochunk.csl->cs[areq->index].info.id.val | PCS_NODE_ALT_MASK;
+		th->ts_net = 0;
+		th->ts_io = ktime_to_us(ktime_get()) - th->misc;
+		th->misc &= PCS_CS_TS_MASK;
 	}
 
 	csa_complete_acr(ireq);
@@ -990,7 +997,7 @@ static inline int csa_submit_write(struct file * file, struct pcs_int_request * 
 	areq->index = idx;
 	ireq->iochunk.acr.num_awr = idx + 1;
 
-	ireq->iochunk.acr.io_times[idx].sync.misc = ktime_to_us(ktime_get());
+	ireq->iochunk.acr.io_times[idx].misc = ktime_to_us(ktime_get());
 
 	ret = call_write_iter(file, iocb, it);
 
@@ -1088,7 +1095,6 @@ static void complete_N_request(struct pcs_int_request * sreq)
 	csa_complete_acr(ireq);
 }
 
-
 struct pcs_int_request * pcs_csa_csl_write_submit(struct pcs_int_request * ireq)
 {
 	int idx;
@@ -1146,6 +1152,23 @@ struct pcs_int_request * pcs_csa_csl_write_submit(struct pcs_int_request * ireq)
 	}
 }
 
+
+int pcs_csa_csl_write_submit_single(struct pcs_int_request * ireq, int idx)
+{
+	if (idx >= PCS_MAX_ACCEL_CS)
+		return 0;
+
+	ireq_init_acr(ireq);
+
+	if (!csa_cs_submit_write(ireq, idx)) {
+		ireq_clear_acr(ireq);
+		return 0;
+	}
+
+	ireq->iochunk.acr.num_iotimes = idx;
+	csa_complete_acr(ireq);
+	return 1;
+}
 
 static long csa_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {

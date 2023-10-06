@@ -42,6 +42,10 @@ unsigned int cs_io_locality = 0;
 module_param(cs_io_locality, uint, 0644);
 MODULE_PARM_DESC(cs_io_locality, "CS IO locality");
 
+unsigned int cs_enable_fanout = 0;
+module_param(cs_enable_fanout, uint, 0644);
+MODULE_PARM_DESC(cs_enable_fanout, "Enable CS fanout");
+
 static struct pcs_cs_list *cs_link_to_cs_list(struct pcs_cs_link *csl)
 {
 	struct pcs_cs_record *cs_rec;
@@ -976,6 +980,7 @@ struct pcs_cs_list* cslist_alloc( struct pcs_cs_set *css, struct pcs_cs_info *re
 
 		if (cs_list->cs[i].info.flags & CS_FL_REPLICATING) {
 			__set_bit(i, &cs_list->blacklist);
+			cs_list->flags |= CS_FL_REPLICATING;
 			cs_list->blacklist_expires = jiffies + PCS_REPLICATION_BLACKLIST_TIMEOUT;
 		}
 

@@ -292,7 +292,22 @@ void cs_log_io_times(struct pcs_int_request * ireq, struct pcs_msg * resp, unsig
 	int reqt = h->hdr.type != PCS_CS_SYNC_RESP ? ireq->iochunk.cmd : PCS_REQ_T_SYNC;
 
 	if (ireq->iochunk.parent_N && h->hdr.type != PCS_CS_READ_RESP && h->hdr.type != PCS_CS_FIEMAP_RESP) {
-		pcs_csa_relay_iotimes(ireq->iochunk.parent_N, h, resp->rpc->peer_id);
+		if (!(ireq->flags & IREQ_F_FANOUT)) {
+			pcs_csa_relay_iotimes(ireq->iochunk.parent_N, h, resp->rpc->peer_id);
+		} else {
+			int idx = ireq->iochunk.cs_index;
+			struct pcs_int_request * parent = ireq->iochunk.parent_N;
+
+			parent->iochunk.fo.io_times[idx].csid = resp->rpc->peer_id.val;
+			/* XXX kio does not implement flow detection (for now) and does
+			 * not use flag PCS_CS_IO_SEQ. So, use it here to indicate
+			 * performed fanout.
+			 */
+			parent->iochunk.fo.io_times[idx].misc = h->sync.misc | PCS_CS_IO_SEQ;
+			parent->iochunk.fo.io_times[idx].ts_net = h->sync.ts_net;
+			parent->iochunk.fo.io_times[idx].ts_io = h->sync.ts_io;
+
+		}
 		return;
 	}
 
@@ -605,7 +620,95 @@ static void cs_sent(struct pcs_msg *msg)
 	pcs_rpc_sent(msg);
 }
 
-void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
+static void ireq_complete_fo(struct pcs_int_request * ireq)
+{
+	if (!atomic_dec_and_test(&ireq->iochunk.fo.iocount))
+		return;
+
+	if (pcs_if_error(&ireq->error)) {
+		FUSE_KTRACE(ireq->cc->fc, "IO error %d %lu, ireq:%p : %llu:%u+%u",
+		      ireq->error.value,
+		      ireq->error.remote ? (unsigned long)ireq->error.offender.val : 0UL,
+		      ireq, (unsigned long long)ireq->iochunk.chunk,
+		      (unsigned)ireq->iochunk.offset,
+		      (unsigned)ireq->iochunk.size);
+	} else if (ireq->iochunk.parent_N) {
+		struct pcs_int_request * parent = ireq->iochunk.parent_N;
+		int n = ireq->iochunk.fo.num_iotimes;
+		int idx = ireq->iochunk.cs_index;
+
+		if (idx < parent->iochunk.acr.num_awr)
+			idx = parent->iochunk.acr.num_awr;
+
+		if (n > PCS_MAX_ACCEL_CS)
+			n = PCS_MAX_ACCEL_CS;
+
+		if (n > idx) {
+			memcpy(&parent->iochunk.acr.io_times[idx], &ireq->iochunk.fo.io_times[idx],
+			       (n - idx) * sizeof(struct fuse_tr_iotimes_cs));
+		}
+		parent->iochunk.acr.num_iotimes = n;
+	} else {
+		struct fuse_conn * fc = container_of(ireq->cc, struct pcs_fuse_cluster, cc)->fc;
+
+		fuse_stat_observe(fc, PCS_REQ_T_WRITE, ktime_sub(ktime_get(), ireq->ts_sent));
+
+		if (fc->ktrace && fc->ktrace_level >= LOG_TRACE) {
+			struct fuse_trace_hdr * t;
+			int n = ireq->iochunk.fo.num_iotimes;
+
+			t = FUSE_TRACE_PREPARE(fc->ktrace, FUSE_KTRACE_IOTIMES, sizeof(struct fuse_tr_iotimes_hdr) +
+					       n*sizeof(struct fuse_tr_iotimes_cs));
+			if (t) {
+				struct fuse_tr_iotimes_hdr * th = (struct fuse_tr_iotimes_hdr *)(t + 1);
+				struct fuse_tr_iotimes_cs * ch = (struct fuse_tr_iotimes_cs *)(th + 1);
+				int i;
+
+				th->chunk = ireq->iochunk.chunk;
+				th->offset = ireq->iochunk.chunk + ireq->iochunk.offset;
+				th->size = ireq->iochunk.size;
+				th->start_time = ktime_to_us(ireq->ts);
+				th->local_delay = ktime_to_us(ktime_sub(ireq->ts_sent, ireq->ts));
+				th->lat = t->time - ktime_to_us(ireq->ts_sent);
+				th->ino = ireq->dentry->fileinfo.attr.id;
+				th->type = PCS_CS_WRITE_AL_RESP;
+				th->cses = n;
+
+				for (i = 0; i < n; i++, ch++) {
+					*ch = ireq->iochunk.fo.io_times[i];
+				}
+			}
+		}
+		FUSE_TRACE_COMMIT(fc->ktrace);
+	}
+	ireq->iochunk.msg.destructor = NULL;
+	ireq->iochunk.msg.rpc = NULL;
+	ireq_complete(ireq);
+}
+
+static void complete_fo_request(struct pcs_int_request * sreq)
+{
+	struct pcs_int_request * ireq = sreq->iochunk.parent_N;
+
+	if (pcs_if_error(&sreq->error)) {
+		if (!pcs_if_error(&ireq->error))
+			ireq->error = sreq->error;
+	}
+
+	/* And free all clone resources */
+	pcs_sreq_detach(sreq);
+	if (sreq->iochunk.map)
+		pcs_map_put(sreq->iochunk.map);
+	if (sreq->iochunk.csl)
+		cslist_put(sreq->iochunk.csl);
+	if (sreq->iochunk.flow)
+		pcs_flow_put(sreq->iochunk.flow, &sreq->cc->maps.ftab);
+	ireq_destroy(sreq);
+
+	ireq_complete_fo(ireq);
+}
+
+static void do_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 {
 	struct pcs_msg *msg = &ireq->iochunk.msg;
 	struct pcs_cs_iohdr *ioh;
@@ -615,30 +718,6 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	int aligned_msg;
 
 	BUG_ON(msg->rpc);
-
-	ireq->ts_sent = ktime_get();
-
-	if (!((ireq->iochunk.size|ireq->iochunk.offset) & 511) && !(ireq->flags & IREQ_F_NO_ACCEL)) {
-		if (ireq->iochunk.cmd == PCS_REQ_T_READ) {
-			if (pcs_csa_cs_submit(cs, ireq))
-				return;
-		} else if (ireq->iochunk.cmd == PCS_REQ_T_WRITE) {
-			/* Synchronous writes in accel mode are still not supported */
-			if (!(ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) &&
-			    !ireq->dentry->no_write_delay) {
-				struct pcs_int_request * sreq;
-
-				sreq = pcs_csa_csl_write_submit(ireq);
-				if (!sreq)
-					return;
-				if (sreq != ireq) {
-					ireq = sreq;
-					cs = ireq->iochunk.csl->cs[ireq->iochunk.cs_index].cslink.cs;
-					msg = &ireq->iochunk.msg;
-				}
-			}
-		}
-	}
 
 	msg->private = cs;
 	msg->private2 = ireq;
@@ -685,6 +764,8 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
                 ioh->sync.misc |= PCS_CS_IO_NOCSUM;
 	if ((ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) || ireq->dentry->no_write_delay)
 		ioh->sync.misc |= PCS_CS_IO_SYNC;
+	if (ireq->flags & IREQ_F_FANOUT)
+		ioh->sync.misc = PCS_CS_IO_FANOUT;
 
 	msg->size = ioh->hdr.len;
 	msg->rpc = NULL;
@@ -729,6 +810,87 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 		pcs_rpc_send(cs->rpc, msg);
 #endif
 	pcs_rpc_queue(cs->rpc, msg);
+}
+
+static inline int eligible_for_fanout(struct pcs_int_request * ireq)
+{
+	return (cs_enable_fanout && pcs_cs_fanout(atomic_read(&ireq->cc->storage_version)) &&
+		ireq->iochunk.csl->nsrv <= PCS_MAP_MAX_FO_CS &&
+		ireq->iochunk.cs_index + 1 < ireq->iochunk.csl->nsrv &&
+		!(ireq->iochunk.csl->flags & CS_FL_REPLICATING));
+}
+
+void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
+{
+	ireq->ts_sent = ktime_get();
+
+	if (!((ireq->iochunk.size|ireq->iochunk.offset) & 511) && !(ireq->flags & IREQ_F_NO_ACCEL)) {
+		if (ireq->iochunk.cmd == PCS_REQ_T_READ) {
+			if (pcs_csa_cs_submit(cs, ireq))
+				return;
+		} else if (ireq->iochunk.cmd == PCS_REQ_T_WRITE) {
+			/* Synchronous writes in accel mode are still not supported */
+			if (!(ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) &&
+			    !ireq->dentry->no_write_delay) {
+				struct pcs_int_request * sreq;
+
+				sreq = pcs_csa_csl_write_submit(ireq);
+				if (!sreq)
+					return;
+				if (sreq != ireq) {
+					ireq = sreq;
+					cs = ireq->iochunk.csl->cs[ireq->iochunk.cs_index].cslink.cs;
+				}
+			}
+		}
+	}
+
+	if (ireq->iochunk.cmd == PCS_REQ_T_WRITE && eligible_for_fanout(ireq)) {
+		int idx = ireq->iochunk.cs_index;
+		struct pcs_cs_list * csl = ireq->iochunk.csl;
+
+		atomic_set(&ireq->iochunk.fo.iocount, 1);
+		ireq->iochunk.fo.num_iotimes = csl->nsrv;
+
+		for (; idx < csl->nsrv; idx++) {
+			struct pcs_int_request * sreq;
+
+			sreq = pcs_ireq_split(ireq, 0, 1);
+			if (sreq == NULL) {
+				ireq->error.remote = 1;
+				ireq->error.offender = ireq->iochunk.csl->cs[idx].info.id;
+				ireq->error.value = PCS_ERR_NORES;
+				ireq_complete_fo(ireq);
+				return;
+			}
+
+			sreq->iochunk.size = ireq->iochunk.size;
+			sreq->iochunk.csl = ireq->iochunk.csl;
+			cslist_get(ireq->iochunk.csl);
+			sreq->flags |= IREQ_F_NOACCT|IREQ_F_FANOUT;
+			sreq->complete_cb = complete_fo_request;
+			sreq->iochunk.parent_N = ireq;
+			sreq->iochunk.cs_index = idx;
+			atomic_inc(&ireq->iochunk.fo.iocount);
+
+			/* If it is not the first cs on remaining chain, we can
+			 * try to check for eligibility for direct cs access.
+			 * This will handle the case when a local cs is not at head of
+			 * chain.
+			 */
+			if (idx == ireq->iochunk.cs_index ||
+			    (ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) ||
+			    ireq->dentry->no_write_delay ||
+			    ((ireq->iochunk.size|ireq->iochunk.offset) & 511) ||
+			    (ireq->flags & IREQ_F_NO_ACCEL) ||
+			    !pcs_csa_csl_write_submit_single(sreq, idx))
+				do_cs_submit(ireq->iochunk.csl->cs[idx].cslink.cs, sreq);
+		}
+		ireq_complete_fo(ireq);
+		return;
+	}
+
+	do_cs_submit(cs, ireq);
 }
 
 static void handle_congestion(struct pcs_cs *cs, struct pcs_rpc_hdr *h)
