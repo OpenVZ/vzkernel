@@ -518,14 +518,13 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 
 	fi = get_fuse_inode(inode);
 
+	/* Mark that invalidate files is in progress */
 	spin_lock(&fi->lock);
+	set_bit(FUSE_I_INVAL_FILES, &fi->state);
 	list_for_each_entry(ff, &fi->rw_files, rw_entry) {
 		set_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state);
 	}
 	spin_unlock(&fi->lock);
-
-	/* Mark that invalidate files is in progress */
-	set_bit(FUSE_I_INVAL_FILES, &fi->state);
 
 	/* let them see FUSE_S_FAIL_IMMEDIATELY */
 	wake_up_all(&fc->blocked_waitq);
@@ -534,24 +533,38 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 	if (!err || err == -EIO) { /* AS_EIO might trigger -EIO */
 		struct fuse_dev *fud;
 		spin_lock(&fc->lock);
+
+		/*
+		 * Clean bg_queue first to prevent requests being flushed
+		 * to an input queue after it has been cleaned .
+		 */
+		spin_lock(&fc->bg_lock);
+		fuse_kill_requests(fc, inode, &fc->bg_queue);
+		spin_unlock(&fc->bg_lock);
+
+		if (fc->kio.op && fc->kio.op->kill_requests)
+			fc->kio.op->kill_requests(fc, inode);
+
+		spin_lock(&fc->main_iq.lock);
+		fuse_kill_requests(fc, inode, &fc->main_iq.pending);
+		spin_unlock(&fc->main_iq.lock);
+
 		list_for_each_entry(fud, &fc->devices, entry) {
 			struct fuse_pqueue *fpq = &fud->pq;
 			struct fuse_iqueue *fiq = fud->fiq;
 			int i;
+
+			spin_lock(&fiq->lock);
+			fuse_kill_requests(fc, inode, &fiq->pending);
+			spin_unlock(&fiq->lock);
+
 			spin_lock(&fpq->lock);
 			for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
 				fuse_kill_requests(fc, inode, &fpq->processing[i]);
 			fuse_kill_requests(fc, inode, &fpq->io);
 			spin_unlock(&fpq->lock);
 
-			spin_lock(&fiq->waitq.lock);
-			fuse_kill_requests(fc, inode, &fiq->pending);
-			spin_unlock(&fiq->waitq.lock);
 		}
-		fuse_kill_requests(fc, inode, &fc->main_iq.pending);
-		fuse_kill_requests(fc, inode, &fc->bg_queue);
-		if (fc->kio.op && fc->kio.op->kill_requests)
-			fc->kio.op->kill_requests(fc, inode);
 
 		wake_up(&fi->page_waitq); /* readpage[s] can wait on fuse wb */
 		spin_unlock(&fc->lock);
