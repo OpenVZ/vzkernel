@@ -5,6 +5,8 @@
 #include <linux/log2.h>
 #include <linux/module.h>
 #include <linux/anon_inodes.h>
+#include <linux/pagemap.h>
+#include <crypto/hash.h>
 
 #include "pcs_types.h"
 #include "pcs_sock_io.h"
@@ -52,6 +54,7 @@ struct pcs_csa_entry
 	unsigned int		flags;
 	int			dead;
 	struct file		*file;
+	struct file		*cfile;
 };
 
 static inline void __cse_destroy(struct pcs_csa_entry * cse)
@@ -59,6 +62,10 @@ static inline void __cse_destroy(struct pcs_csa_entry * cse)
 	if (cse->file) {
 		fput(cse->file);
 		cse->file = NULL;
+	}
+	if (cse->cfile) {
+		fput(cse->cfile);
+		cse->cfile = NULL;
 	}
 	kmem_cache_free(pcs_csa_cachep, cse);
 }
@@ -139,7 +146,7 @@ static inline struct pcs_csa_entry * cse_lookup(struct pcs_csa_context * ctx, u6
 }
 
 static int csa_update(struct pcs_csa_context * ctx, PCS_CHUNK_UID_T chunk_id, u32 flags, PCS_MAP_VERSION_T * vers,
-		      struct file * file)
+		      struct file * file, struct file * cfile)
 {
 	struct pcs_csa_entry * csa, * csb;
 
@@ -157,6 +164,9 @@ static int csa_update(struct pcs_csa_context * ctx, PCS_CHUNK_UID_T chunk_id, u3
 		return 0;
 	}
 
+	if ((flags & PCS_CSA_FL_CSUM) && !crc_tfm)
+		return -EOPNOTSUPP;
+
 	csb = kmem_cache_zalloc(pcs_csa_cachep, GFP_NOIO);
 	if (!csb)
 		return -ENOMEM;
@@ -166,6 +176,10 @@ static int csa_update(struct pcs_csa_context * ctx, PCS_CHUNK_UID_T chunk_id, u3
 	csb->flags = flags;
 	csb->file = file;
 	get_file(file);
+	if (cfile) {
+		csb->cfile = cfile;
+		get_file(cfile);
+	}
 
 again:
 	if (radix_tree_preload(GFP_NOIO)) {
@@ -174,6 +188,10 @@ again:
 	}
 
 	spin_lock(&ctx->lock);
+	/* This is wrong to delete entry before insert. rcu lookup will see
+	 * the gap. Not disasterous for us but dirty yet.
+	 * But I do not see appropriate function in lib/radix-tree.c
+	 */
 	csa = radix_tree_lookup(&ctx->tree, chunk_id);
 	if (csa) {
 		void *ret;
@@ -202,6 +220,51 @@ again:
 	return 0;
 }
 
+static int verify_crc(struct pcs_int_request * ireq, u32 * crc)
+{
+	struct iov_iter it;
+	struct pcs_int_request *parent = ireq->completion_data.parent;
+	pcs_api_iorequest_t *ar = parent->apireq.req;
+	char crc_desc[sizeof(struct shash_desc) + 4] __aligned(__alignof__(struct shash_desc));
+	struct shash_desc *shash = (struct shash_desc *)crc_desc;
+	int i;
+
+	shash->tfm = crc_tfm;
+
+	ar->get_iter(ar->datasource, ireq->iochunk.dio_offset, &it, 0);
+
+	for (i = 0; i < ireq->iochunk.size/4096; i++) {
+		unsigned int left = 4096;
+		u32 ccrc;
+
+		*(u32*)shash->__ctx = ~0U;
+
+		do {
+			size_t offset;
+			int len;
+			struct page * page;
+
+			len = iov_iter_get_pages(&it, &page, left, 1, &offset);
+			BUG_ON(len <= 0);
+
+			crypto_shash_alg(crc_tfm)->update(shash, kmap(page) + offset, len);
+			kunmap(page);
+			put_page(page);
+			iov_iter_advance(&it, len);
+			left -= len;
+		} while (left > 0);
+
+		crypto_shash_alg(crc_tfm)->final(shash, (u8*)&ccrc);
+
+		if (ccrc != crc[i]) {
+			FUSE_KTRACE(ireq->cc->fc, "CRC error pg=%d@%u %08x %08x\n", i,
+				    (unsigned)ireq->iochunk.offset, ccrc, crc[i]);
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static void pcs_csa_do_completion(struct pcs_aio_req *areq)
 {
 	struct pcs_int_request * ireq;
@@ -212,6 +275,21 @@ static void pcs_csa_do_completion(struct pcs_aio_req *areq)
 	fput(areq->iocb.ki_filp);
 
 	ireq = container_of(areq, struct pcs_int_request, iochunk.ar);
+
+	if (areq->crc) {
+		if (!pcs_if_error(&ireq->error)) {
+			if (verify_crc(ireq, areq->crc)) {
+				ireq->error.remote = 1;
+				ireq->error.offender = ireq->iochunk.csl->cs[ireq->iochunk.cs_index].info.id;
+				ireq->error.value = PCS_ERR_IO;
+			}
+		}
+
+		if (areq->crc && areq->crc != areq->crcb) {
+			kfree(areq->crc);
+			areq->crc = NULL;
+		}
+	}
 
 	if (!pcs_if_error(&ireq->error)) {
 		struct fuse_conn * fc = ireq->cc->fc;
@@ -250,6 +328,7 @@ static void pcs_csa_do_completion(struct pcs_aio_req *areq)
 		      ireq, (unsigned long long)ireq->iochunk.chunk,
 		      (unsigned)ireq->iochunk.offset,
 		      (unsigned)ireq->iochunk.size);
+		ireq->flags |= IREQ_F_NO_ACCEL;
 	}
 
 	ireq_complete(ireq);
@@ -259,6 +338,66 @@ static void csa_complete_work(struct work_struct *w)
 {
 	struct pcs_aio_req * areq = container_of(w, struct pcs_aio_req, work);
 
+	pcs_csa_do_completion(areq);
+}
+
+static inline int quick_crc_fetch(struct pcs_int_request * ireq, struct file * cfile)
+{
+	unsigned offset = (ireq->iochunk.offset / 4096) * 4;
+	unsigned sz = (ireq->iochunk.size / 4096) * 4;
+	pgoff_t idx = offset / PAGE_SIZE;
+	struct page * page;
+
+	if (idx != ((offset + sz - 1) / PAGE_SIZE) || sz > sizeof(ireq->iochunk.ar.crcb))
+		return 0;
+
+	page = find_get_page(cfile->f_mapping, idx);
+	if (!page)
+		return 0;
+
+	memcpy(ireq->iochunk.ar.crcb, kmap(page) + (offset & (PAGE_SIZE-1)), sz);
+	ireq->iochunk.ar.crc = ireq->iochunk.ar.crcb;
+	kunmap(page);
+	put_page(page);
+	return 1;
+}
+
+static void csa_crc_work(struct work_struct *w)
+{
+	struct pcs_aio_req * areq = container_of(w, struct pcs_aio_req, work);
+	struct pcs_int_request * ireq = container_of(areq, struct pcs_int_request, iochunk.ar);
+	int ncrc = (ireq->iochunk.size / 4096) * 4;
+	ssize_t sz;
+	loff_t pos;
+
+	if (ncrc <= PCS_MAX_INLINE_CRC)
+		areq->crc = areq->crcb;
+	else {
+		areq->crc = kmalloc(ncrc, GFP_KERNEL);
+		if (areq->crc == NULL) {
+out:
+			if (!ireq->error.value) {
+				ireq->error.remote = 1;
+				ireq->error.offender = ireq->iochunk.csl->cs[ireq->iochunk.cs_index].info.id;
+				ireq->error.value = PCS_ERR_NORES;
+			}
+			fput(areq->cfile);
+			if (areq->crc && areq->crc != areq->crcb) {
+				kfree(areq->crc);
+				areq->crc = NULL;
+			}
+			pcs_csa_do_completion(areq);
+			return;
+		}
+	}
+
+	pos = (ireq->iochunk.offset / 4096) * 4;
+	sz = kernel_read(areq->cfile, areq->crc, ncrc, &pos);
+	if (sz != ncrc) {
+		FUSE_KTRACE(ireq->cc->fc, "Did not read crc res=%u expected=%u", (unsigned)sz, (unsigned)ncrc);
+		goto out;
+	}
+	fput(areq->cfile);
 	pcs_csa_do_completion(areq);
 }
 
@@ -283,7 +422,7 @@ static void pcs_csa_complete(struct kiocb *iocb, long ret)
 	queue_work(ireq->cc->wq, &areq->work);
 }
 
-static inline int csa_submit(struct file * file, struct pcs_int_request * ireq)
+static inline int csa_submit(struct file * file, struct file *cfile, int do_csum, struct pcs_int_request * ireq)
 {
 	struct pcs_aio_req * areq =  &ireq->iochunk.ar;
 	struct kiocb * iocb = &areq->iocb;
@@ -311,8 +450,39 @@ static inline int csa_submit(struct file * file, struct pcs_int_request * ireq)
 
 	atomic_set(&areq->iocount, 2);
 
+	areq->cfile = NULL;
+	areq->crc = NULL;
+
+	if (do_csum) {
+		if (cfile == NULL)
+			return -EINVAL;
+
+		if ((ireq->iochunk.size|ireq->iochunk.offset) & 4095)
+			return -EINVAL;
+
+		if (!quick_crc_fetch(ireq, cfile)) {
+			INIT_WORK(&areq->work, csa_crc_work);
+			atomic_inc(&areq->iocount);
+			areq->cfile = cfile;
+			get_file(cfile);
+		}
+	}
+
 	ireq->ts_sent = ktime_get();
 	ret = call_read_iter(file, iocb, it);
+
+	if (do_csum) {
+		if (ret == -EIOCBQUEUED || ret == ireq->iochunk.size) {
+			if (!areq->crc) {
+				FUSE_KTRACE(ireq->cc->fc, "Not a quicky");
+				queue_work(ireq->cc->wq, &areq->work);
+			}
+			pcs_csa_do_completion(areq);
+			return 0;
+		}
+		if (!areq->crc)
+			pcs_csa_do_completion(areq);
+	}
 
 	pcs_csa_do_completion(areq);
 
@@ -343,7 +513,7 @@ int pcs_csa_cs_submit(struct pcs_cs * cs, struct pcs_int_request * ireq)
 		    (csa->flags & PCS_CSA_FL_READ)) {
 			/* XXX Paranoia? Verify! */
 			if (!(map->state & PCS_MAP_DEAD) && map->cs_list == ireq->iochunk.csl) {
-				if (!csa_submit(csa->file, ireq))
+				if (!csa_submit(csa->file, csa->cfile, csa->flags&PCS_CSA_FL_CSUM, ireq))
 					return 1;
 			}
 		}
@@ -355,6 +525,7 @@ static long csa_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct pcs_csa_context *ctx = file->private_data;
 	struct file * filp = NULL;
+	struct file * cfilp = NULL;
 	int err;
 	struct pcs_csa_setmap req;
 
@@ -365,12 +536,22 @@ static long csa_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case PCS_CSA_IOC_SETMAP:
 		if (copy_from_user(&req, (void __user *)arg, sizeof(req)))
 			return -EFAULT;
+
 		if (req.fd >= 0) {
 			filp = fget(req.fd);
 			if (filp == NULL)
 				return -EBADF;
 		}
-		err = csa_update(ctx, req.chunk_id, req.flags, &req.version, filp);
+		if (req.cfd >= 0) {
+			cfilp = fget(req.cfd);
+			err = -EBADF;
+			if (cfilp == NULL)
+				goto out;
+		}
+		err = csa_update(ctx, req.chunk_id, req.flags, &req.version, filp, cfilp);
+		if (cfilp)
+			fput(cfilp);
+out:
 		if (filp)
 			fput(filp);
 		return err;

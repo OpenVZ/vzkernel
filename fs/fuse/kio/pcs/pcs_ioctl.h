@@ -88,7 +88,6 @@ struct pcs_ioc_getmap
 #define PCS_IOC_GETMAP		_IOWR('V',37, struct pcs_ioc_getmap)
 
 
-#define PCS_KIO_CALL_REG	1
 
 struct fuse_pcs_ioc_register
 {
@@ -96,7 +95,8 @@ struct fuse_pcs_ioc_register
 	PCS_NODE_ID_T 		client_id;
 	PCS_CLUSTER_ID_T	cluster_id;
 	PCS_INTEGRITY_SEQ_T	integrity_seq;
-	u32			reserved;
+	u32			crypto_algo;
+	u64			key_data;
 };
 
 struct pcs_csa_setmap
@@ -104,14 +104,17 @@ struct pcs_csa_setmap
 	PCS_CHUNK_UID_T		chunk_id;
 	PCS_MAP_VERSION_T	version;
 	int			fd;
+	int			cfd;
 	u32			flags;
+	u32			reserved;
 #define PCS_CSA_FL_READ		1
 #define PCS_CSA_FL_WRITE	2
+#define PCS_CSA_FL_CSUM         4
 	PCS_SYNC_SEQ_T		sync_epoch;
 	PCS_SYNC_SEQ_T		sync_seq;
-	u64			reserved;
 };
 
 #define PCS_CSA_IOC_SETMAP	_IOR('V',38, struct pcs_csa_setmap)
+#define PCS_KIO_CALL_REG	_IOR('V',39, struct fuse_pcs_ioc_register)
 
 #endif /* _PCS_IOCTL_H_ */

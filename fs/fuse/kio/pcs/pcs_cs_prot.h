@@ -37,6 +37,9 @@ struct pcs_cs_sync_data
 						 *	This means that at the req completion time, the output
 						 *	data will be transferred to disk.
 						 */
+#define PCS_CS_IO_NOCSUM	(1ULL<<61)	/* Req: skip crc verification */
+#define PCS_CS_IO_SYNC		(1ULL<<60)	/* Req: DSYNC request */
+#define PCS_CS_IO_BACKGROUND	(1ULL<<59)	/* Req: low priority request */
 
 #define PCS_CS_RESET_TS_RECV(sdata, ts)	do { (sdata)->misc = ((u64)ts & 0xFFFFFFFFFFFFFULL); } while (0)
 #define PCS_CS_SET_TS_RECV(sdata, ts)	do { (sdata)->misc = ((sdata)->misc & ~0xFFFFFFFFFFFFFULL) | ((u64)ts & 0xFFFFFFFFFFFFFULL); } while (0)

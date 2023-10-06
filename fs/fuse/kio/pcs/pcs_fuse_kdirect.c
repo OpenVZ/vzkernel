@@ -28,6 +28,7 @@
 #include <linux/net.h>
 #include <linux/debugfs.h>
 #include <linux/fiemap.h>
+#include <crypto/hash.h>
 
 #include "pcs_ioctl.h"
 #include "pcs_cluster.h"
@@ -71,6 +72,8 @@ MODULE_PARM_DESC(rdmaio_queue_depth, "RDMA queue depth");
 
 static LIST_HEAD(pcs_client_list);
 spinlock_t pcs_clients_lock;
+
+struct crypto_shash *crc_tfm;
 
 static void register_client(struct pcs_fuse_cluster * pfc)
 {
@@ -217,7 +220,7 @@ out:
 
 }
 
-int kpcs_conn_init(struct fuse_mount *fm)
+static int kpcs_conn_init(struct fuse_mount *fm)
 {
 	struct fuse_conn *fc = fm->fc;
 	struct fuse_io_args *ia;
@@ -268,7 +271,7 @@ int kpcs_conn_init(struct fuse_mount *fm)
 	return 0;
 }
 
-void kpcs_conn_fini(struct fuse_mount *fm)
+static void kpcs_conn_fini(struct fuse_mount *fm)
 {
 	struct fuse_conn *fc = fm->fc;
 
@@ -284,7 +287,7 @@ void kpcs_conn_fini(struct fuse_mount *fm)
 	pcs_cluster_fini((struct pcs_fuse_cluster *) fc->kio.ctx);
 }
 
-void kpcs_conn_abort(struct fuse_conn *fc)
+static void kpcs_conn_abort(struct fuse_conn *fc)
 {
 	/* XXX: Implement abort pending kio */
 }
@@ -450,7 +453,7 @@ static int kpcs_do_file_open(struct file *file, struct inode *inode)
 	return 0;
 }
 
-int kpcs_file_open(struct file *file, struct inode *inode)
+static int kpcs_file_open(struct file *file, struct inode *inode)
 {
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct pcs_dentry_info *di = fi->private;
@@ -501,7 +504,7 @@ static void kpcs_file_close(struct file *file, struct inode *inode)
 	pcs_mapping_invalidate(&di->mapping);
 }
 
-void kpcs_inode_release(struct fuse_inode *fi)
+static void kpcs_inode_release(struct fuse_inode *fi)
 {
 	struct pcs_dentry_info *di = fi->private;
 
@@ -648,7 +651,7 @@ int fuse_map_resolve(struct pcs_map_entry *m, int direction)
 	return 0;
 }
 
-struct fuse_req *kpcs_req_alloc(struct fuse_mount *fm, gfp_t flags)
+static struct fuse_req *kpcs_req_alloc(struct fuse_mount *fm, gfp_t flags)
 {
 	return fuse_generic_request_alloc(fm, pcs_fuse_req_cachep, flags);
 }
@@ -1567,7 +1570,7 @@ static ssize_t prometheus_file_read(struct file *filp,
 	return count;
 }
 
-const struct file_operations prometheus_file_operations = {
+static const struct file_operations prometheus_file_operations = {
 	.open		= prometheus_file_open,
 	.read		= prometheus_file_read,
 	.release	= prometheus_file_release,
@@ -1745,19 +1748,48 @@ static void kpcs_kill_requests(struct fuse_conn *fc, struct inode *inode)
 
 static int kpcs_ioctl(struct file *file, struct inode *inode, unsigned int cmd, unsigned long arg, int len)
 {
-	struct fuse_conn *fc = inode ? get_fuse_conn(inode) : NULL;
+	struct fuse_conn * fc = NULL;
+	struct fuse_inode *fi = NULL;
+	struct pcs_dentry_info *di = NULL;
 	struct pcs_fuse_cluster *pfc;
 	struct fuse_pcs_ioc_register req;
 	int res;
 
-	if (cmd != PCS_KIO_CALL_REG)
-		return -EINVAL;
+	if (inode) {
+		fc = get_fuse_conn(inode);
+		fi = get_fuse_inode(inode);
+		if (fi)
+			di = fi->private;
+	}
+
+	switch (cmd) {
+	case PCS_KIO_CALL_REG:
+		break;
+	case PCS_IOC_NOCSUMONREAD:
+	case PCS_IOC_NOWRITEDELAY:
+		if (di) {
+			u32 data;
+			if (copy_from_user(&data, (void __user *)arg, 4))
+				return -EFAULT;
+			if (cmd == PCS_IOC_NOCSUMONREAD)
+				di->no_csum_on_read = !!data;
+			else
+				di->no_write_delay = !!data;
+			return 0;
+		}
+		fallthrough;
+	default:
+		return -ENOIOCTLCMD;
+	}
 
 	if (len != sizeof(req))
 		return -EINVAL;
 
 	if (copy_from_user(&req, (void __user *)arg, sizeof(req)))
 		return -EFAULT;
+
+	if (req.crypto_algo)
+		return -EOPNOTSUPP;
 
 	if (fc) {
 		pfc = (struct pcs_fuse_cluster*)fc->kio.ctx;
@@ -1843,6 +1875,10 @@ static int __init kpcs_mod_init(void)
 
 	fuse_trace_root = debugfs_create_dir("fuse", NULL);
 
+	crc_tfm = crypto_alloc_shash("crc32c", 0, 0);
+	if (IS_ERR(crc_tfm))
+		crc_tfm = NULL;
+
 	printk("%s fuse_c:%p ireq_c:%p pcs_wq:%p\n", __FUNCTION__,
 	       pcs_fuse_req_cachep, pcs_ireq_cachep, pcs_wq);
 
@@ -1866,6 +1902,8 @@ static void __exit kpcs_mod_exit(void)
 {
 	if (fuse_trace_root)
 		debugfs_remove(fuse_trace_root);
+	if (crc_tfm)
+		crypto_free_shash(crc_tfm);
 
 	fuse_unregister_kio(&kio_pcs_ops);
 	destroy_workqueue(pcs_cleanup_wq);
