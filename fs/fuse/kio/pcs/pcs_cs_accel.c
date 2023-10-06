@@ -822,6 +822,11 @@ static void __pcs_csa_write_final_completion(struct pcs_accel_write_req *areq)
 		th->ts_io = ktime_to_us(ktime_get()) - th->misc;
 		th->misc &= PCS_CS_TS_MASK;
 		th->misc |= PCS_CS_IO_CLEAR | PCS_CS_IO_FANOUT;
+		if (!(ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) &&
+		    !ireq->dentry->no_write_delay) {
+			if (!test_and_set_bit(CSL_SF_DIRTY, &ireq->iochunk.csl->cs[areq->index].flags))
+				pcs_map_reevaluate_dirty_status(ireq->iochunk.map);
+		}
 	}
 
 	csa_complete_acr(ireq);
@@ -832,6 +837,8 @@ static void csa_sync_work(struct work_struct *w)
 	struct pcs_accel_write_req * areq = container_of(w, struct pcs_accel_write_req, work);
 	struct pcs_int_request * ireq = container_of(areq-areq->index, struct pcs_int_request, iochunk.acr.awr[0]);
 	int res;
+
+	clear_bit(CSL_SF_DIRTY, &ireq->iochunk.csl->cs[ireq->iochunk.cs_index].flags);
 
 	res = vfs_fsync(areq->iocb.ki_filp, 1);
 

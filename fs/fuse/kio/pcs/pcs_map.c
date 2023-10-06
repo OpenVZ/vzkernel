@@ -810,6 +810,7 @@ void transfer_sync_data(struct pcs_cs_list * new_cs_list, struct pcs_cs_list * o
 	for (i = 0; i < new_cs_list->nsrv; i++) {
 		for (k = 0; k < old_cs_list->nsrv; k++) {
 			if (old_cs_list->cs[k].info.id.val == new_cs_list->cs[i].info.id.val) {
+				new_cs_list->cs[i].flags = old_cs_list->cs[k].flags;
 				new_cs_list->cs[i].sync = old_cs_list->cs[k].sync;
 				new_cs_list->cs[i].dirty_ts = old_cs_list->cs[k].dirty_ts;
 				break;
@@ -832,6 +833,23 @@ static int cs_is_dirty(struct cs_sync_state * sync)
 	return res >= 0;
 }
 
+static void force_dirty(struct pcs_cs_record * rec, struct pcs_map_entry * m)
+{
+	if (!rec->sync.dirty_seq || pcs_sync_seq_compare(rec->sync.dirty_seq, rec->sync.sync_seq) < 0)
+		rec->sync.dirty_seq = rec->sync.sync_seq;
+	if (!rec->sync.dirty_epoch || pcs_sync_seq_compare(rec->sync.dirty_epoch, rec->sync.sync_epoch) < 0)
+		rec->sync.dirty_epoch = rec->sync.sync_epoch;
+	if (!rec->sync.dirty_integrity)
+		rec->sync.dirty_integrity = rec->info.integrity_seq;
+	if (!rec->sync.dirty_integrity || !rec->sync.dirty_epoch || !rec->sync.dirty_seq) {
+		FUSE_KTRACE(cc_from_maps(m->maps)->fc, "cannot dirty "NODE_FMT" [%u/%u,%u/%u,%u/%u]", NODE_ARGS(rec->info.id),
+			    rec->sync.dirty_integrity, rec->info.integrity_seq,
+			    rec->sync.dirty_epoch, rec->sync.sync_epoch,
+			    rec->sync.dirty_seq, rec->sync.sync_seq);
+		WARN_ON(1);
+	}
+}
+
 static void evaluate_dirty_status(struct pcs_map_entry * m)
 {
 	int i;
@@ -850,6 +868,9 @@ static void evaluate_dirty_status(struct pcs_map_entry * m)
 		struct pcs_cs_record * rec = m->cs_list->cs + i;
 
 		BUG_ON(rec->info.integrity_seq == 0);
+
+		if (test_bit(CSL_SF_DIRTY, &rec->flags))
+			force_dirty(rec, m);
 
 		if (cs_is_dirty(&rec->sync)) {
 			if (rec->sync.dirty_integrity == rec->info.integrity_seq) {
@@ -880,6 +901,15 @@ static void evaluate_dirty_status(struct pcs_map_entry * m)
 	}
 }
 
+/* Called when we make something which dirties map */
+void pcs_map_reevaluate_dirty_status(struct pcs_map_entry * m)
+{
+	spin_lock(&m->lock);
+	if (!(m->state & (PCS_MAP_DEAD|PCS_MAP_DIRTY)))
+		evaluate_dirty_status(m);
+	spin_unlock(&m->lock);
+}
+
 int pcs_map_encode_req(struct pcs_map_entry*m, struct pcs_ioc_getmap *map, int direction)
 {
 	int i;
@@ -904,7 +934,7 @@ int pcs_map_encode_req(struct pcs_map_entry*m, struct pcs_ioc_getmap *map, int d
 	map->state = 0;
 	if (m->state & PCS_MAP_READABLE)
 		map->state |= PCS_IOC_MAP_S_READ;
-	if (m->state & PCS_MAP_WRITEABLE || direction)
+	if ((m->state & PCS_MAP_WRITEABLE) || direction)
 		map->state |= PCS_IOC_MAP_S_WRITE;
 	if (m->state & PCS_MAP_NEW)
 		map->state |= PCS_IOC_MAP_S_NEW;
@@ -920,7 +950,8 @@ int pcs_map_encode_req(struct pcs_map_entry*m, struct pcs_ioc_getmap *map, int d
 		map->cs_cnt = m->cs_list->nsrv;
 		for (i = 0; i < m->cs_list->nsrv; i++) {
 			map->cs[i] = m->cs_list->cs[i].info;
-			if (!(m->flags & PCS_MAP_DIRTY) || !cs_is_dirty(&m->cs_list->cs[i].sync))
+			if (!(m->flags & PCS_MAP_DIRTY) || (!cs_is_dirty(&m->cs_list->cs[i].sync) &&
+							    !test_bit(CSL_SF_DIRTY, &m->cs_list->cs[i].flags)))
 				map->cs[i].integrity_seq = 0;
 		}
 	}
@@ -3090,6 +3121,15 @@ static void prepare_map_flush_msg(struct pcs_map_entry * m, struct pcs_int_reque
 
 		for (i = 0; i < m->cs_list->nsrv; i++) {
 			struct pcs_cs_record * rec = m->cs_list->cs + i;
+			if (test_and_clear_bit(CSL_SF_DIRTY, &rec->flags)) {
+				/* If chunk is dirty locally, force it to be dirty vstorage-wise
+				 * and clear magic PCS_CS_IO_SEQ flag to enforce CS to make sync
+				 * even if chunk looks already synced.
+				 */
+				force_dirty(rec, m);
+				ioh->sync.misc &= ~PCS_CS_IO_SEQ;
+			}
+
 			if (cs_is_dirty(&rec->sync)) {
 				arr->cs_id = rec->info.id;
 				arr->sync.integrity_seq = rec->sync.dirty_integrity;
@@ -3194,7 +3234,7 @@ retry:
 	sreq->flushreq.csl = NULL;
 	sreq->complete_cb = pcs_flushreq_complete;
 	sreq->flushreq.msg = msg;
-	FUSE_KTRACE(sreq->cc->fc, "timed FLUSH " MAP_FMT, MAP_ARGS(m));
+	FUSE_KTRACE(sreq->cc->fc, "%s FLUSH " MAP_FMT, timer_sync ? "timed" : "user", MAP_ARGS(m));
 	if (timer_sync)
 		m->flags |= PCS_MAP_FLUSHING;
 	__pcs_map_get(m);
