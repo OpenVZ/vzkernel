@@ -219,6 +219,8 @@ void pcs_cs_truncate_maps(struct pcs_cs *cs);
 unsigned long pcs_map_shrink_scan(struct shrinker *,  struct shrink_control *sc);
 void ireq_drop_tokens(struct pcs_int_request * ireq);
 
+extern unsigned int cs_io_locality;
+
 #define MAP_FMT	"(%p) 0x%lld s:%x" DENTRY_FMT
 #define MAP_ARGS(m) (m), (long long)(m)->index,	 (m)->state, DENTRY_ARGS(pcs_dentry_from_map((m)))
 
