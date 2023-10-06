@@ -52,6 +52,12 @@ struct pcs_aio_req
 	atomic_t		iocount;
 	struct iov_iter 	iter;
 	struct work_struct	work;
+
+#define PCS_MAX_INLINE_CRC	2
+	u32    			crcb[PCS_MAX_INLINE_CRC];
+	u32    			*crc;
+	struct file		*cfile;
+	struct work_struct	cwork;
 };
 
 struct pcs_int_request
@@ -76,6 +82,7 @@ struct pcs_int_request
 #define IREQ_F_NOFLUSH		0x200
 #define IREQ_F_WB_SUSP		0x400
 #define IREQ_F_RECV_SPLICE	0x800
+#define IREQ_F_NO_ACCEL		0x1000
 
 	atomic_t		iocount;
 
@@ -362,5 +369,6 @@ void pcs_kio_file_list(struct fuse_conn *fc, kio_file_itr kfile_cb, void *ctx);
 typedef void (*kio_req_itr)(struct fuse_file *ff, struct fuse_req *req,
 			    void *ctx);
 void pcs_kio_req_list(struct fuse_conn *fc, kio_req_itr kreq_cb, void *ctx);
+extern struct crypto_shash *crc_tfm;
 
 #endif /* _PCS_REQ_H_ */

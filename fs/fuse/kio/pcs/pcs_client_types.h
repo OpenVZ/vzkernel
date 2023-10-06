@@ -78,6 +78,8 @@ struct pcs_dentry_info {
 	struct fuse_inode	*inode;
 	struct list_head	kq;
 	spinlock_t		kq_lock;
+	unsigned char		no_csum_on_read;
+	unsigned char		no_write_delay;
 
 	struct fuse_io_cnt stat;
 };
