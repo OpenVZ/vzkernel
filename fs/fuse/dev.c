@@ -267,10 +267,12 @@ void fuse_queue_forget(struct fuse_conn *fc, struct fuse_forget_link *forget,
 	}
 }
 
-static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
+static void flush_bg_queue_and_unlock(struct fuse_conn *fc)
+__releases(fc->bg_lock)
 {
 	struct fuse_req *req, *next;
 	LIST_HEAD(kio_reqs);
+	struct fuse_iqueue *fiq;
 
 	while (fc->active_background < fc->max_background &&
 	       !list_empty(&fc->bg_queue)) {
@@ -287,17 +289,18 @@ static void flush_bg_queue(struct fuse_conn *fc, struct fuse_iqueue *fiq)
 			} else if (ret < 0)
 				continue;
 		}
+		fiq = req->args->fiq;
 		spin_lock(&fiq->lock);
 		req->in.h.unique = fuse_get_unique(fiq);
 		queue_request_and_unlock(fiq, req);
 	}
 
 	spin_unlock(&fc->bg_lock);
+
 	list_for_each_entry_safe(req, next, &kio_reqs, list) {
 		list_del_init(&req->list);
 		fc->kio.op->req_send(req, true);
 	}
-	spin_lock(&fc->bg_lock);
 }
 
 /*
@@ -356,8 +359,9 @@ void __fuse_request_end( struct fuse_req *req, bool flush_bg)
 		fc->num_background--;
 		fc->active_background--;
 		if (flush_bg)
-			flush_bg_queue(fc, fiq);
-		spin_unlock(&fc->bg_lock);
+			flush_bg_queue_and_unlock(fc);
+		else
+			spin_unlock(&fc->bg_lock);
 	}
 
 	if (test_bit(FR_ASYNC, &req->flags)) {
@@ -611,6 +615,7 @@ static int fuse_request_queue_background(struct fuse_req *req)
 	if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
 		ret = -EIO;
 	} else if (likely(fc->connected)) {
+		ret = 0;
 		fc->num_background++;
 		if (fc->num_background == fc->max_background)
 			fc->blocked = 1;
@@ -624,17 +629,14 @@ static int fuse_request_queue_background(struct fuse_req *req)
 			spin_lock(&fiq->lock);
 			req->in.h.unique = fuse_get_unique(fiq);
 			queue_request_and_unlock(fiq, req);
-			ret = 0;
-			goto unlock;
+		} else {
+			list_add_tail(&req->list, &fc->bg_queue);
+			flush_bg_queue_and_unlock(fc);
+			goto out;
 		}
-
-		list_add_tail(&req->list, &fc->bg_queue);
-		flush_bg_queue(fc, fiq);
-		ret = 0;
 	}
-unlock:
 	spin_unlock(&fc->bg_lock);
-
+out:
 	return ret;
 }
 
@@ -2300,11 +2302,7 @@ void fuse_abort_conn(struct fuse_conn *fc)
 		spin_lock(&fc->bg_lock);
 		fc->blocked = 0;
 		fc->max_background = UINT_MAX;
-		for_each_online_cpu(cpu)
-			flush_bg_queue(fc, per_cpu_ptr(fc->iqs, cpu));
-		flush_bg_queue(fc, &fc->main_iq);
-		spin_unlock(&fc->bg_lock);
-
+		flush_bg_queue_and_unlock(fc);
 
 		for_each_online_cpu(cpu)
 			fuse_abort_iqueue(per_cpu_ptr(fc->iqs, cpu), &to_end);
