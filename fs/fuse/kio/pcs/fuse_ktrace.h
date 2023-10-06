@@ -60,7 +60,7 @@ static inline void * fuse_trace_prepare(struct fuse_ktrace * tr, int type, int l
 #define FUSE_TRACE_PREPARE(tr, type, len) fuse_trace_prepare((tr), (type), (len))
 #define FUSE_TRACE_COMMIT(tr)       preempt_enable()
 
-void __kfuse_trace(struct fuse_conn * fc, unsigned long ip, const char * fmt, ...);
+void __printf(3, 4) __kfuse_trace(struct fuse_conn * fc, unsigned long ip, const char * fmt, ...);
 
 #define FUSE_KTRACE(fc, fmt, args...) do { struct fuse_conn * __fc = (fc); if (__fc->ktrace_level >= LOG_TRACE) __kfuse_trace(__fc, _THIS_IP_, "%s: " fmt, __FUNCTION__, ## args); } while (0)
 #define FUSE_KDTRACE(fc, fmt, args...) do { struct fuse_conn * __fc = (fc); if (__fc->ktrace_level >= LOG_DTRACE) __kfuse_trace(__fc, _THIS_IP_, "%s: " fmt, __FUNCTION__, ## args); } while (0)
