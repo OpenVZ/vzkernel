@@ -609,7 +609,8 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 	int storage_version = atomic_read(&ireq->cc->storage_version);
 	int aligned_msg;
 
-	if (ireq->iochunk.cmd == PCS_REQ_T_READ && !((ireq->iochunk.size|ireq->iochunk.offset) & 511)) {
+	if (ireq->iochunk.cmd == PCS_REQ_T_READ && !((ireq->iochunk.size|ireq->iochunk.offset) & 511) &&
+	    !(ireq->flags & IREQ_F_NO_ACCEL)) {
 		if (pcs_csa_cs_submit(cs, ireq))
 			return;
 	}
@@ -631,8 +632,8 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 		if (aligned_msg)
 			ioh->hdr.type = PCS_CS_WRITE_AL_REQ;
 		else
-			ioh->hdr.type = (ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) ?
-					PCS_CS_WRITE_SYNC_REQ : PCS_CS_WRITE_REQ;
+			ioh->hdr.type = ((ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) ||
+					 ireq->dentry->no_write_delay) ? PCS_CS_WRITE_SYNC_REQ : PCS_CS_WRITE_REQ;
 		ioh->hdr.len = pcs_cs_msg_size(ioh->hdr.len + ireq->iochunk.size,
 					       storage_version);
 		break;
@@ -657,8 +658,9 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 
 	if (ireq->flags & IREQ_F_SEQ)
 		ioh->sync.misc = PCS_CS_IO_SEQ;
-
-	if (ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE)
+	if (ireq->dentry->no_csum_on_read)
+                ioh->sync.misc |= PCS_CS_IO_NOCSUM;
+	if ((ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) || ireq->dentry->no_write_delay)
 		ioh->sync.misc |= PCS_CS_IO_SYNC;
 
 	msg->size = ioh->hdr.len;
