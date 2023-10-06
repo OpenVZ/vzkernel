@@ -286,7 +286,7 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 				TRACE(PEER_FMT" msg:%p read_off:%d iov_size:%ld\n", PEER_ARGS(ep), msg, sio->read_offset,
 				      iov_iter_count(it));
 			} else {
-				if (n == -EAGAIN || n == 0)
+				if (n == -EAGAIN)
 					return;
 
 				sio_abort(sio, PCS_ERR_NET_ABORT);
