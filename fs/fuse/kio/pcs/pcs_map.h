@@ -220,6 +220,7 @@ unsigned long pcs_map_shrink_scan(struct shrinker *,  struct shrink_control *sc)
 void ireq_drop_tokens(struct pcs_int_request * ireq);
 
 extern unsigned int cs_io_locality;
+extern unsigned int cs_enable_fanout;
 
 void cslist_destroy(struct pcs_cs_list * csl);
 
