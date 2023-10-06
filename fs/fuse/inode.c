@@ -498,7 +498,7 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 	struct inode *inode;
 	struct fuse_inode *fi;
 	struct fuse_file *ff;
-	int err;
+	int err, i;
 
 	if (!fc->async_read) {
 		printk(KERN_ERR "Turn async_read ON to use "
@@ -522,6 +522,9 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 
 	/* let them see FUSE_S_FAIL_IMMEDIATELY */
 	wake_up_all(&fc->blocked_waitq);
+
+	for (i = 0; i < FUSE_QHASH_SIZE; i++)
+		wake_up_all(&fc->qhash[i].waitq);
 
 	err = filemap_write_and_wait(inode->i_mapping);
 	if (!err || err == -EIO) { /* AS_EIO might trigger -EIO */
@@ -1028,6 +1031,10 @@ int fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
 	refcount_set(&fc->count, 1);
 	atomic_set(&fc->dev_count, 1);
 	init_waitqueue_head(&fc->blocked_waitq);
+	for (cpu = 0; cpu < FUSE_QHASH_SIZE; cpu++) {
+		atomic_set(&fc->qhash[cpu].num_reqs, 0);
+		init_waitqueue_head(&fc->qhash[cpu].waitq);
+	}
 	fuse_iqueue_init(&fc->main_iq, fiq_ops, fiq_priv);
 	fc->iqs = alloc_percpu(struct fuse_iqueue);
 	if (!fc->iqs)

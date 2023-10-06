@@ -437,6 +437,8 @@ struct fuse_req {
 	/* Request flags, updated with test/set/clear_bit() */
 	unsigned long flags;
 
+	unsigned int qhash;
+
 	/* The request input header */
 	struct {
 		struct fuse_in_header h;
@@ -649,6 +651,29 @@ struct fuse_kio_ops {
 int fuse_register_kio(struct fuse_kio_ops *ops);
 void fuse_unregister_kio(struct fuse_kio_ops *ops);
 
+#define FUSE_QHASH_SIZE 64
+
+#include <linux/jhash.h>
+
+struct fuse_qhash_queue
+{
+	atomic_t		num_reqs;
+	wait_queue_head_t	waitq;
+} ____cacheline_aligned_in_smp;
+
+#if 0
+static inline unsigned int fuse_qhash_bucket(struct fuse_args * args)
+{
+	unsigned long val = (unsigned long)args;
+	return jhash_2words(val & 0xFFFFFFFFU, val >> 32, 0) & (FUSE_QHASH_SIZE - 1);
+}
+#else
+static inline unsigned int fuse_qhash_bucket(void)
+{
+	return jhash_1word(current->pid, 0) & (FUSE_QHASH_SIZE - 1);
+}
+#endif
+
 /**
  * A Fuse connection.
  *
@@ -734,6 +759,8 @@ struct fuse_conn {
 
 	/** waitq for blocked connection */
 	wait_queue_head_t blocked_waitq;
+
+	struct fuse_qhash_queue	qhash[FUSE_QHASH_SIZE];
 
 	/** Connection established, cleared on umount, connection
 	    abort and device release */
