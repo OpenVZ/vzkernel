@@ -829,18 +829,14 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 			if (pcs_csa_cs_submit(cs, ireq))
 				return;
 		} else if (ireq->iochunk.cmd == PCS_REQ_T_WRITE) {
-			/* Synchronous writes in accel mode are still not supported */
-			if (!(ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) &&
-			    !ireq->dentry->no_write_delay) {
-				struct pcs_int_request * sreq;
+			struct pcs_int_request * sreq;
 
-				sreq = pcs_csa_csl_write_submit(ireq);
-				if (!sreq)
-					return;
-				if (sreq != ireq) {
-					ireq = sreq;
-					cs = ireq->iochunk.csl->cs[ireq->iochunk.cs_index].cslink.cs;
-				}
+			sreq = pcs_csa_csl_write_submit(ireq);
+			if (!sreq)
+				return;
+			if (sreq != ireq) {
+				ireq = sreq;
+				cs = ireq->iochunk.csl->cs[ireq->iochunk.cs_index].cslink.cs;
 			}
 		}
 	}
@@ -879,8 +875,6 @@ void pcs_cs_submit(struct pcs_cs *cs, struct pcs_int_request *ireq)
 			 * chain.
 			 */
 			if (idx == ireq->iochunk.cs_index ||
-			    (ireq->dentry->fileinfo.attr.attrib & PCS_FATTR_IMMEDIATE_WRITE) ||
-			    ireq->dentry->no_write_delay ||
 			    ((ireq->iochunk.size|ireq->iochunk.offset) & 511) ||
 			    (ireq->flags & IREQ_F_NO_ACCEL) ||
 			    !pcs_csa_csl_write_submit_single(sreq, idx))
