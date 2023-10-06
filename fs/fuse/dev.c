@@ -362,7 +362,8 @@ void __fuse_request_end( struct fuse_req *req, bool flush_bg)
 			flush_bg_queue_and_unlock(fc);
 		else
 			spin_unlock(&fc->bg_lock);
-	}
+	} else if (test_bit(FR_NO_ACCT, &req->flags))
+		bg = true;
 
 	if (test_bit(FR_ASYNC, &req->flags)) {
 		req->args->end(fm, req->args, req->out.h.error);
@@ -465,9 +466,10 @@ static void __fuse_request_send(struct fuse_req *req)
 
 	if (fc->kio.op) {
 		int ret = fc->kio.op->req_classify(req, false, false);
-		if (likely(!ret))
-			return fc->kio.op->req_send(req, false);
-		else if (ret < 0)
+		if (likely(!ret)) {
+			fc->kio.op->req_send(req, false);
+			return;
+		} else if (ret < 0)
 			return;
 	}
 
@@ -602,6 +604,7 @@ static int fuse_request_queue_background(struct fuse_req *req)
 	struct fuse_conn *fc = fm->fc;
 	struct fuse_file *ff = req->args->ff;
 	struct fuse_iqueue *fiq = req->args->fiq;
+	int nonblocking = test_bit(FR_NONBLOCKING, &req->flags);
 	int ret = -ENOTCONN;
 
 	WARN_ON(!test_bit(FR_BACKGROUND, &req->flags));
@@ -611,6 +614,19 @@ static int fuse_request_queue_background(struct fuse_req *req)
 		atomic_inc(&fc->num_waiting);
 	}
 	__set_bit(FR_ISREPLY, &req->flags);
+
+	if (fc->kio.op && req->args->async && !nonblocking &&
+	    (!ff || !test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state))) {
+		int ret = fc->kio.op->req_classify(req, false, false);
+		if (likely(!ret)) {
+			__clear_bit(FR_BACKGROUND, &req->flags);
+			__set_bit(FR_NO_ACCT, &req->flags);
+			fc->kio.op->req_send(req, true);
+			return 0;
+		} else if (ret < 0)
+			return 0;
+	}
+
 	spin_lock(&fc->bg_lock);
 	if (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)) {
 		ret = -EIO;
@@ -624,7 +640,7 @@ static int fuse_request_queue_background(struct fuse_req *req)
 			set_bdi_congested(fm->sb->s_bdi, BLK_RW_ASYNC);
 		}
 
-		if (test_bit(FR_NONBLOCKING, &req->flags)) {
+		if (nonblocking) {
 			fc->active_background++;
 			spin_lock(&fiq->lock);
 			req->in.h.unique = fuse_get_unique(fiq);

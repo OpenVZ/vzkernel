@@ -1006,6 +1006,7 @@ static ssize_t fuse_async_req_send(struct fuse_mount *fm,
 
 	ia->ap.args.end = fuse_aio_complete_req;
 	ia->ap.args.may_block = io->should_dirty;
+	ia->ap.args.async = true;
 	err = fuse_simple_background(fm, &ia->ap.args, GFP_KERNEL);
 	if (err)
 		fuse_aio_complete_req(fm, &ia->ap.args, err);
