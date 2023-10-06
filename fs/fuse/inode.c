@@ -599,7 +599,7 @@ void fuse_unregister_kio(struct fuse_kio_ops *ops)
 }
 EXPORT_SYMBOL_GPL(fuse_unregister_kio);
 
-static struct fuse_kio_ops *fuse_kio_get(struct fuse_conn *fc, char *name)
+struct fuse_kio_ops *fuse_kio_get(struct fuse_conn *fc, char *name)
 {
 	struct fuse_kio_ops *ops;
 	bool once = true;
@@ -621,7 +621,7 @@ again:
 	return NULL;
 }
 
-static void fuse_kio_put(struct fuse_kio_ops *ops)
+void fuse_kio_put(struct fuse_kio_ops *ops)
 {
 	module_put(ops->owner);
 }

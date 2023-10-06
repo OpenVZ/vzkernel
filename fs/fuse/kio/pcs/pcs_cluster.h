@@ -51,6 +51,7 @@ static inline void ireq_retry_inc(struct pcs_int_request *ireq)
 }
 
 struct pcs_fuse_cluster {
+	struct list_head list;
 	struct pcs_cluster_core cc;
 	struct fuse_conn *fc;
 };
@@ -137,5 +138,9 @@ static inline void pcs_cc_set_abort_timeout(struct pcs_cluster_core *cc, int tim
 {
 	cc->cfg.def.abort_timeout = cc->cfg.curr.abort_timeout = timeout;
 }
+
+int pcs_csa_register(struct pcs_cluster_core * cc, PCS_NODE_ID_T cs_id);
+int pcs_csa_init(void);
+void pcs_csa_fini(void);
 
 #endif /* _PCS_CLUSTER_H_ */
