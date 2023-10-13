@@ -3774,6 +3774,10 @@ int fuse_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 
 	inode_lock(inode);
 
+	err = fiemap_prep(inode, fieinfo, start, &len, FIEMAP_FLAG_SYNC);
+	if (err)
+		goto out;
+
 	fuse_sync_writes(inode);
 	fuse_read_dio_wait(fi);
 
