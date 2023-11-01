@@ -63,15 +63,17 @@ static struct nft_af_info *nft_afinfo_lookup(struct net *net, int family)
 {
 	struct nft_af_info *afi;
 
-	list_for_each_entry(afi, &net->nft.af_info, list) {
+	/* called either with rcu_read_lock or nfnl_lock held */
+	list_for_each_entry_rcu(afi, &net->nft.af_info, list) {
 		if (afi->family == family)
 			return afi;
 	}
+
 	return NULL;
 }
 
 static struct nft_af_info *
-nf_tables_afinfo_lookup(struct net *net, int family, bool autoload)
+nf_tables_afinfo_lookup(struct net *net, int family, bool autoload, bool rcu)
 {
 	struct nft_af_info *afi;
 
@@ -80,9 +82,17 @@ nf_tables_afinfo_lookup(struct net *net, int family, bool autoload)
 		return afi;
 #ifdef CONFIG_MODULES
 	if (autoload) {
-		nfnl_unlock(NFNL_SUBSYS_NFTABLES);
+		if (rcu) {
+			rcu_read_unlock();
+		} else {
+			nfnl_unlock(NFNL_SUBSYS_NFTABLES);
+		}
 		request_module("nft-afinfo-%u", family);
-		nfnl_lock(NFNL_SUBSYS_NFTABLES);
+		if (rcu) {
+			rcu_read_lock();
+		} else {
+			nfnl_lock(NFNL_SUBSYS_NFTABLES);
+		}
 		afi = nft_afinfo_lookup(net, family);
 		if (afi != NULL)
 			return ERR_PTR(-EAGAIN);
@@ -361,7 +371,7 @@ static struct nft_table *nft_table_lookup(const struct nft_af_info *afi,
 {
 	struct nft_table *table;
 
-	list_for_each_entry(table, &afi->tables, list) {
+	list_for_each_entry_rcu(table, &afi->tables, list) {
 		if (!nla_strcmp(nla, table->name) &&
 		    nft_active_genmask(table, genmask))
 			return table;
@@ -540,6 +550,24 @@ done:
 	return skb->len;
 }
 
+static int nft_netlink_dump_start_rcu(struct sock *nlsk, struct sk_buff *skb,
+				      const struct nlmsghdr *nlh,
+				      struct netlink_dump_control *c)
+{
+	int err;
+
+	if (!try_module_get(THIS_MODULE))
+		return -EINVAL;
+
+	rcu_read_unlock();
+	err = netlink_dump_start(nlsk, skb, nlh, c);
+	rcu_read_lock();
+	module_put(THIS_MODULE);
+
+	return err;
+}
+
+/* called with rcu_read_lock held */
 static int nf_tables_gettable(struct sock *nlsk, struct sk_buff *skb,
 			      const struct nlmsghdr *nlh,
 			      const struct nlattr * const nla[])
@@ -556,11 +584,13 @@ static int nf_tables_gettable(struct sock *nlsk, struct sk_buff *skb,
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		struct netlink_dump_control c = {
 			.dump = nf_tables_dump_tables,
+			.module = THIS_MODULE,
 		};
-		return netlink_dump_start(nlsk, skb, nlh, &c);
+
+		return nft_netlink_dump_start_rcu(nlsk, skb, nlh, &c);
 	}
 
-	afi = nf_tables_afinfo_lookup(net, family, false);
+	afi = nf_tables_afinfo_lookup(net, family, false, true);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -568,7 +598,7 @@ static int nf_tables_gettable(struct sock *nlsk, struct sk_buff *skb,
 	if (IS_ERR(table))
 		return PTR_ERR(table);
 
-	skb2 = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
+	skb2 = alloc_skb(NLMSG_GOODSIZE, GFP_ATOMIC);
 	if (!skb2)
 		return -ENOMEM;
 
@@ -692,7 +722,7 @@ static int nf_tables_newtable(struct net *net, struct sock *nlsk,
 	struct nft_ctx ctx;
 	int err;
 
-	afi = nf_tables_afinfo_lookup(net, family, true);
+	afi = nf_tables_afinfo_lookup(net, family, true, false);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -844,7 +874,7 @@ static int nf_tables_deltable(struct net *net, struct sock *nlsk,
 	if (family == AF_UNSPEC || nla[NFTA_TABLE_NAME] == NULL)
 		return nft_flush(&ctx, family);
 
-	afi = nf_tables_afinfo_lookup(net, family, false);
+	afi = nf_tables_afinfo_lookup(net, family, false, false);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -919,7 +949,7 @@ static struct nft_chain *nf_tables_chain_lookup(const struct nft_table *table,
 	if (nla == NULL)
 		return ERR_PTR(-EINVAL);
 
-	list_for_each_entry(chain, &table->chains, list) {
+	list_for_each_entry_rcu(chain, &table->chains, list) {
 		if (!nla_strcmp(nla, chain->name) &&
 		    nft_active_genmask(chain, genmask))
 			return chain;
@@ -1121,6 +1151,7 @@ done:
 	return skb->len;
 }
 
+/* called with rcu_read_lock held */
 static int nf_tables_getchain(struct sock *nlsk, struct sk_buff *skb,
 			      const struct nlmsghdr *nlh,
 			      const struct nlattr * const nla[])
@@ -1138,11 +1169,13 @@ static int nf_tables_getchain(struct sock *nlsk, struct sk_buff *skb,
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		struct netlink_dump_control c = {
 			.dump = nf_tables_dump_chains,
+			.module = THIS_MODULE,
 		};
-		return netlink_dump_start(nlsk, skb, nlh, &c);
+
+		return nft_netlink_dump_start_rcu(nlsk, skb, nlh, &c);
 	}
 
-	afi = nf_tables_afinfo_lookup(net, family, false);
+	afi = nf_tables_afinfo_lookup(net, family, false, true);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -1154,7 +1187,7 @@ static int nf_tables_getchain(struct sock *nlsk, struct sk_buff *skb,
 	if (IS_ERR(chain))
 		return PTR_ERR(chain);
 
-	skb2 = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
+	skb2 = alloc_skb(NLMSG_GOODSIZE, GFP_ATOMIC);
 	if (!skb2)
 		return -ENOMEM;
 
@@ -1317,7 +1350,7 @@ static int nf_tables_newchain(struct net *net, struct sock *nlsk,
 
 	create = nlh->nlmsg_flags & NLM_F_CREATE ? true : false;
 
-	afi = nf_tables_afinfo_lookup(net, family, true);
+	afi = nf_tables_afinfo_lookup(net, family, true, false);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -1551,7 +1584,7 @@ static int nf_tables_delchain(struct net *net, struct sock *nlsk,
 	int family = nfmsg->nfgen_family;
 	struct nft_ctx ctx;
 
-	afi = nf_tables_afinfo_lookup(net, family, false);
+	afi = nf_tables_afinfo_lookup(net, family, false, false);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -1823,7 +1856,7 @@ static struct nft_rule *__nf_tables_rule_lookup(const struct nft_chain *chain,
 	struct nft_rule *rule;
 
 	// FIXME: this sucks
-	list_for_each_entry(rule, &chain->rules, list) {
+	list_for_each_entry_rcu(rule, &chain->rules, list) {
 		if (handle == rule->handle)
 			return rule;
 	}
@@ -2026,6 +2059,7 @@ static int nf_tables_dump_rules_done(struct netlink_callback *cb)
 	return 0;
 }
 
+/* called with rcu_read_lock held */
 static int nf_tables_getrule(struct sock *nlsk, struct sk_buff *skb,
 			     const struct nlmsghdr *nlh,
 			     const struct nlattr * const nla[])
@@ -2045,18 +2079,19 @@ static int nf_tables_getrule(struct sock *nlsk, struct sk_buff *skb,
 		struct netlink_dump_control c = {
 			.dump = nf_tables_dump_rules,
 			.done = nf_tables_dump_rules_done,
+			.module = THIS_MODULE,
 		};
 
 		if (nla[NFTA_RULE_TABLE] || nla[NFTA_RULE_CHAIN]) {
 			struct nft_rule_dump_ctx *ctx;
 
-			ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+			ctx = kzalloc(sizeof(*ctx), GFP_ATOMIC);
 			if (!ctx)
 				return -ENOMEM;
 
 			if (nla[NFTA_RULE_TABLE]) {
 				ctx->table = nla_strdup(nla[NFTA_RULE_TABLE],
-							GFP_KERNEL);
+							GFP_ATOMIC);
 				if (!ctx->table) {
 					kfree(ctx);
 					return -ENOMEM;
@@ -2064,7 +2099,7 @@ static int nf_tables_getrule(struct sock *nlsk, struct sk_buff *skb,
 			}
 			if (nla[NFTA_RULE_CHAIN]) {
 				ctx->chain = nla_strdup(nla[NFTA_RULE_CHAIN],
-							GFP_KERNEL);
+							GFP_ATOMIC);
 				if (!ctx->chain) {
 					kfree(ctx->table);
 					kfree(ctx);
@@ -2074,10 +2109,10 @@ static int nf_tables_getrule(struct sock *nlsk, struct sk_buff *skb,
 			c.data = ctx;
 		}
 
-		return netlink_dump_start(nlsk, skb, nlh, &c);
+		return nft_netlink_dump_start_rcu(nlsk, skb, nlh, &c);
 	}
 
-	afi = nf_tables_afinfo_lookup(net, family, false);
+	afi = nf_tables_afinfo_lookup(net, family, false, true);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -2093,7 +2128,7 @@ static int nf_tables_getrule(struct sock *nlsk, struct sk_buff *skb,
 	if (IS_ERR(rule))
 		return PTR_ERR(rule);
 
-	skb2 = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
+	skb2 = alloc_skb(NLMSG_GOODSIZE, GFP_ATOMIC);
 	if (!skb2)
 		return -ENOMEM;
 
@@ -2153,7 +2188,7 @@ static int nf_tables_newrule(struct net *net, struct sock *nlsk,
 
 	create = nlh->nlmsg_flags & NLM_F_CREATE ? true : false;
 
-	afi = nf_tables_afinfo_lookup(net, nfmsg->nfgen_family, create);
+	afi = nf_tables_afinfo_lookup(net, nfmsg->nfgen_family, create, false);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -2315,7 +2350,7 @@ static int nf_tables_delrule(struct net *net, struct sock *nlsk,
 	int family = nfmsg->nfgen_family, err = 0;
 	struct nft_ctx ctx;
 
-	afi = nf_tables_afinfo_lookup(net, family, false);
+	afi = nf_tables_afinfo_lookup(net, family, false, false);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -2478,14 +2513,14 @@ static int nft_ctx_init_from_setattr(struct nft_ctx *ctx, struct net *net,
 				     const struct sk_buff *skb,
 				     const struct nlmsghdr *nlh,
 				     const struct nlattr * const nla[],
-				     u8 genmask)
+				     u8 genmask, bool rcu)
 {
 	const struct nfgenmsg *nfmsg = nlmsg_data(nlh);
 	struct nft_af_info *afi = NULL;
 	struct nft_table *table = NULL;
 
 	if (nfmsg->nfgen_family != NFPROTO_UNSPEC) {
-		afi = nf_tables_afinfo_lookup(net, nfmsg->nfgen_family, false);
+		afi = nf_tables_afinfo_lookup(net, nfmsg->nfgen_family, false, rcu);
 		if (IS_ERR(afi))
 			return PTR_ERR(afi);
 	}
@@ -2512,7 +2547,7 @@ struct nft_set *nf_tables_set_lookup(const struct nft_table *table,
 	if (nla == NULL)
 		return ERR_PTR(-EINVAL);
 
-	list_for_each_entry(set, &table->sets, list) {
+	list_for_each_entry_rcu(set, &table->sets, list) {
 		if (!nla_strcmp(nla, set->name) && !set->removed &&
 		    nft_active_genmask(set, genmask))
 			return set;
@@ -2768,6 +2803,7 @@ static int nf_tables_dump_sets_done(struct netlink_callback *cb)
 	return 0;
 }
 
+/* called with rcu_read_lock held */
 static int nf_tables_getset(struct sock *nlsk, struct sk_buff *skb,
 			    const struct nlmsghdr *nlh,
 			    const struct nlattr * const nla[])
@@ -2781,7 +2817,7 @@ static int nf_tables_getset(struct sock *nlsk, struct sk_buff *skb,
 	int err;
 
 	/* Verify existence before starting dump */
-	err = nft_ctx_init_from_setattr(&ctx, net, skb, nlh, nla, genmask);
+	err = nft_ctx_init_from_setattr(&ctx, net, skb, nlh, nla, genmask, true);
 	if (err < 0)
 		return err;
 
@@ -2789,17 +2825,18 @@ static int nf_tables_getset(struct sock *nlsk, struct sk_buff *skb,
 		struct netlink_dump_control c = {
 			.dump = nf_tables_dump_sets,
 			.done = nf_tables_dump_sets_done,
+			.module = THIS_MODULE,
 		};
 		struct nft_ctx *ctx_dump;
 
-		ctx_dump = kmalloc(sizeof(*ctx_dump), GFP_KERNEL);
+		ctx_dump = kmalloc(sizeof(*ctx_dump), GFP_ATOMIC);
 		if (ctx_dump == NULL)
 			return -ENOMEM;
 
 		*ctx_dump = ctx;
 		c.data = ctx_dump;
 
-		return netlink_dump_start(nlsk, skb, nlh, &c);
+		return nft_netlink_dump_start_rcu(nlsk, skb, nlh, &c);
 	}
 
 	/* Only accept unspec with dump */
@@ -2812,7 +2849,7 @@ static int nf_tables_getset(struct sock *nlsk, struct sk_buff *skb,
 	if (IS_ERR(set))
 		return PTR_ERR(set);
 
-	skb2 = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
+	skb2 = alloc_skb(NLMSG_GOODSIZE, GFP_ATOMIC);
 	if (skb2 == NULL)
 		return -ENOMEM;
 
@@ -2944,7 +2981,7 @@ static int nf_tables_newset(struct net *net, struct sock *nlsk,
 
 	create = nlh->nlmsg_flags & NLM_F_CREATE ? true : false;
 
-	afi = nf_tables_afinfo_lookup(net, nfmsg->nfgen_family, create);
+	afi = nf_tables_afinfo_lookup(net, nfmsg->nfgen_family, create, false);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -3065,7 +3102,7 @@ static int nf_tables_delset(struct net *net, struct sock *nlsk,
 	if (nla[NFTA_SET_TABLE] == NULL)
 		return -EINVAL;
 
-	err = nft_ctx_init_from_setattr(&ctx, net, skb, nlh, nla, genmask);
+	err = nft_ctx_init_from_setattr(&ctx, net, skb, nlh, nla, genmask, false);
 	if (err < 0)
 		return err;
 
@@ -3211,13 +3248,13 @@ static int nft_ctx_init_from_elemattr(struct nft_ctx *ctx, struct net *net,
 				      const struct sk_buff *skb,
 				      const struct nlmsghdr *nlh,
 				      const struct nlattr * const nla[],
-				      u8 genmask)
+				      u8 genmask, bool rcu)
 {
 	const struct nfgenmsg *nfmsg = nlmsg_data(nlh);
 	struct nft_af_info *afi;
 	struct nft_table *table;
 
-	afi = nf_tables_afinfo_lookup(net, nfmsg->nfgen_family, false);
+	afi = nf_tables_afinfo_lookup(net, nfmsg->nfgen_family, false, rcu);
 	if (IS_ERR(afi))
 		return PTR_ERR(afi);
 
@@ -3337,7 +3374,7 @@ static int nf_tables_dump_set(struct sk_buff *skb, struct netlink_callback *cb)
 		return err;
 
 	err = nft_ctx_init_from_elemattr(&ctx, net, cb->skb, cb->nlh,
-					 (void *)nla, genmask);
+					 (void *)nla, genmask, true);
 	if (err < 0)
 		return err;
 
@@ -3393,6 +3430,7 @@ nla_put_failure:
 	return -ENOSPC;
 }
 
+/* called with rcu_read_lock held */
 static int nf_tables_getsetelem(struct sock *nlsk, struct sk_buff *skb,
 				const struct nlmsghdr *nlh,
 				const struct nlattr * const nla[])
@@ -3403,7 +3441,7 @@ static int nf_tables_getsetelem(struct sock *nlsk, struct sk_buff *skb,
 	struct nft_ctx ctx;
 	int err;
 
-	err = nft_ctx_init_from_elemattr(&ctx, net, skb, nlh, nla, genmask);
+	err = nft_ctx_init_from_elemattr(&ctx, net, skb, nlh, nla, genmask, true);
 	if (err < 0)
 		return err;
 
@@ -3415,8 +3453,9 @@ static int nf_tables_getsetelem(struct sock *nlsk, struct sk_buff *skb,
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		struct netlink_dump_control c = {
 			.dump = nf_tables_dump_set,
+			.module = THIS_MODULE,
 		};
-		return netlink_dump_start(nlsk, skb, nlh, &c);
+		return nft_netlink_dump_start_rcu(nlsk, skb, nlh, &c);
 	}
 	return -EOPNOTSUPP;
 }
@@ -3739,7 +3778,7 @@ static int nf_tables_newsetelem(struct net *net, struct sock *nlsk,
 	if (nla[NFTA_SET_ELEM_LIST_ELEMENTS] == NULL)
 		return -EINVAL;
 
-	err = nft_ctx_init_from_elemattr(&ctx, net, skb, nlh, nla, genmask);
+	err = nft_ctx_init_from_elemattr(&ctx, net, skb, nlh, nla, genmask, false);
 	if (err < 0)
 		return err;
 
@@ -3891,7 +3930,7 @@ static int nf_tables_delsetelem(struct net *net, struct sock *nlsk,
 	struct nft_ctx ctx;
 	int rem, err = 0;
 
-	err = nft_ctx_init_from_elemattr(&ctx, net, skb, nlh, nla, genmask);
+	err = nft_ctx_init_from_elemattr(&ctx, net, skb, nlh, nla, genmask, false);
 	if (err < 0)
 		return err;
 
@@ -4015,7 +4054,7 @@ static int nf_tables_getgen(struct sock *nlsk, struct sk_buff *skb,
 	struct sk_buff *skb2;
 	int err;
 
-	skb2 = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
+	skb2 = alloc_skb(NLMSG_GOODSIZE, GFP_ATOMIC);
 	if (skb2 == NULL)
 		return -ENOMEM;
 
@@ -4037,7 +4076,7 @@ static const struct nfnl_callback nf_tables_cb[NFT_MSG_MAX] = {
 		.policy		= nft_table_policy,
 	},
 	[NFT_MSG_GETTABLE] = {
-		.call		= nf_tables_gettable,
+		.call_rcu	= nf_tables_gettable,
 		.attr_count	= NFTA_TABLE_MAX,
 		.policy		= nft_table_policy,
 	},
@@ -4052,7 +4091,7 @@ static const struct nfnl_callback nf_tables_cb[NFT_MSG_MAX] = {
 		.policy		= nft_chain_policy,
 	},
 	[NFT_MSG_GETCHAIN] = {
-		.call		= nf_tables_getchain,
+		.call_rcu	= nf_tables_getchain,
 		.attr_count	= NFTA_CHAIN_MAX,
 		.policy		= nft_chain_policy,
 	},
@@ -4067,7 +4106,7 @@ static const struct nfnl_callback nf_tables_cb[NFT_MSG_MAX] = {
 		.policy		= nft_rule_policy,
 	},
 	[NFT_MSG_GETRULE] = {
-		.call		= nf_tables_getrule,
+		.call_rcu	= nf_tables_getrule,
 		.attr_count	= NFTA_RULE_MAX,
 		.policy		= nft_rule_policy,
 	},
@@ -4082,7 +4121,7 @@ static const struct nfnl_callback nf_tables_cb[NFT_MSG_MAX] = {
 		.policy		= nft_set_policy,
 	},
 	[NFT_MSG_GETSET] = {
-		.call		= nf_tables_getset,
+		.call_rcu	= nf_tables_getset,
 		.attr_count	= NFTA_SET_MAX,
 		.policy		= nft_set_policy,
 	},
@@ -4097,7 +4136,7 @@ static const struct nfnl_callback nf_tables_cb[NFT_MSG_MAX] = {
 		.policy		= nft_set_elem_list_policy,
 	},
 	[NFT_MSG_GETSETELEM] = {
-		.call		= nf_tables_getsetelem,
+		.call_rcu	= nf_tables_getsetelem,
 		.attr_count	= NFTA_SET_ELEM_LIST_MAX,
 		.policy		= nft_set_elem_list_policy,
 	},
@@ -4107,7 +4146,7 @@ static const struct nfnl_callback nf_tables_cb[NFT_MSG_MAX] = {
 		.policy		= nft_set_elem_list_policy,
 	},
 	[NFT_MSG_GETGEN] = {
-		.call		= nf_tables_getgen,
+		.call_rcu	= nf_tables_getgen,
 	},
 };
 
