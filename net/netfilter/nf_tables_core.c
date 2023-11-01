@@ -141,7 +141,7 @@ nft_do_chain(struct nft_pktinfo *pkt, const struct nf_hook_ops *ops)
 		nft_trace_init(&info, pkt, &regs.verdict, basechain);
 do_chain:
 	rulenum = 0;
-	rule = list_entry(&chain->rules, struct nft_rule, list);
+	rule = list_entry_rcu(&chain->rules, struct nft_rule, list);
 next_rule:
 	regs.verdict.code = NFT_CONTINUE;
 	list_for_each_entry_continue_rcu(rule, &chain->rules, list) {
