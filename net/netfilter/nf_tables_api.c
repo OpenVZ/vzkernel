@@ -1890,13 +1890,13 @@ static int nf_tables_fill_rule_info(struct sk_buff *skb, struct net *net,
 				    u32 flags, int family,
 				    const struct nft_table *table,
 				    const struct nft_chain *chain,
-				    const struct nft_rule *rule)
+				    const struct nft_rule *rule,
+				    const struct nft_rule *prule)
 {
 	struct nlmsghdr *nlh;
 	struct nfgenmsg *nfmsg;
 	const struct nft_expr *expr, *next;
 	struct nlattr *list;
-	const struct nft_rule *prule;
 	int type = event | NFNL_SUBSYS_NFTABLES << 8;
 
 	nlh = nlmsg_put(skb, portid, seq, type, sizeof(struct nfgenmsg),
@@ -1917,8 +1917,7 @@ static int nf_tables_fill_rule_info(struct sk_buff *skb, struct net *net,
 			 NFTA_RULE_PAD))
 		goto nla_put_failure;
 
-	if ((event != NFT_MSG_DELRULE) && (rule->list.prev != &chain->rules)) {
-		prule = list_entry(rule->list.prev, struct nft_rule, list);
+	if (event != NFT_MSG_DELRULE && prule) {
 		if (nla_put_be64(skb, NFTA_RULE_POSITION,
 				 cpu_to_be64(prule->handle),
 				 NFTA_RULE_PAD))
@@ -1967,7 +1966,7 @@ static int nf_tables_rule_notify(const struct nft_ctx *ctx,
 
 	err = nf_tables_fill_rule_info(skb, ctx->net, ctx->portid, ctx->seq,
 				       event, 0, ctx->afi->family, ctx->table,
-				       ctx->chain, rule);
+				       ctx->chain, rule, NULL);
 	if (err < 0) {
 		kfree_skb(skb);
 		goto err;
@@ -1996,7 +1995,7 @@ static int nf_tables_dump_rules(struct sk_buff *skb,
 	const struct nft_af_info *afi;
 	const struct nft_table *table;
 	const struct nft_chain *chain;
-	const struct nft_rule *rule;
+	const struct nft_rule *rule, *prule = NULL;
 	unsigned int idx = 0, s_idx = cb->args[0];
 	struct net *net = sock_net(skb->sk);
 	int family = nfmsg->nfgen_family;
@@ -2020,7 +2019,7 @@ static int nf_tables_dump_rules(struct sk_buff *skb,
 
 				list_for_each_entry_rcu(rule, &chain->rules, list) {
 					if (!nft_is_active(net, rule))
-						goto cont;
+						goto cont_skip;
 					if (idx < s_idx)
 						goto cont;
 					if (idx > s_idx)
@@ -2030,11 +2029,13 @@ static int nf_tables_dump_rules(struct sk_buff *skb,
 								      cb->nlh->nlmsg_seq,
 								      NFT_MSG_NEWRULE,
 								      NLM_F_MULTI | NLM_F_APPEND,
-								      afi->family, table, chain, rule) < 0)
+								      afi->family, table, chain, rule, prule) < 0)
 						goto done;
 
 					nl_dump_check_consistent(cb, nlmsg_hdr(skb));
 cont:
+					prule = rule;
+cont_skip:
 					idx++;
 				}
 			}
@@ -2134,7 +2135,7 @@ static int nf_tables_getrule(struct sock *nlsk, struct sk_buff *skb,
 
 	err = nf_tables_fill_rule_info(skb2, net, NETLINK_CB(skb).portid,
 				       nlh->nlmsg_seq, NFT_MSG_NEWRULE, 0,
-				       family, table, chain, rule);
+				       family, table, chain, rule, NULL);
 	if (err < 0)
 		goto err;
 
