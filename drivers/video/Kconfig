@@ -3,7 +3,8 @@
 #
 
 menu "Graphics support"
-	depends on HAS_IOMEM
+
+if HAS_IOMEM
 
 config HAVE_FB_ATMEL
 	bool
@@ -2450,6 +2451,7 @@ config FB_HYPERV
 	select FB_CFB_FILLRECT
 	select FB_CFB_COPYAREA
 	select FB_CFB_IMAGEBLIT
+	select FB_DEFERRED_IO
 	help
 	  This framebuffer driver supports Microsoft Hyper-V Synthetic Video.
 
@@ -2475,10 +2477,6 @@ source "drivers/video/omap2/Kconfig"
 source "drivers/video/exynos/Kconfig"
 source "drivers/video/mmp/Kconfig"
 source "drivers/video/backlight/Kconfig"
-
-if VT
-	source "drivers/video/console/Kconfig"
-endif
 
 if FB || SGI_NEWPORT_CONSOLE
 	source "drivers/video/logo/Kconfig"
@@ -2510,5 +2508,11 @@ config FB_SSD1307
 	help
 	  This driver implements support for the Solomon SSD1307
 	  OLED controller over I2C.
+
+endif # HAS_IOMEM
+
+if VT
+	source "drivers/video/console/Kconfig"
+endif
 
 endmenu

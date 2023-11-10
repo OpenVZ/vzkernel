@@ -11,9 +11,6 @@ menuconfig NEW_LEDS
 	  Say Y to enable Linux LED support.  This allows control of supported
 	  LEDs from both userspace and optionally, by kernel events (triggers).
 
-	  This is not related to standard keyboard LEDs which are controlled
-	  via the input system.
-
 if NEW_LEDS
 
 config LEDS_CLASS
@@ -478,6 +475,17 @@ config LEDS_BLINKM
 	help
 	  This option enables support for the BlinkM RGB LED connected
 	  through I2C. Say Y to enable support for the BlinkM LED.
+
+config LEDS_POWERNV
+	tristate "LED support for PowerNV Platform"
+	depends on LEDS_CLASS
+	depends on PPC_POWERNV
+	depends on OF
+	help
+	  This option enables support for the system LEDs present on
+	  PowerNV platforms. Say 'y' to enable this support in kernel.
+	  To compile this driver as a module, choose 'm' here: the module
+	  will be called leds-powernv.
 
 comment "LED Triggers"
 source "drivers/leds/trigger/Kconfig"

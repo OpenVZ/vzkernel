@@ -65,6 +65,10 @@ struct posix_acl *gfs2_get_acl(struct inode *inode, int type)
 
 	acl = posix_acl_from_xattr(&init_user_ns, data, len);
 	kfree(data);
+
+	if (!IS_ERR(acl))
+		set_cached_acl(inode, type, acl);
+
 	return acl;
 }
 
@@ -224,7 +228,7 @@ static int gfs2_xattr_system_set(struct dentry *dentry, const char *name,
 {
 	struct inode *inode = dentry->d_inode;
 	struct gfs2_sbd *sdp = GFS2_SB(inode);
-	struct posix_acl *acl = NULL;
+	struct posix_acl *acl = NULL, *real_acl = NULL;
 	int error = 0, type;
 
 	if (!sdp->sd_args.ar_posix_acl)
@@ -258,25 +262,21 @@ static int gfs2_xattr_system_set(struct dentry *dentry, const char *name,
 		goto out;
 	}
 
-	error = posix_acl_valid(acl);
+	error = posix_acl_valid(inode->i_sb->s_user_ns, acl);
 	if (error)
 		goto out_release;
 
 	error = -EINVAL;
-	if (acl->a_count > GFS2_ACL_MAX_ENTRIES)
+	if (acl->a_count > GFS2_ACL_MAX_ENTRIES(GFS2_SB(inode)))
 		goto out_release;
 
+	real_acl = acl;
 	if (type == ACL_TYPE_ACCESS) {
-		umode_t mode = inode->i_mode;
-		error = posix_acl_equiv_mode(acl, &mode);
+		umode_t mode;
 
-		if (error <= 0) {
-			posix_acl_release(acl);
-			acl = NULL;
-
-			if (error < 0)
-				return error;
-		}
+		error = posix_acl_update_mode(inode, &mode, &real_acl);
+		if (error)
+			goto out_release;
 
 		error = gfs2_set_mode(inode, mode);
 		if (error)
@@ -286,8 +286,8 @@ static int gfs2_xattr_system_set(struct dentry *dentry, const char *name,
 set_acl:
 	error = __gfs2_xattr_set(inode, name, value, size, 0, GFS2_EATYPE_SYS);
 	if (!error) {
-		if (acl)
-			set_cached_acl(inode, type, acl);
+		if (real_acl)
+			set_cached_acl(inode, type, real_acl);
 		else
 			forget_cached_acl(inode, type);
 	}

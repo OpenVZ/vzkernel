@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 ################################################################################
 #
 # Intel 82599 Virtual Function driver
@@ -35,4 +36,5 @@ ixgbevf-objs := vf.o \
                 mbx.o \
                 ethtool.o \
                 ixgbevf_main.o
+ixgbevf-$(CONFIG_IXGBEVF_IPSEC) += ipsec.o
 

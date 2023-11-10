@@ -120,7 +120,7 @@ static int snb_start(void)
 			previous_count[num][cpu] = val;
 		}
 	}
-	snb_get_count(TSC, &tsc_at_measure_start, 0);
+	snb_get_count(TSC, &tsc_at_measure_start, base_cpu);
 	return 0;
 }
 
@@ -129,7 +129,7 @@ static int snb_stop(void)
 	unsigned long long val;
 	int num, cpu;
 
-	snb_get_count(TSC, &tsc_at_measure_end, 0);
+	snb_get_count(TSC, &tsc_at_measure_end, base_cpu);
 
 	for (num = 0; num < SNB_CSTATE_COUNT; num++) {
 		for (cpu = 0; cpu < cpu_count; cpu++) {
@@ -155,6 +155,10 @@ static struct cpuidle_monitor *snb_register(void)
 	case 0x2D: /* SNB Xeon */
 	case 0x3A: /* IVB */
 	case 0x3E: /* IVB Xeon */
+	case 0x3C: /* HSW */
+	case 0x3F: /* HSW */
+	case 0x45: /* HSW */
+	case 0x46: /* HSW */
 		break;
 	default:
 		return NULL;
@@ -189,7 +193,7 @@ struct cpuidle_monitor intel_snb_monitor = {
 	.stop			= snb_stop,
 	.do_register		= snb_register,
 	.unregister		= snb_unregister,
-	.needs_root		= 1,
+	.flags.needs_root	= 1,
 	.overflow_s		= 922000000 /* 922337203 seconds TSC overflow
 					       at 20GHz */
 };

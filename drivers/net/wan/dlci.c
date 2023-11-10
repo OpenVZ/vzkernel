@@ -197,8 +197,10 @@ static netdev_tx_t dlci_transmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct dlci_local *dlp = netdev_priv(dev);
 
-	if (skb)
-		dlp->slave->netdev_ops->ndo_start_xmit(skb, dlp->slave);
+	if (skb) {
+		struct netdev_queue *txq = skb_get_tx_queue(dev, skb);
+		netdev_start_xmit(skb, dlp->slave, txq, false);
+	}
 	return NETDEV_TX_OK;
 }
 
@@ -469,7 +471,7 @@ static const struct net_device_ops dlci_netdev_ops = {
 	.ndo_stop	= dlci_close,
 	.ndo_do_ioctl	= dlci_dev_ioctl,
 	.ndo_start_xmit	= dlci_transmit,
-	.ndo_change_mtu	= dlci_change_mtu,
+	.ndo_change_mtu_rh74 = dlci_change_mtu,
 };
 
 static void dlci_setup(struct net_device *dev)
@@ -479,7 +481,7 @@ static void dlci_setup(struct net_device *dev)
 	dev->flags		= 0;
 	dev->header_ops		= &dlci_header_ops;
 	dev->netdev_ops		= &dlci_netdev_ops;
-	dev->destructor		= free_netdev;
+	dev->extended->needs_free_netdev	= true;
 
 	dlp->receive		= dlci_receive;
 
@@ -493,7 +495,7 @@ static void dlci_setup(struct net_device *dev)
 static int dlci_dev_event(struct notifier_block *unused,
 			  unsigned long event, void *ptr)
 {
-	struct net_device *dev = (struct net_device *) ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 
 	if (dev_net(dev) != &init_net)
 		return NOTIFY_DONE;
@@ -520,7 +522,7 @@ static struct notifier_block dlci_notifier = {
 static int __init init_dlci(void)
 {
 	dlci_ioctl_set(dlci_ioctl);
-	register_netdevice_notifier(&dlci_notifier);
+	register_netdevice_notifier_rh(&dlci_notifier);
 
 	printk("%s.\n", version);
 
@@ -532,7 +534,7 @@ static void __exit dlci_exit(void)
 	struct dlci_local	*dlp, *nxt;
 	
 	dlci_ioctl_set(NULL);
-	unregister_netdevice_notifier(&dlci_notifier);
+	unregister_netdevice_notifier_rh(&dlci_notifier);
 
 	rtnl_lock();
 	list_for_each_entry_safe(dlp, nxt, &dlci_devs, list) {

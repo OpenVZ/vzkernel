@@ -27,6 +27,7 @@
 #include <linux/highmem.h>
 #include <linux/list.h>
 #include <linux/slab.h>
+#include <linux/compiler.h>
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -155,7 +156,7 @@ static inline void free_image_page(void *addr, int clear_nosave_free)
 struct linked_page {
 	struct linked_page *next;
 	char data[LINKED_PAGE_DATA_SIZE];
-} __attribute__((packed));
+} __packed;
 
 static inline void
 free_list_of_pages(struct linked_page *list, int clear_page_nosave)
@@ -642,8 +643,9 @@ __register_nosave_region(unsigned long start_pfn, unsigned long end_pfn,
 	region->end_pfn = end_pfn;
 	list_add_tail(&region->list, &nosave_regions);
  Report:
-	printk(KERN_INFO "PM: Registered nosave memory: %016lx - %016lx\n",
-		start_pfn << PAGE_SHIFT, end_pfn << PAGE_SHIFT);
+	printk(KERN_INFO "PM: Registered nosave memory: [mem %#010llx-%#010llx]\n",
+		(unsigned long long) start_pfn << PAGE_SHIFT,
+		((unsigned long long) end_pfn << PAGE_SHIFT) - 1);
 }
 
 /*
@@ -856,8 +858,10 @@ static struct page *saveable_highmem_page(struct zone *zone, unsigned long pfn)
 
 	BUG_ON(!PageHighMem(page));
 
-	if (swsusp_page_is_forbidden(page) ||  swsusp_page_is_free(page) ||
-	    PageReserved(page))
+	if (swsusp_page_is_forbidden(page) ||  swsusp_page_is_free(page))
+		return NULL;
+
+	if (PageReserved(page) || PageOffline(page))
 		return NULL;
 
 	if (page_is_guard(page))
@@ -919,6 +923,9 @@ static struct page *saveable_page(struct zone *zone, unsigned long pfn)
 	BUG_ON(PageHighMem(page));
 
 	if (swsusp_page_is_forbidden(page) || swsusp_page_is_free(page))
+		return NULL;
+
+	if (PageOffline(page))
 		return NULL;
 
 	if (PageReserved(page)
@@ -1398,7 +1405,11 @@ int hibernate_preallocate_memory(void)
 	 * highmem and non-highmem zones separately.
 	 */
 	pages_highmem = preallocate_image_highmem(highmem / 2);
-	alloc = (count - max_size) - pages_highmem;
+	alloc = count - max_size;
+	if (alloc > pages_highmem)
+		alloc -= pages_highmem;
+	else
+		alloc = 0;
 	pages = preallocate_image_memory(alloc, avail_normal);
 	if (pages < alloc) {
 		/* We have exhausted non-highmem pages, try highmem. */

@@ -13,7 +13,8 @@
 #include <asm/pgtable_types.h>
 
 /*
- * Must be relocatable PIC code callable as a C function
+ * Must be relocatable PIC code callable as a C function, in particular
+ * there must be a plain RET and not jump to return thunk.
  */
 
 #define PTR(x) (x << 3)
@@ -47,6 +48,7 @@ relocate_kernel:
 	 * %rsi page_list
 	 * %rdx start address
 	 * %rcx preserve_context
+	 * %r8  sme_active
 	 */
 
 	/* Save the CPU context, used for jumping back */
@@ -70,6 +72,9 @@ relocate_kernel:
 	/* zero out flags, and disable interrupts */
 	pushq $0
 	popfq
+
+	/* Save SME active flag */
+	movq	%r8, %r12
 
 	/*
 	 * get physical address of control page now
@@ -98,6 +103,7 @@ relocate_kernel:
 	addq	$(identity_mapped - relocate_kernel), %r8
 	pushq	%r8
 	ret
+	int3
 
 identity_mapped:
 	/* set return address to 0 if not preserving context */
@@ -131,6 +137,16 @@ identity_mapped:
 
 	/* Flush the TLB (needed?) */
 	movq	%r9, %cr3
+
+	/*
+	 * If SME is active, there could be old encrypted cache line
+	 * entries that will conflict with the now unencrypted memory
+	 * used by kexec. Flush the caches before copying the kernel.
+	 */
+	testq	%r12, %r12
+	jz 1f
+	wbinvd
+1:
 
 	movq	%rcx, %r11
 	call	swap_pages
@@ -168,6 +184,7 @@ identity_mapped:
 	xorq	%r15, %r15
 
 	ret
+	int3
 
 1:
 	popq	%rdx
@@ -189,6 +206,7 @@ identity_mapped:
 	movq	$virtual_mapped, %rax
 	pushq	%rax
 	ret
+	int3
 
 virtual_mapped:
 	movq	RSP(%r8), %rsp
@@ -208,6 +226,7 @@ virtual_mapped:
 	popq	%rbp
 	popq	%rbx
 	ret
+	int3
 
 	/* Do the copies */
 swap_pages:
@@ -263,6 +282,7 @@ swap_pages:
 	jmp	0b
 3:
 	ret
+	int3
 
 	.globl kexec_control_code_size
 .set kexec_control_code_size, . - relocate_kernel

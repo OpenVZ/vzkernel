@@ -120,13 +120,54 @@ static inline void setup_node_to_cpumask_map(void) { }
 extern const struct cpumask *cpu_coregroup_mask(int cpu);
 
 #ifdef ENABLE_TOPO_DEFINES
+#define topology_logical_package_id(cpu)	(rh_cpu_data(cpu).logical_proc_id)
 #define topology_physical_package_id(cpu)	(cpu_data(cpu).phys_proc_id)
+#define topology_logical_die_id(cpu)		(rh_cpu_data(cpu).logical_die_id)
+#define topology_die_id(cpu)			(rh_cpu_data(cpu).cpu_die_id)
 #define topology_core_id(cpu)			(cpu_data(cpu).cpu_core_id)
+#define topology_die_cpumask(cpu)		(per_cpu(cpu_die_map, cpu))
 #define topology_core_cpumask(cpu)		(per_cpu(cpu_core_map, cpu))
-#define topology_thread_cpumask(cpu)		(per_cpu(cpu_sibling_map, cpu))
+#define topology_sibling_cpumask(cpu)		(per_cpu(cpu_sibling_map, cpu))
 
 /* indicates that pointers to the topology cpumask_t maps are valid */
 #define arch_provides_topology_pointers		yes
+
+extern unsigned int __max_logical_packages;
+#define topology_max_packages()			(__max_logical_packages)
+
+extern unsigned int __max_die_per_package;
+
+static inline int topology_max_die_per_package(void)
+{
+	return __max_die_per_package;
+}
+
+extern int __max_smt_threads;
+
+static inline int topology_max_smt_threads(void)
+{
+	return __max_smt_threads;
+}
+
+int topology_update_package_map(unsigned int apicid, unsigned int cpu);
+int topology_update_die_map(unsigned int dieid, unsigned int cpu);
+int topology_phys_to_logical_pkg(unsigned int pkg);
+int topology_phys_to_logical_die(unsigned int die, unsigned int cpu);
+bool topology_is_primary_thread(unsigned int cpu);
+bool topology_smt_supported(void);
+#else
+#define topology_max_packages()			(1)
+static inline int
+topology_update_package_map(unsigned int apicid, unsigned int cpu) { return 0; }
+static inline int
+topology_update_die_map(unsigned int dieid, unsigned int cpu) { return 0; }
+static inline int topology_phys_to_logical_pkg(unsigned int pkg) { return 0; }
+static inline int topology_phys_to_logical_die(unsigned int die,
+		unsigned int cpu) { return 0; }
+static inline int topology_max_die_per_package(void) { return 1; }
+static inline int topology_max_smt_threads(void) { return 1; }
+static inline bool topology_is_primary_thread(unsigned int cpu) { return true; }
+static inline bool topology_smt_supported(void) { return false; }
 #endif
 
 static inline void arch_fix_phys_package_id(int num, u32 slot)
@@ -134,7 +175,38 @@ static inline void arch_fix_phys_package_id(int num, u32 slot)
 }
 
 struct pci_bus;
+int x86_pci_root_bus_node(int bus);
 void x86_pci_root_bus_resources(int bus, struct list_head *resources);
+
+#ifdef CONFIG_SCHED_MC_PRIO
+#include <asm/percpu.h>
+
+DECLARE_PER_CPU_READ_MOSTLY(int, sched_core_priority);
+extern unsigned int __read_mostly sysctl_sched_itmt_enabled;
+
+/* Interface to set priority of a cpu */
+void sched_set_itmt_core_prio(int prio, int core_cpu);
+
+/* Interface to notify scheduler that system supports ITMT */
+int sched_set_itmt_support(void);
+
+/* Interface to notify scheduler that system revokes ITMT support */
+void sched_clear_itmt_support(void);
+
+#else /* CONFIG_SCHED_MC_PRIO */
+
+#define sysctl_sched_itmt_enabled	0
+static inline void sched_set_itmt_core_prio(int prio, int core_cpu)
+{
+}
+static inline int sched_set_itmt_support(void)
+{
+	return 0;
+}
+static inline void sched_clear_itmt_support(void)
+{
+}
+#endif /* CONFIG_SCHED_MC_PRIO */
 
 #ifdef CONFIG_SMP
 #define mc_capable()	((boot_cpu_data.x86_max_cores > 1) && \
@@ -142,17 +214,5 @@ void x86_pci_root_bus_resources(int bus, struct list_head *resources);
 #define smt_capable()			(smp_num_siblings > 1)
 #endif
 
-#ifdef CONFIG_NUMA
-extern int get_mp_bus_to_node(int busnum);
-extern void set_mp_bus_to_node(int busnum, int node);
-#else
-static inline int get_mp_bus_to_node(int busnum)
-{
-	return 0;
-}
-static inline void set_mp_bus_to_node(int busnum, int node)
-{
-}
-#endif
-
+extern bool x86_topology_update;
 #endif /* _ASM_X86_TOPOLOGY_H */

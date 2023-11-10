@@ -973,7 +973,7 @@ static int nilfs_attach_snapshot(struct super_block *s, __u64 cno,
 
 static int nilfs_tree_was_touched(struct dentry *root_dentry)
 {
-	return root_dentry->d_count > 1;
+	return d_count(root_dentry) > 1;
 }
 
 /**
@@ -1403,7 +1403,8 @@ static int __init nilfs_init_cachep(void)
 {
 	nilfs_inode_cachep = kmem_cache_create("nilfs2_inode_cache",
 			sizeof(struct nilfs_inode_info), 0,
-			SLAB_RECLAIM_ACCOUNT, nilfs_inode_init_once);
+			SLAB_RECLAIM_ACCOUNT|SLAB_ACCOUNT,
+			nilfs_inode_init_once);
 	if (!nilfs_inode_cachep)
 		goto fail;
 

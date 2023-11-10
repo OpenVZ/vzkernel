@@ -135,6 +135,7 @@ my %text_sections = (
      ".spinlock.text" => 1,
      ".irqentry.text" => 1,
      ".kprobes.text" => 1,
+     ".cpuidle.text" => 1,
      ".text.unlikely" => 1,
 );
 
@@ -266,7 +267,8 @@ if ($arch eq "x86_64") {
 
 } elsif ($arch eq "powerpc") {
     $local_regex = "^[0-9a-fA-F]+\\s+t\\s+(\\.?\\S+)";
-    $function_regex = "^([0-9a-fA-F]+)\\s+<(\\.?.*?)>:";
+    # See comment in the sparc64 section for why we use '\w'.
+    $function_regex = "^([0-9a-fA-F]+)\\s+<(\\.?\\w*?)>:";
     $mcount_regex = "^\\s*([0-9a-fA-F]+):.*\\s\\.?_mcount\$";
 
     if ($bits == 64) {
@@ -460,7 +462,7 @@ sub update_funcs
 #
 # Step 2: find the sections and mcount call sites
 #
-open(IN, "$objdump -hdr $inputfile|") || die "error running $objdump";
+open(IN, "LANG=C $objdump -hdr $inputfile|") || die "error running $objdump";
 
 my $text;
 

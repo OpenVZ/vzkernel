@@ -36,6 +36,8 @@ bridge.txt
 	- where to get user space programs for ethernet bridging with Linux.
 can.txt
 	- documentation on CAN protocol family.
+checksum-offloads.txt
+	- Explanation of checksum offloads; LCO, RCO
 cops.txt
 	- info on the COPS LocalTalk Linux driver
 cs89x0.txt
@@ -62,6 +64,8 @@ dns_resolver.txt
 	- The DNS resolver module allows kernel servies to make DNS queries.
 driver.txt
 	- Softnet driver issues.
+ena.txt
+	- info on Amazon's Elastic Network Adapter (ENA)
 e100.txt
 	- info on Intel's EtherExpress PRO/100 line of 10/100 boards
 e1000.txt
@@ -86,6 +90,10 @@ generic_netlink.txt
 	- info on Generic Netlink
 gianfar.txt
 	- Gianfar Ethernet Driver.
+i40e.txt
+	- README for the Intel Ethernet Controller XL710 Driver (i40e).
+iavf.txt
+	- README for the Intel Ethernet Adaptive Virtual Function Driver (iavf).
 ieee802154.txt
 	- Linux IEEE 802.15.4 implementation, API and drivers
 ifenslave.c

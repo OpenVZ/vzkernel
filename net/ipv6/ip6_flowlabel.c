@@ -101,16 +101,21 @@ static struct ip6_flowlabel *fl_lookup(struct net *net, __be32 label)
 	return fl;
 }
 
+static void fl_free_rcu(struct rcu_head *head)
+{
+	struct ip6_flowlabel *fl = container_of(head, struct ip6_flowlabel, rcu);
+
+	if (fl->share == IPV6_FL_S_PROCESS)
+		put_pid(fl->owner.pid);
+	kfree(fl->opt);
+	kfree(fl);
+}
+
 
 static void fl_free(struct ip6_flowlabel *fl)
 {
-	if (fl) {
-		if (fl->share == IPV6_FL_S_PROCESS)
-			put_pid(fl->owner.pid);
-		release_net(fl->fl_net);
-		kfree(fl->opt);
-		kfree_rcu(fl, rcu);
-	}
+	if (fl)
+		call_rcu(&fl->rcu, fl_free_rcu);
 }
 
 static void fl_release(struct ip6_flowlabel *fl)
@@ -179,7 +184,7 @@ static void __net_exit ip6_fl_purge(struct net *net)
 {
 	int i;
 
-	spin_lock(&ip6_fl_lock);
+	spin_lock_bh(&ip6_fl_lock);
 	for (i = 0; i <= FL_HASH_MASK; i++) {
 		struct ip6_flowlabel *fl;
 		struct ip6_flowlabel __rcu **flp;
@@ -197,7 +202,7 @@ static void __net_exit ip6_fl_purge(struct net *net)
 			flp = &fl->next;
 		}
 	}
-	spin_unlock(&ip6_fl_lock);
+	spin_unlock_bh(&ip6_fl_lock);
 }
 
 static struct ip6_flowlabel *fl_intern(struct net *net,
@@ -210,7 +215,7 @@ static struct ip6_flowlabel *fl_intern(struct net *net,
 	spin_lock_bh(&ip6_fl_lock);
 	if (label == 0) {
 		for (;;) {
-			fl->label = htonl(net_random())&IPV6_FLOWLABEL_MASK;
+			fl->label = htonl(prandom_u32())&IPV6_FLOWLABEL_MASK;
 			if (fl->label) {
 				lfl = __fl_lookup(net, fl->label);
 				if (lfl == NULL)
@@ -407,7 +412,7 @@ fl_create(struct net *net, struct sock *sk, struct in6_flowlabel_req *freq,
 		}
 	}
 
-	fl->fl_net = hold_net(net);
+	fl->fl_net = net;
 	fl->expires = jiffies;
 	err = fl6_renew(fl, freq->flr_linger, freq->flr_expires);
 	if (err)
@@ -453,8 +458,10 @@ static int mem_check(struct sock *sk)
 	if (room > FL_MAX_SIZE - FL_MAX_PER_SOCK)
 		return 0;
 
+	rcu_read_lock_bh();
 	for_each_sk_fl_rcu(np, sfl)
 		count++;
+	rcu_read_unlock_bh();
 
 	if (room <= 0 ||
 	    ((count >= FL_MAX_PER_SOCK ||
@@ -463,34 +470,6 @@ static int mem_check(struct sock *sk)
 		return -ENOBUFS;
 
 	return 0;
-}
-
-static bool ipv6_hdr_cmp(struct ipv6_opt_hdr *h1, struct ipv6_opt_hdr *h2)
-{
-	if (h1 == h2)
-		return false;
-	if (h1 == NULL || h2 == NULL)
-		return true;
-	if (h1->hdrlen != h2->hdrlen)
-		return true;
-	return memcmp(h1+1, h2+1, ((h1->hdrlen+1)<<3) - sizeof(*h1));
-}
-
-static bool ipv6_opt_cmp(struct ipv6_txoptions *o1, struct ipv6_txoptions *o2)
-{
-	if (o1 == o2)
-		return false;
-	if (o1 == NULL || o2 == NULL)
-		return true;
-	if (o1->opt_nflen != o2->opt_nflen)
-		return true;
-	if (ipv6_hdr_cmp(o1->hopopt, o2->hopopt))
-		return true;
-	if (ipv6_hdr_cmp(o1->dst0opt, o2->dst0opt))
-		return true;
-	if (ipv6_hdr_cmp((struct ipv6_opt_hdr *)o1->srcrt, (struct ipv6_opt_hdr *)o2->srcrt))
-		return true;
-	return false;
 }
 
 static inline void fl_link(struct ipv6_pinfo *np, struct ipv6_fl_socklist *sfl,
@@ -525,12 +504,13 @@ int ipv6_flowlabel_opt(struct sock *sk, char __user *optval, int optlen)
 	case IPV6_FL_A_PUT:
 		spin_lock_bh(&ip6_sk_fl_lock);
 		for (sflp = &np->ipv6_fl_list;
-		     (sfl = rcu_dereference(*sflp))!=NULL;
+		     (sfl = rcu_dereference_protected(*sflp,
+						      lockdep_is_held(&ip6_sk_fl_lock))) != NULL;
 		     sflp = &sfl->next) {
 			if (sfl->fl->label == freq.flr_label) {
 				if (freq.flr_label == (np->flow_label&IPV6_FLOWLABEL_MASK))
 					np->flow_label &= ~IPV6_FLOWLABEL_MASK;
-				*sflp = rcu_dereference(sfl->next);
+				*sflp = sfl->next;
 				spin_unlock_bh(&ip6_sk_fl_lock);
 				fl_release(sfl->fl);
 				kfree_rcu(sfl, rcu);
@@ -601,11 +581,6 @@ recheck:
 				     (fl1->owner.pid == fl->owner.pid)) ||
 				    ((fl1->share == IPV6_FL_S_USER) &&
 				     uid_eq(fl1->owner.uid, fl->owner.uid)))
-					goto release;
-
-				err = -EINVAL;
-				if (!ipv6_addr_equal(&fl1->dst, &fl->dst) ||
-				    ipv6_opt_cmp(fl1->opt, fl->opt))
 					goto release;
 
 				err = -ENOMEM;

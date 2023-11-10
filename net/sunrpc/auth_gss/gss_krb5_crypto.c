@@ -34,6 +34,7 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#include <crypto/algapi.h>
 #include <linux/err.h>
 #include <linux/types.h>
 #include <linux/mm.h>
@@ -45,7 +46,7 @@
 #include <linux/sunrpc/gss_krb5.h>
 #include <linux/sunrpc/xdr.h>
 
-#ifdef RPC_DEBUG
+#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
 # define RPCDBG_FACILITY        RPCDBG_AUTH
 #endif
 
@@ -154,8 +155,8 @@ make_checksum_hmac_md5(struct krb5_ctx *kctx, char *header, int hdrlen,
 {
 	struct hash_desc                desc;
 	struct scatterlist              sg[1];
-	int err;
-	u8 checksumdata[GSS_KRB5_MAX_CKSUM_LEN];
+	int err = -1;
+	u8 *checksumdata;
 	u8 rc4salt[4];
 	struct crypto_hash *md5;
 	struct crypto_hash *hmac_md5;
@@ -174,16 +175,18 @@ make_checksum_hmac_md5(struct krb5_ctx *kctx, char *header, int hdrlen,
 		return GSS_S_FAILURE;
 	}
 
-	md5 = crypto_alloc_hash("md5", 0, CRYPTO_ALG_ASYNC);
-	if (IS_ERR(md5))
+	checksumdata = kmalloc(GSS_KRB5_MAX_CKSUM_LEN, GFP_NOFS);
+	if (!checksumdata)
 		return GSS_S_FAILURE;
 
+	md5 = crypto_alloc_hash("md5", 0, CRYPTO_ALG_ASYNC);
+	if (IS_ERR(md5))
+		goto out_free_cksum;
+
 	hmac_md5 = crypto_alloc_hash(kctx->gk5e->cksum_name, 0,
-				     CRYPTO_ALG_ASYNC);
-	if (IS_ERR(hmac_md5)) {
-		crypto_free_hash(md5);
-		return GSS_S_FAILURE;
-	}
+				      CRYPTO_ALG_ASYNC);
+	if (IS_ERR(hmac_md5))
+		goto out_free_md5;
 
 	desc.tfm = md5;
 	desc.flags = CRYPTO_TFM_REQ_MAY_SLEEP;
@@ -227,8 +230,11 @@ make_checksum_hmac_md5(struct krb5_ctx *kctx, char *header, int hdrlen,
 	memcpy(cksumout->data, checksumdata, kctx->gk5e->cksumlength);
 	cksumout->len = kctx->gk5e->cksumlength;
 out:
-	crypto_free_hash(md5);
 	crypto_free_hash(hmac_md5);
+out_free_md5:
+	crypto_free_hash(md5);
+out_free_cksum:
+	kfree(checksumdata);
 	return err ? GSS_S_FAILURE : 0;
 }
 
@@ -244,8 +250,8 @@ make_checksum(struct krb5_ctx *kctx, char *header, int hdrlen,
 {
 	struct hash_desc                desc;
 	struct scatterlist              sg[1];
-	int err;
-	u8 checksumdata[GSS_KRB5_MAX_CKSUM_LEN];
+	int err = -1;
+	u8 *checksumdata;
 	unsigned int checksumlen;
 
 	if (kctx->gk5e->ctype == CKSUMTYPE_HMAC_MD5_ARCFOUR)
@@ -259,9 +265,13 @@ make_checksum(struct krb5_ctx *kctx, char *header, int hdrlen,
 		return GSS_S_FAILURE;
 	}
 
+	checksumdata = kmalloc(GSS_KRB5_MAX_CKSUM_LEN, GFP_NOFS);
+	if (checksumdata == NULL)
+		return GSS_S_FAILURE;
+
 	desc.tfm = crypto_alloc_hash(kctx->gk5e->cksum_name, 0, CRYPTO_ALG_ASYNC);
 	if (IS_ERR(desc.tfm))
-		return GSS_S_FAILURE;
+		goto out_free_cksum;
 	desc.flags = CRYPTO_TFM_REQ_MAY_SLEEP;
 
 	checksumlen = crypto_hash_digestsize(desc.tfm);
@@ -308,6 +318,8 @@ make_checksum(struct krb5_ctx *kctx, char *header, int hdrlen,
 	cksumout->len = kctx->gk5e->cksumlength;
 out:
 	crypto_free_hash(desc.tfm);
+out_free_cksum:
+	kfree(checksumdata);
 	return err ? GSS_S_FAILURE : 0;
 }
 
@@ -325,9 +337,8 @@ make_checksum_v2(struct krb5_ctx *kctx, char *header, int hdrlen,
 {
 	struct hash_desc desc;
 	struct scatterlist sg[1];
-	int err;
-	u8 checksumdata[GSS_KRB5_MAX_CKSUM_LEN];
-	unsigned int checksumlen;
+	int err = -1;
+	u8 *checksumdata;
 
 	if (kctx->gk5e->keyed_cksum == 0) {
 		dprintk("%s: expected keyed hash for %s\n",
@@ -340,11 +351,14 @@ make_checksum_v2(struct krb5_ctx *kctx, char *header, int hdrlen,
 		return GSS_S_FAILURE;
 	}
 
+	checksumdata = kmalloc(GSS_KRB5_MAX_CKSUM_LEN, GFP_NOFS);
+	if (!checksumdata)
+		return GSS_S_FAILURE;
+
 	desc.tfm = crypto_alloc_hash(kctx->gk5e->cksum_name, 0,
 							CRYPTO_ALG_ASYNC);
 	if (IS_ERR(desc.tfm))
-		return GSS_S_FAILURE;
-	checksumlen = crypto_hash_digestsize(desc.tfm);
+		goto out_free_cksum;
 	desc.flags = CRYPTO_TFM_REQ_MAY_SLEEP;
 
 	err = crypto_hash_setkey(desc.tfm, cksumkey, kctx->gk5e->keylength);
@@ -382,6 +396,8 @@ make_checksum_v2(struct krb5_ctx *kctx, char *header, int hdrlen,
 	}
 out:
 	crypto_free_hash(desc.tfm);
+out_free_cksum:
+	kfree(checksumdata);
 	return err ? GSS_S_FAILURE : 0;
 }
 
@@ -600,14 +616,17 @@ gss_krb5_cts_crypt(struct crypto_blkcipher *cipher, struct xdr_buf *buf,
 	u32 ret;
 	struct scatterlist sg[1];
 	struct blkcipher_desc desc = { .tfm = cipher, .info = iv };
-	u8 data[GSS_KRB5_MAX_BLOCKSIZE * 2];
+	u8 *data;
 	struct page **save_pages;
 	u32 len = buf->len - offset;
 
-	if (len > ARRAY_SIZE(data)) {
+	if (len > GSS_KRB5_MAX_BLOCKSIZE * 2) {
 		WARN_ON(0);
 		return -ENOMEM;
 	}
+	data = kmalloc(GSS_KRB5_MAX_BLOCKSIZE * 2, GFP_NOFS);
+	if (!data)
+		return -ENOMEM;
 
 	/*
 	 * For encryption, we want to read from the cleartext
@@ -636,12 +655,13 @@ gss_krb5_cts_crypt(struct crypto_blkcipher *cipher, struct xdr_buf *buf,
 	ret = write_bytes_to_xdr_buf(buf, offset, data, len);
 
 out:
+	kfree(data);
 	return ret;
 }
 
 u32
 gss_krb5_aes_encrypt(struct krb5_ctx *kctx, u32 offset,
-		     struct xdr_buf *buf, int ec, struct page **pages)
+		     struct xdr_buf *buf, struct page **pages)
 {
 	u32 err;
 	struct xdr_netobj hmac;
@@ -684,13 +704,8 @@ gss_krb5_aes_encrypt(struct krb5_ctx *kctx, u32 offset,
 		ecptr = buf->tail[0].iov_base;
 	}
 
-	memset(ecptr, 'X', ec);
-	buf->tail[0].iov_len += ec;
-	buf->len += ec;
-
 	/* copy plaintext gss token header after filler (if any) */
-	memcpy(ecptr + ec, buf->head[0].iov_base + offset,
-						GSS_KRB5_TOK_HDR_LEN);
+	memcpy(ecptr, buf->head[0].iov_base + offset, GSS_KRB5_TOK_HDR_LEN);
 	buf->tail[0].iov_len += GSS_KRB5_TOK_HDR_LEN;
 	buf->len += GSS_KRB5_TOK_HDR_LEN;
 
@@ -838,7 +853,7 @@ gss_krb5_aes_decrypt(struct krb5_ctx *kctx, u32 offset, struct xdr_buf *buf,
 	if (ret)
 		goto out_err;
 
-	if (memcmp(pkt_hmac, our_hmac, kctx->gk5e->cksumlength) != 0) {
+	if (crypto_memneq(pkt_hmac, our_hmac, kctx->gk5e->cksumlength) != 0) {
 		ret = GSS_S_BAD_SIG;
 		goto out_err;
 	}
@@ -886,9 +901,7 @@ krb5_rc4_setup_seq_key(struct krb5_ctx *kctx, struct crypto_blkcipher *cipher,
 	if (err)
 		goto out_err;
 
-	sg_init_table(sg, 1);
-	sg_set_buf(sg, &zeroconstant, 4);
-
+	sg_init_one(sg, &zeroconstant, 4);
 	err = crypto_hash_digest(&desc, sg, 4, Kseq);
 	if (err)
 		goto out_err;
@@ -956,9 +969,7 @@ krb5_rc4_setup_enc_key(struct krb5_ctx *kctx, struct crypto_blkcipher *cipher,
 	if (err)
 		goto out_err;
 
-	sg_init_table(sg, 1);
-	sg_set_buf(sg, zeroconstant, 4);
-
+	sg_init_one(sg, zeroconstant, 4);
 	err = crypto_hash_digest(&desc, sg, 4, Kcrypt);
 	if (err)
 		goto out_err;

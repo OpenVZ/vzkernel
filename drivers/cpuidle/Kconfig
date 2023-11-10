@@ -1,7 +1,9 @@
 
-config CPU_IDLE
+menuconfig CPU_IDLE
 	bool "CPU idle PM support"
 	default y if ACPI || PPC_PSERIES
+	select CPU_IDLE_GOV_LADDER if (!NO_HZ && !NO_HZ_IDLE)
+	select CPU_IDLE_GOV_MENU if (NO_HZ || NO_HZ_IDLE)
 	help
 	  CPU idle is a generic framework for supporting software-controlled
 	  idle processor power management.  It includes modular cross-platform
@@ -9,9 +11,10 @@ config CPU_IDLE
 
 	  If you're using an ACPI-enabled platform, you should say Y here.
 
+if CPU_IDLE
+
 config CPU_IDLE_MULTIPLE_DRIVERS
         bool "Support multiple cpuidle drivers"
-        depends on CPU_IDLE
         default n
         help
          Allows the cpuidle framework to use different drivers for each CPU.
@@ -19,19 +22,23 @@ config CPU_IDLE_MULTIPLE_DRIVERS
          states. If unsure say N.
 
 config CPU_IDLE_GOV_LADDER
-	bool
-	depends on CPU_IDLE
+	bool "Ladder governor (for periodic timer tick)"
 	default y
 
 config CPU_IDLE_GOV_MENU
-	bool
-	depends on CPU_IDLE && NO_HZ
+	bool "Menu governor (for tickless system)"
 	default y
 
-config ARCH_NEEDS_CPU_IDLE_COUPLED
-	def_bool n
+config CPU_IDLE_GOV_HALTPOLL
+       bool "Haltpoll governor (for virtualized systems)"
+       depends on X86 && KVM_GUEST
+       help
+         This governor implements haltpoll idle state selection, to be
+         used in conjunction with the haltpoll cpuidle driver, allowing
+         for polling for a certain amount of time before entering idle
+         state.
 
-if CPU_IDLE
+         Some virtualized workloads benefit from using it.
 
 config CPU_IDLE_CALXEDA
 	bool "CPU Idle Driver for Calxeda processors"
@@ -39,4 +46,21 @@ config CPU_IDLE_CALXEDA
 	help
 	  Select this to enable cpuidle on Calxeda processors.
 
+menu "POWERPC CPU Idle Drivers"
+depends on PPC
+source "drivers/cpuidle/Kconfig.powerpc"
+endmenu
+
+config HALTPOLL_CPUIDLE
+       tristate "Halt poll cpuidle driver"
+       depends on X86 && KVM_GUEST
+       default y
+       help
+         This option enables halt poll cpuidle driver, which allows to poll
+         before halting in the guest (more efficient than polling in the
+         host via halt_poll_ns for some scenarios).
+
 endif
+
+config ARCH_NEEDS_CPU_IDLE_COUPLED
+	def_bool n

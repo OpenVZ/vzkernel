@@ -103,7 +103,7 @@ static int cpts_fifo_read(struct cpts *cpts, int match)
 	return type == match ? 0 : -1;
 }
 
-static cycle_t cpts_systim_read(const struct cyclecounter *cc)
+static u64 cpts_systim_read(const struct cyclecounter *cc)
 {
 	u64 val = 0;
 	struct cpts_event *event;
@@ -217,6 +217,7 @@ static struct ptp_clock_info cpts_info = {
 	.name		= "CTPS timer",
 	.max_adj	= 1000000,
 	.n_ext_ts	= 0,
+	.n_pins		= 0,
 	.pps		= 0,
 	.adjfreq	= cpts_ptp_adjfreq,
 	.adjtime	= cpts_ptp_adjtime,

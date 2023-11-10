@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * cfg80211 debugfs
  *
  * Copyright 2009	Luis R. Rodriguez <lrodriguez@atheros.com>
  * Copyright 2007	Johannes Berg <johannes@sipsolutions.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/slab.h>
@@ -17,7 +14,7 @@
 static ssize_t name## _read(struct file *file, char __user *userbuf,	\
 			    size_t count, loff_t *ppos)			\
 {									\
-	struct wiphy *wiphy= file->private_data;		\
+	struct wiphy *wiphy = file->private_data;			\
 	char buf[buflen];						\
 	int res;							\
 									\
@@ -29,14 +26,14 @@ static const struct file_operations name## _ops = {			\
 	.read = name## _read,						\
 	.open = simple_open,						\
 	.llseek = generic_file_llseek,					\
-};
+}
 
 DEBUGFS_READONLY_FILE(rts_threshold, 20, "%d",
-		      wiphy->rts_threshold)
+		      wiphy->rts_threshold);
 DEBUGFS_READONLY_FILE(fragmentation_threshold, 20, "%d",
 		      wiphy->frag_threshold);
 DEBUGFS_READONLY_FILE(short_retry_limit, 20, "%d",
-		      wiphy->retry_short)
+		      wiphy->retry_short);
 DEBUGFS_READONLY_FILE(long_retry_limit, 20, "%d",
 		      wiphy->retry_long);
 
@@ -47,17 +44,19 @@ static int ht_print_chan(struct ieee80211_channel *chan,
 		return 0;
 
 	if (chan->flags & IEEE80211_CHAN_DISABLED)
-		return snprintf(buf + offset,
-				buf_size - offset,
-				"%d Disabled\n",
-				chan->center_freq);
+		return scnprintf(buf + offset,
+				 buf_size - offset,
+				 "%d Disabled\n",
+				 chan->center_freq);
 
-	return snprintf(buf + offset,
-			buf_size - offset,
-			"%d HT40 %c%c\n",
-			chan->center_freq,
-			(chan->flags & IEEE80211_CHAN_NO_HT40MINUS) ? ' ' : '-',
-			(chan->flags & IEEE80211_CHAN_NO_HT40PLUS)  ? ' ' : '+');
+	return scnprintf(buf + offset,
+			 buf_size - offset,
+			 "%d HT40 %c%c\n",
+			 chan->center_freq,
+			 (chan->flags & IEEE80211_CHAN_NO_HT40MINUS) ?
+				' ' : '-',
+			 (chan->flags & IEEE80211_CHAN_NO_HT40PLUS) ?
+				' ' : '+');
 }
 
 static ssize_t ht40allow_map_read(struct file *file,
@@ -67,16 +66,16 @@ static ssize_t ht40allow_map_read(struct file *file,
 	struct wiphy *wiphy = file->private_data;
 	char *buf;
 	unsigned int offset = 0, buf_size = PAGE_SIZE, i, r;
-	enum ieee80211_band band;
+	enum nl80211_band band;
 	struct ieee80211_supported_band *sband;
 
 	buf = kzalloc(buf_size, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	mutex_lock(&cfg80211_mutex);
+	rtnl_lock();
 
-	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
+	for (band = 0; band < NUM_NL80211_BANDS; band++) {
 		sband = wiphy->bands[band];
 		if (!sband)
 			continue;
@@ -85,7 +84,7 @@ static ssize_t ht40allow_map_read(struct file *file,
 						buf, buf_size, offset);
 	}
 
-	mutex_unlock(&cfg80211_mutex);
+	rtnl_unlock();
 
 	r = simple_read_from_buffer(user_buf, count, ppos, buf, offset);
 
@@ -101,7 +100,7 @@ static const struct file_operations ht40allow_map_ops = {
 };
 
 #define DEBUGFS_ADD(name)						\
-	debugfs_create_file(#name, S_IRUGO, phyd, &rdev->wiphy, &name## _ops);
+	debugfs_create_file(#name, 0444, phyd, &rdev->wiphy, &name## _ops)
 
 void cfg80211_debugfs_rdev_add(struct cfg80211_registered_device *rdev)
 {

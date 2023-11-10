@@ -118,15 +118,15 @@
 
 /* Maximum object reference count (detects object deletion issues) */
 
-#define ACPI_MAX_REFERENCE_COUNT        0x1000
+#define ACPI_MAX_REFERENCE_COUNT        0x4000
 
 /* Default page size for use in mapping memory for operation regions */
 
 #define ACPI_DEFAULT_PAGE_SIZE          4096	/* Must be power of 2 */
 
-/* owner_id tracking. 8 entries allows for 255 owner_ids */
+/* owner_id tracking. 128 entries allows for 4095 owner_ids */
 
-#define ACPI_NUM_OWNERID_MASKS          8
+#define ACPI_NUM_OWNERID_MASKS          128
 
 /* Size of the root table array is increased by this increment */
 
@@ -219,8 +219,8 @@
  *
  *****************************************************************************/
 
-#define ACPI_DEBUGGER_MAX_ARGS          8	/* Must be max method args + 1 */
-#define ACPI_DB_LINE_BUFFER_SIZE	512
+#define ACPI_DEBUGGER_MAX_ARGS          ACPI_METHOD_NUM_ARGS + 4	/* Max command line arguments */
+#define ACPI_DB_LINE_BUFFER_SIZE        512
 
 #define ACPI_DEBUGGER_COMMAND_PROMPT    '-'
 #define ACPI_DEBUGGER_EXECUTE_PROMPT    '%'
