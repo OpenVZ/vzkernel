@@ -54,6 +54,14 @@ MODULE_PARM_DESC(max_user_congthresh,
  "Global limit for the maximum congestion threshold an "
  "unprivileged user can set");
 
+unsigned int fuse_qhash_size = 16;
+module_param(fuse_qhash_size, uint, 0600);
+MODULE_PARM_DESC(fuse_qhash_size, "Number of qhash buckets, must be power of 2");
+
+unsigned int fuse_qhash_bucket_len = 256;
+module_param(fuse_qhash_bucket_len, uint, 0600);
+MODULE_PARM_DESC(fuse_qhash_bucket_len, "Limit of a qhash bucket");
+
 #define FUSE_SUPER_MAGIC 0x65735546
 
 #define FUSE_DEFAULT_BLKSIZE 512
