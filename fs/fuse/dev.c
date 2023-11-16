@@ -367,7 +367,7 @@ void __fuse_request_end( struct fuse_req *req, bool flush_bg)
 
 		bg = true;
 
-		if (atomic_dec_return(&fc->qhash[bkt].num_reqs) < ((2*fc->max_background) / FUSE_QHASH_SIZE)) {
+		if (atomic_dec_return(&fc->qhash[bkt].num_reqs) < fuse_qhash_bucket_len) {
 			if (waitqueue_active(&fc->qhash[bkt].waitq))
 				wake_up(&fc->qhash[bkt].waitq);
 		}
@@ -631,8 +631,7 @@ static int fuse_request_queue_background(struct fuse_req *req)
 			__clear_bit(FR_BACKGROUND, &req->flags);
 			__set_bit(FR_NO_ACCT, &req->flags);
 			if (wait_event_killable_exclusive(fc->qhash[bkt].waitq,
-							  (atomic_read(&fc->qhash[bkt].num_reqs) <
-							   ((2 * fc->max_background) / FUSE_QHASH_SIZE) ||
+							  (atomic_read(&fc->qhash[bkt].num_reqs) < fuse_qhash_bucket_len ||
 							   !READ_ONCE(fc->connected) ||
 							   (ff && test_bit(FUSE_S_FAIL_IMMEDIATELY, &ff->ff_state)))))
 				return -EIO;

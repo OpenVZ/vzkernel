@@ -651,7 +651,7 @@ struct fuse_kio_ops {
 int fuse_register_kio(struct fuse_kio_ops *ops);
 void fuse_unregister_kio(struct fuse_kio_ops *ops);
 
-#define FUSE_QHASH_SIZE 64
+#define FUSE_QHASH_SIZE 128
 
 #include <linux/jhash.h>
 
@@ -668,9 +668,11 @@ static inline unsigned int fuse_qhash_bucket(struct fuse_args * args)
 	return jhash_2words(val & 0xFFFFFFFFU, val >> 32, 0) & (FUSE_QHASH_SIZE - 1);
 }
 #else
+extern unsigned int fuse_qhash_size;
+extern unsigned int fuse_qhash_bucket_len;
 static inline unsigned int fuse_qhash_bucket(void)
 {
-	return jhash_1word(current->pid, 0) & (FUSE_QHASH_SIZE - 1);
+	return jhash_1word(current->pid, 0) & (FUSE_QHASH_SIZE - 1) & (fuse_qhash_size - 1);
 }
 #endif
 
