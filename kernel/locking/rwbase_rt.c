@@ -103,6 +103,8 @@ static int __sched __rwbase_read_lock(struct rwbase_rt *rwb,
 	 * Reader2 to call up_read(), which might be unbound.
 	 */
 
+	trace_contention_begin(rwb, LCB_F_RT | LCB_F_READ);
+
 	/*
 	 * For rwlocks this returns 0 unconditionally, so the below
 	 * !ret conditionals are optimized out.
@@ -121,16 +123,31 @@ static int __sched __rwbase_read_lock(struct rwbase_rt *rwb,
 	raw_spin_unlock_irq(&rtm->wait_lock);
 	if (!ret)
 		rwbase_rtmutex_unlock(rtm);
+
+	trace_contention_end(rwb, ret);
 	return ret;
 }
 
 static __always_inline int rwbase_read_lock(struct rwbase_rt *rwb,
 					    unsigned int state)
 {
+	int ret;
+
+	lockdep_assert(!current->pi_blocked_on);
+
 	if (rwbase_read_trylock(rwb))
 		return 0;
 
-	return __rwbase_read_lock(rwb, state);
+	/*
+	 * The task is about to sleep. For rwsems this submits work as that
+	 * might take locks and corrupt tsk::pi_blocked_on. Must be
+	 * explicit here because __rwbase_read_lock() cannot invoke
+	 * rt_mutex_slowlock(). NOP for rwlocks.
+	 */
+	rwbase_sched_submit_work();
+	ret = __rwbase_read_lock(rwb, state);
+	rwbase_sched_resume_work();
+	return ret;
 }
 
 static void __sched __rwbase_read_unlock(struct rwbase_rt *rwb,
@@ -226,7 +243,10 @@ static int __sched rwbase_write_lock(struct rwbase_rt *rwb,
 	struct rt_mutex_base *rtm = &rwb->rtmutex;
 	unsigned long flags;
 
-	/* Take the rtmutex as a first step */
+	/*
+	 * Take the rtmutex as a first step. For rwsem this will also
+	 * invoke sched_submit_work() to flush IO and workers.
+	 */
 	if (rwbase_rtmutex_lock_state(rtm, state))
 		return -EINTR;
 
@@ -238,11 +258,13 @@ static int __sched rwbase_write_lock(struct rwbase_rt *rwb,
 		goto out_unlock;
 
 	rwbase_set_and_save_current_state(state);
+	trace_contention_begin(rwb, LCB_F_RT | LCB_F_WRITE);
 	for (;;) {
 		/* Optimized out for rwlocks */
 		if (rwbase_signal_pending_state(state, current)) {
 			rwbase_restore_current_state();
 			__rwbase_write_unlock(rwb, 0, flags);
+			trace_contention_end(rwb, -EINTR);
 			return -EINTR;
 		}
 
@@ -256,6 +278,7 @@ static int __sched rwbase_write_lock(struct rwbase_rt *rwb,
 		set_current_state(state);
 	}
 	rwbase_restore_current_state();
+	trace_contention_end(rwb, 0);
 
 out_unlock:
 	raw_spin_unlock_irqrestore(&rtm->wait_lock, flags);
