@@ -130,6 +130,8 @@ static void rio_abort(struct pcs_rdmaio *rio, int error);
 static void rio_rx_done(struct rio_cqe *cqe, bool sync_mode);
 static void rio_tx_done(struct rio_cqe *cqe, bool sync_mode);
 static void rio_tx_err_occured(struct rio_cqe *cqe, bool sync_mode);
+static int rio_submit(struct pcs_rdmaio *rio, struct pcs_msg *msg, int type, u64 xid, int status,
+		      bool allow_again);
 
 /* Only called when rio->write_queue is not empty */
 static struct pcs_msg *rio_dequeue_msg(struct pcs_rdmaio *rio)
@@ -424,6 +426,10 @@ static int rio_submit_rdma_read(struct pcs_rdmaio *rio, struct pcs_msg *msg,
 	struct pcs_rdma_device *dev = rio->dev;
 	struct rio_tx *tx;
 
+	/* Blocked until after pending RDMA_READ_ACKs are sent out to keep ACK in order */
+	if (rio->n_rdma_read_ack_pending)
+		return -EAGAIN;
+
 	tx = RE_NULL(rio_get_tx(dev));
 	if (!tx) {
 		if (allow_again)
@@ -467,6 +473,8 @@ fallback:
 		}
 	}
 
+	rio->n_rdma_read_ongoing++;
+
 	return 0;
 
 fail:
@@ -476,6 +484,21 @@ fail:
 	rio_abort(rio, PCS_ERR_NET_ABORT);
 
 	return -EIO;
+}
+
+static int rio_submit_rdma_read_ack(struct pcs_rdmaio *rio,  u64 xid)
+{
+	int ret;
+
+	/* Can only be sent after all ongoing RDMA_READ_REQs complete to keep ack in order */
+	if (rio->n_rdma_read_ongoing)
+		return -EAGAIN;
+
+	ret = rio_submit(rio, NULL, SUBMIT_RDMA_READ_ACK, xid, 0, true);
+	if (!ret)
+		rio->n_rdma_read_ack_pending--;
+
+	return ret;
 }
 
 static int rio_rdma_read_job_work(struct rio_job *j)
@@ -488,8 +511,16 @@ static int rio_rdma_read_job_work(struct rio_job *j)
 		return 0;
 	}
 
-	return rio_submit_rdma_read(rio, job->msg, job->offset,
-				    &job->rb, true);
+	/*
+	 * Return RDMA_READ_ACK directly if the original request msg had been
+	 * killed, however must wait until all previous RDMA_READ_REQs have
+	 * been acked.
+	 */
+	if (job->msg == PCS_TRASH_MSG)
+		return rio_submit_rdma_read_ack(rio, job->rb.xid);
+	else
+		return rio_submit_rdma_read(rio, job->msg, job->offset,
+					    &job->rb, true);
 }
 
 static void rio_rdma_read_job_destroy(struct rio_job *j)
@@ -766,6 +797,7 @@ static void rio_handle_tx(struct pcs_rdmaio *rio, struct rio_tx *tx, int ok)
 		case TX_SUBMIT_RDMA_READ_ACK:
 			rio_put_tx(rio->dev, tx);
 			rio_submit(rio, NULL, SUBMIT_RDMA_READ_ACK, xid, !ok, false);
+			rio->n_rdma_read_ongoing--;
 			break;
 		case TX_WAIT_FOR_TX_COMPL:
 		case TX_WAIT_FOR_READ_ACK:
@@ -798,6 +830,7 @@ static int rio_handle_rx_immediate(struct pcs_rdmaio *rio, char *buf, int len,
 	u32 msg_size;
 	int offset = rio->hdr_size;
 	struct iov_iter it;
+	struct rio_rdma_read_job *job;
 
 	if (rio->throttled) {
 		*throttle = 1;
@@ -820,6 +853,22 @@ static int rio_handle_rx_immediate(struct pcs_rdmaio *rio, char *buf, int len,
 		return err;
 	} else if (msg == PCS_TRASH_MSG) {
 		TRACE("rio drop trash msg: %u, rio: 0x%p\n", msg_size, rio);
+		/*
+		 * We must Ack every RDMA_READ_REQ received from our peer in
+		 * order even it's going to be dropped.
+		 * Missing ack will result in out of order ACK to our peer,
+		 * which will cause it to crash.
+		 * So we setup a job to ack this msg however it can only be
+		 * sent out after all ongoing RDMA READ completes and will
+		 * block future RDMA READ being issued.
+		 */
+		if (rb) {
+			job = rio_rdma_read_job_alloc(rio, msg, 0, rb);
+			if (!job)
+				return PCS_ERR_NOMEM;
+			rio_post_tx_job(rio, &job->job);
+			rio->n_rdma_read_ack_pending++;
+		}
 		return 0;
 	}
 
@@ -852,12 +901,10 @@ static int rio_handle_rx_immediate(struct pcs_rdmaio *rio, char *buf, int len,
 	if (len == msg->size) {
 		msg->done(msg);
 	} else if (rio_submit_rdma_read(rio, msg, offset, rb, true) == -EAGAIN) {
-		struct rio_rdma_read_job *job;
 		job = rio_rdma_read_job_alloc(rio, msg, offset, rb);
 		if (!job)
-			rio_submit_rdma_read(rio, msg, offset, rb, false);
-		else
-			rio_post_tx_job(rio, &job->job);
+			return PCS_ERR_NOMEM;
+		rio_post_tx_job(rio, &job->job);
 	}
 
 	return 0;
@@ -1227,6 +1274,9 @@ struct pcs_rdmaio* pcs_rdma_create(int hdr_size, struct rdma_cm_id *cmid,
 	rio->n_reserved_credits = queue_depth;
 	rio->n_os_credits = 0;
 	rio->n_th_credits = queue_depth / 2;
+
+	rio->n_rdma_read_ongoing = 0;
+	rio->n_rdma_read_ack_pending = 0;
 
 	rio->cmid = cmid;
 
