@@ -2877,7 +2877,7 @@ static int commit_sync_info(struct pcs_int_request *req,
 			int idx;
 			clear_bit(CS_SF_REPLICATING, &csl->cs[read_idx].cslink.cs->state);
 			clear_bit(read_idx, &csl->blacklist);
-			for (idx = csl->nsrv - 1; idx >= 0; idx++) {
+			for (idx = csl->nsrv - 1; idx >= 0; idx--) {
 				if (test_bit(CS_SF_REPLICATING, &csl->cs[idx].cslink.cs->state))
 					break;
 			}
