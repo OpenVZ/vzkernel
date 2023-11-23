@@ -90,6 +90,9 @@ struct pcs_rdmaio
 	int n_th_credits;   /* threshold: when to return outstanding
 			     * credits urgently */
 
+	int n_rdma_read_ongoing;	/* number of ongoing RDMA_READ. */
+	int n_rdma_read_ack_pending;	/* number of RDMA_READ_ACK to be submitted */
+
 	struct pcs_rdma_device *dev;
 	struct rdma_cm_id *cmid;
 	struct ib_cq *cq;
