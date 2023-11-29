@@ -232,6 +232,18 @@ extern unsigned int cs_enable_fanout;
 
 void cslist_destroy(struct pcs_cs_list * csl);
 
+/* Return:
+ * - true if refcnt incrementation is successful;
+ * - false if refcnt is equal to 0, it indicates that the cslist has been dropped
+ *   and it is not safe to use it without acquiring the cs->lock
+ */
+static inline bool try_cslist_get(struct pcs_cs_list *csl)
+{
+	TRACE("csl:%p csl->map:%p refcnt:%d\n", csl, csl->map, atomic_read(&csl->refcnt));
+
+	return atomic_inc_not_zero(&csl->refcnt);
+}
+
 static inline void cslist_get(struct pcs_cs_list * csl)
 {
 	TRACE("csl:%p csl->map:%p refcnt:%d\n", csl, csl->map, atomic_read(&csl->refcnt));
