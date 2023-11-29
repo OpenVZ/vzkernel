@@ -236,7 +236,7 @@ static inline void cslist_get(struct pcs_cs_list * csl)
 {
 	TRACE("csl:%p csl->map:%p refcnt:%d\n", csl, csl->map, atomic_read(&csl->refcnt));
 
-	atomic_inc(&csl->refcnt);
+	BUG_ON(!atomic_inc_not_zero(&csl->refcnt));
 }
 
 static inline void cslist_put(struct pcs_cs_list * csl)
