@@ -294,7 +294,8 @@ again:
 		list_move(&cs_link->link, &map_list);
 
 		cs_list = cs_link_to_cs_list(cs_link);
-		cslist_get(cs_list);
+		if (!try_cslist_get(cs_list))
+			continue;
 		spin_unlock(&cs->lock);
 
 		rcu_read_lock();
