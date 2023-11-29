@@ -766,8 +766,11 @@ void pcs_map_notify_addr_change(struct pcs_cs * cs)
 		 * Thus, csl stays on the place in the list. New elements may be
 		 * added to head of cs->map_list, so our caller must care, they
 		 * will contain correct rpc addr.
+		 * If false is returned, it indicates that the cslist has been dropped
+		 * and should not be handled here.
 		 */
-		cslist_get(cs_list);
+		if (!try_cslist_get(cs_list))
+			continue;
 		spin_unlock(&cs->lock);
 
 		if (prev_cs_list)
