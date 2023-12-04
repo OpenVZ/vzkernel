@@ -180,7 +180,10 @@ int ext4_sync_files(struct file **files, unsigned int *flags, unsigned int nr_fi
 		struct address_space * mapping = files[i]->f_mapping;
 		struct inode *inode = mapping->host;
 
-		BUG_ON(sb != inode->i_sb);
+		if (sb != inode->i_sb) {
+			err = -EINVAL;
+			goto out;
+		}
 		if (!mapping->nrpages)
 			continue;
 
