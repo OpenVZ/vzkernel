@@ -5812,8 +5812,8 @@ again:
  *
  * The call may be interrupted by a signal, in which case -EINTR is returned.
  */
-static int memcg_numa_migrate_write(struct cgroup *cont,
-		struct cftype *cft, const char *buf)
+static int __memcg_numa_migrate_write(struct cgroup *cont, struct cftype *cft,
+				      const char *buf)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
 	NODEMASK_ALLOC(nodemask_t, target_nodes, GFP_KERNEL);
@@ -5849,6 +5849,15 @@ out:
 		kfree(nodes_str);
 	NODEMASK_FREE(target_nodes);
 	return ret;
+}
+
+static int memcg_numa_migrate_write(struct cgroup *cont, struct cftype *cft,
+				    const char *buf)
+{
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
+	return __memcg_numa_migrate_write(cont, cft, buf);
 }
 
 #endif /* CONFIG_NUMA */
