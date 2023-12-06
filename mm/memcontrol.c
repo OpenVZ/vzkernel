@@ -4700,8 +4700,8 @@ again:
  *
  * The call may be interrupted by a signal, in which case -EINTR is returned.
  */
-static ssize_t memcg_numa_migrate_write(struct kernfs_open_file *of, char *buf,
-				size_t nbytes, loff_t off)
+static ssize_t __memcg_numa_migrate_write(struct kernfs_open_file *of,
+					  char *buf, size_t nbytes, loff_t off)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
 	NODEMASK_ALLOC(nodemask_t, target_nodes, GFP_KERNEL);
@@ -4737,6 +4737,15 @@ out:
 		kfree(nodes_str);
 	NODEMASK_FREE(target_nodes);
 	return ret ?: nbytes;
+}
+
+static ssize_t memcg_numa_migrate_write(struct kernfs_open_file *of, char *buf,
+					size_t nbytes, loff_t off)
+{
+	if (!ve_is_super(get_exec_env()))
+		return -EPERM;
+
+	return __memcg_numa_migrate_write(of, buf, nbytes, off);
 }
 
 #endif /* CONFIG_NUMA */
