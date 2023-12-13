@@ -8942,6 +8942,12 @@ static int detach_tasks(struct lb_env *env)
 		if (env->loop > env->loop_max &&
 		    !(env->flags & LBF_ALL_PINNED))
 			break;
+		/*
+		 * Quit if we have scanned all tasks even in case we haven't
+		 * found any movable task.
+		 */
+		if (env->loop > env->src_rq->nr_running)
+			break;
 
 		/* take a breather every nr_migrate tasks */
 		if (env->loop > env->loop_break) {
