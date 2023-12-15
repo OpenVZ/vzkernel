@@ -1016,6 +1016,48 @@ static void fuse_iqueue_init(struct fuse_iqueue *fiq,
 	fiq->priv = priv;
 }
 
+int fuse_install_percpu_iqs(struct fuse_dev *fud, int dest_cpu, int rw)
+{
+	int res = -EINVAL;
+
+	if (dest_cpu < NR_CPUS && cpu_possible(dest_cpu)) {
+		struct fuse_iqueue __percpu **iqs_p = rw ? &fud->fc->wiqs : &fud->fc->riqs;
+		struct fuse_iqueue __percpu *iqs;
+
+		iqs = *iqs_p;
+		if (iqs == NULL) {
+			int cpu;
+
+			iqs = alloc_percpu(struct fuse_iqueue);
+			if (!iqs)
+				return -ENOMEM;
+			for_each_possible_cpu(cpu) {
+				fuse_iqueue_init(per_cpu_ptr(iqs, cpu), fud->fc->main_iq.ops,
+								  fud->fc->main_iq.priv);
+			}
+		}
+
+		spin_lock(&fud->fc->lock);
+
+		if (*iqs_p == NULL) {
+			*iqs_p = iqs;
+		} else if (*iqs_p != iqs) {
+			free_percpu(iqs);
+			iqs = *iqs_p;
+		}
+
+		fud->fiq->handled_by_fud--;
+		BUG_ON(fud->fiq->handled_by_fud < 0);
+
+		fud->fiq = per_cpu_ptr(iqs, dest_cpu);
+
+		fud->fiq->handled_by_fud++;
+		spin_unlock(&fud->fc->lock);
+		res = 0;
+	}
+	return res;
+}
+
 static void fuse_pqueue_init(struct fuse_pqueue *fpq)
 {
 	unsigned int i;
@@ -1044,11 +1086,6 @@ int fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
 		init_waitqueue_head(&fc->qhash[cpu].waitq);
 	}
 	fuse_iqueue_init(&fc->main_iq, fiq_ops, fiq_priv);
-	fc->iqs = alloc_percpu(struct fuse_iqueue);
-	if (!fc->iqs)
-		return -ENOMEM;
-	for_each_online_cpu(cpu)
-		fuse_iqueue_init(per_cpu_ptr(fc->iqs, cpu), fiq_ops, fiq_priv);
 	INIT_LIST_HEAD(&fc->bg_queue);
 	INIT_LIST_HEAD(&fc->entry);
 	INIT_LIST_HEAD(&fc->devices);
@@ -1511,7 +1548,10 @@ EXPORT_SYMBOL_GPL(fuse_send_init);
 void fuse_free_conn(struct fuse_conn *fc)
 {
 	WARN_ON(!list_empty(&fc->devices));
-	free_percpu(fc->iqs);
+	if (fc->riqs)
+		free_percpu(fc->riqs);
+	if (fc->wiqs)
+		free_percpu(fc->wiqs);
 	kfree_rcu(fc, rcu);
 }
 EXPORT_SYMBOL_GPL(fuse_free_conn);
