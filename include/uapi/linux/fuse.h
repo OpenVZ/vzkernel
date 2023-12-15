@@ -977,6 +977,7 @@ struct fuse_notify_retrieve_in {
 #define FUSE_DEV_IOC_MAGIC		229
 #define FUSE_DEV_IOC_CLONE		_IOR(FUSE_DEV_IOC_MAGIC, 0, uint32_t)
 #define FUSE_DEV_IOC_SETAFF		_IO(FUSE_DEV_IOC_MAGIC, 1)
+#define FUSE_DEV_IOC_SETAFF_W		_IO(FUSE_DEV_IOC_MAGIC, 2)
 
 struct fuse_lseek_in {
 	uint64_t	fh;

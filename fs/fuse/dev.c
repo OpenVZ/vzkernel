@@ -2340,8 +2340,12 @@ void fuse_abort_conn(struct fuse_conn *fc)
 		fc->max_background = UINT_MAX;
 		flush_bg_queue_and_unlock(fc);
 
-		for_each_online_cpu(cpu)
-			fuse_abort_iqueue(per_cpu_ptr(fc->iqs, cpu), &to_end);
+		for_each_online_cpu(cpu) {
+			if (fc->riqs)
+				fuse_abort_iqueue(per_cpu_ptr(fc->riqs, cpu), &to_end);
+			if (fc->wiqs)
+				fuse_abort_iqueue(per_cpu_ptr(fc->wiqs, cpu), &to_end);
+		}
 		fuse_abort_iqueue(&fc->main_iq, &to_end);
 
 		end_polls(fc);
@@ -2454,20 +2458,10 @@ static long fuse_dev_ioctl(struct file *file, unsigned int cmd,
 		}
 		break;
 	case FUSE_DEV_IOC_SETAFF:
-		res = -EINVAL;
-		if (arg < NR_CPUS && cpu_possible(arg)) {
-			struct fuse_dev *fud = fuse_get_dev(file);
-			spin_lock(&fud->fc->lock);
-
-			fud->fiq->handled_by_fud--;
-			BUG_ON(fud->fiq->handled_by_fud < 0);
-
-			fud->fiq = per_cpu_ptr(fud->fc->iqs, arg);
-
-			fud->fiq->handled_by_fud++;
-			spin_unlock(&fud->fc->lock);
-			res = 0;
-		}
+		res = fuse_install_percpu_iqs(fuse_get_dev(file), arg, 0);
+		break;
+	case FUSE_DEV_IOC_SETAFF_W:
+		res = fuse_install_percpu_iqs(fuse_get_dev(file), arg, 1);
 		break;
 	case FUSE_IOC_KIO_CALL:
 	{
