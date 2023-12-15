@@ -5853,6 +5853,7 @@ out:
 
 static int memcg_numa_migrate_write(struct cgroup *cont, struct cftype *cft,
 				    const char *buf)
+{
 	if (!ve_is_super(get_exec_env()))
 		return -EPERM;
 
