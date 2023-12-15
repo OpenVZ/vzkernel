@@ -723,7 +723,8 @@ struct fuse_conn {
 	struct fuse_iqueue main_iq;
 
 	/** Per-cpu input queues */
-	struct fuse_iqueue __percpu *iqs;
+	struct fuse_iqueue __percpu *riqs;
+	struct fuse_iqueue __percpu *wiqs;
 
 	/** The next unique kernel file handle */
 	atomic64_t khctr;
@@ -1299,6 +1300,8 @@ struct fuse_conn *fuse_conn_get(struct fuse_conn *fc);
 int fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
 		    struct user_namespace *user_ns,
 		    const struct fuse_iqueue_ops *fiq_ops, void *fiq_priv);
+
+int fuse_install_percpu_iqs(struct fuse_dev *fud, int cpu, int rw);
 
 /**
  * Release reference to fuse_conn

@@ -797,9 +797,12 @@ void fuse_read_args_fill(struct fuse_io_args *ia, struct file *file, loff_t pos,
 	args->io_inode = file_inode(file);
 
 	if (opcode == FUSE_READ) {
-		struct fuse_iqueue *fiq = raw_cpu_ptr(ff->fm->fc->iqs);
-		if (fiq->handled_by_fud)
-			args->fiq = fiq;
+		if (ff->fm->fc->riqs) {
+			struct fuse_iqueue *fiq = raw_cpu_ptr(ff->fm->fc->riqs);
+
+			if (fiq->handled_by_fud)
+				args->fiq = fiq;
+		}
 		args->inode = file->f_path.dentry->d_inode;
 		args->ff = ff;
 	}
@@ -1308,6 +1311,13 @@ static void fuse_write_args_fill(struct fuse_io_args *ia, struct fuse_file *ff,
 	args->out_args[0].value = &ia->write.out;
 	args->io_inode = inode;
 	args->ff = ff;
+
+	if (ff->fm->fc->wiqs) {
+		struct fuse_iqueue *fiq = raw_cpu_ptr(ff->fm->fc->wiqs);
+
+		if (fiq->handled_by_fud)
+			args->fiq = fiq;
+	}
 }
 
 static unsigned int fuse_write_flags(struct kiocb *iocb)
