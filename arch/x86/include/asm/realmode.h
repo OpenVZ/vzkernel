@@ -1,6 +1,15 @@
 #ifndef _ARCH_X86_REALMODE_H
 #define _ARCH_X86_REALMODE_H
 
+/*
+ * Flag bit definitions for use with the flags field of the trampoline header
+ * in the CONFIG_X86_64 variant.
+ */
+#define TH_FLAGS_SME_ACTIVE_BIT		0
+#define TH_FLAGS_SME_ACTIVE		BIT(TH_FLAGS_SME_ACTIVE_BIT)
+
+#ifndef __ASSEMBLY__
+
 #include <linux/types.h>
 #include <asm/io.h>
 
@@ -38,6 +47,7 @@ struct trampoline_header {
 	u64 start;
 	u64 efer;
 	u32 cr4;
+	u32 flags;
 #endif
 };
 
@@ -47,6 +57,7 @@ extern unsigned char real_mode_blob_end[];
 extern unsigned long init_rsp;
 extern unsigned long initial_code;
 extern unsigned long initial_gs;
+extern unsigned long initial_stack;
 
 extern unsigned char real_mode_blob[];
 extern unsigned char real_mode_relocs[];
@@ -60,5 +71,7 @@ extern unsigned char secondary_startup_64[];
 
 void reserve_real_mode(void);
 void setup_real_mode(void);
+
+#endif /* __ASSEMBLY__ */
 
 #endif /* _ARCH_X86_REALMODE_H */

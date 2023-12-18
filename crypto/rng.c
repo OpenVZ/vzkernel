@@ -45,7 +45,7 @@ static int rngapi_reset(struct crypto_rng *tfm, u8 *seed, unsigned int slen)
 
 	err = crypto_rng_alg(tfm)->rng_reset(tfm, seed, slen);
 
-	kfree(buf);
+	kzfree(buf);
 	return err;
 }
 

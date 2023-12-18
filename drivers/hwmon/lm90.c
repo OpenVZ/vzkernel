@@ -1487,10 +1487,14 @@ static int lm90_remove(struct i2c_client *client)
 	return 0;
 }
 
-static void lm90_alert(struct i2c_client *client, unsigned int flag)
+static void lm90_alert(struct i2c_client *client, enum i2c_alert_protocol type,
+		       unsigned int flag)
 {
 	struct lm90_data *data = i2c_get_clientdata(client);
 	u8 config, alarms, alarms2 = 0;
+
+	if (type != I2C_PROTOCOL_SMBUS_ALERT)
+		return;
 
 	lm90_read_reg(client, LM90_REG_R_STATUS, &alarms);
 

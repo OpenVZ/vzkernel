@@ -49,7 +49,6 @@ struct fwspk {
 	struct snd_card *card;
 	struct fw_unit *unit;
 	const struct device_info *device_info;
-	struct snd_pcm_substream *pcm;
 	struct mutex mutex;
 	struct cmp_connection connection;
 	struct amdtp_out_stream stream;
@@ -353,7 +352,6 @@ static int fwspk_create_pcm(struct fwspk *fwspk)
 		.trigger   = fwspk_trigger,
 		.pointer   = fwspk_pointer,
 		.page      = snd_pcm_lib_get_vmalloc_page,
-		.mmap      = snd_pcm_lib_mmap_vmalloc,
 	};
 	struct snd_pcm *pcm;
 	int err;
@@ -363,8 +361,7 @@ static int fwspk_create_pcm(struct fwspk *fwspk)
 		return err;
 	pcm->private_data = fwspk;
 	strcpy(pcm->name, fwspk->device_info->short_name);
-	fwspk->pcm = pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream;
-	fwspk->pcm->ops = &ops;
+	snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_PLAYBACK, &ops);
 	return 0;
 }
 
@@ -708,10 +705,10 @@ static int fwspk_probe(struct device *unit_dev)
 	u32 firmware;
 	int err;
 
-	err = snd_card_create(-1, NULL, THIS_MODULE, sizeof(*fwspk), &card);
+	err = snd_card_new(&unit->device, -1, NULL, THIS_MODULE,
+			   sizeof(*fwspk), &card);
 	if (err < 0)
 		return err;
-	snd_card_set_dev(card, unit_dev);
 
 	fwspk = card->private_data;
 	fwspk->card = card;

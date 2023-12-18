@@ -893,17 +893,11 @@ bio_pageinc(struct bio *bio)
 	int i;
 
 	bio_for_each_segment(bv, bio, i) {
-		page = bv->bv_page;
 		/* Non-zero page count for non-head members of
-		 * compound pages is no longer allowed by the kernel,
-		 * but this has never been seen here.
+		 * compound pages is no longer allowed by the kernel.
 		 */
-		if (unlikely(PageCompound(page)))
-			if (compound_trans_head(page) != page) {
-				pr_crit("page tail used for block I/O\n");
-				BUG();
-			}
-		atomic_inc(&page->_count);
+		page = compound_head(bv->bv_page);
+		page_ref_inc(page);
 	}
 }
 
@@ -911,10 +905,13 @@ static void
 bio_pagedec(struct bio *bio)
 {
 	struct bio_vec *bv;
+	struct page *page;
 	int i;
 
-	bio_for_each_segment(bv, bio, i)
-		atomic_dec(&bv->bv_page->_count);
+	bio_for_each_segment(bv, bio, i) {
+		page = compound_head(bv->bv_page);
+		page_ref_dec(page);
+	}
 }
 
 static void

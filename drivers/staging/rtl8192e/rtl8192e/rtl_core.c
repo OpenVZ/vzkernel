@@ -2062,7 +2062,7 @@ short rtl8192_tx(struct net_device *dev, struct sk_buff *skb)
 	__skb_queue_tail(&ring->queue, skb);
 	pdesc->OWN = 1;
 	spin_unlock_irqrestore(&priv->irq_th_lock, flags);
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 
 	write_nic_word(dev, TPPoll, 0x01 << tcb_desc->queue_index);
 	return 0;
@@ -2849,7 +2849,7 @@ static const struct net_device_ops rtl8192_netdev_ops = {
 	.ndo_set_rx_mode = r8192_set_multicast,
 	.ndo_set_mac_address = r8192_set_mac_adr,
 	.ndo_validate_addr = eth_validate_addr,
-	.ndo_change_mtu = eth_change_mtu,
+	.ndo_change_mtu_rh74 = eth_change_mtu,
 	.ndo_start_xmit = rtllib_xmit,
 };
 

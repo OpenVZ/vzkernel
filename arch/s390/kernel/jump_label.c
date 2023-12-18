@@ -33,32 +33,24 @@ static void __jump_label_transform(struct jump_entry *entry,
 		insn.opcode = 0xc0f4;
 		insn.offset = (entry->target - entry->code) >> 1;
 	} else {
-		/* brcl 0,0 */
+		/* brcl 0,offset */
 		insn.opcode = 0xc004;
-		insn.offset = 0;
+		insn.offset = (entry->target - entry->code) >> 1;
 	}
 
 	rc = probe_kernel_write((void *)entry->code, &insn, JUMP_LABEL_NOP_SIZE);
 	WARN_ON_ONCE(rc < 0);
 }
 
-static int __sm_arch_jump_label_transform(void *data)
+static void __jump_label_sync(void *dummy)
 {
-	struct insn_args *args = data;
-
-	__jump_label_transform(args->entry, args->type);
-	return 0;
 }
 
 void arch_jump_label_transform(struct jump_entry *entry,
 			       enum jump_label_type type)
 {
-	struct insn_args args;
-
-	args.entry = entry;
-	args.type = type;
-
-	stop_machine(__sm_arch_jump_label_transform, &args, NULL);
+	__jump_label_transform(entry, type);
+	smp_call_function(__jump_label_sync, NULL, 1);
 }
 
 void arch_jump_label_transform_static(struct jump_entry *entry,

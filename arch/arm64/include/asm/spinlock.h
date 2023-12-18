@@ -199,4 +199,7 @@ static inline int arch_read_trylock(arch_rwlock_t *rw)
 #define arch_read_relax(lock)	cpu_relax()
 #define arch_write_relax(lock)	cpu_relax()
 
+/* See include/linux/spinlock.h */
+#define smp_mb__after_spinlock()	smp_mb()
+
 #endif /* __ASM_SPINLOCK_H */

@@ -292,7 +292,7 @@ int cfpkt_setlen(struct cfpkt *pkt, u16 len)
 
 	if (likely(len <= skb->len)) {
 		if (unlikely(skb->data_len))
-			___pskb_trim(skb, len);
+			___pskb_trim_adjust_truesize(skb, len);
 		else
 			skb_trim(skb, len);
 

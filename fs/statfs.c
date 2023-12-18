@@ -37,6 +37,8 @@ static int flags_by_sb(int s_flags)
 		flags |= ST_SYNCHRONOUS;
 	if (s_flags & MS_MANDLOCK)
 		flags |= ST_MANDLOCK;
+	if (s_flags & MS_RDONLY)
+		flags |= ST_RDONLY;
 	return flags;
 }
 
@@ -94,7 +96,7 @@ retry:
 
 int fd_statfs(int fd, struct kstatfs *st)
 {
-	struct fd f = fdget(fd);
+	struct fd f = fdget_raw(fd);
 	int error = -EBADF;
 	if (f.file) {
 		error = vfs_statfs(&f.file->f_path, st);
