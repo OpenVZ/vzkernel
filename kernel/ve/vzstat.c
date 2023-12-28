@@ -27,7 +27,6 @@
 #include <linux/kthread.h>
 #include <linux/freezer.h>
 #include <linux/veowner.h>
-#include <linux/swap.h>
 
 #include <linux/vzstat.h>
 
@@ -385,18 +384,6 @@ static void kernel_text_csum_seq_show(struct seq_file *m, void *v)
 	seq_printf(m, "kernel_text_csum_broken: %d\n", 0);
 }
 
-static void swap_cache_seq_show(struct seq_file *m, void *v)
-{
-	struct swap_cache_info *swpcache;
-
-	swpcache = &swap_cache_info;
-	seq_printf(m, "Swap cache: add %lu, del %lu, find %lu/%lu\n",
-			swpcache->add_total,
-			swpcache->del_total,
-			swpcache->find_success,
-			swpcache->find_total);
-}
-
 /*
  * Declare special structure to store summarized statistics. The 'struct zone'
  * is not used because of it's tremendous size.
@@ -668,14 +655,13 @@ static int stats_seq_show(struct seq_file *m, void *v)
 {
 	if (!v)
 		return 0;
-	seq_puts(m, "Version: 2.6\n");
+	seq_puts(m, "Version: 2.7\n");
 	cycles_per_jiffy_show(m, v);
 	jiffies_per_second_show(m, v);
 	seq_puts(m, "\nLoad info:\n");
 	task_counts_seq_show(m, v);
 	seq_puts(m, "\nMemory info:\n");
 	kernel_text_csum_seq_show(m, v);
-	swap_cache_seq_show(m, v);
 	mem_free_areas_show(m, v);
 	mem_avg_show(m, v);
 	mem_fails_show(m, v);

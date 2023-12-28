@@ -715,14 +715,5 @@ static inline bool mem_cgroup_swap_full(struct page *page)
 }
 #endif
 
-struct swap_cache_info {
-	unsigned long add_total;
-	unsigned long del_total;
-	unsigned long find_success;
-	unsigned long find_total;
-};
-
-extern struct swap_cache_info swap_cache_info;
-
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */

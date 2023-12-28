@@ -14,13 +14,6 @@
 #include <linux/mmzone.h>
 #include <linux/kstat.h>
 
-struct swap_cache_info_struct {
-	unsigned long add_total;
-	unsigned long del_total;
-	unsigned long find_success;
-	unsigned long find_total;
-};
-
 struct kstat_zone_avg {
 	unsigned long		free_pages_avg[3],
 				nr_active_avg[3],
