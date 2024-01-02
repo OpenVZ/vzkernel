@@ -1372,7 +1372,7 @@ free_rio:
 	return NULL;
 }
 
-int pcs_rdma_established(struct pcs_rdmaio *rio)
+int pcs_rdma_setup_rxs(struct pcs_rdmaio *rio)
 {
 	struct rio_rx *rx;
 
@@ -1494,20 +1494,35 @@ static void rio_destroy(struct work_struct *work)
 
 static DECLARE_WORK(rio_destroy_work, rio_destroy);
 
+/*
+ * This is only used in case cm error happens during establishing
+ * a connection. We need to destroy the rio immediately such that
+ * the rdma_cm_id can be destroyed immediately afterwards.
+ */
 void pcs_rdma_destroy(struct pcs_rdmaio *rio)
 {
-	struct pcs_netio *netio = &rio->netio;
-	struct pcs_rpc *ep = netio->parent;
+	struct pcs_rpc *ep = rio->netio.parent;
+	int i;
 
 	TRACE("rio: 0x%p\n", rio);
 
 	BUG_ON(!mutex_is_locked(&ep->mutex));
 
-	netio->eof = NULL;
-	rio_abort(rio, PCS_ERR_NET_ABORT);
+	rio->rio_state = RIO_STATE_ABORTED;
+	rio->rio_error = PCS_ERR_NET_ABORT;
 
-	if (llist_add(&rio->destroy_node, &rio_destroy_list))
-		queue_work(pcs_cleanup_wq, &rio_destroy_work);
+	rdma_disconnect(rio->cmid);
+
+	rdma_destroy_qp(rio->cmid);
+	ib_destroy_cq(rio->cq);
+
+	pcs_rdma_device_destroy(rio->dev);
+	for (i = 0; i < rio->recv_queue_depth; i++)
+		rio_fini_rx(rio->rx_descs + i, rio->cmid->device);
+	kfree(rio->rx_descs);
+
+	pcs_rpc_put(ep);
+	kfree(rio);
 }
 
 void pcs_rdma_ioconn_destruct(struct pcs_ioconn *ioconn)
