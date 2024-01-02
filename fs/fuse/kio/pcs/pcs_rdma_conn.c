@@ -77,7 +77,6 @@ static int pcs_rdma_cm_event_handler(struct rdma_cm_id *cmid,
 				complete(&rc->cm_done);
 				break;
 			}
-			rc->cmid = NULL;
 
 			conn_param_init(&conn_param, &rc->rio->conn_req, cmid);
 			if (rdma_connect_locked(cmid, &conn_param)) {
@@ -87,10 +86,6 @@ static int pcs_rdma_cm_event_handler(struct rdma_cm_id *cmid,
 			break;
 		case RDMA_CM_EVENT_ESTABLISHED:
 			cmid->context = &rc->rio->id;
-			if (pcs_rdma_established(rc->rio)) {
-				TRACE("pcs_rdma_established failed, rio: 0x%p\n", rc->rio);
-				rc->cm_event = RDMA_CM_EVENT_REJECTED;
-			}
 			complete(&rc->cm_done);
 			break;
 		case RDMA_CM_EVENT_REJECTED:
@@ -166,6 +161,14 @@ void pcs_rdmaconnect_start(struct pcs_rpc *ep)
 		ep->flags |= PCS_RPC_F_PEER_ID;
 
 	ep->state = PCS_RPC_AUTH;
+
+	/* setup rxs */
+	if (pcs_rdma_setup_rxs((rc.rio))) {
+		TRACE("pcs_rdma_setup_rxs failed, rio: 0x%p\n", rc.rio);
+		pcs_rpc_report_error(ep, PCS_RPC_ERR_CONNECT_ERROR);
+		goto fail;
+	}
+
 	ret = rpc_client_start_auth(ep, PCS_AUTH_DIGEST,
 				    cc_from_rpc(ep->eng)->cluster_name);
 	if (ret < 0) {
@@ -186,8 +189,7 @@ void pcs_rdmaconnect_start(struct pcs_rpc *ep)
 fail_cm:
 	if (rc.rio)
 		pcs_rdma_destroy(rc.rio);
-	if (rc.cmid)
-		rdma_destroy_id(rc.cmid);
+	rdma_destroy_id(rc.cmid);
 fail:
 	pcs_rpc_reset(ep);
 	return;
