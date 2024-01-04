@@ -257,7 +257,14 @@ static bool vhost_worker_queue(struct vhost_worker *worker,
 
 bool vhost_work_queue(struct vhost_dev *dev, struct vhost_work *work)
 {
-	return vhost_worker_queue(dev->worker, work);
+	XA_STATE(xas, &dev->worker_xa, 0);
+	struct vhost_worker *worker;
+
+	worker = xas_find(&xas, UINT_MAX);
+	if (!worker)
+		return false;
+
+	return vhost_worker_queue(worker, work);
 }
 EXPORT_SYMBOL_GPL(vhost_work_queue);
 
@@ -286,7 +293,11 @@ EXPORT_SYMBOL_GPL(vhost_vq_flush);
 
 void vhost_dev_flush(struct vhost_dev *dev)
 {
-	vhost_worker_flush(dev->worker);
+	struct vhost_worker *worker;
+	unsigned long i;
+
+	xa_for_each(&dev->worker_xa, i, worker)
+		vhost_worker_flush(worker);
 }
 EXPORT_SYMBOL_GPL(vhost_dev_flush);
 
@@ -501,7 +512,6 @@ void vhost_dev_init(struct vhost_dev *dev,
 	dev->umem = NULL;
 	dev->iotlb = NULL;
 	dev->mm = NULL;
-	dev->worker = NULL;
 	dev->iov_limit = iov_limit;
 	dev->weight = weight;
 	dev->byte_weight = byte_weight;
@@ -511,6 +521,7 @@ void vhost_dev_init(struct vhost_dev *dev,
 	INIT_LIST_HEAD(&dev->read_list);
 	INIT_LIST_HEAD(&dev->pending_list);
 	spin_lock_init(&dev->iotlb_lock);
+	xa_init_flags(&dev->worker_xa, XA_FLAGS_ALLOC);
 
 
 	for (i = 0; i < dev->nvqs; ++i) {
@@ -598,17 +609,35 @@ static void vhost_detach_mm(struct vhost_dev *dev)
 	dev->mm = NULL;
 }
 
-static void vhost_worker_free(struct vhost_dev *dev)
+static void vhost_worker_destroy(struct vhost_dev *dev,
+				 struct vhost_worker *worker)
 {
-	struct vhost_worker *worker = dev->worker;
-
 	if (!worker)
 		return;
 
-	dev->worker = NULL;
 	WARN_ON(!llist_empty(&worker->work_list));
+	xa_erase(&dev->worker_xa, worker->id);
 	kthread_stop(worker->task);
 	kfree(worker);
+}
+
+static void vhost_workers_free(struct vhost_dev *dev)
+{
+	struct vhost_worker *worker;
+	unsigned long i;
+
+	if (!dev->use_worker)
+		return;
+
+	for (i = 0; i < dev->nvqs; i++)
+		dev->vqs[i]->worker = NULL;
+	/*
+	 * Free the default worker we created and cleanup workers userspace
+	 * created but couldn't clean up (it forgot or crashed).
+	 */
+	xa_for_each(&dev->worker_xa, i, worker)
+		vhost_worker_destroy(dev, worker);
+	xa_destroy(&dev->worker_xa);
 }
 
 static struct vhost_worker *vhost_worker_create(struct vhost_dev *dev)
@@ -616,19 +645,25 @@ static struct vhost_worker *vhost_worker_create(struct vhost_dev *dev)
 	struct vhost_worker *worker;
 	struct task_struct *task;
 	int ret;
+	u32 id;
 
 	worker = kzalloc(sizeof(*worker), GFP_KERNEL_ACCOUNT);
 	if (!worker)
 		return NULL;
 
-	dev->worker = worker;
 	worker->dev = dev;
 	worker->kcov_handle = kcov_common_handle();
 	init_llist_head(&worker->work_list);
 
-	task = kthread_create(vhost_worker, worker, "vhost-%d", current->pid);
-	if (IS_ERR(task))
+	ret = xa_alloc(&dev->worker_xa, &id, worker, xa_limit_32b, GFP_KERNEL);
+	if (ret < 0)
 		goto free_worker;
+	worker->id = id;
+
+	task = kthread_create(vhost_worker, worker, "vhost-%d-%d",
+			      current->pid, worker->id);
+	if (IS_ERR(task))
+		goto erase_xa;
 
 	worker->task = task;
 	wake_up_process(task); /* avoid contributing to loadavg */
@@ -641,9 +676,10 @@ static struct vhost_worker *vhost_worker_create(struct vhost_dev *dev)
 
 stop_worker:
 	kthread_stop(worker->task);
+erase_xa:
+	xa_erase(&dev->worker_xa, id);
 free_worker:
 	kfree(worker);
-	dev->worker = NULL;
 	return NULL;
 }
 
@@ -698,6 +734,12 @@ long vhost_dev_set_owner(struct vhost_dev *dev)
 			err = -ENOMEM;
 			goto err_worker;
 		}
+
+		/*
+		 * vsock can already try to queue so make sure the worker
+		 * is setup before vhost_vq_work_queue sees vq->worker is set.
+		 */
+		smp_wmb();
 
 		for (i = 0; i < dev->nvqs; i++)
 			dev->vqs[i]->worker = worker;
@@ -799,7 +841,7 @@ void vhost_dev_cleanup(struct vhost_dev *dev)
 	dev->iotlb = NULL;
 	vhost_clear_msg(dev);
 	wake_up_interruptible_poll(&dev->wait, EPOLLIN | EPOLLRDNORM);
-	vhost_worker_free(dev);
+	vhost_workers_free(dev);
 	vhost_detach_mm(dev);
 }
 EXPORT_SYMBOL_GPL(vhost_dev_cleanup);
