@@ -333,6 +333,7 @@ static void vhost_vq_reset(struct vhost_dev *dev,
 	vq->busyloop_timeout = 0;
 	vq->umem = NULL;
 	vq->iotlb = NULL;
+	vq->worker = NULL;
 	vhost_vring_call_reset(&vq->call_ctx);
 	__vhost_vq_meta_reset(vq);
 }
@@ -585,7 +586,7 @@ static void vhost_worker_free(struct vhost_dev *dev)
 	kfree(worker);
 }
 
-static int vhost_worker_create(struct vhost_dev *dev)
+static struct vhost_worker *vhost_worker_create(struct vhost_dev *dev)
 {
 	struct vhost_worker *worker;
 	struct task_struct *task;
@@ -593,7 +594,7 @@ static int vhost_worker_create(struct vhost_dev *dev)
 
 	worker = kzalloc(sizeof(*worker), GFP_KERNEL_ACCOUNT);
 	if (!worker)
-		return -ENOMEM;
+		return NULL;
 
 	dev->worker = worker;
 	worker->dev = dev;
@@ -601,10 +602,8 @@ static int vhost_worker_create(struct vhost_dev *dev)
 	init_llist_head(&worker->work_list);
 
 	task = kthread_create(vhost_worker, worker, "vhost-%d", current->pid);
-	if (IS_ERR(task)) {
-		ret = PTR_ERR(task);
+	if (IS_ERR(task))
 		goto free_worker;
-	}
 
 	worker->task = task;
 	wake_up_process(task); /* avoid contributing to loadavg */
@@ -613,14 +612,14 @@ static int vhost_worker_create(struct vhost_dev *dev)
 	if (ret)
 		goto stop_worker;
 
-	return 0;
+	return worker;
 
 stop_worker:
 	kthread_stop(worker->task);
 free_worker:
 	kfree(worker);
 	dev->worker = NULL;
-	return ret;
+	return NULL;
 }
 
 static int vhost_get_vq_from_user(struct vhost_dev *dev, void __user *argp,
@@ -647,7 +646,8 @@ static int vhost_get_vq_from_user(struct vhost_dev *dev, void __user *argp,
 /* Caller should have device mutex */
 long vhost_dev_set_owner(struct vhost_dev *dev)
 {
-	int err;
+	struct vhost_worker *worker;
+	int err, i;
 
 	/* Is there an owner already? */
 	if (vhost_dev_has_owner(dev)) {
@@ -668,9 +668,14 @@ long vhost_dev_set_owner(struct vhost_dev *dev)
 		 * below since we don't have to worry about vsock queueing
 		 * while we free the worker.
 		 */
-		err = vhost_worker_create(dev);
-		if (err)
+		worker = vhost_worker_create(dev);
+		if (!worker) {
+			err = -ENOMEM;
 			goto err_worker;
+		}
+
+		for (i = 0; i < dev->nvqs; i++)
+			dev->vqs[i]->worker = worker;
 	}
 
 	return 0;
