@@ -204,4 +204,12 @@
  */
 #define VHOST_VDPA_GET_VRING_DESC_GROUP	_IOWR(VHOST_VIRTIO, 0x7F,	\
 					      struct vhost_vring_state)
+
+/* VHOST_BLK specific defines */
+#define VHOST_BLK_SET_SERIAL		_IOW(VHOST_VIRTIO, 0xFE, \
+					     char[VIRTIO_BLK_ID_BYTES])
+
+#define VHOST_BLK_SET_BACKEND		_IOW(VHOST_VIRTIO, 0xFF, \
+					     struct vhost_vring_file)
+
 #endif
