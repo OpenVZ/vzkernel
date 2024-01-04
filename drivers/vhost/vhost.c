@@ -235,21 +235,23 @@ void vhost_dev_flush(struct vhost_dev *dev)
 {
 	struct vhost_flush_struct flush;
 
-	if (dev->worker) {
-		init_completion(&flush.wait_event);
-		vhost_work_init(&flush.work, vhost_flush_work);
+	init_completion(&flush.wait_event);
+	vhost_work_init(&flush.work, vhost_flush_work);
 
-		vhost_work_queue(dev, &flush.work);
+	if (vhost_work_queue(dev, &flush.work))
 		wait_for_completion(&flush.wait_event);
-	}
 }
 EXPORT_SYMBOL_GPL(vhost_dev_flush);
 
-void vhost_work_queue(struct vhost_dev *dev, struct vhost_work *work)
+bool vhost_work_queue(struct vhost_dev *dev, struct vhost_work *work)
 {
 	if (!dev->worker)
-		return;
-
+		return false;
+	/*
+	 * vsock can queue while we do a VHOST_SET_OWNER, so we have a smp_wmb
+	 * when setting up the worker. We don't have a smp_rmb here because
+	 * test_and_set_bit gives us a mb already.
+	 */
 	if (!test_and_set_bit(VHOST_WORK_QUEUED, &work->flags)) {
 		/* We can only add the work to the list after we're
 		 * sure it was not in the list.
@@ -258,6 +260,8 @@ void vhost_work_queue(struct vhost_dev *dev, struct vhost_work *work)
 		llist_add(&work->node, &dev->worker->work_list);
 		wake_up_process(dev->worker->task);
 	}
+
+	return true;
 }
 EXPORT_SYMBOL_GPL(vhost_work_queue);
 
