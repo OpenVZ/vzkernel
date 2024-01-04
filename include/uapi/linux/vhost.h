@@ -71,6 +71,14 @@
 #define VHOST_SET_VRING_ENDIAN _IOW(VHOST_VIRTIO, 0x13, struct vhost_vring_state)
 #define VHOST_GET_VRING_ENDIAN _IOW(VHOST_VIRTIO, 0x14, struct vhost_vring_state)
 
+/* Set number of vhost workers.
+ * This can be done only once until reset.
+ * All workers are freed upon reset.
+ * If the value is too big it is silently truncated to the maximum number of
+ * supported vhost workers
+ */
+#define VHOST_SET_NWORKERS _IOW(VHOST_VIRTIO, 0x1F, int)
+
 /* The following ioctls use eventfd file descriptors to signal and poll
  * for events. */
 
