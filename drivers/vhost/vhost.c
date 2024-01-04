@@ -522,7 +522,7 @@ void vhost_dev_init(struct vhost_dev *dev,
 	INIT_LIST_HEAD(&dev->pending_list);
 	spin_lock_init(&dev->iotlb_lock);
 	xa_init_flags(&dev->worker_xa, XA_FLAGS_ALLOC);
-
+	dev->workers_set = false;
 
 	for (i = 0; i < dev->nvqs; ++i) {
 		vq = dev->vqs[i];
@@ -704,6 +704,42 @@ static int vhost_get_vq_from_user(struct vhost_dev *dev, void __user *argp,
 	return 0;
 }
 
+static void vhost_propagate_workers(struct vhost_dev *dev, int nworkers)
+{
+	int i, j = 0;
+
+	for (i = nworkers; i < dev->nvqs; i++) {
+		dev->vqs[i]->worker = dev->vqs[j]->worker;
+		if (++j >= nworkers)
+			j = 0;
+	}
+}
+
+
+static int vhost_set_workers(struct vhost_dev *dev, int n)
+{
+	struct vhost_worker *worker;
+	int i, ret = 0;
+
+	if (n > dev->nvqs)
+		n = dev->nvqs;
+
+	dev->workers_set = true;
+
+	for (i = 1; i < n; i++) {
+		worker = vhost_worker_create(dev);
+		if (!worker) {
+			ret = -ENOMEM;
+			break;
+		}
+		dev->vqs[i]->worker = worker;
+	}
+
+	vhost_propagate_workers(dev, i);
+
+	return ret;
+}
+
 /* Caller should have device mutex */
 long vhost_dev_set_owner(struct vhost_dev *dev)
 {
@@ -843,6 +879,7 @@ void vhost_dev_cleanup(struct vhost_dev *dev)
 	wake_up_interruptible_poll(&dev->wait, EPOLLIN | EPOLLRDNORM);
 	vhost_workers_free(dev);
 	vhost_detach_mm(dev);
+	dev->workers_set = false;
 }
 EXPORT_SYMBOL_GPL(vhost_dev_cleanup);
 
@@ -1896,7 +1933,7 @@ long vhost_dev_ioctl(struct vhost_dev *d, unsigned int ioctl, void __user *argp)
 	struct eventfd_ctx *ctx;
 	u64 p;
 	long r;
-	int i, fd;
+	int i, fd, n;
 
 	/* If you are not the owner, you can become one */
 	if (ioctl == VHOST_SET_OWNER) {
@@ -1952,6 +1989,17 @@ long vhost_dev_ioctl(struct vhost_dev *d, unsigned int ioctl, void __user *argp)
 		}
 		if (ctx)
 			eventfd_ctx_put(ctx);
+		break;
+	case VHOST_SET_NWORKERS:
+		r = get_user(n, (int __user *)argp);
+		if (r < 0)
+			break;
+		if (d->workers_set) {
+			r = -EINVAL;
+			break;
+		}
+
+		r = vhost_set_workers(d, n);
 		break;
 	default:
 		r = -ENOIOCTLCMD;
