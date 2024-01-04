@@ -548,14 +548,14 @@ static void vhost_attach_cgroups_work(struct vhost_work *work)
 	s->ret = cgroup_attach_task_all(s->owner, current);
 }
 
-static int vhost_attach_cgroups(struct vhost_dev *dev)
+static int vhost_attach_cgroups(struct vhost_worker *worker)
 {
 	struct vhost_attach_cgroups_struct attach;
 
 	attach.owner = current;
 	vhost_work_init(&attach.work, vhost_attach_cgroups_work);
-	vhost_work_queue(dev, &attach.work);
-	vhost_dev_flush(dev);
+	vhost_worker_queue(worker, &attach.work);
+	vhost_worker_flush(worker);
 	return attach.ret;
 }
 
@@ -631,7 +631,7 @@ static struct vhost_worker *vhost_worker_create(struct vhost_dev *dev)
 	worker->task = task;
 	wake_up_process(task); /* avoid contributing to loadavg */
 
-	ret = vhost_attach_cgroups(dev);
+	ret = vhost_attach_cgroups(worker);
 	if (ret)
 		goto stop_worker;
 
