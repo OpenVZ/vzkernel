@@ -43,6 +43,10 @@
 #include <net/addrconf.h>
 #include <bc/beancounter.h>
 
+#include <linux/skbuff.h>
+#include <linux/netfilter.h>
+#include <net/netfilter/br_netfilter.h>
+
 #define DEBUG
 #define NEIGH_DEBUG 1
 #define neigh_dbg(level, fmt, ...)		\
@@ -257,6 +261,28 @@ static void pneigh_queue_purge(struct sk_buff_head *list, struct net *net)
 	}
 }
 
+static void neigh_purge_nf_bridge_dev(struct neighbour *neigh, struct net_device *dev)
+{
+	struct sk_buff_head *list = &neigh->arp_queue;
+	struct nf_bridge_info *nf_bridge;
+	struct sk_buff *skb, *next;
+
+	write_lock(&neigh->lock);
+	skb = skb_peek(list);
+	while (skb) {
+		nf_bridge = nf_bridge_info_get(skb);
+
+		next = skb_peek_next(skb, list);
+		if (nf_bridge && nf_bridge->physindev == dev) {
+			__skb_unlink(skb, list);
+			neigh->arp_queue_len_bytes -= skb->truesize;
+			kfree_skb(skb);
+		}
+		skb = next;
+	}
+	write_unlock(&neigh->lock);
+}
+
 static void neigh_flush_dev(struct neigh_table *tbl, struct net_device *dev)
 {
 	int i;
@@ -272,6 +298,7 @@ static void neigh_flush_dev(struct neigh_table *tbl, struct net_device *dev)
 		while ((n = rcu_dereference_protected(*np,
 					lockdep_is_held(&tbl->lock))) != NULL) {
 			if (dev && n->dev != dev) {
+				neigh_purge_nf_bridge_dev(n, dev);
 				np = &n->next;
 				continue;
 			}
