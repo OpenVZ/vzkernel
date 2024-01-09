@@ -1354,7 +1354,7 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 	if (nbytes < max_t(size_t, FUSE_MIN_READ_BUFFER,
 			   sizeof(struct fuse_in_header) +
 			   sizeof(struct fuse_write_in) +
-			   fc->max_write))
+			   (fiq->size ? : fc->max_write)))
 		return -EINVAL;
 
  restart:
@@ -2275,6 +2275,22 @@ void fuse_abort_iqueue(struct fuse_iqueue *fiq, struct list_head *to_end)
 	kill_fasync(&fiq->fasync, SIGIO, POLL_IN);
 }
 
+static void fuse_abort_routing(struct fuse_rtable *rt, struct list_head *to_end)
+{
+	if (rt->type == FUSE_ROUTING_CPU) {
+		int cpu;
+
+		for_each_online_cpu(cpu) {
+			fuse_abort_iqueue(per_cpu_ptr(rt->iqs_cpu, cpu), to_end);
+		}
+	} else if (rt->type == FUSE_ROUTING_SIZE || rt->type == FUSE_ROUTING_HASH) {
+		int i;
+
+		for (i = 0; i < rt->rt_size; i++)
+			fuse_abort_iqueue(rt->iqs_table + i, to_end);
+	}
+}
+
 /*
  * Abort all requests.
  *
@@ -2339,12 +2355,8 @@ void fuse_abort_conn(struct fuse_conn *fc)
 		fc->max_background = UINT_MAX;
 		flush_bg_queue_and_unlock(fc);
 
-		for_each_online_cpu(cpu) {
-			if (fc->riqs)
-				fuse_abort_iqueue(per_cpu_ptr(fc->riqs, cpu), &to_end);
-			if (fc->wiqs)
-				fuse_abort_iqueue(per_cpu_ptr(fc->wiqs, cpu), &to_end);
-		}
+		fuse_abort_routing(&fc->wrt, &to_end);
+		fuse_abort_routing(&fc->rrt, &to_end);
 		fuse_abort_iqueue(&fc->main_iq, &to_end);
 
 		end_polls(fc);
@@ -2457,11 +2469,31 @@ static long fuse_dev_ioctl(struct file *file, unsigned int cmd,
 		}
 		break;
 	case FUSE_DEV_IOC_SETAFF:
-		res = fuse_install_percpu_iqs(fuse_get_dev(file), arg, 0);
+	{
+		struct fuse_iq_routing req = { .type = FUSE_ROUTING_CPU,
+					       .flags = FUSE_ROUTE_F_IOTYPE_R, .index = arg };
+
+		res = fuse_install_iq_route(fuse_get_dev(file), &req);
 		break;
+	}
 	case FUSE_DEV_IOC_SETAFF_W:
-		res = fuse_install_percpu_iqs(fuse_get_dev(file), arg, 1);
+	{
+		struct fuse_iq_routing req = { .type = FUSE_ROUTING_CPU,
+					       .flags = FUSE_ROUTE_F_IOTYPE_W, .index = arg };
+
+		res = fuse_install_iq_route(fuse_get_dev(file), &req);
 		break;
+	}
+	case FUSE_DEV_IOC_ROUTING:
+	{
+		struct fuse_iq_routing req;
+
+		if (copy_from_user(&req, (void __user *)arg, sizeof(req)))
+			return -EFAULT;
+
+		res = fuse_install_iq_route(fuse_get_dev(file), &req);
+		break;
+	}
 	case FUSE_IOC_KIO_CALL:
 	{
 		struct fuse_kio_call req;

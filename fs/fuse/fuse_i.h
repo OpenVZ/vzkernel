@@ -509,6 +509,9 @@ struct fuse_iqueue {
 	/** # of fuds pointing to this fiq */
 	int handled_by_fud;
 
+	/** request size allowed for this fiq */
+	int size;
+
 	/** Lock protecting accesses to members of this structure */
 	spinlock_t lock;
 
@@ -676,6 +679,16 @@ static inline unsigned int fuse_qhash_bucket(void)
 }
 #endif
 
+struct fuse_rtable {
+	int	type;
+	int	rt_size;
+	union {
+		void				*iqs;
+		struct fuse_iqueue __percpu	*iqs_cpu;
+		struct fuse_iqueue		*iqs_table;
+	};
+};
+
 /**
  * A Fuse connection.
  *
@@ -722,9 +735,9 @@ struct fuse_conn {
 	/** Input queue */
 	struct fuse_iqueue main_iq;
 
-	/** Per-cpu input queues */
-	struct fuse_iqueue __percpu *riqs;
-	struct fuse_iqueue __percpu *wiqs;
+	/** fiq routing tables */
+	struct fuse_rtable wrt;
+	struct fuse_rtable rrt;
 
 	/** The next unique kernel file handle */
 	atomic64_t khctr;
@@ -1301,7 +1314,7 @@ int fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
 		    struct user_namespace *user_ns,
 		    const struct fuse_iqueue_ops *fiq_ops, void *fiq_priv);
 
-int fuse_install_percpu_iqs(struct fuse_dev *fud, int cpu, int rw);
+int fuse_install_iq_route(struct fuse_dev *fud, struct fuse_iq_routing *req);
 
 /**
  * Release reference to fuse_conn

@@ -973,11 +973,29 @@ struct fuse_notify_retrieve_in {
 	uint64_t	dummy4;
 };
 
+struct fuse_iq_routing {
+	uint16_t	type;
+#define FUSE_ROUTING_NONE	0
+#define FUSE_ROUTING_CPU	1
+#define FUSE_ROUTING_SIZE	2
+#define FUSE_ROUTING_HASH	3
+	uint16_t	flags;
+#define FUSE_ROUTE_F_IOTYPE_MASK	3
+#define FUSE_ROUTE_F_IOTYPE_R		1
+#define FUSE_ROUTE_F_IOTYPE_W		2
+	uint32_t	table_size;
+	uint32_t	index;
+	uint32_t	key;
+	uint32_t	reserved[3];
+};
+
 /* Device ioctls: */
 #define FUSE_DEV_IOC_MAGIC		229
 #define FUSE_DEV_IOC_CLONE		_IOR(FUSE_DEV_IOC_MAGIC, 0, uint32_t)
+/* *SETAFF* are for compatibility, should use FUSE_DEV_IOC_ROUTING instead */
 #define FUSE_DEV_IOC_SETAFF		_IO(FUSE_DEV_IOC_MAGIC, 1)
 #define FUSE_DEV_IOC_SETAFF_W		_IO(FUSE_DEV_IOC_MAGIC, 2)
+#define FUSE_DEV_IOC_ROUTING		_IOR(FUSE_DEV_IOC_MAGIC, 6, struct fuse_iq_routing)
 
 struct fuse_lseek_in {
 	uint64_t	fh;

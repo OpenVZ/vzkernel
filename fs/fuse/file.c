@@ -21,6 +21,7 @@
 #include <linux/task_io_accounting_ops.h>
 #include <linux/fiemap.h>
 #include <linux/file.h>
+#include <linux/jhash.h>
 
 struct workqueue_struct *fuse_fput_wq;
 static DEFINE_SPINLOCK(fuse_fput_lock);
@@ -776,6 +777,38 @@ out:
 	return err;
 }
 
+struct fuse_iqueue *fuse_route_io(struct fuse_conn *fc, struct fuse_rtable *rt, size_t iosize,
+				  struct inode *inode)
+{
+	struct fuse_iqueue *fiq;
+	int i;
+
+	switch (rt->type) {
+	case FUSE_ROUTING_CPU:
+		fiq = raw_cpu_ptr(rt->iqs_cpu);
+		if (fiq->handled_by_fud)
+			return fiq;
+		break;
+	case FUSE_ROUTING_HASH:
+		i = jhash_1word((u32)inode->i_ino, 0) % rt->rt_size;
+		fiq = rt->iqs_table + i;
+		if (fiq->handled_by_fud)
+			return fiq;
+		break;
+	case FUSE_ROUTING_SIZE:
+		if (iosize == 0)
+			return NULL;
+
+		for (i = 0; i < rt->rt_size; i++) {
+			fiq = rt->iqs_table + i;
+			if (iosize <= fiq->size && fiq->handled_by_fud)
+				return fiq;
+		}
+		break;
+	}
+	return NULL;
+}
+
 void fuse_read_args_fill(struct fuse_io_args *ia, struct file *file, loff_t pos,
 			 size_t count, int opcode)
 {
@@ -797,12 +830,7 @@ void fuse_read_args_fill(struct fuse_io_args *ia, struct file *file, loff_t pos,
 	args->io_inode = file_inode(file);
 
 	if (opcode == FUSE_READ) {
-		if (ff->fm->fc->riqs) {
-			struct fuse_iqueue *fiq = raw_cpu_ptr(ff->fm->fc->riqs);
-
-			if (fiq->handled_by_fud)
-				args->fiq = fiq;
-		}
+		args->fiq = fuse_route_io(ff->fm->fc, &ff->fm->fc->rrt, count, args->io_inode);
 		args->inode = file->f_path.dentry->d_inode;
 		args->ff = ff;
 	}
@@ -1312,12 +1340,7 @@ static void fuse_write_args_fill(struct fuse_io_args *ia, struct fuse_file *ff,
 	args->io_inode = inode;
 	args->ff = ff;
 
-	if (ff->fm->fc->wiqs) {
-		struct fuse_iqueue *fiq = raw_cpu_ptr(ff->fm->fc->wiqs);
-
-		if (fiq->handled_by_fud)
-			args->fiq = fiq;
-	}
+	args->fiq = fuse_route_io(ff->fm->fc, &ff->fm->fc->wrt, count, inode);
 }
 
 static unsigned int fuse_write_flags(struct kiocb *iocb)
@@ -2004,6 +2027,8 @@ __acquires(fi->lock)
 	args->in_args[1].size = inarg->size;
 	args->force = true;
 	args->nocreds = true;
+
+	args->fiq = fuse_route_io(fm->fc, &fm->fc->wrt, inarg->size, wpa->inode);
 
 	spin_unlock(&fi->lock);
 	err = fuse_simple_background(fm, args, GFP_NOFS | __GFP_NOFAIL);
