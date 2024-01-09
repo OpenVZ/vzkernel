@@ -644,7 +644,7 @@ int __zerocopy_sg_from_iter(struct msghdr *msg, struct sock *sk,
 		skb->data_len += copied;
 		skb->len += copied;
 		skb->truesize += truesize;
-		if (sk && sk->sk_type == SOCK_STREAM) {
+		if (sk && sk->sk_type == SOCK_STREAM && sk->sk_family != PF_UNIX) {
 			sk_wmem_queued_add(sk, truesize);
 			if (!skb_zcopy_pure(skb))
 				sk_mem_charge(sk, truesize);
