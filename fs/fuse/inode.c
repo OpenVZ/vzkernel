@@ -501,6 +501,31 @@ void fuse_kill_requests(struct fuse_conn *fc, struct inode *inode,
 }
 EXPORT_SYMBOL_GPL(fuse_kill_requests);
 
+static void fuse_kill_routing(struct fuse_rtable *rt, struct fuse_conn *fc, struct inode *inode)
+{
+	if (rt->type == FUSE_ROUTING_CPU) {
+		int cpu;
+
+		for_each_online_cpu(cpu) {
+			struct fuse_iqueue *fiq =  per_cpu_ptr(rt->iqs_cpu, cpu);
+
+			spin_lock(&fiq->lock);
+			fuse_kill_requests(fc, inode, &fiq->pending);
+			spin_unlock(&fiq->lock);
+		}
+	} else if (rt->type == FUSE_ROUTING_SIZE || rt->type == FUSE_ROUTING_HASH) {
+		int i;
+
+		for (i = 0; i < rt->rt_size; i++) {
+			struct fuse_iqueue *fiq =  rt->iqs_table + i;
+
+			spin_lock(&fiq->lock);
+			fuse_kill_requests(fc, inode, &fiq->pending);
+			spin_unlock(&fiq->lock);
+		}
+	}
+}
+
 int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 {
 	struct inode *inode;
@@ -553,6 +578,9 @@ int fuse_invalidate_files(struct fuse_conn *fc, u64 nodeid)
 		spin_lock(&fc->main_iq.lock);
 		fuse_kill_requests(fc, inode, &fc->main_iq.pending);
 		spin_unlock(&fc->main_iq.lock);
+
+		fuse_kill_routing(&fc->rrt, fc, inode);
+		fuse_kill_routing(&fc->wrt, fc, inode);
 
 		list_for_each_entry(fud, &fc->devices, entry) {
 			struct fuse_pqueue *fpq = &fud->pq;
@@ -1016,45 +1044,146 @@ static void fuse_iqueue_init(struct fuse_iqueue *fiq,
 	fiq->priv = priv;
 }
 
-int fuse_install_percpu_iqs(struct fuse_dev *fud, int dest_cpu, int rw)
+static void fuse_free_routing(struct fuse_rtable *rt)
+{
+	if (rt->type == FUSE_ROUTING_CPU)
+		free_percpu(rt->iqs_cpu);
+	else if (rt->type == FUSE_ROUTING_SIZE || rt->type == FUSE_ROUTING_HASH)
+		kfree(rt->iqs_table);
+}
+
+static int alloc_rt_table(struct fuse_dev *fud, struct fuse_rtable *rt,
+			  struct fuse_iq_routing *req)
 {
 	int res = -EINVAL;
+	int idx;
 
-	if (dest_cpu < NR_CPUS && cpu_possible(dest_cpu)) {
-		struct fuse_iqueue __percpu **iqs_p = rw ? &fud->fc->wiqs : &fud->fc->riqs;
-		struct fuse_iqueue __percpu *iqs;
+	switch (req->type) {
+	case FUSE_ROUTING_CPU:
+		if (req->index >= NR_CPUS || !cpu_possible(req->index))
+			break;
 
-		iqs = *iqs_p;
-		if (iqs == NULL) {
-			int cpu;
-
-			iqs = alloc_percpu(struct fuse_iqueue);
-			if (!iqs)
-				return -ENOMEM;
-			for_each_possible_cpu(cpu) {
-				fuse_iqueue_init(per_cpu_ptr(iqs, cpu), fud->fc->main_iq.ops,
-								  fud->fc->main_iq.priv);
-			}
+		rt->iqs_cpu = alloc_percpu(struct fuse_iqueue);
+		if (!rt->iqs_cpu)
+			break;
+		for_each_possible_cpu(idx) {
+			fuse_iqueue_init(per_cpu_ptr(rt->iqs_cpu, idx), fud->fc->main_iq.ops,
+					 fud->fc->main_iq.priv);
 		}
-
-		spin_lock(&fud->fc->lock);
-
-		if (*iqs_p == NULL) {
-			*iqs_p = iqs;
-		} else if (*iqs_p != iqs) {
-			free_percpu(iqs);
-			iqs = *iqs_p;
-		}
-
-		fud->fiq->handled_by_fud--;
-		BUG_ON(fud->fiq->handled_by_fud < 0);
-
-		fud->fiq = per_cpu_ptr(iqs, dest_cpu);
-
-		fud->fiq->handled_by_fud++;
-		spin_unlock(&fud->fc->lock);
 		res = 0;
+		break;
+	case FUSE_ROUTING_SIZE:
+		if (req->key > FUSE_MAX_MAX_PAGES*PAGE_SIZE || (req->key % PAGE_SIZE))
+			break;
+		fallthrough;
+	case FUSE_ROUTING_HASH:
+		if (req->index >= req->table_size)
+			break;
+		rt->rt_size = req->table_size;
+		rt->iqs_table = kcalloc(req->table_size, sizeof(struct fuse_iqueue), GFP_KERNEL);
+		if (!rt->iqs_table)
+			return -ENOMEM;
+		for (idx = 0; idx < rt->rt_size; idx++) {
+			fuse_iqueue_init(rt->iqs_table + idx, fud->fc->main_iq.ops,
+					 fud->fc->main_iq.priv);
+			rt->iqs_table[idx].size = 0;
+		}
+		res = 0;
+		break;
 	}
+	return res;
+}
+
+static void adjust_rt_table(struct fuse_dev *fud, struct fuse_iqueue *fiq,
+			    struct fuse_iq_routing *req)
+{
+	u32 size = req->key;
+
+	fiq->size = size;
+
+	if (fud->fc->max_pages < size / PAGE_SIZE)
+		fud->fc->max_pages = size / PAGE_SIZE;
+
+	/* The first installed routing entry must establish minimal size,
+	 * this is important at size check in fuse_dev_do_read()
+	 */
+	if (fud->fc->main_iq.size == 0)
+		fud->fc->main_iq.size = size;
+
+	if (req->flags & FUSE_ROUTE_F_IOTYPE_W) {
+		if (fud->fc->max_write < size)
+			fud->fc->max_write = size;
+	}
+	if (req->flags & FUSE_ROUTE_F_IOTYPE_R) {
+		if (fud->fc->max_read < size)
+			fud->fc->max_read = size;
+	}
+}
+
+int fuse_install_iq_route(struct fuse_dev *fud, struct fuse_iq_routing *req)
+{
+	int res = -EINVAL;
+	struct fuse_rtable *rt = (req->flags & FUSE_ROUTE_F_IOTYPE_W) ? &fud->fc->wrt :
+		&fud->fc->rrt;
+	struct fuse_rtable rtl;
+
+	if (rt->type != FUSE_ROUTING_NONE && rt->type != req->type)
+		return -EINVAL;
+
+	rtl.type = req->type;
+	rtl.iqs = rt->iqs;
+	if (rtl.iqs == NULL) {
+		res = alloc_rt_table(fud, &rtl, req);
+		if (res)
+			goto out;
+	}
+
+	res = 0;
+	spin_lock(&fud->fc->lock);
+
+	if (rt->iqs == NULL) {
+		rt->iqs = rtl.iqs;
+		rt->type = rtl.type;
+		rt->rt_size = rtl.rt_size;
+	} else if (rt->iqs != rtl.iqs) {
+		fuse_free_routing(&rtl);
+		if (rt->type != req->type)
+			res = -EINVAL;
+	}
+
+	if (res)
+		goto out_unlock;
+
+	fud->fiq->handled_by_fud--;
+	BUG_ON(fud->fiq->handled_by_fud < 0);
+
+	switch (rt->type) {
+	case FUSE_ROUTING_CPU:
+		if (req->index >= NR_CPUS || !cpu_possible(req->index)) {
+			res = -EINVAL;
+			goto out_unlock;
+		}
+		fud->fiq = per_cpu_ptr(rt->iqs_cpu, req->index);
+		res = 0;
+		break;
+	case FUSE_ROUTING_SIZE:
+	case FUSE_ROUTING_HASH:
+		if (req->index >= rt->rt_size) {
+			res = -EINVAL;
+			goto out_unlock;
+		}
+		fud->fiq = rt->iqs_table + req->index;
+		if (rt->type == FUSE_ROUTING_SIZE)
+			adjust_rt_table(fud, fud->fiq, req);
+		res = 0;
+		break;
+	}
+
+	fud->fiq->handled_by_fud++;
+
+out_unlock:
+	spin_unlock(&fud->fc->lock);
+out:
 	return res;
 }
 
@@ -1548,10 +1677,8 @@ EXPORT_SYMBOL_GPL(fuse_send_init);
 void fuse_free_conn(struct fuse_conn *fc)
 {
 	WARN_ON(!list_empty(&fc->devices));
-	if (fc->riqs)
-		free_percpu(fc->riqs);
-	if (fc->wiqs)
-		free_percpu(fc->wiqs);
+	fuse_free_routing(&fc->wrt);
+	fuse_free_routing(&fc->rrt);
 	kfree_rcu(fc, rcu);
 }
 EXPORT_SYMBOL_GPL(fuse_free_conn);
