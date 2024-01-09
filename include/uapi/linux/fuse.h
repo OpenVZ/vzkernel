@@ -902,6 +902,9 @@ struct fuse_out_header {
 	uint64_t	unique;
 };
 
+/* Special error value for fuse_out_header */
+#define FUSE_OUT_SPLICES	0x40000000
+
 struct fuse_dirent {
 	uint64_t	ino;
 	uint64_t	off;

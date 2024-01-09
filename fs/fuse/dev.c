@@ -31,6 +31,7 @@ MODULE_ALIAS("devname:fuse");
 
 static struct kmem_cache *fuse_req_cachep;
 extern struct workqueue_struct *fuse_fput_wq;
+static const struct file_operations *fuse_g_splice_ops;
 
 static struct fuse_dev *fuse_get_dev(struct file *file)
 {
@@ -1999,6 +2000,144 @@ static int copy_out_args(struct fuse_copy_state *cs, struct fuse_args *args,
 			      args->out_args, args->page_zeroing);
 }
 
+static int copy_out_splices(struct fuse_copy_state *cs, struct fuse_args *args,
+			    unsigned int nbytes)
+{
+	struct fuse_args_pages *ap = container_of(args, typeof(*ap), args);
+	struct pipe_inode_info *pipe;
+	u32 fdarr_inline[8];
+	u32 *fdarr;
+	unsigned int nsplices;
+	int err, i;
+	int didx = 0;
+	int doff = ap->descs[0].offset;
+	int dend = doff + ap->descs[0].length;
+	struct page *dpage = ap->pages[0];
+
+	nsplices = nbytes - sizeof(struct fuse_out_header);
+	if (nsplices & 3)
+		return -EINVAL;
+	if (nsplices > 8) {
+		fdarr = kmalloc(nsplices, GFP_KERNEL);
+		if (!fdarr)
+			return -ENOMEM;
+	} else
+		fdarr = fdarr_inline;
+
+	err = fuse_copy_one(cs, fdarr, nsplices);
+	if (err)
+		goto out;
+
+	nsplices /= 4;
+
+	fuse_copy_finish(cs);
+
+	for (i = 0; i < nsplices; i++) {
+		void *src, *dst;
+		struct fd f = fdget(fdarr[i]);
+
+		if (f.file) {
+			unsigned int head, tail, mask;
+
+			if (unlikely(f.file->f_op != fuse_g_splice_ops)) {
+				if (fuse_g_splice_ops == NULL) {
+					struct file *probe_files[2];
+
+					if (create_pipe_files(probe_files, 0)) {
+						err = -EBADF;
+						goto out;
+					}
+					fuse_g_splice_ops = probe_files[0]->f_op;
+					fput(probe_files[0]);
+					fput(probe_files[1]);
+				}
+				if (unlikely(f.file->f_op != fuse_g_splice_ops)) {
+					err = -EBADF;
+					goto out;
+				}
+			}
+
+			pipe = f.file->private_data;
+
+			if (pipe == NULL) {
+				err = -EBADF;
+				goto out;
+			}
+
+			pipe_lock(pipe);
+
+			head = pipe->head;
+			mask = pipe->ring_size - 1;
+
+			for (tail = pipe->tail; tail != head; tail++) {
+				struct page *ipage = pipe->bufs[tail & mask].page;
+				int ioff = pipe->bufs[tail & mask].offset;
+				int ilen = pipe->bufs[tail & mask].len;
+
+				while (ilen > 0) {
+					int copy = ilen;
+
+					if (doff >= dend) {
+						didx++;
+						if (didx >= ap->num_pages)
+							goto out_overflow;
+						dpage = ap->pages[didx];
+						doff = ap->descs[didx].offset;
+						dend = doff + ap->descs[didx].length;
+					}
+
+					if (copy > dend - doff)
+						copy = dend - doff;
+					src = kmap_atomic(ipage);
+					dst = kmap_atomic(dpage);
+					memcpy(dst + doff, src + ioff, copy);
+					kunmap_atomic(dst);
+					kunmap_atomic(src);
+
+					doff += copy;
+					ioff += copy;
+					ilen -= copy;
+				}
+				put_page(ipage);
+				pipe->bufs[tail & mask].ops = NULL;
+				pipe->bufs[tail & mask].page = NULL;
+				pipe->tail = tail + 1;
+			}
+			pipe_unlock(pipe);
+			fdput(f);
+		} else {
+			err = -EBADF;
+			goto out;
+		}
+	}
+
+	if (args->page_zeroing && didx < ap->num_pages) {
+		if (doff < dend) {
+			void *dst = kmap_atomic(dpage);
+
+			memset(dst + doff, 0, dend - doff);
+			kunmap_atomic(dst);
+		}
+		for (didx++ ; didx < ap->num_pages; didx++) {
+			void *dst = kmap_atomic(ap->pages[didx]);
+
+			memset(dst + ap->descs[didx].offset, 0, ap->descs[didx].length);
+			kunmap_atomic(dst);
+		}
+	}
+	err = 0;
+
+out:
+	if (fdarr != fdarr_inline)
+		kfree(fdarr);
+	return err;
+
+out_overflow:
+	pipe_unlock(pipe);
+	err = -EMSGSIZE;
+	goto out;
+}
+
 /*
  * Write a single reply to a request.  First the header is copied from
  * the write buffer.  The request is then searched on the processing
@@ -2037,7 +2176,8 @@ static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
 	}
 
 	err = -EINVAL;
-	if (oh.error <= -512 || oh.error > 0)
+	if (oh.error != FUSE_OUT_SPLICES &&
+	    (oh.error <= -512 || oh.error > 0))
 		goto copy_finish;
 
 	spin_lock(&fpq->lock);
@@ -2069,6 +2209,14 @@ static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
 		goto copy_finish;
 	}
 
+	if (oh.error == FUSE_OUT_SPLICES) {
+		if (req->args->out_numargs != 1 || !req->args->out_pages) {
+			spin_unlock(&fpq->lock);
+			err = -EINVAL;
+			goto copy_finish;
+		}
+	}
+
 	clear_bit(FR_SENT, &req->flags);
 	list_move(&req->list, &fpq->io);
 	req->out.h = oh;
@@ -2078,7 +2226,10 @@ static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
 	if (!req->args->page_replace)
 		cs->move_pages = 0;
 
-	if (oh.error)
+	if (oh.error == FUSE_OUT_SPLICES) {
+		req->out.h.error = 0;
+		err = copy_out_splices(cs, req->args, nbytes);
+	} else if (oh.error)
 		err = nbytes != sizeof(oh) ? -EINVAL : 0;
 	else
 		err = copy_out_args(cs, req->args, nbytes);
