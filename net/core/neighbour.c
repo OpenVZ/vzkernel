@@ -348,7 +348,7 @@ int neigh_ifdown(struct neigh_table *tbl, struct net_device *dev)
 	neigh_flush_dev(tbl, dev);
 	pneigh_ifdown(tbl, dev);
 	write_unlock_bh(&tbl->lock);
-	pneigh_queue_purge(&tbl->proxy_queue, dev_net(dev));
+	pneigh_queue_purge(&tbl->proxy_queue, dev ? dev_net(dev) : NULL);
 	if (skb_queue_empty(&tbl->proxy_queue))
 		del_timer_sync(&tbl->proxy_timer);
 	return 0;
