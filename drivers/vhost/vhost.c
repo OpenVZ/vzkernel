@@ -257,10 +257,10 @@ static bool vhost_worker_queue(struct vhost_worker *worker,
 
 bool vhost_work_queue(struct vhost_dev *dev, struct vhost_work *work)
 {
-	XA_STATE(xas, &dev->worker_xa, 0);
 	struct vhost_worker *worker;
+	unsigned long i;
 
-	worker = xas_find(&xas, UINT_MAX);
+	worker = xa_find(&dev->worker_xa, &i, ULONG_MAX, XA_PRESENT);
 	if (!worker)
 		return false;
 
