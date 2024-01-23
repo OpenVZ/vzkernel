@@ -2013,11 +2013,12 @@ static int copy_out_splices(struct fuse_copy_state *cs, struct fuse_args *args,
 	int doff = ap->descs[0].offset;
 	int dend = doff + ap->descs[0].length;
 	struct page *dpage = ap->pages[0];
+	struct fd f = { .file = NULL };
 
 	nsplices = nbytes - sizeof(struct fuse_out_header);
 	if (nsplices & 3)
 		return -EINVAL;
-	if (nsplices > 8) {
+	if (nsplices > sizeof(fdarr_inline)) {
 		fdarr = kmalloc(nsplices, GFP_KERNEL);
 		if (!fdarr)
 			return -ENOMEM;
@@ -2034,7 +2035,8 @@ static int copy_out_splices(struct fuse_copy_state *cs, struct fuse_args *args,
 
 	for (i = 0; i < nsplices; i++) {
 		void *src, *dst;
-		struct fd f = fdget(fdarr[i]);
+
+		f = fdget(fdarr[i]);
 
 		if (f.file) {
 			unsigned int head, tail, mask;
@@ -2105,6 +2107,7 @@ static int copy_out_splices(struct fuse_copy_state *cs, struct fuse_args *args,
 			}
 			pipe_unlock(pipe);
 			fdput(f);
+			f.file = NULL;
 		} else {
 			err = -EBADF;
 			goto out;
@@ -2128,6 +2131,8 @@ static int copy_out_splices(struct fuse_copy_state *cs, struct fuse_args *args,
 	err = 0;
 
 out:
+	if (f.file)
+		fdput(f);
 	if (fdarr != fdarr_inline)
 		kfree(fdarr);
 	return err;
