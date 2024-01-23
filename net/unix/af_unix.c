@@ -2849,16 +2849,33 @@ static int unix_stream_splice_actor(struct sk_buff *skb,
 {
 	/* Zerocopy pages cannot be spliced, alas. It looks like splice interface
 	 * gives no way to notify about actual page consumption. So, we have to copy.
-	 * This path is not going be legit, sender will be notified and will stop zerocopying.
+	 * This path is not going be used, sender and receiver should agree
+	 * about the protocol apriori or sender will be notified with
+	 * SO_EE_CODE_ZEROCOPY_COPIED to stop zerocopying.
 	 */
-	int err = skb_orphan_frags_rx(skb, GFP_KERNEL);
+	int err = 0;
+	struct sk_buff *__skb = skb;
 
-	if (err)
-		return err;
+	if (skb_zcopy(skb)) {
+		/* skb is always shared, unfortunately. */
+		if (skb_shared(skb)) {
+			__skb = skb_clone(skb, GFP_KERNEL);
+			if (!__skb)
+				return -ENOMEM;
+		}
+		err = skb_orphan_frags_rx(__skb, GFP_KERNEL);
+		if (err)
+			goto out;
+	}
 
-	return skb_splice_bits(skb, state->socket->sk,
-			       UNIXCB(skb).consumed + skip,
-			       state->pipe, chunk, state->splice_flags);
+	err = skb_splice_bits(__skb, state->socket->sk,
+			      UNIXCB(__skb).consumed + skip,
+			      state->pipe, chunk, state->splice_flags);
+
+out:
+	if (skb != __skb)
+		kfree_skb(__skb);
+	return err;
 }
 
 static ssize_t unix_stream_splice_read(struct socket *sock,  loff_t *ppos,

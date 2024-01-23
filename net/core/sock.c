@@ -1406,7 +1406,7 @@ unpriv_rcvbuf:
 			       sk->sk_protocol == IPPROTO_UDP)))
 				ret = -EOPNOTSUPP;
 		} else if (sk->sk_family == PF_UNIX) {
-			if (sk->sk_type == SOCK_DGRAM)
+			if (sk->sk_type != SOCK_STREAM)
 				ret = -EOPNOTSUPP;
 		} else if (sk->sk_family != PF_RDS) {
 			ret = -EOPNOTSUPP;
