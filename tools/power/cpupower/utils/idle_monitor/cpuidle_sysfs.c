@@ -130,15 +130,18 @@ static struct cpuidle_monitor *cpuidle_register(void)
 {
 	int num;
 	char *tmp;
+	int this_cpu;
+
+	this_cpu = sched_getcpu();
 
 	/* Assume idle state count is the same for all CPUs */
-	cpuidle_sysfs_monitor.hw_states_num = sysfs_get_idlestate_count(0);
+	cpuidle_sysfs_monitor.hw_states_num = sysfs_get_idlestate_count(this_cpu);
 
 	if (cpuidle_sysfs_monitor.hw_states_num <= 0)
 		return NULL;
 
 	for (num = 0; num < cpuidle_sysfs_monitor.hw_states_num; num++) {
-		tmp = sysfs_get_idlestate_name(0, num);
+		tmp = sysfs_get_idlestate_name(this_cpu, num);
 		if (tmp == NULL)
 			continue;
 
@@ -146,7 +149,7 @@ static struct cpuidle_monitor *cpuidle_register(void)
 		strncpy(cpuidle_cstates[num].name, tmp, CSTATE_NAME_LEN - 1);
 		free(tmp);
 
-		tmp = sysfs_get_idlestate_desc(0, num);
+		tmp = sysfs_get_idlestate_desc(this_cpu, num);
 		if (tmp == NULL)
 			continue;
 		strncpy(cpuidle_cstates[num].desc, tmp,	CSTATE_DESC_LEN - 1);
@@ -191,6 +194,6 @@ struct cpuidle_monitor cpuidle_sysfs_monitor = {
 	.stop			= cpuidle_stop,
 	.do_register		= cpuidle_register,
 	.unregister		= cpuidle_unregister,
-	.needs_root		= 0,
+	.flags.needs_root	= 0,
 	.overflow_s		= UINT_MAX,
 };

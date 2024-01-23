@@ -32,6 +32,12 @@
 #include <linux/gfp.h>
 #include <linux/memblock.h>
 #include <linux/edd.h>
+#include <linux/crash_dump.h>
+#include <linux/frame.h>
+
+#ifdef CONFIG_KEXEC_CORE
+#include <linux/kexec.h>
+#endif
 
 #include <xen/xen.h>
 #include <xen/events.h>
@@ -110,6 +116,10 @@ DEFINE_PER_CPU(struct vcpu_info *, xen_vcpu);
  */
 DEFINE_PER_CPU(struct vcpu_info, xen_vcpu_info);
 
+/* Linux <-> Xen vCPU id mapping */
+DEFINE_PER_CPU(uint32_t, xen_vcpu_id);
+EXPORT_PER_CPU_SYMBOL(xen_vcpu_id);
+
 enum xen_domain_type xen_domain_type = XEN_NATIVE;
 EXPORT_SYMBOL_GPL(xen_domain_type);
 
@@ -148,7 +158,7 @@ struct shared_info *HYPERVISOR_shared_info = &xen_dummy_shared_info;
  *
  * 0: not available, 1: available
  */
-static int have_vcpu_info_placement = 1;
+int xen_have_vcpu_info_placement = 1;
 
 struct tls_descs {
 	struct desc_struct desc[3];
@@ -163,69 +173,25 @@ struct tls_descs {
  */
 static DEFINE_PER_CPU(struct tls_descs, shadow_tls_desc);
 
-static void clamp_max_cpus(void)
-{
-#ifdef CONFIG_SMP
-	if (setup_max_cpus > MAX_VIRT_CPUS)
-		setup_max_cpus = MAX_VIRT_CPUS;
-#endif
-}
+#define XEN_HVM_CPUID_VCPU_ID_PRESENT  (1u << 3)
 
-static void xen_vcpu_setup(int cpu)
+static int xen_vcpu_setup_restore(int cpu)
 {
-	struct vcpu_register_vcpu_info info;
-	int err;
-	struct vcpu_info *vcpup;
+	int rc = 0;
 
-	BUG_ON(HYPERVISOR_shared_info == &xen_dummy_shared_info);
+	/* Any per_cpu(xen_vcpu) is stale, so reset it */
+	xen_vcpu_info_reset(cpu);
 
 	/*
-	 * This path is called twice on PVHVM - first during bootup via
-	 * smp_init -> xen_hvm_cpu_notify, and then if the VCPU is being
-	 * hotplugged: cpu_up -> xen_hvm_cpu_notify.
-	 * As we can only do the VCPUOP_register_vcpu_info once lets
-	 * not over-write its result.
-	 *
-	 * For PV it is called during restore (xen_vcpu_restore) and bootup
-	 * (xen_setup_vcpu_info_placement). The hotplug mechanism does not
-	 * use this function.
+	 * For PVH and PVHVM, setup online VCPUs only. The rest will
+	 * be handled by hotplug.
 	 */
-	if (xen_hvm_domain()) {
-		if (per_cpu(xen_vcpu, cpu) == &per_cpu(xen_vcpu_info, cpu))
-			return;
-	}
-	if (cpu < MAX_VIRT_CPUS)
-		per_cpu(xen_vcpu,cpu) = &HYPERVISOR_shared_info->vcpu_info[cpu];
-
-	if (!have_vcpu_info_placement) {
-		if (cpu >= MAX_VIRT_CPUS)
-			clamp_max_cpus();
-		return;
+	if (xen_pv_domain() ||
+	    (xen_hvm_domain() && cpu_online(cpu))) {
+		rc = xen_vcpu_setup(cpu);
 	}
 
-	vcpup = &per_cpu(xen_vcpu_info, cpu);
-	info.mfn = arbitrary_virt_to_mfn(vcpup);
-	info.offset = offset_in_page(vcpup);
-
-	/* Check to see if the hypervisor will put the vcpu_info
-	   structure where we want it, which allows direct access via
-	   a percpu-variable.
-	   N.B. This hypercall can _only_ be called once per CPU. Subsequent
-	   calls will error out with -EINVAL. This is due to the fact that
-	   hypervisor has no unregister variant and this hypercall does not
-	   allow to over-write info.mfn and info.offset.
-	 */
-	err = HYPERVISOR_vcpu_op(VCPUOP_register_vcpu_info, cpu, &info);
-
-	if (err) {
-		printk(KERN_DEBUG "register_vcpu_info failed: err=%d\n", err);
-		have_vcpu_info_placement = 0;
-		clamp_max_cpus();
-	} else {
-		/* This cpu is using the registered vcpu info, even if
-		   later ones fail to. */
-		per_cpu(xen_vcpu, cpu) = vcpup;
-	}
+	return rc;
 }
 
 /*
@@ -235,25 +201,115 @@ static void xen_vcpu_setup(int cpu)
  */
 void xen_vcpu_restore(void)
 {
-	int cpu;
+	int cpu, rc;
 
 	for_each_possible_cpu(cpu) {
 		bool other_cpu = (cpu != smp_processor_id());
-		bool is_up = HYPERVISOR_vcpu_op(VCPUOP_is_up, cpu, NULL);
+		bool is_up;
+
+		if (xen_vcpu_nr(cpu) == XEN_VCPU_ID_INVALID)
+			continue;
+
+		/* Only Xen 4.5 and higher support this. */
+		is_up = HYPERVISOR_vcpu_op(VCPUOP_is_up,
+					   xen_vcpu_nr(cpu), NULL) > 0;
 
 		if (other_cpu && is_up &&
-		    HYPERVISOR_vcpu_op(VCPUOP_down, cpu, NULL))
+		    HYPERVISOR_vcpu_op(VCPUOP_down, xen_vcpu_nr(cpu), NULL))
 			BUG();
 
-		xen_setup_runstate_info(cpu);
+		if (xen_pv_domain() || xen_feature(XENFEAT_hvm_safe_pvclock))
+			xen_setup_runstate_info(cpu);
 
-		if (have_vcpu_info_placement)
-			xen_vcpu_setup(cpu);
-
-		if (other_cpu && is_up &&
-		    HYPERVISOR_vcpu_op(VCPUOP_up, cpu, NULL))
+		rc = xen_vcpu_setup_restore(cpu);
+		if (rc)
+			pr_emerg_once("vcpu restore failed for cpu=%d err=%d. "
+					"System will hang.\n", cpu, rc);
+		/*
+		 * In case xen_vcpu_setup_restore() fails, do not bring up the
+		 * VCPU. This helps us avoid the resulting OOPS when the VCPU
+		 * accesses pvclock_vcpu_time via xen_vcpu (which is NULL.)
+		 * Note that this does not improve the situation much -- now the
+		 * VM hangs instead of OOPSing -- with the VCPUs that did not
+		 * fail, spinning in stop_machine(), waiting for the failed
+		 * VCPUs to come up.
+		 */
+		if (other_cpu && is_up && (rc == 0) &&
+		    HYPERVISOR_vcpu_op(VCPUOP_up, xen_vcpu_nr(cpu), NULL))
 			BUG();
 	}
+}
+
+void xen_vcpu_info_reset(int cpu)
+{
+	if (xen_vcpu_nr(cpu) < MAX_VIRT_CPUS) {
+		per_cpu(xen_vcpu, cpu) =
+			&HYPERVISOR_shared_info->vcpu_info[xen_vcpu_nr(cpu)];
+	} else {
+		/* Set to NULL so that if somebody accesses it we get an OOPS */
+		per_cpu(xen_vcpu, cpu) = NULL;
+	}
+}
+
+int xen_vcpu_setup(int cpu)
+{
+	struct vcpu_register_vcpu_info info;
+	int err;
+	struct vcpu_info *vcpup;
+
+	BUG_ON(HYPERVISOR_shared_info == &xen_dummy_shared_info);
+
+	/*
+	 * This path is called on PVHVM at bootup (xen_hvm_smp_prepare_boot_cpu)
+	 * and at restore (xen_vcpu_restore). Also called for hotplugged
+	 * VCPUs (cpu_init -> xen_hvm_cpu_prepare_hvm).
+	 * However, the hypercall can only be done once (see below) so if a VCPU
+	 * is offlined and comes back online then let's not redo the hypercall.
+	 *
+	 * For PV it is called during restore (xen_vcpu_restore) and bootup
+	 * (xen_setup_vcpu_info_placement). The hotplug mechanism does not
+	 * use this function.
+	 */
+	if (xen_hvm_domain()) {
+		if (per_cpu(xen_vcpu, cpu) == &per_cpu(xen_vcpu_info, cpu))
+			return 0;
+	}
+
+	if (xen_have_vcpu_info_placement) {
+		vcpup = &per_cpu(xen_vcpu_info, cpu);
+		info.mfn = arbitrary_virt_to_mfn(vcpup);
+		info.offset = offset_in_page(vcpup);
+
+		/*
+		 * Check to see if the hypervisor will put the vcpu_info
+		 * structure where we want it, which allows direct access via
+		 * a percpu-variable.
+		 * N.B. This hypercall can _only_ be called once per CPU.
+		 * Subsequent calls will error out with -EINVAL. This is due to
+		 * the fact that hypervisor has no unregister variant and this
+		 * hypercall does not allow to over-write info.mfn and
+		 * info.offset.
+		 */
+		err = HYPERVISOR_vcpu_op(VCPUOP_register_vcpu_info,
+					 xen_vcpu_nr(cpu), &info);
+
+		if (err) {
+			pr_warn_once("register_vcpu_info failed: cpu=%d err=%d\n",
+				     cpu, err);
+			xen_have_vcpu_info_placement = 0;
+		} else {
+			/*
+			 * This cpu is using the registered vcpu info, even if
+			 * later ones fail to.
+			 */
+			per_cpu(xen_vcpu, cpu) = vcpup;
+		}
+	}
+
+	if (!xen_have_vcpu_info_placement)
+		xen_vcpu_info_reset(cpu);
+
+	return ((per_cpu(xen_vcpu, cpu) == NULL) ? -ENODEV : 0);
 }
 
 static void __init xen_banner(void)
@@ -342,8 +398,8 @@ static void xen_cpuid(unsigned int *ax, unsigned int *bx,
 	*cx &= maskecx;
 	*cx |= setecx;
 	*dx &= maskedx;
-
 }
+STACK_FRAME_NON_STANDARD(xen_cpuid); /* XEN_EMULATE_PREFIX */
 
 static bool __init xen_check_mwait(void)
 {
@@ -1135,12 +1191,26 @@ void xen_setup_vcpu_info_placement(void)
 {
 	int cpu;
 
-	for_each_possible_cpu(cpu)
-		xen_vcpu_setup(cpu);
+	for_each_possible_cpu(cpu) {
+		/* Set up direct vCPU id mapping for PV guests. */
+		per_cpu(xen_vcpu_id, cpu) = cpu;
 
-	/* xen_vcpu_setup managed to place the vcpu_info within the
-	   percpu area for all cpus, so make use of it */
-	if (have_vcpu_info_placement) {
+		/*
+		 * xen_vcpu_setup(cpu) can fail  -- in which case it
+		 * falls back to the shared_info version for cpus
+		 * where xen_vcpu_nr(cpu) < MAX_VIRT_CPUS.
+		 *
+		 * xen_cpu_up_prepare_pv() handles the rest by failing
+		 * them in hotplug.
+		 */
+		(void) xen_vcpu_setup(cpu);
+	}
+
+	/*
+	 * xen_vcpu_setup managed to place the vcpu_info within the
+	 * percpu area for all cpus, so make use of it.
+	 */
+	if (xen_have_vcpu_info_placement) {
 		pv_irq_ops.save_fl = __PV_IS_CALLEE_SAVE(xen_save_fl_direct);
 		pv_irq_ops.restore_fl = __PV_IS_CALLEE_SAVE(xen_restore_fl_direct);
 		pv_irq_ops.irq_disable = __PV_IS_CALLEE_SAVE(xen_irq_disable_direct);
@@ -1159,7 +1229,7 @@ static unsigned xen_patch(u8 type, u16 clobbers, void *insnbuf,
 
 #define SITE(op, x)							\
 	case PARAVIRT_PATCH(op.x):					\
-	if (have_vcpu_info_placement) {					\
+	if (xen_have_vcpu_info_placement) {				\
 		start = (char *)xen_##x##_direct;			\
 		end = xen_##x##_direct_end;				\
 		reloc = xen_##x##_direct_reloc;				\
@@ -1242,10 +1312,7 @@ static const struct pv_cpu_ops xen_cpu_ops __initconst = {
 	.read_msr = native_read_msr_safe,
 	.write_msr = xen_write_msr_safe,
 
-	.read_tsc = native_read_tsc,
 	.read_pmc = native_read_pmc,
-
-	.read_tscp = native_read_tscp,
 
 	.iret = xen_iret,
 	.irq_enable_sysexit = xen_sysexit,
@@ -1481,6 +1548,8 @@ asmlinkage void __init xen_start_kernel(void)
 	xen_init_irq_ops();
 	xen_init_cpuid_mask();
 
+	setup_clear_cpu_cap(X86_FEATURE_SME);
+
 #ifdef CONFIG_X86_LOCAL_APIC
 	/*
 	 * set up the basic apic ops.
@@ -1520,9 +1589,17 @@ asmlinkage void __init xen_start_kernel(void)
 	 */
 	pat_enabled = 0;
 #endif
-	/* Don't do the full vcpu_info placement stuff until we have a
-	   possible map and a non-dummy shared_info. */
-	per_cpu(xen_vcpu, 0) = &HYPERVISOR_shared_info->vcpu_info[0];
+	/* Let's presume PV guests always boot on vCPU with id 0. */
+	per_cpu(xen_vcpu_id, 0) = 0;
+
+	/*
+	 * Setup xen_vcpu early because start_kernel needs it for
+	 * local_irq_disable(), irqs_disabled().
+	 *
+	 * Don't do the full vcpu_info placement stuff until we have
+	 * the cpu_possible_mask and a non-dummy shared_info.
+	 */
+	xen_vcpu_info_reset(0);
 
 	local_irq_disable();
 	early_boot_irqs_disabled = true;
@@ -1611,6 +1688,7 @@ asmlinkage void __init xen_start_kernel(void)
 #endif
 	xen_raw_console_write("about to get started...\n");
 
+	/* We need this for printk timestamps */
 	xen_setup_runstate_info(0);
 
 	/* Start the world */
@@ -1623,7 +1701,6 @@ asmlinkage void __init xen_start_kernel(void)
 
 void __ref xen_hvm_init_shared_info(void)
 {
-	int cpu;
 	struct xen_add_to_physmap xatp;
 	static struct shared_info *shared_info_page = 0;
 
@@ -1638,21 +1715,6 @@ void __ref xen_hvm_init_shared_info(void)
 		BUG();
 
 	HYPERVISOR_shared_info = (struct shared_info *)shared_info_page;
-
-	/* xen_vcpu is a pointer to the vcpu_info struct in the shared_info
-	 * page, we use it in the event channel upcall and in some pvclock
-	 * related functions. We don't need the vcpu_info placement
-	 * optimizations because we don't use any pv_mmu or pv_irq op on
-	 * HVM.
-	 * When xen_hvm_init_shared_info is run at boot time only vcpu 0 is
-	 * online but xen_hvm_init_shared_info is run at resume time too and
-	 * in that case multiple vcpus might be online. */
-	for_each_online_cpu(cpu) {
-		/* Leave it to be NULL. */
-		if (cpu >= MAX_VIRT_CPUS)
-			continue;
-		per_cpu(xen_vcpu, cpu) = &HYPERVISOR_shared_info->vcpu_info[cpu];
-	}
 }
 
 #ifdef CONFIG_XEN_PVHVM
@@ -1676,20 +1738,32 @@ static void __init init_hvm_pv_info(void)
 
 	xen_setup_features();
 
+	cpuid(base + 4, &eax, &ebx, &ecx, &edx);
+	if (eax & XEN_HVM_CPUID_VCPU_ID_PRESENT)
+		this_cpu_write(xen_vcpu_id, ebx);
+	else
+		this_cpu_write(xen_vcpu_id, smp_processor_id());
+
 	pv_info.name = "Xen HVM";
 
 	xen_domain_type = XEN_HVM_DOMAIN;
 }
 
-static int __cpuinit xen_hvm_cpu_notify(struct notifier_block *self,
-				    unsigned long action, void *hcpu)
+static int xen_hvm_cpu_notify(struct notifier_block *self, unsigned long action,
+			      void *hcpu)
 {
 	int cpu = (long)hcpu;
 	switch (action) {
 	case CPU_UP_PREPARE:
-		xen_vcpu_setup(cpu);
+		if (cpu_acpi_id(cpu) != U32_MAX)
+			per_cpu(xen_vcpu_id, cpu) = cpu_acpi_id(cpu);
+		else
+			per_cpu(xen_vcpu_id, cpu) = cpu;
+
+		if (xen_vcpu_setup(cpu))
+			return NOTIFY_BAD;
+
 		if (xen_have_vector_callback) {
-			xen_init_lock_cpu(cpu);
 			if (xen_feature(XENFEAT_hvm_safe_pvclock))
 				xen_setup_timer(cpu);
 		}
@@ -1700,15 +1774,39 @@ static int __cpuinit xen_hvm_cpu_notify(struct notifier_block *self,
 	return NOTIFY_OK;
 }
 
-static struct notifier_block xen_hvm_cpu_notifier __cpuinitdata = {
+static struct notifier_block xen_hvm_cpu_notifier = {
 	.notifier_call	= xen_hvm_cpu_notify,
 };
+
+#ifdef CONFIG_KEXEC_CORE
+static void xen_hvm_shutdown(void)
+{
+	native_machine_shutdown();
+	if (kexec_in_progress)
+		xen_reboot(SHUTDOWN_soft_reset);
+}
+
+static void xen_hvm_crash_shutdown(struct pt_regs *regs)
+{
+	native_machine_crash_shutdown(regs);
+	xen_reboot(SHUTDOWN_soft_reset);
+}
+#endif
 
 static void __init xen_hvm_guest_init(void)
 {
 	init_hvm_pv_info();
 
 	xen_hvm_init_shared_info();
+
+	/*
+	 * xen_vcpu is a pointer to the vcpu_info struct in the shared_info
+	 * page, we use it in the event channel upcall and in some pvclock
+	 * related functions.
+	 */
+	xen_vcpu_info_reset(0);
+
+	xen_panic_handler_init();
 
 	if (xen_feature(XENFEAT_hvm_callback_vector))
 		xen_have_vector_callback = 1;
@@ -1718,17 +1816,41 @@ static void __init xen_hvm_guest_init(void)
 	x86_init.irqs.intr_init = xen_init_IRQ;
 	xen_hvm_init_time_ops();
 	xen_hvm_init_mmu_ops();
+#ifdef CONFIG_KEXEC_CORE
+	if (xen_running_on_version_or_later(3, 2)) {
+		machine_ops.shutdown = xen_hvm_shutdown;
+		machine_ops.crash_shutdown = xen_hvm_crash_shutdown;
+	}
+#endif
 }
 
-static bool __init xen_hvm_platform(void)
+static uint32_t __init xen_hvm_platform(void)
 {
+	uint32_t eax, ebx, ecx, edx, base;
+	int major, minor;
+
 	if (xen_pv_domain())
-		return false;
+		return 0;
 
-	if (!xen_cpuid_base())
-		return false;
+	/*
+	 * RHEL-only: old Xen versions (e.g. RHEL5 Xen) allow booting pure HVM
+	 * kernel after kdump but for newer versions this trick won't work and
+	 * we must reestablish PV interfaces if we ever used them. We hope that
+	 * crashing kernel did SHUTDOWN_soft_reset call and that this call is
+	 * supported by the hypervisor.
+	 */
 
-	return true;
+	base = xen_cpuid_base();
+
+	if (base && is_kdump_kernel()) {
+		cpuid(base + 1, &eax, &ebx, &ecx, &edx);
+		major = eax >> 16;
+		minor = eax & 0xffff;
+		if (major == 3 && minor < 2)
+			return 0;
+	}
+
+	return base;
 }
 
 bool xen_hvm_need_lapic(void)

@@ -2405,7 +2405,7 @@ static const struct net_device_ops pch_gbe_netdev_ops = {
 	.ndo_get_stats = pch_gbe_get_stats,
 	.ndo_set_mac_address = pch_gbe_set_mac,
 	.ndo_tx_timeout = pch_gbe_tx_timeout,
-	.ndo_change_mtu = pch_gbe_change_mtu,
+	.ndo_change_mtu_rh74 = pch_gbe_change_mtu,
 	.ndo_set_features = pch_gbe_set_features,
 	.ndo_do_ioctl = pch_gbe_ioctl,
 	.ndo_set_rx_mode = pch_gbe_set_multi,
@@ -2697,7 +2697,7 @@ err_disable_device:
 	return ret;
 }
 
-static DEFINE_PCI_DEVICE_TABLE(pch_gbe_pcidev_id) = {
+static const struct pci_device_id pch_gbe_pcidev_id[] = {
 	{.vendor = PCI_VENDOR_ID_INTEL,
 	 .device = PCI_DEVICE_ID_INTEL_IOH1_GBE,
 	 .subvendor = PCI_ANY_ID,

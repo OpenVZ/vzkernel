@@ -3,8 +3,16 @@
 #include <linux/sort.h>
 #include <asm/uaccess.h>
 
+typedef bool (*ex_handler_t)(const struct mc_exception_table_entry *,
+			    struct pt_regs *, int);
+
 static inline unsigned long
 ex_insn_addr(const struct exception_table_entry *x)
+{
+	return (unsigned long)&x->insn + x->insn;
+}
+static inline unsigned long
+mc_ex_insn_addr(const struct mc_exception_table_entry *x)
 {
 	return (unsigned long)&x->insn + x->insn;
 }
@@ -12,6 +20,69 @@ static inline unsigned long
 ex_fixup_addr(const struct exception_table_entry *x)
 {
 	return (unsigned long)&x->fixup + x->fixup;
+}
+static inline unsigned long
+mc_ex_fixup_addr(const struct mc_exception_table_entry *x)
+{
+	return (unsigned long)&x->fixup + x->fixup;
+}
+static inline ex_handler_t
+ex_fixup_handler(const struct mc_exception_table_entry *x)
+{
+	return (ex_handler_t)((unsigned long)&x->handler + x->handler);
+}
+
+bool ex_handler_fault(const struct mc_exception_table_entry *fixup,
+		     struct pt_regs *regs, int trapnr)
+{
+	regs->ip = mc_ex_fixup_addr(fixup);
+	regs->ax = trapnr;
+	return true;
+}
+
+extern struct mc_exception_table_entry __start___mc_table[];
+extern struct mc_exception_table_entry __stop___mc_table[];
+
+/*
+ * This table is small, just do a linear search
+ */
+const struct mc_exception_table_entry *mc_search_extable(unsigned long value)
+{
+	const struct mc_exception_table_entry *e;
+
+	for (e = __start___mc_table; e < __stop___mc_table; e++) {
+		unsigned long addr = mc_ex_insn_addr(e);
+
+		if (addr == value)
+			return e;
+	}
+	return NULL;
+}
+
+bool ex_has_fault_handler(unsigned long ip)
+{
+	const struct mc_exception_table_entry *e;
+	ex_handler_t handler;
+
+	e = mc_search_extable(ip);
+	if (!e)
+		return false;
+	handler = ex_fixup_handler(e);
+
+	return handler == ex_handler_fault;
+}
+
+int mc_fixup_exception(struct pt_regs *regs, int trapnr)
+{
+	const struct mc_exception_table_entry *e;
+	ex_handler_t handler;
+
+	e = mc_search_extable(regs->ip);
+	if (!e)
+		return 0;
+
+	handler = ex_fixup_handler(e);
+	return handler(e, regs, trapnr);
 }
 
 int fixup_exception(struct pt_regs *regs)

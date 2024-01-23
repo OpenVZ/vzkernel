@@ -4,7 +4,8 @@
 #include <linux/types.h>
 #include <linux/compiler.h>
 #include <linux/sysctl.h>
-
+#include <linux/in.h>
+#include <linux/in6.h>
 
 /* Responses from hook functions. */
 #define NF_DROP 0
@@ -53,6 +54,7 @@ enum nf_inet_hooks {
 
 enum {
 	NFPROTO_UNSPEC =  0,
+	NFPROTO_INET   =  1,
 	NFPROTO_IPV4   =  2,
 	NFPROTO_ARP    =  3,
 	NFPROTO_BRIDGE =  7,

@@ -22,31 +22,98 @@
 #define BRANCH_SET_LINK	0x1
 #define BRANCH_ABSOLUTE	0x2
 
+bool is_offset_in_branch_range(long offset);
 unsigned int create_branch(const unsigned int *addr,
 			   unsigned long target, int flags);
 unsigned int create_cond_branch(const unsigned int *addr,
 				unsigned long target, int flags);
 int patch_branch(unsigned int *addr, unsigned long target, int flags);
 int patch_instruction(unsigned int *addr, unsigned int instr);
+int raw_patch_instruction(unsigned int *addr, unsigned int instr);
+int patch_instruction_site(s32 *addr, unsigned int instr);
+int patch_branch_site(s32 *site, unsigned long target, int flags);
 
 int instr_is_relative_branch(unsigned int instr);
+int instr_is_relative_link_branch(unsigned int instr);
 int instr_is_branch_to_addr(const unsigned int *instr, unsigned long addr);
 unsigned long branch_target(const unsigned int *instr);
 unsigned int translate_branch(const unsigned int *dest,
 			      const unsigned int *src);
 
+#define OP_RT_RA_MASK	0xffff0000UL
+#define LIS_R2		0x3c020000UL
+#define ADDIS_R2_R12	0x3c4c0000UL
+#define ADDI_R2_R2	0x38420000UL
+
 static inline unsigned long ppc_function_entry(void *func)
 {
-#ifdef CONFIG_PPC64
+#ifdef PPC64_ELF_ABI_v2
+	u32 *insn = func;
+
 	/*
-	 * On PPC64 the function pointer actually points to the function's
-	 * descriptor. The first entry in the descriptor is the address
-	 * of the function text.
+	 * A PPC64 ABIv2 function may have a local and a global entry
+	 * point. We need to use the local entry point when patching
+	 * functions, so identify and step over the global entry point
+	 * sequence.
+	 *
+	 * The global entry point sequence is always of the form:
+	 *
+	 * addis r2,r12,XXXX
+	 * addi  r2,r2,XXXX
+	 *
+	 * A linker optimisation may convert the addis to lis:
+	 *
+	 * lis   r2,XXXX
+	 * addi  r2,r2,XXXX
+	 */
+	if ((((*insn & OP_RT_RA_MASK) == ADDIS_R2_R12) ||
+	     ((*insn & OP_RT_RA_MASK) == LIS_R2)) &&
+	    ((*(insn+1) & OP_RT_RA_MASK) == ADDI_R2_R2))
+		return (unsigned long)(insn + 2);
+	else
+		return (unsigned long)func;
+#elif defined(PPC64_ELF_ABI_v1)
+	/*
+	 * On PPC64 ABIv1 the function pointer actually points to the
+	 * function's descriptor. The first entry in the descriptor is the
+	 * address of the function text.
 	 */
 	return ((func_descr_t *)func)->entry;
 #else
 	return (unsigned long)func;
 #endif
 }
+
+static inline unsigned long ppc_global_function_entry(void *func)
+{
+#ifdef PPC64_ELF_ABI_v2
+	/* PPC64 ABIv2 the global entry point is at the address */
+	return (unsigned long)func;
+#else
+	/* All other cases there is no change vs ppc_function_entry() */
+	return ppc_function_entry(func);
+#endif
+}
+
+#ifdef CONFIG_PPC64
+/*
+ * Some instruction encodings commonly used in dynamic ftracing
+ * and function live patching.
+ */
+
+/* This must match the definition of STK_GOT in <asm/ppc_asm.h> */
+#ifdef PPC64_ELF_ABI_v2
+#define R2_STACK_OFFSET         24
+#else
+#define R2_STACK_OFFSET         40
+#endif
+
+#define PPC_INST_LD_TOC		(PPC_INST_LD  | ___PPC_RT(__REG_R2) | \
+				 ___PPC_RA(__REG_R1) | R2_STACK_OFFSET)
+
+/* usually preceded by a mflr r0 */
+#define PPC_INST_STD_LR		(PPC_INST_STD | ___PPC_RS(__REG_R0) | \
+				 ___PPC_RA(__REG_R1) | PPC_LR_STKOFF)
+#endif /* CONFIG_PPC64 */
 
 #endif /* _ASM_POWERPC_CODE_PATCHING_H */

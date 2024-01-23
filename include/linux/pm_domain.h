@@ -310,4 +310,11 @@ static inline void pm_genpd_syscore_poweron(struct device *dev)
 	pm_genpd_syscore_switch(dev, false);
 }
 
+#ifdef CONFIG_PM
+extern void dev_pm_domain_set(struct device *dev, struct dev_pm_domain *pd);
+#else
+static inline void dev_pm_domain_set(struct device *dev,
+				     struct dev_pm_domain *pd) {}
+#endif
+
 #endif /* _LINUX_PM_DOMAIN_H */

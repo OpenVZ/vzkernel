@@ -48,6 +48,7 @@ extern int inet_rtx_syn_ack(struct sock *parent, struct request_sock *req);
 /* struct request_sock - mini sock to represent a connection request
  */
 struct request_sock {
+	struct sock_common		__req_common;
 	struct request_sock		*dl_next;
 	u16				mss;
 	u8				num_retrans; /* number of retransmits */
@@ -191,23 +192,6 @@ static inline void reqsk_queue_unlink(struct request_sock_queue *queue,
 	write_lock(&queue->syn_wait_lock);
 	*prev_req = req->dl_next;
 	write_unlock(&queue->syn_wait_lock);
-}
-
-static inline void reqsk_queue_add(struct request_sock_queue *queue,
-				   struct request_sock *req,
-				   struct sock *parent,
-				   struct sock *child)
-{
-	req->sk = child;
-	sk_acceptq_added(parent);
-
-	if (queue->rskq_accept_head == NULL)
-		queue->rskq_accept_head = req;
-	else
-		queue->rskq_accept_tail->dl_next = req;
-
-	queue->rskq_accept_tail = req;
-	req->dl_next = NULL;
 }
 
 static inline struct request_sock *reqsk_queue_remove(struct request_sock_queue *queue)

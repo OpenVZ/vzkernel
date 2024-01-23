@@ -156,6 +156,7 @@ struct c_can_priv {
 	struct napi_struct napi;
 	struct net_device *dev;
 	struct device *device;
+	spinlock_t xmit_lock;
 	int tx_object;
 	int current_status;
 	int last_status;
@@ -170,7 +171,7 @@ struct c_can_priv {
 	u16 irqstatus;
 	enum c_can_dev_id type;
 	u32 __iomem *raminit_ctrlreg;
-	unsigned int instance;
+	int instance;
 	void (*raminit) (const struct c_can_priv *priv, bool enable);
 };
 

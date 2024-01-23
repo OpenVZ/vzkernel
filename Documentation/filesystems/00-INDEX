@@ -26,6 +26,9 @@ configfs/
 	- directory containing configfs documentation and example code.
 cramfs.txt
 	- info on the cram filesystem for small storage (ROMs etc).
+dax.txt
+	- info on avoiding the page cache for files stored on CPU-addressable
+	  storage devices.
 dentry-locking.txt
 	- info on the RCU-based dcache locking model.
 directory-locking
@@ -120,5 +123,3 @@ vfs.txt
 	- overview of the Virtual File System
 xfs.txt
 	- info and mount options for the XFS filesystem.
-xip.txt
-	- info on execute-in-place for file mappings.

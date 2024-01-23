@@ -570,4 +570,50 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_15H_NB_F4,
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_15H_NB_F5,
 			quirk_amd_nb_node);
 
+static void quirk_intel_soc_ixgbe_variant(struct pci_dev *dev)
+{
+	/* Only mark Broadwell-DE SoC unsupported */
+	if (boot_cpu_data.x86_model != 86)
+		return;
+	mark_hardware_unsupported("Intel ixgbe device");
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, 0x15AE,
+			quirk_intel_soc_ixgbe_variant);
+
+#if defined(CONFIG_X86_64) && defined(CONFIG_X86_MCE)
+#include <linux/jump_label.h>
+
+/* Ivy Bridge, Haswell, Broadwell */
+static void quirk_intel_brickland_xeon_ras_cap(struct pci_dev *pdev)
+{
+	u32 capid0;
+
+	pci_read_config_dword(pdev, 0x84, &capid0);
+
+	if (capid0 & 0x10)
+		static_key_slow_inc(&mcsafe_key);
+}
+
+/* Skylake */
+static void quirk_intel_purley_xeon_ras_cap(struct pci_dev *pdev)
+{
+	u32 capid0, capid5;
+
+	pci_read_config_dword(pdev, 0x84, &capid0);
+	pci_read_config_dword(pdev, 0x98, &capid5);
+
+	/*
+	 * CAPID0{7:6} indicate whether this is an advanced RAS SKU
+	 * CAPID5{8:5} indicate that various NVDIMM usage modes are
+	 * enabled, so memory machine check recovery is also enabled.
+	 */
+	if ((capid0 & 0xc0) == 0xc0 || (capid5 & 0x1e0))
+		static_key_slow_inc(&mcsafe_key);
+
+}
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, 0x0ec3, quirk_intel_brickland_xeon_ras_cap);
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, 0x2fc0, quirk_intel_brickland_xeon_ras_cap);
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, 0x6fc0, quirk_intel_brickland_xeon_ras_cap);
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, 0x2083, quirk_intel_purley_xeon_ras_cap);
+#endif
 #endif

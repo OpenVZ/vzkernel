@@ -64,12 +64,18 @@ struct nlm_host *nlmclnt_init(const struct nlmclnt_initdata *nlm_init)
 				   nlm_init->protocol, nlm_version,
 				   nlm_init->hostname, nlm_init->noresvport,
 				   nlm_init->net);
-	if (host == NULL) {
-		lockd_down(nlm_init->net);
-		return ERR_PTR(-ENOLCK);
-	}
+	if (host == NULL)
+		goto out_nohost;
+	if (host->h_rpcclnt == NULL && nlm_bind_host(host) == NULL)
+		goto out_nobind;
 
+	host->h_nlmclnt_ops = nlm_init->nlmclnt_ops;
 	return host;
+out_nobind:
+	nlmclnt_release_host(host);
+out_nohost:
+	lockd_down(nlm_init->net);
+	return ERR_PTR(-ENOLCK);
 }
 EXPORT_SYMBOL_GPL(nlmclnt_init);
 
@@ -181,7 +187,7 @@ __be32 nlmclnt_grant(const struct sockaddr *addr, const struct nlm_lock *lock)
 			continue;
 		if (!rpc_cmp_addr(nlm_addr(block->b_host), addr))
 			continue;
-		if (nfs_compare_fh(NFS_FH(file_inode(fl_blocked->fl_file)) ,fh) != 0)
+		if (nfs_compare_fh(NFS_FH(locks_inode(fl_blocked->fl_file)), fh) != 0)
 			continue;
 		/* Alright, we found a lock. Set the return status
 		 * and wake up the caller

@@ -1,5 +1,6 @@
 #include <linux/io.h>
 #include <linux/memblock.h>
+#include <linux/mem_encrypt.h>
 
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
@@ -7,6 +8,9 @@
 
 struct real_mode_header *real_mode_header;
 u32 *trampoline_cr4_features;
+
+/* Hold the pgd entry used on booting additional CPUs */
+pgd_t trampoline_pgd_entry;
 
 void __init reserve_real_mode(void)
 {
@@ -85,8 +89,12 @@ void __init setup_real_mode(void)
 	trampoline_cr4_features = &trampoline_header->cr4;
 	*trampoline_cr4_features = read_cr4();
 
+	trampoline_header->flags = 0;
+	if (sme_active())
+		trampoline_header->flags |= TH_FLAGS_SME_ACTIVE;
+
 	trampoline_pgd = (u64 *) __va(real_mode_header->trampoline_pgd);
-	trampoline_pgd[0] = init_level4_pgt[pgd_index(__PAGE_OFFSET)].pgd;
+	trampoline_pgd[0] = trampoline_pgd_entry.pgd;
 	trampoline_pgd[511] = init_level4_pgt[511].pgd;
 #endif
 }
@@ -114,6 +122,16 @@ static int __init set_real_mode_permissions(void)
 
 	unsigned long text_start =
 		(unsigned long) __va(real_mode_header->text_start);
+
+	/*
+	 * If SME is active, the trampoline area will need to be in
+	 * decrypted memory in order to bring up other processors
+	 * successfully.
+	 */
+	if (sme_active()) {
+		sme_early_decrypt(__pa(base), size);
+		set_memory_decrypted((unsigned long)base, size >> PAGE_SHIFT);
+	}
 
 	set_memory_nx((unsigned long) base, size >> PAGE_SHIFT);
 	set_memory_ro((unsigned long) base, ro_size >> PAGE_SHIFT);
