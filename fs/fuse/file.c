@@ -799,8 +799,8 @@ struct fuse_iqueue *fuse_route_io(struct fuse_conn *fc, struct fuse_rtable *rt, 
 		if (iosize == 0)
 			return NULL;
 
-		for (i = 0; i < rt->rt_size; i++) {
-			fiq = rt->iqs_table + i;
+		for (i = 0; i < rt->rt_size; i += rt->divisor) {
+			fiq = rt->iqs_table + i + (jhash_1word((u32)inode->i_ino, 0) % rt->divisor);
 			if (iosize <= fiq->size && fiq->handled_by_fud)
 				return fiq;
 		}
