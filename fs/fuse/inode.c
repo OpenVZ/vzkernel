@@ -1064,6 +1064,8 @@ static int alloc_rt_table(struct fuse_dev *fud, struct fuse_rtable *rt,
 	int res = -EINVAL;
 	int idx;
 
+	rt->divisor = 1;
+
 	switch (req->type) {
 	case FUSE_ROUTING_CPU:
 		if (req->index >= NR_CPUS || !cpu_possible(req->index))
@@ -1079,7 +1081,9 @@ static int alloc_rt_table(struct fuse_dev *fud, struct fuse_rtable *rt,
 		res = 0;
 		break;
 	case FUSE_ROUTING_SIZE:
-		if (req->key > FUSE_MAX_MAX_PAGES*PAGE_SIZE || (req->key % PAGE_SIZE))
+		rt->divisor = 1 + (req->key & (PAGE_SIZE - 1));
+		if (rt->divisor > req->table_size ||
+		   (req->key & ~(PAGE_SIZE - 1)) > FUSE_MAX_MAX_PAGES*PAGE_SIZE)
 			break;
 		fallthrough;
 	case FUSE_ROUTING_HASH:
@@ -1103,7 +1107,7 @@ static int alloc_rt_table(struct fuse_dev *fud, struct fuse_rtable *rt,
 static void adjust_rt_table(struct fuse_dev *fud, struct fuse_iqueue *fiq,
 			    struct fuse_iq_routing *req)
 {
-	u32 size = req->key;
+	u32 size = req->key & ~(PAGE_SIZE - 1);
 
 	fiq->size = size;
 
@@ -1149,6 +1153,7 @@ int fuse_install_iq_route(struct fuse_dev *fud, struct fuse_iq_routing *req)
 
 	if (rt->iqs == NULL) {
 		rt->iqs = rtl.iqs;
+		rt->divisor = rtl.divisor;
 		rt->type = rtl.type;
 		rt->rt_size = rtl.rt_size;
 	} else if (rt->iqs != rtl.iqs) {
