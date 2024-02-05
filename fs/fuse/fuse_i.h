@@ -682,6 +682,7 @@ static inline unsigned int fuse_qhash_bucket(void)
 struct fuse_rtable {
 	int	type;
 	int	rt_size;
+	int	divisor;
 	union {
 		void				*iqs;
 		struct fuse_iqueue __percpu	*iqs_cpu;
