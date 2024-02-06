@@ -218,6 +218,13 @@ static struct shrinker_info *shrinker_info_protected(struct mem_cgroup *memcg,
 					 lockdep_is_held(&shrinker_rwsem));
 }
 
+static struct shrinker_info *shrinker_info_check(struct mem_cgroup *memcg,
+						 int nid)
+{
+	return rcu_dereference_check(memcg->nodeinfo[nid]->shrinker_info,
+				     lockdep_is_held(&shrinker_rwsem));
+}
+
 static int expand_one_shrinker_info(struct mem_cgroup *memcg,
 				    int map_size, int defer_size,
 				    int old_map_size, int old_defer_size)
@@ -411,18 +418,34 @@ static long xchg_nr_deferred_memcg(int nid, struct shrinker *shrinker,
 				   struct mem_cgroup *memcg)
 {
 	struct shrinker_info *info;
+	long ret;
 
-	info = shrinker_info_protected(memcg, nid);
-	return atomic_long_xchg(&info->nr_deferred[shrinker->id], 0);
+	/*
+	 * Need rcu lock here in case we've released shrinker_rwsem to prevent
+	 * hang on nfs before calling do_shrink_slab().
+	 */
+	rcu_read_lock();
+	info = shrinker_info_check(memcg, nid);
+	ret = atomic_long_xchg(&info->nr_deferred[shrinker->id], 0);
+	rcu_read_unlock();
+	return ret;
 }
 
 static long add_nr_deferred_memcg(long nr, int nid, struct shrinker *shrinker,
 				  struct mem_cgroup *memcg)
 {
 	struct shrinker_info *info;
+	long ret;
 
-	info = shrinker_info_protected(memcg, nid);
-	return atomic_long_add_return(nr, &info->nr_deferred[shrinker->id]);
+	/*
+	 * Need rcu lock here in case we've released shrinker_rwsem to prevent
+	 * hang on nfs before calling do_shrink_slab().
+	 */
+	rcu_read_lock();
+	info = shrinker_info_check(memcg, nid);
+	ret = atomic_long_add_return(nr, &info->nr_deferred[shrinker->id]);
+	rcu_read_unlock();
+	return ret;
 }
 
 void reparent_shrinker_deferred(struct mem_cgroup *memcg)
