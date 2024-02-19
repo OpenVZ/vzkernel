@@ -45,7 +45,7 @@ enum {
  */
 #define VHOST_DEV_PKT_WEIGHT 256
 
-#define VHOST_BLK_VQ_MAX 8
+#define VHOST_BLK_VQ_MAX 32
 
 #define VHOST_MAX_METADATA_IOV 1
 
