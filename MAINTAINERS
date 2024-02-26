@@ -5841,6 +5841,17 @@ W:	http://www.adaptec.com/
 F:	drivers/scsi/dpt*
 F:	drivers/scsi/dpt/
 
+DPLL SUBSYSTEM
+M:	Vadim Fedorenko <vadim.fedorenko@linux.dev>
+M:	Arkadiusz Kubalewski <arkadiusz.kubalewski@intel.com>
+M:	Jiri Pirko <jiri@resnulli.us>
+L:	netdev@vger.kernel.org
+S:	Supported
+F:	Documentation/driver-api/dpll.rst
+F:	drivers/dpll/*
+F:	include/net/dpll.h
+F:	include/uapi/linux/dpll.h
+
 DRBD DRIVER
 M:	Philipp Reisner <philipp.reisner@linbit.com>
 M:	Lars Ellenberg <lars.ellenberg@linbit.com>
@@ -13840,8 +13851,8 @@ OBJTOOL
 M:	Josh Poimboeuf <jpoimboe@redhat.com>
 M:	Peter Zijlstra <peterz@infradead.org>
 S:	Supported
+F:	include/linux/objtool*.h
 F:	tools/objtool/
-F:	include/linux/objtool.h
 
 OCELOT ETHERNET SWITCH DRIVER
 M:	Vladimir Oltean <vladimir.oltean@nxp.com>
