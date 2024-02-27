@@ -178,7 +178,7 @@ nfs_file_read(struct kiocb *iocb, struct iov_iter *to)
 EXPORT_SYMBOL_GPL(nfs_file_read);
 
 int
-nfs_file_mmap(struct file * file, struct vm_area_struct * vma)
+nfs_file_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct inode *inode = file_inode(file);
 	int	status;

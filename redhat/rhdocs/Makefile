@@ -38,15 +38,12 @@ all:
 		echo "* Any MR adding or modifying a devel-sst field requires the"; \
 		echo "approval from the subsystem maintainer."; \
 		echo " "; \
-		echo "* Any MR adding a or modifying a qe-sst field requires the"; \
-		echo "approval from a member of the QE SST being added."; \
-		echo " "; \
 		echo "This warning can be disabled by executing:"; \
 		echo "        git config --add owners.warning false"; \
 		echo "======================================================="; \
 	fi
 	@if test -n "$$(git diff main | grep "^+" | grep "\s\- rhel-sst-null" )"; then \
-		echo "ERROR: New entries cannot set devel-sst or qe-sst to rhel-sst-null."; \
+		echo "ERROR: New entries cannot set devel-sst to rhel-sst-null."; \
 		exit 1; \
 	fi
 	@if test -n "$$(git diff --name-status main | grep validSSTNames.go)" && \

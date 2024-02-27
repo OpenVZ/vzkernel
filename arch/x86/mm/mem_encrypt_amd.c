@@ -33,6 +33,7 @@
 #include <asm/msr.h>
 #include <asm/cmdline.h>
 #include <asm/sev.h>
+#include <asm/ia32.h>
 
 #include "mm_internal.h"
 
@@ -314,7 +315,7 @@ static void enc_dec_hypercall(unsigned long vaddr, unsigned long size, bool enc)
 #endif
 }
 
-static void amd_enc_status_change_prepare(unsigned long vaddr, int npages, bool enc)
+static bool amd_enc_status_change_prepare(unsigned long vaddr, int npages, bool enc)
 {
 	/*
 	 * To maintain the security guarantees of SEV-SNP guests, make sure
@@ -322,6 +323,8 @@ static void amd_enc_status_change_prepare(unsigned long vaddr, int npages, bool 
 	 */
 	if (cc_platform_has(CC_ATTR_GUEST_SEV_SNP) && !enc)
 		snp_set_memory_shared(vaddr, npages);
+
+	return true;
 }
 
 /* Return true unconditionally: return value doesn't matter for the SEV side */
@@ -496,6 +499,16 @@ void __init sme_early_init(void)
 	x86_platform.guest.enc_status_change_finish  = amd_enc_status_change_finish;
 	x86_platform.guest.enc_tlb_flush_required    = amd_enc_tlb_flush_required;
 	x86_platform.guest.enc_cache_flush_required  = amd_enc_cache_flush_required;
+
+	/*
+	 * The VMM is capable of injecting interrupt 0x80 and triggering the
+	 * compatibility syscall path.
+	 *
+	 * By default, the 32-bit emulation is disabled in order to ensure
+	 * the safety of the VM.
+	 */
+	if (sev_status & MSR_AMD64_SEV_ENABLED)
+		ia32_disable();
 }
 
 void __init mem_encrypt_free_decrypted_mem(void)

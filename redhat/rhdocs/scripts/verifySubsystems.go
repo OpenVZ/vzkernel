@@ -28,7 +28,6 @@ type SubSystem struct {
 	}
 	Status string `status`
 	DevelSst []string `devel-sst`
-	QeSst []string `qe-sst`
 	Maintainers []NameAndEmail `maintainers`
 	Reviewers []NameAndEmail `reviewers`
 	Paths struct {
@@ -109,20 +108,10 @@ func main() {
 		if s.DevelSst == nil {
 			log.Fatalf("error: '%s' is missing a devel-sst entry", s.Subsystem)
 		}
-		// check that qe-sst is set
-		if s.QeSst == nil {
-			log.Fatalf("error: '%s' is missing a qe-sst entry", s.Subsystem)
-		}
 		// check that the devel-sst is valid
 		for _, sst := range s.DevelSst {
 			if !contains(validSSTNames, sst) {
 				log.Fatalf("error: '%s' devel-sst entry (%s) is not valid", s.Subsystem, sst)
-			}
-		}
-		// check that the qe-sst is valid
-		for _, sst := range s.QeSst {
-			if !contains(validSSTNames, sst) {
-				log.Fatalf("error: '%s' qe-sst entry (%s) is not valid", s.Subsystem, sst)
 			}
 		}
 

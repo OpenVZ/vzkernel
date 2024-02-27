@@ -491,12 +491,12 @@ static bool single_major = true;
 module_param(single_major, bool, 0444);
 MODULE_PARM_DESC(single_major, "Use a single major number for all rbd devices (default: true)");
 
-static ssize_t add_store(struct bus_type *bus, const char *buf, size_t count);
-static ssize_t remove_store(struct bus_type *bus, const char *buf,
+static ssize_t add_store(const struct bus_type *bus, const char *buf, size_t count);
+static ssize_t remove_store(const struct bus_type *bus, const char *buf,
 			    size_t count);
-static ssize_t add_single_major_store(struct bus_type *bus, const char *buf,
+static ssize_t add_single_major_store(const struct bus_type *bus, const char *buf,
 				      size_t count);
-static ssize_t remove_single_major_store(struct bus_type *bus, const char *buf,
+static ssize_t remove_single_major_store(const struct bus_type *bus, const char *buf,
 					 size_t count);
 static int rbd_dev_image_probe(struct rbd_device *rbd_dev, int depth);
 
@@ -538,7 +538,7 @@ static bool rbd_is_lock_owner(struct rbd_device *rbd_dev)
 	return is_lock_owner;
 }
 
-static ssize_t supported_features_show(struct bus_type *bus, char *buf)
+static ssize_t supported_features_show(const struct bus_type *bus, char *buf)
 {
 	return sprintf(buf, "0x%llx\n", RBD_FEATURES_SUPPORTED);
 }
@@ -659,9 +659,9 @@ static bool pending_result_dec(struct pending_result *pending, int *result)
 	return true;
 }
 
-static int rbd_open(struct block_device *bdev, fmode_t mode)
+static int rbd_open(struct gendisk *disk, blk_mode_t mode)
 {
-	struct rbd_device *rbd_dev = bdev->bd_disk->private_data;
+	struct rbd_device *rbd_dev = disk->private_data;
 	bool removing = false;
 
 	spin_lock_irq(&rbd_dev->lock);
@@ -678,7 +678,7 @@ static int rbd_open(struct block_device *bdev, fmode_t mode)
 	return 0;
 }
 
-static void rbd_release(struct gendisk *disk, fmode_t mode)
+static void rbd_release(struct gendisk *disk)
 {
 	struct rbd_device *rbd_dev = disk->private_data;
 	unsigned long open_count_before;
@@ -3452,14 +3452,15 @@ static bool rbd_lock_add_request(struct rbd_img_request *img_req)
 static void rbd_lock_del_request(struct rbd_img_request *img_req)
 {
 	struct rbd_device *rbd_dev = img_req->rbd_dev;
-	bool need_wakeup;
+	bool need_wakeup = false;
 
 	lockdep_assert_held(&rbd_dev->lock_rwsem);
 	spin_lock(&rbd_dev->lock_lists_lock);
-	rbd_assert(!list_empty(&img_req->lock_item));
-	list_del_init(&img_req->lock_item);
-	need_wakeup = (rbd_dev->lock_state == RBD_LOCK_STATE_RELEASING &&
-		       list_empty(&rbd_dev->running_list));
+	if (!list_empty(&img_req->lock_item)) {
+		list_del_init(&img_req->lock_item);
+		need_wakeup = (rbd_dev->lock_state == RBD_LOCK_STATE_RELEASING &&
+			       list_empty(&rbd_dev->running_list));
+	}
 	spin_unlock(&rbd_dev->lock_lists_lock);
 	if (need_wakeup)
 		complete(&rbd_dev->releasing_wait);
@@ -3842,14 +3843,19 @@ static void wake_lock_waiters(struct rbd_device *rbd_dev, int result)
 		return;
 	}
 
-	list_for_each_entry(img_req, &rbd_dev->acquiring_list, lock_item) {
+	while (!list_empty(&rbd_dev->acquiring_list)) {
+		img_req = list_first_entry(&rbd_dev->acquiring_list,
+					   struct rbd_img_request, lock_item);
 		mutex_lock(&img_req->state_mutex);
 		rbd_assert(img_req->state == RBD_IMG_EXCLUSIVE_LOCK);
+		if (!result)
+			list_move_tail(&img_req->lock_item,
+				       &rbd_dev->running_list);
+		else
+			list_del_init(&img_req->lock_item);
 		rbd_img_schedule(img_req, result);
 		mutex_unlock(&img_req->state_mutex);
 	}
-
-	list_splice_tail_init(&rbd_dev->acquiring_list, &rbd_dev->running_list);
 }
 
 static bool locker_equal(const struct ceph_locker *lhs,
@@ -7083,9 +7089,7 @@ out:
 	return ret;
 }
 
-static ssize_t do_rbd_add(struct bus_type *bus,
-			  const char *buf,
-			  size_t count)
+static ssize_t do_rbd_add(const char *buf, size_t count)
 {
 	struct rbd_device *rbd_dev = NULL;
 	struct ceph_options *ceph_opts = NULL;
@@ -7197,18 +7201,18 @@ err_out_args:
 	goto out;
 }
 
-static ssize_t add_store(struct bus_type *bus, const char *buf, size_t count)
+static ssize_t add_store(const struct bus_type *bus, const char *buf, size_t count)
 {
 	if (single_major)
 		return -EINVAL;
 
-	return do_rbd_add(bus, buf, count);
+	return do_rbd_add(buf, count);
 }
 
-static ssize_t add_single_major_store(struct bus_type *bus, const char *buf,
+static ssize_t add_single_major_store(const struct bus_type *bus, const char *buf,
 				      size_t count)
 {
-	return do_rbd_add(bus, buf, count);
+	return do_rbd_add(buf, count);
 }
 
 static void rbd_dev_remove_parent(struct rbd_device *rbd_dev)
@@ -7238,9 +7242,7 @@ static void rbd_dev_remove_parent(struct rbd_device *rbd_dev)
 	}
 }
 
-static ssize_t do_rbd_remove(struct bus_type *bus,
-			     const char *buf,
-			     size_t count)
+static ssize_t do_rbd_remove(const char *buf, size_t count)
 {
 	struct rbd_device *rbd_dev = NULL;
 	struct list_head *tmp;
@@ -7312,18 +7314,18 @@ static ssize_t do_rbd_remove(struct bus_type *bus,
 	return count;
 }
 
-static ssize_t remove_store(struct bus_type *bus, const char *buf, size_t count)
+static ssize_t remove_store(const struct bus_type *bus, const char *buf, size_t count)
 {
 	if (single_major)
 		return -EINVAL;
 
-	return do_rbd_remove(bus, buf, count);
+	return do_rbd_remove(buf, count);
 }
 
-static ssize_t remove_single_major_store(struct bus_type *bus, const char *buf,
+static ssize_t remove_single_major_store(const struct bus_type *bus, const char *buf,
 					 size_t count)
 {
-	return do_rbd_remove(bus, buf, count);
+	return do_rbd_remove(buf, count);
 }
 
 /*

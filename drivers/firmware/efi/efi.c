@@ -21,6 +21,7 @@
 #include <linux/device.h>
 #include <linux/efi.h>
 #include <linux/of.h>
+#include <linux/initrd.h>
 #include <linux/io.h>
 #include <linux/kexec.h>
 #include <linux/platform_device.h>
@@ -50,12 +51,18 @@ struct efi __read_mostly efi = {
 #ifdef CONFIG_EFI_COCO_SECRET
 	.coco_secret		= EFI_INVALID_TABLE_ADDR,
 #endif
+#ifdef CONFIG_UNACCEPTED_MEMORY
+	.unaccepted		= EFI_INVALID_TABLE_ADDR,
+#endif
 };
 EXPORT_SYMBOL(efi);
 
 unsigned long __ro_after_init efi_rng_seed = EFI_INVALID_TABLE_ADDR;
 static unsigned long __initdata mem_reserve = EFI_INVALID_TABLE_ADDR;
 static unsigned long __initdata rt_prop = EFI_INVALID_TABLE_ADDR;
+static unsigned long __initdata initrd = EFI_INVALID_TABLE_ADDR;
+
+extern unsigned long screen_info_table;
 
 struct mm_struct efi_mm = {
 	.mm_rb			= RB_ROOT,
@@ -184,8 +191,27 @@ static const struct attribute_group efi_subsys_attr_group = {
 static struct efivars generic_efivars;
 static struct efivar_operations generic_ops;
 
+static bool generic_ops_supported(void)
+{
+	unsigned long name_size;
+	efi_status_t status;
+	efi_char16_t name;
+	efi_guid_t guid;
+
+	name_size = sizeof(name);
+
+	status = efi.get_next_variable(&name_size, &name, &guid);
+	if (status == EFI_UNSUPPORTED)
+		return false;
+
+	return true;
+}
+
 static int generic_ops_register(void)
 {
+	if (!generic_ops_supported())
+		return 0;
+
 	generic_ops.get_variable = efi.get_variable;
 	generic_ops.get_next_variable = efi.get_next_variable;
 	generic_ops.query_variable_store = efi_query_variable_store;
@@ -199,6 +225,9 @@ static int generic_ops_register(void)
 
 static void generic_ops_unregister(void)
 {
+	if (!generic_ops.get_variable)
+		return;
+
 	efivars_unregister(&generic_efivars);
 }
 
@@ -392,8 +421,8 @@ static int __init efisubsys_init(void)
 	efi_kobj = kobject_create_and_add("efi", firmware_kobj);
 	if (!efi_kobj) {
 		pr_err("efi: Firmware registration failed.\n");
-		destroy_workqueue(efi_rts_wq);
-		return -ENOMEM;
+		error = -ENOMEM;
+		goto err_destroy_wq;
 	}
 
 	if (efi_rt_services_supported(EFI_RT_SUPPORTED_GET_VARIABLE |
@@ -441,7 +470,11 @@ err_unregister:
 		generic_ops_unregister();
 err_put:
 	kobject_put(efi_kobj);
-	destroy_workqueue(efi_rts_wq);
+	efi_kobj = NULL;
+err_destroy_wq:
+	if (efi_rts_wq)
+		destroy_workqueue(efi_rts_wq);
+
 	return error;
 }
 
@@ -470,6 +503,12 @@ int efi_mem_desc_lookup(u64 phys_addr, efi_memory_desc_t *out_md)
 	for_each_efi_memory_desc(md) {
 		u64 size;
 		u64 end;
+
+		/* skip bogus entries (including empty ones) */
+		if ((md->phys_addr & (EFI_PAGE_SIZE - 1)) ||
+		    (md->num_pages <= 0) ||
+		    (md->num_pages > (U64_MAX - md->phys_addr) >> EFI_PAGE_SHIFT))
+			continue;
 
 		size = md->num_pages << EFI_PAGE_SHIFT;
 		end = md->phys_addr + size;
@@ -531,6 +570,7 @@ static const efi_config_table_type_t common_tables[] __initconst = {
 	{LINUX_EFI_TPM_EVENT_LOG_GUID,		&efi.tpm_log,		"TPMEventLog"	},
 	{LINUX_EFI_TPM_FINAL_LOG_GUID,		&efi.tpm_final_log,	"TPMFinalLog"	},
 	{LINUX_EFI_MEMRESERVE_TABLE_GUID,	&mem_reserve,		"MEMRESERVE"	},
+	{LINUX_EFI_INITRD_MEDIA_GUID,		&initrd,		"INITRD"	},
 	{EFI_RT_PROPERTIES_TABLE_GUID,		&rt_prop,		"RTPROP"	},
 #ifdef CONFIG_EFI_RCI2_TABLE
 	{DELLEMC_EFI_RCI2_TABLE_GUID,		&rci2_table_phys			},
@@ -540,6 +580,9 @@ static const efi_config_table_type_t common_tables[] __initconst = {
 #endif
 #ifdef CONFIG_EFI_COCO_SECRET
 	{LINUX_EFI_COCO_SECRET_AREA_GUID,	&efi.coco_secret,	"CocoSecret"	},
+#endif
+#ifdef CONFIG_UNACCEPTED_MEMORY
+	{LINUX_EFI_UNACCEPTED_MEM_TABLE_GUID,	&efi.unaccepted,	"Unaccepted"	},
 #endif
 	{},
 };
@@ -561,6 +604,34 @@ static __init int match_config_table(const efi_guid_t *guid,
 	}
 
 	return 0;
+}
+
+/**
+ * reserve_unaccepted - Map and reserve unaccepted configuration table
+ * @unaccepted: Pointer to unaccepted memory table
+ *
+ * memblock_add() makes sure that the table is mapped in direct mapping. During
+ * normal boot it happens automatically because the table is allocated from
+ * usable memory. But during crashkernel boot only memory specifically reserved
+ * for crash scenario is mapped. memblock_add() forces the table to be mapped
+ * in crashkernel case.
+ *
+ * Align the range to the nearest page borders. Ranges smaller than page size
+ * are not going to be mapped.
+ *
+ * memblock_reserve() makes sure that future allocations will not touch the
+ * table.
+ */
+
+static __init void reserve_unaccepted(struct efi_unaccepted_memory *unaccepted)
+{
+	phys_addr_t start, size;
+
+	start = PAGE_ALIGN_DOWN(efi.unaccepted);
+	size = PAGE_ALIGN(sizeof(*unaccepted) + unaccepted->size);
+
+	memblock_add(start, size);
+	memblock_reserve(start, size);
 }
 
 int __init efi_config_parse_tables(const efi_config_table_t *config_tables,
@@ -605,7 +676,7 @@ int __init efi_config_parse_tables(const efi_config_table_t *config_tables,
 
 		seed = early_memremap(efi_rng_seed, sizeof(*seed));
 		if (seed != NULL) {
-			size = READ_ONCE(seed->size);
+			size = min_t(u32, seed->size, SZ_1K); // sanity check
 			early_memunmap(seed, sizeof(*seed));
 		} else {
 			pr_err("Could not map UEFI random seed!\n");
@@ -614,8 +685,8 @@ int __init efi_config_parse_tables(const efi_config_table_t *config_tables,
 			seed = early_memremap(efi_rng_seed,
 					      sizeof(*seed) + size);
 			if (seed != NULL) {
-				pr_notice("seeding entropy pool\n");
 				add_bootloader_randomness(seed->bits, size);
+				memzero_explicit(seed->bits, size);
 				early_memunmap(seed, sizeof(*seed) + size);
 			} else {
 				pr_err("Could not map UEFI random seed!\n");
@@ -673,6 +744,35 @@ int __init efi_config_parse_tables(const efi_config_table_t *config_tables,
 		}
 	}
 
+	if (IS_ENABLED(CONFIG_BLK_DEV_INITRD) &&
+	    initrd != EFI_INVALID_TABLE_ADDR && phys_initrd_size == 0) {
+		struct linux_efi_initrd *tbl;
+
+		tbl = early_memremap(initrd, sizeof(*tbl));
+		if (tbl) {
+			phys_initrd_start = tbl->base;
+			phys_initrd_size = tbl->size;
+			early_memunmap(tbl, sizeof(*tbl));
+		}
+	}
+
+	if (IS_ENABLED(CONFIG_UNACCEPTED_MEMORY) &&
+	    efi.unaccepted != EFI_INVALID_TABLE_ADDR) {
+		struct efi_unaccepted_memory *unaccepted;
+
+		unaccepted = early_memremap(efi.unaccepted, sizeof(*unaccepted));
+		if (unaccepted) {
+
+			if (unaccepted->version == 1) {
+				reserve_unaccepted(unaccepted);
+			} else {
+				efi.unaccepted = EFI_INVALID_TABLE_ADDR;
+			}
+
+			early_memunmap(unaccepted, sizeof(*unaccepted));
+		}
+	}
+
 	return 0;
 }
 
@@ -720,6 +820,7 @@ void __init efi_systab_report_header(const efi_table_hdr_t *systab_hdr,
 	char vendor[100] = "unknown";
 	const efi_char16_t *c16;
 	size_t i;
+	u16 rev;
 
 	c16 = map_fw_vendor(fw_vendor, sizeof(vendor) * sizeof(efi_char16_t));
 	if (c16) {
@@ -730,10 +831,14 @@ void __init efi_systab_report_header(const efi_table_hdr_t *systab_hdr,
 		unmap_fw_vendor(c16, sizeof(vendor) * sizeof(efi_char16_t));
 	}
 
-	pr_info("EFI v%u.%.02u by %s\n",
-		systab_hdr->revision >> 16,
-		systab_hdr->revision & 0xffff,
-		vendor);
+	rev = (u16)systab_hdr->revision;
+	pr_info("EFI v%u.%u", systab_hdr->revision >> 16, rev / 10);
+
+	rev %= 10;
+	if (rev)
+		pr_cont(".%u", rev);
+
+	pr_cont(" by %s\n", vendor);
 
 	if (IS_ENABLED(CONFIG_X86_64) &&
 	    systab_hdr->revision > EFI_1_10_SYSTEM_TABLE_REVISION &&
@@ -759,6 +864,7 @@ static __initdata char memory_type_name[][13] = {
 	"MMIO Port",
 	"PAL Code",
 	"Persistent",
+	"Unaccepted",
 };
 
 char * __init efi_md_typeattr_format(char *buf, size_t size,
@@ -1023,6 +1129,8 @@ int __ref efi_mem_reserve_persistent(phys_addr_t addr, u64 size)
 	/* first try to find a slot in an existing linked list entry */
 	for (prsv = efi_memreserve_root->next; prsv; ) {
 		rsv = memremap(prsv, sizeof(*rsv), MEMREMAP_WB);
+		if (!rsv)
+			return -ENOMEM;
 		index = atomic_fetch_add_unless(&rsv->count, 1, rsv->size);
 		if (index < rsv->size) {
 			rsv->entry[index].base = addr;

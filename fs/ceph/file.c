@@ -95,12 +95,11 @@ static ssize_t __iter_get_bvecs(struct iov_iter *iter, size_t maxsize,
 		size_t start;
 		int idx = 0;
 
-		bytes = iov_iter_get_pages(iter, pages, maxsize - size,
+		bytes = iov_iter_get_pages2(iter, pages, maxsize - size,
 					   ITER_GET_BVECS_PAGES, &start);
 		if (bytes < 0)
 			return size ?: bytes;
 
-		iov_iter_advance(iter, bytes);
 		size += bytes;
 
 		for ( ; bytes; idx++, bvec_idx++) {
@@ -788,7 +787,8 @@ retry:
 	if (flags & O_CREAT) {
 		struct ceph_file_layout lo;
 
-		req->r_dentry_drop = CEPH_CAP_FILE_SHARED | CEPH_CAP_AUTH_EXCL;
+		req->r_dentry_drop = CEPH_CAP_FILE_SHARED | CEPH_CAP_AUTH_EXCL |
+				     CEPH_CAP_XATTR_EXCL;
 		req->r_dentry_unless = CEPH_CAP_FILE_EXCL;
 		if (as_ctx.pagelist) {
 			req->r_pagelist = as_ctx.pagelist;
@@ -1278,7 +1278,7 @@ ceph_direct_read_write(struct kiocb *iocb, struct iov_iter *iter,
 	size_t count = iov_iter_count(iter);
 	loff_t pos = iocb->ki_pos;
 	bool write = iov_iter_rw(iter) == WRITE;
-	bool should_dirty = !write && iter_is_iovec(iter);
+	bool should_dirty = !write && user_backed_iter(iter);
 
 	if (write && ceph_snap(file_inode(file)) != CEPH_NOSNAP)
 		return -EROFS;

@@ -451,6 +451,19 @@ struct ceph_inode_info {
 	unsigned long  i_work_mask;
 };
 
+struct ceph_netfs_request_data {
+	int caps;
+
+	/*
+	 * Maximum size of a file readahead request.
+	 * The fadvise could update the bdi's default ra_pages.
+	 */
+	unsigned int file_ra_pages;
+
+	/* Set it if fadvise disables file readahead entirely */
+	bool file_ra_disabled;
+};
+
 static inline struct ceph_inode_info *
 ceph_inode(const struct inode *inode)
 {
@@ -1199,8 +1212,6 @@ extern void ceph_take_cap_refs(struct ceph_inode_info *ci, int caps,
 extern void ceph_get_cap_refs(struct ceph_inode_info *ci, int caps);
 extern void ceph_put_cap_refs(struct ceph_inode_info *ci, int had);
 extern void ceph_put_cap_refs_async(struct ceph_inode_info *ci, int had);
-extern void ceph_put_cap_refs_no_check_caps(struct ceph_inode_info *ci,
-					    int had);
 extern void ceph_put_wrbuffer_cap_refs(struct ceph_inode_info *ci, int nr,
 				       struct ceph_snap_context *snapc);
 extern void __ceph_remove_capsnap(struct inode *inode,
