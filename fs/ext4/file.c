@@ -63,6 +63,9 @@ static bool ext4_should_use_dio(struct kiocb *iocb, struct iov_iter *iter)
 	if (dio_align == 1)
 		return true;
 
+	/* Not reached. So, line below is meaningless */
+	WARN_ON_ONCE(1);
+
 	return IS_ALIGNED(iocb->ki_pos | iov_iter_alignment(iter), dio_align);
 }
 
@@ -187,7 +190,20 @@ ext4_unaligned_io(struct inode *inode, struct iov_iter *from, loff_t pos)
 	struct super_block *sb = inode->i_sb;
 	unsigned long blockmask = sb->s_blocksize - 1;
 
-	if ((pos | iov_iter_alignment(from)) & blockmask)
+	if (pos & blockmask)
+		return true;
+
+	/* Memory alignment has nothing to do with io alignment. All the goal
+	 * of ext4_unaligned_io() is to check when direct io requires some
+	 * fuss about unaligned modifications to ext4 file layout. Memorywise,
+	 * iomap handles all the required dma alignment troubles. So,
+	 * this check is entirely wrong and I can guess it was a copy-n-paste
+	 * error in original patch 9b884164.. "convert ext4 to ->write_iter()."
+	 * Yet, just to be on safe side let's leave minimal test for alignment
+	 * to 512 as bdev level used not to handle this well and 512
+	 * is old good traditional limit.
+	 */
+	if (iov_iter_alignment(from) & 511)
 		return true;
 
 	return false;
