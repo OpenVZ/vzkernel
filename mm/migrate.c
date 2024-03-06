@@ -433,6 +433,10 @@ int folio_migrate_mapping(struct address_space *mapping,
 		if (folio_test_swapcache(folio)) {
 			folio_set_swapcache(newfolio);
 			newfolio->private = folio_get_private(folio);
+
+			/* Swap cache needs private for each page of huge page */
+			for (i = 1; i < nr; i++)
+				set_page_private(folio_page(newfolio, i), folio_page(folio, i)->private);
 		}
 		entries = nr;
 	} else {

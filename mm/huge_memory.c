@@ -2494,6 +2494,11 @@ static void __split_huge_page_tail(struct page *head, int tail,
 	 * What of 32-bit systems, on which folio->_pincount overlays
 	 * head[1].private?  No problem: THP_SWAP is not enabled on 32-bit, and
 	 * pincount must be 0 for folio_ref_freeze() to have succeeded.
+	 *
+	 * NOTE: drop the patch ("mm: migrate page private for high-order
+	 * folios in swap cache correctly") once ms commit cfeed8ffe55b
+	 * ("mm/swap: stop using page->private on tail pages for THP_SWAP")
+	 * is applied.
 	 */
 	if (!folio_test_swapcache(page_folio(head))) {
 		VM_WARN_ON_ONCE_PAGE(page_tail->private != 0, page_tail);
