@@ -2523,6 +2523,11 @@ static void __split_huge_page_tail(struct page *head, int tail,
 	 * page->private should not be set in tail pages with the exception
 	 * of swap cache pages that store the swp_entry_t in tail pages.
 	 * Fix up and warn once if private is unexpectedly set.
+	 *
+	 * NOTE: drop the patch ("mm: migrate page private for high-order
+	 * folios in swap cache correctly") once ms commit cfeed8ffe55b
+	 * ("mm/swap: stop using page->private on tail pages for THP_SWAP")
+	 * is applied.
 	 */
 	if (!folio_test_swapcache(page_folio(head))) {
 		VM_WARN_ON_ONCE_PAGE(page_tail->private != 0, page_tail);
