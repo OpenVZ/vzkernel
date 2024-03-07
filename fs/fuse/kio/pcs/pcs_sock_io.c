@@ -226,10 +226,15 @@ static int do_recv_one_seg(struct socket *sock, struct iov_iter *it, size_t left
 		ssize_t len;
 		struct page* page;
 
-		len = iov_iter_get_pages(it, &page, size, 1, &offset);
+		len = iov_iter_get_pages2(it, &page, size, 1, &offset);
 		BUG_ON(len <=0);
 
 		ret = do_sock_recv(sock, kmap(page) + offset, len);
+		if (ret <= 0)
+			iov_iter_revert(it, len);
+		else if (ret < len)
+			iov_iter_revert(it, len - ret);
+
 		kunmap(page);
 		put_page(page);
 	}
@@ -313,7 +318,6 @@ static void pcs_sockio_recv(struct pcs_sockio *sio)
 				n = do_recv_one_seg(sio->socket, it, (size_t)(msg_size - sio->read_offset));
 				if (n > 0) {
 					sio->read_offset += n;
-					iov_iter_advance(it, n);
 				} else {
 					if (n == -EAGAIN || n == 0)
 						return;
