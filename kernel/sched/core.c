@@ -11866,6 +11866,10 @@ static struct cftype cpu_files[] = {
 		.write = cpu_uclamp_max_write,
 	},
 #endif
+	{
+		.name = "proc.stat",
+		.seq_show = cpu_cgroup_proc_stat_show,
+	},
 	{ }	/* terminate */
 };
 
