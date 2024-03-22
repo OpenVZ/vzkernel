@@ -8961,3 +8961,78 @@ static int __init mem_cgroup_swap_init(void)
 subsys_initcall(mem_cgroup_swap_init);
 
 #endif /* CONFIG_SWAP */
+
+static int cache_max_show(struct seq_file *m, void *v)
+{
+	return seq_puts_memcg_tunable(m,
+		READ_ONCE(mem_cgroup_from_seq(m)->cache.max));
+}
+
+static ssize_t cache_max_write(struct kernfs_open_file *of,
+			       char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned int nr_reclaims = MAX_RECLAIM_RETRIES;
+	unsigned long max;
+	int err;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &max);
+	if (err)
+		return err;
+
+	xchg(&memcg->cache.max, max);
+
+	for (;;) {
+		unsigned long nr_cache = page_counter_read(&memcg->cache);
+
+		if (nr_cache <= max)
+			break;
+
+		if (signal_pending(current))
+			break;
+
+		if (!nr_reclaims)
+			break;
+
+		if (!try_to_free_mem_cgroup_pages(memcg, nr_cache - max,
+		    GFP_KERNEL, false))
+			nr_reclaims--;
+	}
+
+	memcg_wb_domain_size_changed(memcg);
+	return nbytes;
+}
+
+static u64 cache_current_read(struct cgroup_subsys_state *css,
+			       struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	return (u64)page_counter_read(&memcg->cache) * PAGE_SIZE;
+}
+
+static struct cftype cache_files[] = {
+	{
+		.name = "cache.max",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = cache_max_show,
+		.write = cache_max_write,
+	},
+	{
+		.name = "cache.current",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_u64 = cache_current_read,
+	},
+	{ }	/* terminate */
+};
+
+static int __init mem_cgroup_cache_init(void)
+{
+	if (mem_cgroup_disabled())
+		return 0;
+
+	WARN_ON(cgroup_add_dfl_cftypes(&memory_cgrp_subsys, cache_files));
+	return 0;
+}
+subsys_initcall(mem_cgroup_cache_init);
