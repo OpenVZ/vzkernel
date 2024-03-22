@@ -28,7 +28,7 @@ __all:
 # Use this spot to avoid future merge conflicts
 include Makefile.rhelver
 
-VZVERSION = ovz9.60.1
+VZVERSION = ovz9.60.2
 ifeq ($(EXTRAVERSION),)
   EXTRAVERSION := -$(RHEL_RELEASE).$(VZVERSION)
 endif
