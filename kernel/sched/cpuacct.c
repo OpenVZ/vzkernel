@@ -362,6 +362,9 @@ struct cgroup_subsys cpuacct_cgrp_subsys = {
 	.css_free	= cpuacct_css_free,
 	.legacy_cftypes	= files,
 	.early_init	= true,
+
+	.implicit_on_dfl = true,
+	.threaded       = true,
 };
 
 extern struct task_group *css_tg(struct cgroup_subsys_state *css);
