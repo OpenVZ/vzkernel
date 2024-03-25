@@ -263,7 +263,7 @@ struct mem_cgroup {
 	struct vmpressure vmpressure;
 
 	unsigned long overdraft;
-	unsigned long long oom_guarantee;
+	unsigned long oom_guarantee;
 
 	/*
 	 * Should the OOM killer kill all belonging tasks, had it kill one?

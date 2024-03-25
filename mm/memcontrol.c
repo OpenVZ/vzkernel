@@ -5310,6 +5310,14 @@ static u64 mem_cgroup_oom_guarantee_read(struct cgroup_subsys_state *css,
 	return mem_cgroup_from_css(css)->oom_guarantee << PAGE_SHIFT;
 }
 
+static int seq_puts_memcg_tunable(struct seq_file *m, unsigned long value);
+
+static int memory_oom_guarantee_show(struct seq_file *m, void *v)
+{
+	return seq_puts_memcg_tunable(m,
+		READ_ONCE(mem_cgroup_from_seq(m)->oom_guarantee));
+}
+
 static ssize_t mem_cgroup_oom_guarantee_write(struct kernfs_open_file *kops,
 					char *buffer, size_t nbytes, loff_t off)
 {
@@ -5323,6 +5331,22 @@ static ssize_t mem_cgroup_oom_guarantee_write(struct kernfs_open_file *kops,
 		return ret;
 
 	memcg->oom_guarantee = nr_pages;
+	return nbytes;
+}
+
+static ssize_t memory_oom_guarantee_write(struct kernfs_open_file *of,
+					  char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned long oom_guarantee;
+	int err;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &oom_guarantee);
+	if (err)
+		return err;
+
+	xchg(&memcg->oom_guarantee, oom_guarantee);
 	return nbytes;
 }
 
@@ -7752,6 +7776,12 @@ static struct cftype memory_files[] = {
 		.name = "reclaim",
 		.flags = CFTYPE_NS_DELEGATABLE,
 		.write = memory_reclaim,
+	},
+	{
+		.name = "oom_guarantee",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_oom_guarantee_show,
+		.write = memory_oom_guarantee_write,
 	},
 	{ }	/* terminate */
 };
