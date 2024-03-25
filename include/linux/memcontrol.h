@@ -22,6 +22,7 @@
 #include <linux/writeback.h>
 #include <linux/page-flags.h>
 #include <linux/virtinfo.h>
+#include <linux/oom.h>
 
 struct mem_cgroup;
 struct obj_cgroup;
@@ -1004,6 +1005,7 @@ void mem_cgroup_print_oom_context(struct mem_cgroup *memcg,
 
 void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg);
 unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg);
+void refresh_mem_cgroup_overdraft(struct oom_control *oc);
 
 static inline void mem_cgroup_enter_user_fault(void)
 {
@@ -1527,6 +1529,10 @@ mem_cgroup_print_oom_context(struct mem_cgroup *memcg, struct task_struct *p)
 static inline unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
 {
 	return 0;
+}
+
+static inline void refresh_mem_cgroup_overdraft(struct oom_control *oc)
+{
 }
 
 static inline void

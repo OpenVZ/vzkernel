@@ -1308,17 +1308,6 @@ int mem_cgroup_scan_tasks(struct mem_cgroup *memcg,
 	for_each_mem_cgroup_tree(iter, memcg) {
 		struct css_task_iter it;
 		struct task_struct *task;
-		struct mem_cgroup *parent;
-
-		/*
-		 * Update overdraft of each cgroup under us. This
-		 * information will be used in oom_badness.
-		 */
-		iter->overdraft = mem_cgroup_overdraft(iter);
-		parent = parent_mem_cgroup(iter);
-		if (parent && iter != memcg)
-			iter->overdraft = max(iter->overdraft,
-					parent->overdraft);
 
 		css_task_iter_start(&iter->css, CSS_TASK_ITER_PROCS, &it);
 		while (!ret && (task = css_task_iter_next(&it)))
@@ -1516,6 +1505,25 @@ unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
 	guarantee = READ_ONCE(memcg->oom_guarantee);
 	usage = page_counter_read(&memcg->memsw);
 	return usage > guarantee ? (usage - guarantee) : 0;
+}
+
+void refresh_mem_cgroup_overdraft(struct oom_control *oc)
+{
+	struct mem_cgroup *iter;
+
+	for_each_mem_cgroup_tree(iter, oc->memcg) {
+		struct mem_cgroup *parent;
+
+		/*
+		 * Update overdraft of each cgroup under us. This
+		 * information will be used in oom_badness.
+		 */
+		iter->overdraft = mem_cgroup_overdraft(iter);
+		parent = parent_mem_cgroup(iter);
+		if (parent && iter != oc->memcg)
+			iter->overdraft = max(iter->overdraft,
+					      parent->overdraft);
+	}
 }
 
 bool mem_cgroup_dcache_is_low(struct mem_cgroup *memcg, int vfs_cache_min_ratio)

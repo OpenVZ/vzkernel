@@ -378,6 +378,8 @@ static void select_bad_process(struct oom_control *oc)
 {
 	oc->chosen_points = LONG_MIN;
 
+	refresh_mem_cgroup_overdraft(oc);
+
 	if (is_memcg_oom(oc))
 		mem_cgroup_scan_tasks(oc->memcg, oom_evaluate_task, oc);
 	else {
@@ -1072,6 +1074,8 @@ static void oom_berserker(struct oom_control *oc)
 
 	if (rage < 0)
 		return;
+
+	refresh_mem_cgroup_overdraft(oc);
 
 	/*
 	 * So, we are in rage. Kill (1 << rage) youngest tasks that are
