@@ -1503,7 +1503,10 @@ unsigned long mem_cgroup_overdraft(struct mem_cgroup *memcg)
 		return 0;
 
 	guarantee = READ_ONCE(memcg->oom_guarantee);
-	usage = page_counter_read(&memcg->memsw);
+	if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+		usage = page_counter_read(&memcg->memory) + page_counter_read(&memcg->swap);
+	else
+		usage = page_counter_read(&memcg->memsw);
 	return usage > guarantee ? (usage - guarantee) : 0;
 }
 
