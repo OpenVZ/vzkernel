@@ -568,8 +568,6 @@ static inline int csa_submit(struct file * file, struct file *cfile, int do_csum
 
 	if (unlikely(ret != -EIOCBQUEUED)) {
 		if (ret != size) {
-			pcs_set_error_cond_atomic(&ireq->error, PCS_ERR_IO, 1, ireq->iochunk.csl->cs[ireq->iochunk.cs_index].info.id);
-
 			/* Do not drop refs, we do not want to complete ireq. */
 			fput(areq->iocb.ki_filp);
 			FUSE_KTRACE(ireq->cc->fc, "AIO submit rejected ret=%d %lu, ireq:%p : %llu:%u+%u",
@@ -648,6 +646,7 @@ int pcs_csa_cs_submit(struct pcs_cs * cs, struct pcs_int_request * ireq)
 				/* Clear state which could be rewritten by csa_submit */
 				ireq->iochunk.msg.destructor = NULL;
 				ireq->iochunk.msg.rpc = NULL;
+				ireq->flags |= IREQ_F_NO_ACCEL;
 			}
 		}
 	}
@@ -1026,8 +1025,6 @@ static inline int csa_submit_write(struct file * file, struct pcs_int_request * 
 
 	if (unlikely(ret != -EIOCBQUEUED)) {
 		if (ret != size) {
-			pcs_set_error_cond_atomic(&ireq->error, PCS_ERR_IO, 1, ireq->iochunk.csl->cs[idx].info.id);
-
 			/* Do not drop refs, we do not want to complete ireq. */
 			fput(areq->iocb.ki_filp);
 			FUSE_KTRACE(ireq->cc->fc, "AIO submit rejected ret=%d %lu, ireq:%p : %llu:%u+%u",
