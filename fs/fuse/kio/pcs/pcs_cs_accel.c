@@ -22,6 +22,14 @@
 #include "log.h"
 #include "fuse_ktrace.h"
 
+static unsigned int crc_verify = 1;
+module_param(crc_verify, uint, 0644);
+MODULE_PARM_DESC(crc_verify, "Enable CRC check");
+
+static unsigned int enable_cpu_wq;
+module_param(enable_cpu_wq, uint, 0644);
+MODULE_PARM_DESC(enable_cpu_wq, "Execute crypto/crc in separate work pool");
+
 /* CSA context can be referenced from two places:
  *  * csaccel file struct as filp->private_data
  *    This reference is dropped at csaccel file close
@@ -519,7 +527,7 @@ static void pcs_csa_complete(struct kiocb *iocb, long ret)
 
 	if (atomic_dec_and_test(&areq->iocount)) {
 		INIT_WORK(&areq->work, csa_complete_work);
-		queue_work(ireq->cc->wq, &areq->work);
+		queue_work(enable_cpu_wq ? pcs_cpu_wq : ireq->cc->wq, &areq->work);
 	}
 }
 
@@ -608,7 +616,7 @@ static inline int csa_submit(struct file * file, struct file *cfile, int do_csum
 	 */
 	if (atomic_dec_and_test(&areq->iocount)) {
 		INIT_WORK(&areq->work, csa_complete_work);
-		queue_work(ireq->cc->wq, &areq->work);
+		queue_work(enable_cpu_wq ? pcs_cpu_wq : ireq->cc->wq, &areq->work);
 	}
 	return 0;
 }
@@ -631,7 +639,7 @@ int pcs_csa_cs_submit(struct pcs_cs * cs, struct pcs_int_request * ireq)
 			if (!(map->state & PCS_MAP_DEAD) && map->cs_list == ireq->iochunk.csl) {
 				struct file * file = get_file(csa->file);
 				struct file * cfile = csa->cfile ? get_file(csa->cfile) : NULL;
-				unsigned int flags = csa->flags;
+				unsigned int flags = crc_verify ? csa->flags : 0;
 				int err;
 
 				if (csa_ctx->tfm)

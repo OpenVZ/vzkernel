@@ -64,6 +64,7 @@ struct pcs_fuse_work {
 };
 
 extern struct workqueue_struct *pcs_cleanup_wq;
+extern struct workqueue_struct *pcs_cpu_wq;
 
 int pcs_cluster_init(struct pcs_fuse_cluster *c, struct workqueue_struct *,
 		     struct fuse_conn *fc, struct pcs_ioc_init_kdirect *info);

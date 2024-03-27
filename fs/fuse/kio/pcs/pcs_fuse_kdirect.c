@@ -71,6 +71,16 @@ unsigned int rdmaio_queue_depth = 8;
 module_param(rdmaio_queue_depth, uint, 0644);
 MODULE_PARM_DESC(rdmaio_queue_depth, "RDMA queue depth");
 
+unsigned int worker_flags;
+module_param(worker_flags, uint, 0444);
+MODULE_PARM_DESC(worker_flags, "Set main worker flags");
+
+unsigned int cpu_worker_flags = 1;
+module_param(cpu_worker_flags, uint, 0444);
+MODULE_PARM_DESC(cpu_worker_flags, "Set cpu worker flags");
+
+#define sel_wq_flags(f) ((((f) & 1) ? WQ_CPU_INTENSIVE : 0) | (((f) & 2) ? WQ_UNBOUND : 0))
+
 void (*fuse_printk_plugin)(unsigned long, const char *, ...);
 EXPORT_SYMBOL(fuse_printk_plugin);
 
@@ -145,6 +155,7 @@ static int fuse_ktrace_remove(struct fuse_conn *fc);
 static struct kmem_cache *pcs_fuse_req_cachep;
 static struct kmem_cache *pcs_ireq_cachep;
 static struct workqueue_struct *pcs_wq;
+struct workqueue_struct *pcs_cpu_wq;
 struct workqueue_struct *pcs_cleanup_wq;
 static struct fuse_kio_ops kio_pcs_ops;
 static struct dentry *fuse_trace_root;
@@ -289,6 +300,7 @@ static void kpcs_conn_fini(struct fuse_mount *fm)
 	unregister_client(fc->kio.ctx);
 	synchronize_rcu();
 	flush_workqueue(pcs_wq);
+	flush_workqueue(pcs_cpu_wq);
 	flush_workqueue(pcs_cleanup_wq);
 	pcs_cluster_fini((struct pcs_fuse_cluster *) fc->kio.ctx);
 }
@@ -1909,13 +1921,17 @@ static int __init kpcs_mod_init(void)
 	if (!pcs_map_cachep)
 		goto free_ireq_cache;
 
-	pcs_wq = alloc_workqueue("pcs_cluster", WQ_MEM_RECLAIM, 0);
+	pcs_wq = alloc_workqueue("pcs_cluster", WQ_MEM_RECLAIM|sel_wq_flags(worker_flags), 0);
 	if (!pcs_wq)
 		goto free_map_cache;
 
+	pcs_cpu_wq = alloc_workqueue("pcs_cpu", WQ_MEM_RECLAIM|sel_wq_flags(cpu_worker_flags), 0);
+	if (!pcs_cpu_wq)
+		goto free_wq;
+
 	pcs_cleanup_wq = alloc_workqueue("pcs_cleanup_wq", WQ_MEM_RECLAIM, 0);
 	if (!pcs_cleanup_wq)
-		goto free_wq;
+		goto free_cpu_wq;
 
 	if (pcs_csa_init())
 		goto free_cleanup_wq;
@@ -1945,6 +1961,8 @@ free_csa:
 	pcs_csa_fini();
 free_cleanup_wq:
 	destroy_workqueue(pcs_cleanup_wq);
+free_cpu_wq:
+	destroy_workqueue(pcs_cpu_wq);
 free_wq:
 	destroy_workqueue(pcs_wq);
 free_map_cache:
@@ -1965,6 +1983,7 @@ static void __exit kpcs_mod_exit(void)
 
 	fuse_unregister_kio(&kio_pcs_ops);
 	destroy_workqueue(pcs_cleanup_wq);
+	destroy_workqueue(pcs_cpu_wq);
 	destroy_workqueue(pcs_wq);
 	kmem_cache_destroy(pcs_map_cachep);
 	kmem_cache_destroy(pcs_ireq_cachep);
