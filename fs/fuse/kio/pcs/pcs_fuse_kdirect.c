@@ -1931,7 +1931,9 @@ static int __init kpcs_mod_init(void)
 
 	fuse_trace_root = debugfs_create_dir("fuse", NULL);
 
-	crc_tfm = crypto_alloc_shash("crc32c", 0, 0);
+	crc_tfm = crypto_alloc_shash("crc32c-intel", 0, 0);
+	if (!crc_tfm || IS_ERR(crc_tfm))
+		crc_tfm = crypto_alloc_shash("crc32c", 0, 0);
 	if (IS_ERR(crc_tfm))
 		crc_tfm = NULL;
 
