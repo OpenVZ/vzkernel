@@ -85,4 +85,6 @@
 
 #define SO_SELECT_ERR_QUEUE	45
 
+#define SCM_TIMESTAMPING_PKTINFO	58
+
 #endif	/* _XTENSA_SOCKET_H */

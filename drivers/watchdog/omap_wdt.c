@@ -244,6 +244,7 @@ static int omap_wdt_probe(struct platform_device *pdev)
 	omap_wdt->ops	      = &omap_wdt_ops;
 	omap_wdt->min_timeout = TIMER_MARGIN_MIN;
 	omap_wdt->max_timeout = TIMER_MARGIN_MAX;
+	omap_wdt->parent = &pdev->dev;
 
 	if (timer_margin >= TIMER_MARGIN_MIN &&
 	    timer_margin <= TIMER_MARGIN_MAX)

@@ -85,4 +85,8 @@ typedef struct spinlock {
 
 #include <linux/rwlock_types.h>
 
+#ifdef CONFIG_QUEUED_RWLOCKS
+#include <generated/qrwlock_types.h>
+#endif
+
 #endif /* __LINUX_SPINLOCK_TYPES_H */

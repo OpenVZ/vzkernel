@@ -1146,7 +1146,7 @@ static void hamachi_tx_timeout(struct net_device *dev)
 	hmp->rx_ring[RX_RING_SIZE-1].status_n_length |= cpu_to_le32(DescEndRing);
 
 	/* Trigger an immediate transmit demand. */
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 	dev->stats.tx_errors++;
 
 	/* Restart the chip's Tx/Rx processes . */
@@ -1914,7 +1914,7 @@ static void hamachi_remove_one(struct pci_dev *pdev)
 	}
 }
 
-static DEFINE_PCI_DEVICE_TABLE(hamachi_pci_tbl) = {
+static const struct pci_device_id hamachi_pci_tbl[] = {
 	{ 0x1318, 0x0911, PCI_ANY_ID, PCI_ANY_ID, },
 	{ 0, }
 };
